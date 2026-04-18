@@ -16,7 +16,6 @@ dependencies {
     implementation project(':prjxp-common')
 
     // Spring & DevTools
-    implementation libs.spring.boot.starter
     implementation libs.spring.boot.starter.json
     developmentOnly libs.spring.boot.devtools
 
@@ -26,14 +25,6 @@ dependencies {
     implementation libs.dotenv.java
     implementation libs.commons.io
 
-    // Lombok (Nutzt den Katalog)
-    compileOnly libs.lombok
-    annotationProcessor libs.lombok
-    testCompileOnly libs.lombok
-    testAnnotationProcessor libs.lombok
-
-    // Testing (Nutzt das Bundle)
-    testImplementation libs.bundles.test.bundle
 }
 
 jar {

@@ -14,7 +14,6 @@ dependencies {
     implementation project(':prjxp-common')
 
     // Spring Boot
-    implementation libs.spring.boot.starter
     implementation libs.spring.boot.starter.json
 
     // LangChain4j (Inklusive Gemini über das Bundle)
@@ -24,12 +23,6 @@ dependencies {
     implementation libs.commons.cli
     implementation libs.javaparser.core
     implementation libs.dotenv.java
-
-    // Lombok
-    compileOnly libs.lombok
-    annotationProcessor libs.lombok
-    testCompileOnly libs.lombok
-    testAnnotationProcessor libs.lombok
 
     // Testing
     testImplementation libs.bundles.test.bundle

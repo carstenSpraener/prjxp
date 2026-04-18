@@ -12,4 +12,10 @@ plugins {
 }
 
 rootProject.name = 'prjxp'
-include('prjxp-common', 'chunk-norris', 'tibed', 'golden-retriever')
+include('prjxp-common', 'chunk-norris', 'tibed', 'golden-retriever', 'oragel')
+// Beispiel für mehrere Tools im encubator
+['oragel'].each { name ->
+    include name
+    project(":$name").projectDir = new File(settingsDir, "encubator/$name")
+}
+

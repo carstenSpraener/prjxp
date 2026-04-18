@@ -1,6 +1,6 @@
 gldrtrvr:
   gemini:
-    api-key: ${GOOGLE_AI_API_KEY}
+    api-key: UNKNOWN
   chat:
     modelName: deepseek-coder-v2:16b
     ollamaUrl: http://192.168.1.228:11434

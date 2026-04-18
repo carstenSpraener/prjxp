@@ -19,6 +19,24 @@ subprojects {
     }
 
     dependencies {
+        // Spring Boot Starter aus dem Version Catalog
+        implementation libs.spring.boot.starter
+
         developmentOnly libs.spring.boot.devtools
+
+        // Lombok (Katalog)
+        compileOnly libs.lombok
+        annotationProcessor libs.lombok
+        testCompileOnly libs.lombok
+        testAnnotationProcessor libs.lombok
+
+        // Testing (Nutzt das Bundle)
+        testImplementation libs.bundles.test.bundle
+        testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    }
+
+    test {
+        useJUnitPlatform()
+        jvmArgs("-Djava.awt.headless=false")
     }
 }
