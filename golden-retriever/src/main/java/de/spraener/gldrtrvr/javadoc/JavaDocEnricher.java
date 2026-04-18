@@ -63,7 +63,7 @@ public class JavaDocEnricher {
                     //Originalpfad holen (z.B. .../my-project/src/main/java/de/pkg/MyClass.java)
                     Path originalPath = cu.getStorage().get().getPath();
                     //Zielpfad definieren (Basisverzeichnis im target-Ordner)
-                    Path targetBase = Path.of("target/enriched");
+                    Path targetBase = Path.of("build/enriched-src");
                     // 3. Den relativen Pfad ab "src" extrahieren
                     // Wir suchen den Index von "src", um die Package-Struktur beizubehalten
                     String pathStr = originalPath.toString();

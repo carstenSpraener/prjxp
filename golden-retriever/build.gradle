@@ -36,5 +36,5 @@ dependencies {
 }
 
 application {
-    mainClass = 'de.spraener.tibed.CliApp'
+    mainClass = 'de.spraener.gldrtrvr.GRJavaDocEnricherCli'
 }
