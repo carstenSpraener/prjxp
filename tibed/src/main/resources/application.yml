@@ -1,0 +1,11 @@
+tibed:
+  ollama:
+    #    url: http://192.168.1.228:11434
+    url: http://192.168.1.140:11434
+  embedding:
+    modelName: mxbai-embed-large
+    chroma:
+      collectioName: chunk_norris
+      database: prjxp
+      tenant: prjxp
+

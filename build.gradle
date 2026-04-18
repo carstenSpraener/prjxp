@@ -1,0 +1,24 @@
+plugins {
+    id 'org.springframework.boot' version '3.5.0' apply false
+}
+
+subprojects {
+    group = 'de.spraener.prjxp'
+    version = '0.0.1-SNAPSHOT'
+
+    apply plugin: 'java'
+
+    repositories {
+        mavenCentral()
+    }
+
+    // Zentrale Konfiguration für DevTools (wie besprochen)
+    configurations {
+        developmentOnly
+        runtimeClasspath.extendsFrom developmentOnly
+    }
+
+    dependencies {
+        developmentOnly libs.spring.boot.devtools
+    }
+}

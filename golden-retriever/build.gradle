@@ -1,0 +1,40 @@
+plugins {
+    id 'application'
+    alias(libs.plugins.shadow)
+}
+
+// Repositories können theoretisch auch in die zentrale build.gradle,
+// aber hier schadet es nicht.
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Internes Modul
+    implementation project(':prjxp-common')
+
+    // Spring Boot
+    implementation libs.spring.boot.starter
+    implementation libs.spring.boot.starter.json
+
+    // LangChain4j (Inklusive Gemini über das Bundle)
+    implementation libs.bundles.langchain.stack
+
+    // Utilities
+    implementation libs.commons.cli
+    implementation libs.javaparser.core
+    implementation libs.dotenv.java
+
+    // Lombok
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+    testCompileOnly libs.lombok
+    testAnnotationProcessor libs.lombok
+
+    // Testing
+    testImplementation libs.bundles.test.bundle
+}
+
+application {
+    mainClass = 'de.spraener.tibed.CliApp'
+}

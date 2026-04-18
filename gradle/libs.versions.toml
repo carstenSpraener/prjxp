@@ -1,0 +1,54 @@
+[versions]
+# Core Frameworks
+springBoot = "3.5.0"
+langchain4j = "1.12.1"
+shadow = "8.3.0"
+
+# Libraries
+commonsCli = "1.11.0"
+javaparser = "3.25.10"
+dotenv = "3.0.0"
+commonsIo = "2.21.0"
+lombok = "1.18.34"
+
+# Test
+mockito = "5.11.0"
+assertj = "3.27.7"
+[plugins]
+shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
+springBoot = { id = "org.springframework.boot", version.ref = "springBoot" }
+
+[libraries]
+# Spring Boot
+spring-boot-starter = { group = "org.springframework.boot", name = "spring-boot-starter", version.ref = "springBoot" }
+spring-boot-starter-json = { group = "org.springframework.boot", name = "spring-boot-starter-json", version.ref = "springBoot" }
+spring-boot-devtools = { group = "org.springframework.boot", name = "spring-boot-devtools", version.ref = "springBoot" }
+spring-boot-starter-test = { group = "org.springframework.boot", name = "spring-boot-starter-test", version.ref = "springBoot" }
+# Langchain4j
+langchain4j-core = { group = "dev.langchain4j", name = "langchain4j", version.ref = "langchain4j" }
+langchain4j-ollama = { group = "dev.langchain4j", name = "langchain4j-ollama", version.ref = "langchain4j" }
+# Sonderfall: Chroma hat ein eigenes Version Suffix
+langchain4j-chroma = { group = "dev.langchain4j", name = "langchain4j-chroma", version = "1.12.1-beta21" }
+langchain4j-google-ai-gemini = { group = "dev.langchain4j", name = "langchain4j-google-ai-gemini", version.ref = "langchain4j" }
+
+# Utilities
+commons-cli = { group = "commons-cli", name = "commons-cli", version.ref = "commonsCli" }
+javaparser-core = { group = "com.github.javaparser", name = "javaparser-core", version.ref = "javaparser" }
+dotenv-java = { group = "io.github.cdimascio", name = "dotenv-java", version.ref = "dotenv" }
+commons-io = { group = "commons-io", name = "commons-io", version.ref = "commonsIo" }
+
+# Annotation Processors
+lombok = { group = "org.projectlombok", name = "lombok", version.ref = "lombok" }
+
+# Testing
+mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
+mockito-junit-jupiter = { group = "org.mockito", name = "mockito-junit-jupiter", version.ref = "mockito" }
+assertj-core = { group = "org.assertj", name = "assertj-core", version.ref = "assertj" }
+
+[bundles]
+# Ein Bundle für die Lombok-Konfiguration (spart Zeilen im Build-Script)
+lombok = ["lombok"]
+# Standard Testing Stack
+test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
+# Ein Bundle für LangChain4j spart Platz im Build-Script
+langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-chroma", "langchain4j-google-ai-gemini"]

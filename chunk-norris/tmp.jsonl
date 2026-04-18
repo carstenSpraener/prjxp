@@ -1,0 +1,2064 @@
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImplTest.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/test/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImplTest.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImplTest",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "5",
+  "size": 87,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import org.junit.jupiter.api.Test;\n\nimport static org.junit.jupiter.api.Assertions.*;\n\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImplTest.void findPxChunkers()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/test/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImplTest.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImplTest",
+  "part": 0,
+  "total": 1,
+  "fromLine": "8",
+  "toLine": "11",
+  "size": 50,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@Test\n    @Test\n    void findPxChunkers() {\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImplTest",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/test/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImplTest.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "6",
+  "toLine": "12",
+  "size": 200,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno;\n\n\nimport org.junit.jupiter.api.Test;\n\nimport static org.junit.jupiter.api.Assertions.*;\n\nclass AnnotationBasedChunkerBrokerImplTest {\n\n    @Test\n    void findPxChunkers()\n}\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerBroker.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerBroker.java",
+  "parent": "de.spraener.chuno.ChunkerBroker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "4",
+  "size": 54,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import java.io.File;\nimport java.util.stream.Stream;\n\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerBroker.Stream<PxChunker> findPxChunkers(File)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerBroker.java",
+  "parent": "de.spraener.chuno.ChunkerBroker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "6",
+  "toLine": "7",
+  "size": 46,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    Stream<PxChunker> findPxChunkers(File f);\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerBroker.Stream<PxChunker> listPostWalkChunker()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerBroker.java",
+  "parent": "de.spraener.chuno.ChunkerBroker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "7",
+  "toLine": "8",
+  "size": 45,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    Stream<PxChunker> listPostWalkChunker();\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerBroker",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerBroker.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "5",
+  "toLine": "9",
+  "size": 206,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno;\n\n\nimport java.io.File;\nimport java.util.stream.Stream;\n\npublic interface ChunkerBroker {\n\n    Stream<PxChunker> findPxChunkers(File)\n    Stream<PxChunker> listPostWalkChunker()\n}\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "13",
+  "size": 433,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import io.github.cdimascio.dotenv.Dotenv;\nimport lombok.NonNull;\nimport org.apache.commons.cli.*;\nimport org.springframework.boot.CommandLineRunner;\nimport org.springframework.boot.SpringApplication;\nimport org.springframework.boot.autoconfigure.SpringBootApplication;\nimport org.springframework.context.annotation.Bean;\nimport org.springframework.context.annotation.Profile;\n\nimport java.io.FileWriter;\nimport java.io.PrintWriter;\n\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.void readDotEnv()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 0,
+  "total": 1,
+  "fromLine": "18",
+  "toLine": "32",
+  "size": 490,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private static void readDotEnv() {\n        Dotenv dotenv = Dotenv.configure()\n                .directory(\".\")\n                .filename(\".env\")\n                .ignoreIfMissing()\n                .load();\n\n        // Jede Variable aus der .env für Spring/System verfügbar machen\n        dotenv.entries().forEach(entry -> {\n            if (System.getProperty(entry.getKey()) == null) {\n                System.setProperty(entry.getKey(), entry.getValue());\n            }\n        });\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.void main(String[])",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 0,
+  "total": 1,
+  "fromLine": "33",
+  "toLine": "37",
+  "size": 129,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public static void main(String[] args) {\n        readDotEnv();\n        SpringApplication.run(ChunkNorris.class, args);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.CommandLineRunner run(ChunkProcess, ChunkNorrisConfig)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 0,
+  "total": 1,
+  "fromLine": "38",
+  "toLine": "48",
+  "size": 269,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@Bean\n@Profile(\"!test\")\n    @Bean\n    @Profile(\"!test\")\n    public CommandLineRunner run(\n            ChunkProcess chunkProcess,\n            ChunkNorrisConfig cfg\n    ) {\n        return args -> {\n            chunkProcess.execute(parseArgs(args, cfg));\n        };\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.ChunkNorrisConfig parseArgs(String[], ChunkNorrisConfig)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 0,
+  "total": 2,
+  "fromLine": "49",
+  "toLine": "4932",
+  "size": 1300,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private static ChunkNorrisConfig parseArgs(String[] args, ChunkNorrisConfig cfg) {\n        Options options = getOptions();\n        CommandLineParser parser = new DefaultParser();\n        HelpFormatter formatter = new HelpFormatter();\n        try {\n            CommandLine cmd = parser.parse(options, args);\n\n            if (cmd.hasOption(\"h\")) {\n                formatter.printHelp(\"chunk-norris\", options);\n                return null;\n            }\n            if (cmd.hasOption(\"r\")) {\n                cfg.setRootDir(cmd.getOptionValue(\"r\"));\n            } else {\n                cfg.setRootDir(\".\");\n            }\n            if( cmd.hasOption(\"o\")) {\n                String outputFileName = cmd.getOptionValue(\"o\");\n                cfg.setOutput(new PrintWriter(new FileWriter(outputFileName)));\n            } else {\n                cfg.setOutput(new PrintWriter(System.out));\n            }\n            if( cmd.hasOption(\"c\") ) {\n                cfg.setConfigFile(cmd.getOptionValue(\"c\"));\n            }\n            if( cmd.hasOption(\"wl\") ) {\n                cfg.setWhiteList(cmd.getOptionValue(\"wl\"));\n            }\n            return cfg;\n        } catch( Exception e ) {\n            System.err.println(e.getMessage());\n            throw new RuntimeException(\"Configuration failed!\");\n   "
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.ChunkNorrisConfig parseArgs(String[], ChunkNorrisConfig)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 1,
+  "total": 2,
+  "fromLine": "81",
+  "toLine": "814",
+  "size": 113,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "em.err.println(e.getMessage());\n            throw new RuntimeException(\"Configuration failed!\");\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.Options getOptions()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 0,
+  "total": 2,
+  "fromLine": "84",
+  "toLine": "8428",
+  "size": 1300,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@NonNull\n    private static @NonNull Options getOptions() {\n        if( options == null ) {\n            options = new Options();\n            options.addOption(Option.builder(\"r\")\n                    .longOpt(\"root\")\n                    .numberOfArgs(1)\n                    .desc(\"Read all files from within the given root directory. Default is the current directory.\")\n                    .build());\n            options.addOption(Option.builder((\"o\"))\n                    .longOpt(\"output\")\n                            .numberOfArgs(1)\n                    .desc(\"write JSONL to this file. Default is stdout\")\n                    .build()\n            );\n            options.addOption(Option.builder(\"c\")\n                    .longOpt(\"config\")\n                    .numberOfArgs(1)\n                    .desc(\"read configuration from the given json file. default is none.\")\n                    .build()\n            );\n            options.addOption(Option.builder()\n                            .longOpt(\"no-standard-vetos\")\n                            .desc(\"Turns of the standard vetos for chunk processing. Default is false (standard vetos enabled).\")\n                    .build()\n            );\n            options.addOption(Option.builder(\"wl\")\n                    .longOpt(\"white-list\")\n             "
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.Options getOptions()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 1,
+  "total": 2,
+  "fromLine": "112",
+  "toLine": "11210",
+  "size": 362,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "     options.addOption(Option.builder(\"wl\")\n                    .longOpt(\"white-list\")\n                            .numberOfArgs(1)\n                    .desc(\"A list (,) of endings that should be chunked.\")\n                    .build()\n            );\n            options.addOption(\"h\", \"help\", false, \"Shows this help.\");\n        }\n        return options;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorris.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "14",
+  "toLine": "120",
+  "size": 787,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno;\n\n\nimport io.github.cdimascio.dotenv.Dotenv;\nimport lombok.NonNull;\nimport org.apache.commons.cli.*;\nimport org.springframework.boot.CommandLineRunner;\nimport org.springframework.boot.SpringApplication;\nimport org.springframework.boot.autoconfigure.SpringBootApplication;\nimport org.springframework.context.annotation.Bean;\nimport org.springframework.context.annotation.Profile;\n\nimport java.io.FileWriter;\nimport java.io.PrintWriter;\n\n@SpringBootApplication\npublic class ChunkNorris {\n    private static Options options;\n\n    void readDotEnv()\n    void main(String[])\n    @Bean\n    @Profile(\"!test\")\n    CommandLineRunner run(ChunkProcess, ChunkNorrisConfig)\n    ChunkNorrisConfig parseArgs(String[], ChunkNorrisConfig)\n    @NonNull\n    Options getOptions()\n}\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistryManager.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistryManager.java",
+  "parent": "de.spraener.chuno.util.DependencyRegistryManager",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "7",
+  "size": 159,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import lombok.RequiredArgsConstructor;\nimport org.springframework.core.env.Environment;\nimport org.springframework.stereotype.Service;\n\nimport java.util.Map;\n\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistryManager.DependencyRegistry get(String)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistryManager.java",
+  "parent": "de.spraener.chuno.util.DependencyRegistryManager",
+  "part": 0,
+  "total": 1,
+  "fromLine": "15",
+  "toLine": "24",
+  "size": 449,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public DependencyRegistry get(String name) {\n        var dependencyRegistry = dependencyRegistryMap.get(name);\n        if (dependencyRegistry == null){\n            String dependencyPrefix = env.getProperty(\"dependencyPrefix.\"+name, \"de.spraener\");\n            dependencyRegistry = new DependencyRegistry(name, dependencyPrefix);\n            dependencyRegistryMap.put(name, dependencyRegistry);\n        }\n        return dependencyRegistry;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistryManager",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistryManager.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "8",
+  "toLine": "25",
+  "size": 436,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.util;\n\n\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.core.env.Environment;\nimport org.springframework.stereotype.Service;\n\nimport java.util.Map;\n\n@Service\n@RequiredArgsConstructor\npublic class DependencyRegistryManager {\n    private final Environment env;\n    private Map<String, DependencyRegistry> dependencyRegistryMap = new java.util.HashMap<>();\n\n    DependencyRegistry get(String)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.util.ChunkRange.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ChunkRange.java",
+  "parent": "de.spraener.chuno.util.ChunkRange",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "6",
+  "size": 84,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import lombok.Data;\nimport lombok.RequiredArgsConstructor;\n\nimport java.util.List;\n\n"
+}
+{
+  "id": "de.spraener.chuno.util.ChunkRange.String toCode()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ChunkRange.java",
+  "parent": "de.spraener.chuno.util.ChunkRange",
+  "part": 0,
+  "total": 1,
+  "fromLine": "15",
+  "toLine": "25",
+  "size": 289,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public String toCode() {\n        if( codeLines==null) {\n            return \"\";\n        }\n        StringBuilder sb = new StringBuilder();\n        for( int i=fromLine; i<=toLine; i++ ) {\n            sb.append(codeLines.get(i)).append('\\n');\n        }\n        return sb.toString();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.ChunkRange",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ChunkRange.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "7",
+  "toLine": "26",
+  "size": 373,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.util;\n\n\nimport lombok.Data;\nimport lombok.RequiredArgsConstructor;\n\nimport java.util.List;\n\n@Data\n@RequiredArgsConstructor\npublic class ChunkRange {\n    public static final ChunkRange EMPTY = new ChunkRange(0, 0, null);\n    private final int fromLine;\n    private final int toLine;\n    private final List<String> codeLines;\n\n    String toCode()\n}\n"
+}
+{
+  "id": "de.spraener.chuno.util.ContentSplitter.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ContentSplitter.java",
+  "parent": "de.spraener.chuno.util.ContentSplitter",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "10",
+  "size": 240,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import de.spraener.prjxp.common.model.PxChunk;\nimport lombok.Data;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.util.StringUtils;\n\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.function.Supplier;\n\n"
+}
+{
+  "id": "de.spraener.chuno.util.ContentSplitter.List<PxChunk> splitContent(ChunkRange, Supplier<PxChunk>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ContentSplitter.java",
+  "parent": "de.spraener.chuno.util.ContentSplitter",
+  "part": 0,
+  "total": 1,
+  "fromLine": "17",
+  "toLine": "20",
+  "size": 197,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public List<PxChunk> splitContent(ChunkRange range, Supplier<PxChunk> chunkSupplier) {\n        return splitContent(range.toCode(), range.getFromLine(), range.getToLine(), chunkSupplier);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.ContentSplitter.List<PxChunk> splitContent(String, int, int, Supplier<PxChunk>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ContentSplitter.java",
+  "parent": "de.spraener.chuno.util.ContentSplitter",
+  "part": 0,
+  "total": 1,
+  "fromLine": "21",
+  "toLine": "24",
+  "size": 211,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public List<PxChunk> splitContent(String content, int fromLine, int toLine, Supplier<PxChunk> chunkSupplier) {\n        return splitContent(new StringBuilder(content), fromLine, toLine, chunkSupplier);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.ContentSplitter.List<PxChunk> splitContent(StringBuilder, int, int, Supplier<PxChunk>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ContentSplitter.java",
+  "parent": "de.spraener.chuno.util.ContentSplitter",
+  "part": 0,
+  "total": 2,
+  "fromLine": "25",
+  "toLine": "2525",
+  "size": 1300,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public List<PxChunk> splitContent(StringBuilder content, int fromLine, int toLine, Supplier<PxChunk> chunkSupplier) {\n        List<PxChunk> chunks = new ArrayList<>();\n        if( content.length() < chunkSize ) {\n            PxChunk chunk = chunkSupplier.get();\n            chunk.setContent(content.toString());\n            chunk.setTotal(1);\n            chunk.setPart(0);\n            chunk.setSize(content.length());\n            chunk.setOverlap(0);\n            chunk.setFromLine(\"\"+fromLine);\n            chunk.setToLine(\"\"+toLine);\n            chunks.add(chunk);\n        } else {\n            int total = 0;\n            int chunkStart = 0;\n            int chunkStartLine = fromLine;\n            for( int i=0; chunkStart < content.length(); i++ ) {\n                String chunkContent = content.substring(chunkStart, Math.min(chunkStart + chunkSize, content.length()));\n                PxChunk chunk = chunkSupplier.get();\n                chunk.setContent(chunkContent);\n                chunk.setTotal(total);\n                chunk.setPart(i);\n                chunk.setSize(chunkContent.length());\n                chunk.setOverlap(this.overlap);\n                chunk.setFromLine(\"\"+chunkStartLine);\n                chunk.setToLine(\"\"+chunkStartLine + StringUtils.countOccurrencesOf(chunkContent"
+}
+{
+  "id": "de.spraener.chuno.util.ContentSplitter.List<PxChunk> splitContent(StringBuilder, int, int, Supplier<PxChunk>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ContentSplitter.java",
+  "parent": "de.spraener.chuno.util.ContentSplitter",
+  "part": 1,
+  "total": 2,
+  "fromLine": "50",
+  "toLine": "5015",
+  "size": 526,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "ne);\n                chunk.setToLine(\"\"+chunkStartLine + StringUtils.countOccurrencesOf(chunkContent, \"\\n\"));\n                chunkStartLine += StringUtils.countOccurrencesOf(chunkContent, \"\\n\");\n\n                chunks.add(chunk);\n                chunkStart += chunkSize-overlap;\n                total++;\n                if( chunkStart > content.length()) {\n                    break;\n                }\n            }\n            chunks.stream().forEach(c -> c.setTotal(chunks.size()));\n        }\n        return chunks;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.ContentSplitter",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/ContentSplitter.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "11",
+  "toLine": "66",
+  "size": 608,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.util;\n\n\nimport de.spraener.prjxp.common.model.PxChunk;\nimport lombok.Data;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.util.StringUtils;\n\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.function.Supplier;\n\n@Data\n@RequiredArgsConstructor\npublic class ContentSplitter {\n    private final int chunkSize;\n    private final int overlap;\n\n    List<PxChunk> splitContent(ChunkRange, Supplier<PxChunk>)\n    List<PxChunk> splitContent(String, int, int, Supplier<PxChunk>)\n    List<PxChunk> splitContent(StringBuilder, int, int, Supplier<PxChunk>)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistry.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistry.java",
+  "parent": "de.spraener.chuno.util.DependencyRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "3",
+  "size": 33,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import java.util.stream.Stream;\n\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistry.void addDependency(String, String)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistry.java",
+  "parent": "de.spraener.chuno.util.DependencyRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "15",
+  "toLine": "22",
+  "size": 328,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public synchronized void addDependency(String source, String target) {\n        if( !target.startsWith(prefix) ) {\n            return;\n        }\n        dependencies.computeIfAbsent(source, k -> new java.util.HashSet<>()).add(target);\n        usedBy.computeIfAbsent(target, k -> new java.util.HashSet<>()).add(source);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistry.java.util.Set<String> getDependencies(String)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistry.java",
+  "parent": "de.spraener.chuno.util.DependencyRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "23",
+  "toLine": "26",
+  "size": 156,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public java.util.Set<String> getDependencies(String source) {\n        return dependencies.getOrDefault(source, java.util.Collections.emptySet());\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistry.void clear()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistry.java",
+  "parent": "de.spraener.chuno.util.DependencyRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "27",
+  "toLine": "30",
+  "size": 62,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public void clear() {\n        dependencies.clear();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistry.Stream<String> keyStream()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistry.java",
+  "parent": "de.spraener.chuno.util.DependencyRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "31",
+  "toLine": "34",
+  "size": 93,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public Stream<String> keyStream() {\n        return dependencies.keySet().stream();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistry.Stream<String> getUsedBy(String)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistry.java",
+  "parent": "de.spraener.chuno.util.DependencyRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "35",
+  "toLine": "38",
+  "size": 146,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public Stream<String> getUsedBy(String source) {\n        return usedBy.getOrDefault(source, java.util.Collections.emptySet()).stream();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.util.DependencyRegistry",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/util/DependencyRegistry.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "4",
+  "toLine": "39",
+  "size": 546,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.util;\n\n\nimport java.util.stream.Stream;\n\npublic class DependencyRegistry {\n    private final java.util.Map<String, java.util.Set<String>> dependencies = new java.util.HashMap<>();\n    private final java.util.Map<String, java.util.Set<String>> usedBy = new java.util.HashMap<>();\n    private final String prefix;\n    private final String name;\n\n    void addDependency(String, String)\n    java.util.Set<String> getDependencies(String)\n    void clear()\n    Stream<String> keyStream()\n    Stream<String> getUsedBy(String)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorrisConfig.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorrisConfig.java",
+  "parent": "de.spraener.chuno.ChunkNorrisConfig",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "6",
+  "size": 99,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import lombok.Data;\nimport org.springframework.stereotype.Component;\n\nimport java.io.PrintWriter;\n\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorrisConfig",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkNorrisConfig.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "7",
+  "toLine": "15",
+  "size": 302,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno;\n\n\nimport lombok.Data;\nimport org.springframework.stereotype.Component;\n\nimport java.io.PrintWriter;\n\n@Component\n@Data\npublic class ChunkNorrisConfig {\n    private String rootDir;\n    private PrintWriter output;\n    private String configFile;\n    private String whiteList;\n\n}\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaFQNamesMapper.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaFQNamesMapper.java",
+  "parent": "de.spraener.chuno.code.java.JavaFQNamesMapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "15",
+  "size": 498,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import com.github.javaparser.StaticJavaParser;\nimport com.github.javaparser.ast.CompilationUnit;\nimport com.github.javaparser.ast.body.TypeDeclaration;\nimport de.spraener.chuno.ChunkNorrisConfig;\nimport de.spraener.chuno.spring.SpringPreWalkEvent;\nimport org.springframework.context.event.EventListener;\nimport org.springframework.stereotype.Component;\n\nimport java.io.File;\nimport java.nio.file.Files;\nimport java.nio.file.Path;\nimport java.util.*;\nimport java.util.concurrent.ConcurrentHashMap;\n\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaFQNamesMapper.void fillFQNamesMap(SpringPreWalkEvent<ChunkNorrisConfig>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaFQNamesMapper.java",
+  "parent": "de.spraener.chuno.code.java.JavaFQNamesMapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "20",
+  "toLine": "31",
+  "size": 488,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@EventListener(SpringPreWalkEvent.class)\n    @EventListener(SpringPreWalkEvent.class)\n    public void fillFQNamesMap(SpringPreWalkEvent<ChunkNorrisConfig> event) {\n        try {\n            Files.walk(Path.of(event.config().getRootDir()))\n                    .filter(Files::isRegularFile)\n                    .filter(path -> path.toString().endsWith(\".java\"))\n                    .forEach(path -> handleFile(path.toFile()) );\n        } catch( Exception e ) {\n            \n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaFQNamesMapper.void handleFile(File)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaFQNamesMapper.java",
+  "parent": "de.spraener.chuno.code.java.JavaFQNamesMapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "32",
+  "toLine": "44",
+  "size": 450,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void handleFile(File file)  {\n        try {\n            CompilationUnit cu = StaticJavaParser.parse(file);\n            cu.findAll(TypeDeclaration.class).forEach(type -> {\n                type.getFullyQualifiedName().ifPresent(fqn -> {\n                    registerFQName(type.getNameAsString(), fqn.toString());\n                });\n            });\n        } catch (Exception e) {\n            throw new RuntimeException(e);\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaFQNamesMapper.void registerFQName(String, String)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaFQNamesMapper.java",
+  "parent": "de.spraener.chuno.code.java.JavaFQNamesMapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "45",
+  "toLine": "49",
+  "size": 209,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void registerFQName(String name, String fqn) {\n        Set<String> fqName = name2FQNamesMap.computeIfAbsent(name, k -> Collections.synchronizedSet(new HashSet<>()));\n        fqName.add(fqn);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaFQNamesMapper.String getFQName(String, String, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaFQNamesMapper.java",
+  "parent": "de.spraener.chuno.code.java.JavaFQNamesMapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "50",
+  "toLine": "73",
+  "size": 842,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public String getFQName(String name, String fromPkg, List<String> imports) {\n        Set<String> fqNames = name2FQNamesMap.get(name);\n        if (fqNames == null) return \"\";\n\n        // 1. Suche in expliziten Imports\n        for (String fqName : fqNames) {\n            String fqPkg = fqName.substring(0, Math.max(0, fqName.length() - name.length() - 1));\n            String wildcardImp = fqPkg + \".*\";\n\n            for (var imp : imports) {\n                if (imp.equals(fqName) || imp.equals(wildcardImp)) {\n                    return fqName;\n                }\n            }\n        }\n\n        // 2. Prüfung: Existiert die Klasse im selben Paket?\n        String samePkgFQN = fromPkg.isEmpty() ? name : fromPkg + \".\" + name;\n        if (fqNames.contains(samePkgFQN)) {\n            return samePkgFQN;\n        }\n        return name;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaFQNamesMapper",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaFQNamesMapper.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "16",
+  "toLine": "74",
+  "size": 891,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.code.java;\n\n\nimport com.github.javaparser.StaticJavaParser;\nimport com.github.javaparser.ast.CompilationUnit;\nimport com.github.javaparser.ast.body.TypeDeclaration;\nimport de.spraener.chuno.ChunkNorrisConfig;\nimport de.spraener.chuno.spring.SpringPreWalkEvent;\nimport org.springframework.context.event.EventListener;\nimport org.springframework.stereotype.Component;\n\nimport java.io.File;\nimport java.nio.file.Files;\nimport java.nio.file.Path;\nimport java.util.*;\nimport java.util.concurrent.ConcurrentHashMap;\n\n@Component\npublic class JavaFQNamesMapper {\n    private Map<String, Set<String>> name2FQNamesMap = new ConcurrentHashMap<>();\n\n    @EventListener(SpringPreWalkEvent.class)\n    void fillFQNamesMap(SpringPreWalkEvent<ChunkNorrisConfig>)\n    void handleFile(File)\n    void registerFQName(String, String)\n    String getFQName(String, String, List<String>)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "31",
+  "size": 1199,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import com.github.javaparser.ParserConfiguration;\nimport com.github.javaparser.StaticJavaParser;\nimport com.github.javaparser.ast.CompilationUnit;\nimport com.github.javaparser.ast.body.MethodDeclaration;\nimport com.github.javaparser.ast.body.TypeDeclaration;\nimport com.github.javaparser.ast.expr.AnnotationExpr;\nimport de.spraener.chuno.util.ChunkRange;\nimport de.spraener.chuno.util.ContentSplitter;\nimport de.spraener.prjxp.common.annotations.ChunkNorrisComponent;\nimport de.spraener.prjxp.common.annotations.Chunker;\nimport de.spraener.prjxp.common.model.PxChunk;\nimport de.spraener.prjxp.common.model.PxFileType;\nimport de.spraener.prjxp.common.util.ValueContainer;\nimport lombok.RequiredArgsConstructor;\nimport lombok.extern.java.Log;\nimport org.springframework.beans.factory.annotation.Value;\nimport org.springframework.stereotype.Component;\nimport org.springframework.util.StringUtils;\n\nimport java.io.File;\nimport java.io.IOException;\nimport java.nio.charset.StandardCharsets;\nimport java.nio.file.Files;\nimport java.util.ArrayList;\nimport java.util.Collection;\nimport java.util.List;\nimport java.util.function.Consumer;\nimport java.util.stream.Collectors;\nimport java.util.stream.Stream;\n\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.Stream<PxChunk> chunk(File)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "48",
+  "toLine": "68",
+  "size": 1006,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@Chunker(fileTypes = PxFileType.JAVA_CODE)\n    @Chunker(fileTypes = PxFileType.JAVA_CODE)\n    public Stream<PxChunk> chunk(File f) {\n        try {\n            List<String> codeLines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);\n            StaticJavaParser.getConfiguration().setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17);\n            CompilationUnit cu = StaticJavaParser.parse(f);\n\n            javaDependencyHandler.fillDependencies(cu);\n\n            List<PxChunk> chunks = new ArrayList<>();\n            chunks.addAll(createImportChunk(f, cu, codeLines));\n            chunks.addAll(createMethodChunks(f, cu, codeLines));\n            chunks.addAll(createClassFrameChunk(f, cu, codeLines));\n            chunks.addAll(createMetaChunk(cu, chunks, codeLines));\n            return chunks.stream();\n        } catch (Exception e) {\n            log.warning(\"Exception while chunking file \" + f.getAbsolutePath() + \": \" + e.getMessage());\n            return Stream.of();\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.ChunkRange getImportsRange(CompilationUnit, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "69",
+  "toLine": "90",
+  "size": 949,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private ChunkRange getImportsRange(CompilationUnit cu, List<String> codeLines) {\n        final ValueContainer<Integer> vcFromLine = new ValueContainer(Integer.MAX_VALUE);\n        final ValueContainer<Integer> vcToLine = new ValueContainer(0);\n        for (var imp : cu.getImports()) {\n            imp.getRange().ifPresent(r -> {\n                        if (r.begin.line < vcFromLine.getValue()) {\n                            vcFromLine.setValue(r.begin.line);\n                        }\n                        if (r.end.line > vcToLine.getValue()) {\n                            vcToLine.setValue(r.end.line);\n                        }\n                    }\n            );\n        }\n        if (vcFromLine.getValue() == Integer.MAX_VALUE) {\n            return ChunkRange.EMPTY;\n        }\n        int fromLine = vcFromLine.getValue() - 1;\n        int toLine = vcToLine.getValue();\n        return new ChunkRange(fromLine, toLine, codeLines);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.Collection<PxChunk> createImportChunk(File, CompilationUnit, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "91",
+  "toLine": "103",
+  "size": 785,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private Collection<PxChunk> createImportChunk(File src, CompilationUnit cu, List<String> codeLines) throws IOException {\n        ChunkRange importRange = getImportsRange(cu, codeLines);\n        return new ContentSplitter(this.chunkSize, this.overlap).splitContent(importRange, () ->\n                PxChunk.create(\n                        c -> c.setMimeType(JAVA_CODE_MIME_TYPE),\n                        c -> c.setParent(cu.getPrimaryType().get().getFullyQualifiedName().get()),\n                        c -> c.setId(c.getParent() + \".imports\"),\n                        c -> c.setFile(src.getAbsolutePath()),\n                        c -> c.getMetadata().put(MDKEY_CODESECTION, de.spraener.prjxp.common.code.java.JavaCodeSection.IMPORTS.getName())\n                )\n        );\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.void readLines(List<String>, Integer, Integer, Consumer<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "104",
+  "toLine": "109",
+  "size": 220,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void readLines(List<String> codeLines, Integer from, Integer to, Consumer<String> lineConsumer) {\n        for (var line : codeLines.subList(from, to)) {\n            lineConsumer.accept(line);\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createMethodChunks(File, CompilationUnit, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "110",
+  "toLine": "123",
+  "size": 601,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private Collection<? extends PxChunk> createMethodChunks(File f, CompilationUnit cu, List<String> codeLines) {\n        List<PxChunk> chunks = new ArrayList<>();\n        if (cu.getPrimaryType().isPresent()) {\n            var primaryType = cu.getPrimaryType().get();\n            createContainedMethodChunks(f, cu, chunks, primaryType, codeLines);\n        }\n        for (var subClazz : cu.getTypes()) {\n            if (!subClazz.equals(cu.getPrimaryType().get())) {\n                createContainedMethodChunks(f, cu, chunks, subClazz, codeLines);\n            }\n        }\n        return chunks;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.void createContainedMethodChunks(File, CompilationUnit, List<PxChunk>, TypeDeclaration<?>, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 2,
+  "fromLine": "124",
+  "toLine": "12418",
+  "size": 1300,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void createContainedMethodChunks(File f, CompilationUnit cu, List<PxChunk> chunks, TypeDeclaration<?> type, List<String> codeLines) {\n        for (var m : type.getMethods()) {\n            String id = type.getFullyQualifiedName().get() + \".\" + m.getDeclarationAsString(false, false, false);\n            m.getJavadocComment().ifPresent(jc -> {\n                StringBuilder content = new StringBuilder();\n                int fromLine = jc.getRange().get().begin.line - 1;\n                int toLine = jc.getRange().get().end.line;\n                readLines(codeLines, fromLine, toLine, l -> content.append(l).append('\\n'));\n                chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap).splitContent(content, fromLine, toLine, () ->\n                        PxChunk.create(\n                                c -> c.setMimeType(JAVA_CODE_MIME_TYPE),\n                                c -> c.setParent(id),\n                                c -> c.setId(id + \".javadoc\"),\n                                c -> c.setFile(f.getAbsolutePath()),\n                                c -> c.getMetadata().put(MDKEY_CODESECTION, de.spraener.prjxp.common.code.java.JavaCodeSection.METHOD_DOC.getName())\n                        )\n                ));\n            });\n            StringBuilder meth"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.void createContainedMethodChunks(File, CompilationUnit, List<PxChunk>, TypeDeclaration<?>, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 1,
+  "total": 2,
+  "fromLine": "142",
+  "toLine": "14223",
+  "size": 1093,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "Name())\n                        )\n                ));\n            });\n            StringBuilder methodImpl = new StringBuilder();\n            addAnnotationsIfExist(methodImpl, m, \"\");\n            int fromLine = m.getRange().get().begin.line - 1;\n            int toLine = m.getRange().get().end.line;\n            readLines(codeLines, fromLine, toLine, l -> methodImpl.append(l).append('\\n'));\n            chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap).splitContent(\n                    methodImpl.toString(),\n                    fromLine,\n                    toLine,\n                    () -> PxChunk.create(\n                            c -> c.setMimeType(JAVA_CODE_MIME_TYPE),\n                            c -> c.setParent(type.getFullyQualifiedName().get().toString()),\n                            c -> c.setId(id),\n                            c -> c.setFile(f.getAbsolutePath()),\n                            c -> c.getMetadata().put(MDKEY_CODESECTION, de.spraener.prjxp.common.code.java.JavaCodeSection.METHOD.getName())\n                    )\n            ));\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 2,
+  "fromLine": "162",
+  "toLine": "16220",
+  "size": 1300,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private Collection<? extends PxChunk> createClassFrameChunk(File f, CompilationUnit cu, List<String> codeLines) {\n        List<PxChunk> chunks = new ArrayList<>();\n        for (var clazz : cu.getTypes()) {\n            StringBuilder content = new StringBuilder();\n            cu.getPackageDeclaration().ifPresent(pd -> content.append(pd.toString()).append('\\n'));\n            content.append(getImportsRange(cu, codeLines).toCode());\n            clazz.getJavadocComment().ifPresent(jc -> content.append(jc.toString()).append('\\n'));\n            for( int idx = clazz.getRange().get().begin.line - 1; !codeLines.get(idx-1).contains(\"{\"); idx++) {\n                content.append(codeLines.get(idx)).append('\\n');\n            }\n            for (var attr : clazz.getFields()) {\n                content.append(\"    \").append(attr.toString()).append('\\n');\n            }\n            content.append(\"\\n\");\n            for (var m : clazz.getMethods()) {\n                m.getJavadocComment().ifPresent(jc -> content.append(jc.toString()).append('\\n'));\n                addAnnotationsIfExist(content, m, \"    \");\n                content.append(\"    \").append(m.getDeclarationAsString(false, false, false)).append('\\n');\n            }\n            content.append(\"}\\n\");\n            int fromLine = clazz.getRan"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 1,
+  "total": 2,
+  "fromLine": "182",
+  "toLine": "18221",
+  "size": 984,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "pend('\\n');\n            }\n            content.append(\"}\\n\");\n            int fromLine = clazz.getRange().get().begin.line - 1;\n            int toLine = clazz.getRange().get().end.line;\n            chunks.addAll(\n                    new ContentSplitter(this.chunkSize, this.overlap).splitContent(content.toString(), fromLine, toLine,\n                            () -> {\n                                return PxChunk.create(\n                                        c -> c.setMimeType(JAVA_CODE_MIME_TYPE),\n                                        c -> c.setId(clazz.getFullyQualifiedName().get().toString()),\n                                        c -> c.setFile(f.getAbsolutePath()),\n                                        c -> c.getMetadata().put(MDKEY_CODESECTION, de.spraener.prjxp.common.code.java.JavaCodeSection.CLAZZ_FRAME.getName())\n                                );\n                            }\n\n                    )\n            );\n        }\n        return chunks;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.void addAnnotationsIfExist(StringBuilder, MethodDeclaration, String)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "201",
+  "toLine": "209",
+  "size": 408,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void addAnnotationsIfExist(StringBuilder content, MethodDeclaration m, String identation) {\n        String annotations = m.getAnnotations().stream()\n                .map(AnnotationExpr::toString)\n                .collect(Collectors.joining(\"\\n\"+identation));\n        if(StringUtils.hasText(annotations) ) {\n            content.append(identation).append(annotations).append('\\n');\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createMetaChunk(CompilationUnit, List<PxChunk>, List<String>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "210",
+  "toLine": "213",
+  "size": 158,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private Collection<? extends PxChunk> createMetaChunk(CompilationUnit cu, List<PxChunk> chunks, List<String> codeLines) {\n        return List.of();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": null,
+  "part": 0,
+  "total": 3,
+  "fromLine": "32",
+  "toLine": "3236",
+  "size": 1300,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.code.java;\n\n\nimport com.github.javaparser.ParserConfiguration;\nimport com.github.javaparser.StaticJavaParser;\nimport com.github.javaparser.ast.CompilationUnit;\nimport com.github.javaparser.ast.body.MethodDeclaration;\nimport com.github.javaparser.ast.body.TypeDeclaration;\nimport com.github.javaparser.ast.expr.AnnotationExpr;\nimport de.spraener.chuno.util.ChunkRange;\nimport de.spraener.chuno.util.ContentSplitter;\nimport de.spraener.prjxp.common.annotations.ChunkNorrisComponent;\nimport de.spraener.prjxp.common.annotations.Chunker;\nimport de.spraener.prjxp.common.model.PxChunk;\nimport de.spraener.prjxp.common.model.PxFileType;\nimport de.spraener.prjxp.common.util.ValueContainer;\nimport lombok.RequiredArgsConstructor;\nimport lombok.extern.java.Log;\nimport org.springframework.beans.factory.annotation.Value;\nimport org.springframework.stereotype.Component;\nimport org.springframework.util.StringUtils;\n\nimport java.io.File;\nimport java.io.IOException;\nimport java.nio.charset.StandardCharsets;\nimport java.nio.file.Files;\nimport java.util.ArrayList;\nimport java.util.Collection;\nimport java.util.List;\nimport java.util.function.Consumer;\nimport java.util.stream.Collectors;\nimport java.util.stream.Stream;\n\n@Component\n@RequiredArgsConstructor\n@ChunkNorrisComponent\n@Log"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": null,
+  "part": 1,
+  "total": 3,
+  "fromLine": "68",
+  "toLine": "6828",
+  "size": 1280,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "ors;\nimport java.util.stream.Stream;\n\n@Component\n@RequiredArgsConstructor\n@ChunkNorrisComponent\n@Log\npublic class JavaCodeChunker {\n    private static final String CHUNKER_NAME = \"JavaCodeChunker\";\n    private static final String JAVA_CODE_MIME_TYPE = \"text/x-java-code\";\n    public static final String MDKEY_CODESECTION = \"java_code_section\";\n    private final JavaDependencyHandler javaDependencyHandler;\n    @Value(\"${java.chunksize:1300}\")\nprivate int chunkSize;\n    @Value(\"${java.chunkoverlap:100}\")\nprivate int overlap;\n\n    @Chunker(fileTypes = PxFileType.JAVA_CODE)\n    Stream<PxChunk> chunk(File)\n    ChunkRange getImportsRange(CompilationUnit, List<String>)\n    Collection<PxChunk> createImportChunk(File, CompilationUnit, List<String>)\n    void readLines(List<String>, Integer, Integer, Consumer<String>)\n    Collection<? extends PxChunk> createMethodChunks(File, CompilationUnit, List<String>)\n    void createContainedMethodChunks(File, CompilationUnit, List<PxChunk>, TypeDeclaration<?>, List<String>)\n    Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)\n    void addAnnotationsIfExist(StringBuilder, MethodDeclaration, String)\n    Collection<? extends PxChunk> createMetaChunk(CompilationUnit, List<PxChunk>, List<String>)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaCodeChunker.java",
+  "parent": null,
+  "part": 2,
+  "total": 3,
+  "fromLine": "96",
+  "toLine": "962",
+  "size": 80,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "xtends PxChunk> createMetaChunk(CompilationUnit, List<PxChunk>, List<String>)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependenciesChunker.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependenciesChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaDependenciesChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "14",
+  "size": 568,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import de.spraener.chuno.util.ContentSplitter;\nimport de.spraener.chuno.util.DependencyRegistry;\nimport de.spraener.chuno.util.DependencyRegistryManager;\nimport de.spraener.prjxp.common.annotations.ChunkNorrisComponent;\nimport de.spraener.prjxp.common.annotations.PostWalkChunker;\nimport de.spraener.prjxp.common.code.java.JavaCodeSection;\nimport de.spraener.prjxp.common.model.PxChunk;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.beans.factory.annotation.Value;\nimport org.springframework.stereotype.Component;\n\nimport java.util.stream.Stream;\n\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependenciesChunker.Stream<PxChunk> createDependencyChunks()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependenciesChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaDependenciesChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "26",
+  "toLine": "33",
+  "size": 299,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@PostWalkChunker\n    @PostWalkChunker\n    public Stream<PxChunk> createDependencyChunks() {\n        DependencyRegistry depReg = depRegMgr.get(JavaDependencyHandler.JAVA_DEPENDENCIES);\n        return depReg.keyStream()\n              .flatMap(this::createDependencyChunkForSource)\n            ;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependenciesChunker.Stream<PxChunk> createDependencyChunkForSource(String)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependenciesChunker.java",
+  "parent": "de.spraener.chuno.code.java.JavaDependenciesChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "34",
+  "toLine": "53",
+  "size": 1158,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private Stream<PxChunk> createDependencyChunkForSource(String source) {\n        StringBuilder content = new StringBuilder();\n        content.append(\"Die Klasse \"+source+\" benutzt die folgenden Klassen:\").append('\\n');\n        depRegMgr.get(JavaDependencyHandler.JAVA_DEPENDENCIES)\n                .getDependencies(source)\n                .stream()\n                .forEach(str -> content.append(\"  * \").append(str).append('\\n'));\n        content.append( \"Die folgenden Klassen verweisen auf die Klasse \"+source+\":\\n\");\n        depRegMgr.get(JavaDependencyHandler.JAVA_DEPENDENCIES)\n                .getUsedBy(source)\n                .forEach( str -> content.append(\"  * \").append(str).append('\\n'));\n        return new ContentSplitter(chunkSize, overlap).splitContent(content, 0,\n                content.length(), () -> PxChunk.create(\n                        c -> c.setMimeType(\"text/plain\"),\n                        c -> c.setParent(source),\n                        c-> c.getMetadata().put(\"java_code_section\", JavaCodeSection.DEPENDENCIE_INFO.getName()),\n                        c -> c.setId(source+\".dependencies\")\n                )).stream();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependenciesChunker",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependenciesChunker.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "15",
+  "toLine": "54",
+  "size": 1005,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.code.java;\n\n\nimport de.spraener.chuno.util.ContentSplitter;\nimport de.spraener.chuno.util.DependencyRegistry;\nimport de.spraener.chuno.util.DependencyRegistryManager;\nimport de.spraener.prjxp.common.annotations.ChunkNorrisComponent;\nimport de.spraener.prjxp.common.annotations.PostWalkChunker;\nimport de.spraener.prjxp.common.code.java.JavaCodeSection;\nimport de.spraener.prjxp.common.model.PxChunk;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.beans.factory.annotation.Value;\nimport org.springframework.stereotype.Component;\n\nimport java.util.stream.Stream;\n\n@RequiredArgsConstructor\n@Component\n@ChunkNorrisComponent\npublic class JavaDependenciesChunker {\n    @Value(\"${java.chunksize:600}\")\nprivate int chunkSize;\n    @Value(\"${java.chunkoverlap:50}\")\nprivate int overlap;\n    private final DependencyRegistryManager depRegMgr;\n\n    @PostWalkChunker\n    Stream<PxChunk> createDependencyChunks()\n    Stream<PxChunk> createDependencyChunkForSource(String)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependencyHandler.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependencyHandler.java",
+  "parent": "de.spraener.chuno.code.java.JavaDependencyHandler",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "9",
+  "size": 343,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import com.github.javaparser.ast.CompilationUnit;\nimport com.github.javaparser.ast.body.TypeDeclaration;\nimport com.github.javaparser.ast.type.Type;\nimport de.spraener.chuno.util.DependencyRegistry;\nimport de.spraener.chuno.util.DependencyRegistryManager;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.stereotype.Service;\n\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependencyHandler.void fillDependencies(CompilationUnit)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependencyHandler.java",
+  "parent": "de.spraener.chuno.code.java.JavaDependencyHandler",
+  "part": 0,
+  "total": 1,
+  "fromLine": "18",
+  "toLine": "22",
+  "size": 212,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public void fillDependencies(CompilationUnit cu) {\n        DependencyRegistry depReg = dependencyRegistryManager.get(JAVA_DEPENDENCIES);\n        fillDependencies(cu.getPrimaryType().get(), cu, depReg);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependencyHandler.void fillDependencies(TypeDeclaration<?>, CompilationUnit, DependencyRegistry)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependencyHandler.java",
+  "parent": "de.spraener.chuno.code.java.JavaDependencyHandler",
+  "part": 0,
+  "total": 2,
+  "fromLine": "23",
+  "toLine": "2325",
+  "size": 1300,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void fillDependencies(TypeDeclaration<?> type, CompilationUnit cu, DependencyRegistry depReg) {\n        String sourceFQN = type.getFullyQualifiedName().orElse(type.getNameAsString());\n\n        // 1. Imports als Basis-Abhängigkeiten\n        cu.getImports().forEach(imp -> {\n            String importedName = imp.getNameAsString();\n            // Statische Imports oder Wildcards behandeln wir als eine Abhängigkeit auf den Root-Typ\n            depReg.addDependency(sourceFQN, importedName);\n        });\n\n        // 2. Vererbung (Extends & Implements)\n        if (type.isClassOrInterfaceDeclaration()) {\n            var classDecl = type.asClassOrInterfaceDeclaration();\n            classDecl.getExtendedTypes().forEach(et -> depReg.addDependency(sourceFQN, resolveFQName(et, cu)) );\n            classDecl.getImplementedTypes().forEach(it -> depReg.addDependency(sourceFQN, resolveFQName(it, cu)) );\n        }\n\n        // 3. Felder (Member-Variablen)\n        type.getFields().forEach(field -> {\n            depReg.addDependency(sourceFQN, resolveFQName(field.getElementType(), cu));\n        });\n\n        // 4. Methoden-Signaturen (Parameter & Rückgabewerte)\n        type.getMethods().forEach(method -> {\n            depReg.addDependency(sourceFQN, method.getType().asString());\n            m"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependencyHandler.void fillDependencies(TypeDeclaration<?>, CompilationUnit, DependencyRegistry)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependencyHandler.java",
+  "parent": "de.spraener.chuno.code.java.JavaDependencyHandler",
+  "part": 1,
+  "total": 2,
+  "fromLine": "48",
+  "toLine": "4813",
+  "size": 530,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "(method -> {\n            depReg.addDependency(sourceFQN, method.getType().asString());\n            method.getParameters().forEach(\n                    param -> depReg.addDependency(sourceFQN, resolveFQName(param.getType(), cu))\n            );\n        });\n\n        // 5. Innere Klassen rekursiv behandeln\n        type.getMembers().stream()\n                .filter(m -> m instanceof TypeDeclaration)\n                .map(m -> (TypeDeclaration<?>) m)\n                .forEach(subType -> fillDependencies(subType, cu, depReg));\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependencyHandler.String resolveFQName(Type, CompilationUnit)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependencyHandler.java",
+  "parent": "de.spraener.chuno.code.java.JavaDependencyHandler",
+  "part": 0,
+  "total": 1,
+  "fromLine": "60",
+  "toLine": "66",
+  "size": 291,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private String resolveFQName(Type type, CompilationUnit cu) {\n        return fqNamesMapper.getFQName(type.asString(),\n                cu.getPackageDeclaration().get().getNameAsString(),\n                cu.getImports().stream().map(imp -> imp.getNameAsString()).toList()\n        );\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependencyHandler",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/code/java/JavaDependencyHandler.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "10",
+  "toLine": "67",
+  "size": 824,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.code.java;\n\n\nimport com.github.javaparser.ast.CompilationUnit;\nimport com.github.javaparser.ast.body.TypeDeclaration;\nimport com.github.javaparser.ast.type.Type;\nimport de.spraener.chuno.util.DependencyRegistry;\nimport de.spraener.chuno.util.DependencyRegistryManager;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.stereotype.Service;\n\n@Service\n@RequiredArgsConstructor\npublic class JavaDependencyHandler {\n    public static final String JAVA_DEPENDENCIES = \"JAVA_DEPENDENCIES\";\n    private final DependencyRegistryManager dependencyRegistryManager;\n    private final JavaFQNamesMapper fqNamesMapper;\n\n    void fillDependencies(CompilationUnit)\n    void fillDependencies(TypeDeclaration<?>, CompilationUnit, DependencyRegistry)\n    String resolveFQName(Type, CompilationUnit)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "22",
+  "size": 953,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;\nimport de.spraener.prjxp.common.annotations.Chunker;\nimport de.spraener.prjxp.common.annotations.PostWalkChunker;\nimport de.spraener.prjxp.common.model.PxChunk;\nimport lombok.extern.slf4j.Slf4j;\nimport org.springframework.beans.BeansException;\nimport org.springframework.beans.factory.NoSuchBeanDefinitionException;\nimport org.springframework.beans.factory.config.BeanDefinition;\nimport org.springframework.context.ApplicationContext;\nimport org.springframework.context.ApplicationContextAware;\nimport org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;\nimport org.springframework.core.type.filter.AnnotationTypeFilter;\nimport org.springframework.util.ClassUtils;\n\nimport java.io.File;\nimport java.lang.reflect.InvocationTargetException;\nimport java.lang.reflect.Method;\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.stream.Stream;\n\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.void setApplicationContext(ApplicationContext)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "34",
+  "toLine": "38",
+  "size": 185,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@Override\n    @Override\n    public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {\n        this.applicationContext = applicationContext;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.Stream<PxChunker> findPxChunkers(File)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "39",
+  "toLine": "46",
+  "size": 226,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@Override\n    @Override\n    public Stream<PxChunker> findPxChunkers(File f) {\n        if (chunkers == null) {\n            initChunkers();\n        }\n        return chunkers.stream().filter(chunker -> chunker.matches(f));\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.Stream<PxChunker> listPostWalkChunker()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "47",
+  "toLine": "54",
+  "size": 211,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@Override\n    @Override\n    public Stream<PxChunker> listPostWalkChunker() {\n        if (postWalkChunkers == null) {\n            initPostWalkChunkers();\n        }\n        return postWalkChunkers.stream();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.void initPostWalkChunkers()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "55",
+  "toLine": "75",
+  "size": 964,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void initPostWalkChunkers() {\n        this.postWalkChunkers = new ArrayList<>();\n        ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);\n        scanner.addIncludeFilter(new AnnotationTypeFilter(ChunkNorrisComponent.class));\n\n        for (BeanDefinition bd : scanner.findCandidateComponents(rootPkg)) {\n            try {\n                Class<?> clazz = ClassUtils.forName(bd.getBeanClassName(), ClassUtils.getDefaultClassLoader());\n\n                // Check methods\n                for (Method method : clazz.getDeclaredMethods()) {\n                    if (isPostWalkChunkerMethod(method)) {\n                        this.postWalkChunkers.add(createPostWalkChunkerByMethod(clazz, method));\n                    }\n                }\n            } catch (ClassNotFoundException e) {\n                log.error(\"Could not load class: {}\", bd.getBeanClassName(), e);\n            }\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.boolean isPostWalkChunkerMethod(Method)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "76",
+  "toLine": "88",
+  "size": 379,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private boolean isPostWalkChunkerMethod(Method method) {\n        if (!method.isAnnotationPresent(PostWalkChunker.class)) {\n            return false;\n        }\n        if (method.getParameterCount() != 0) {\n            return false;\n        }\n        if (!Stream.class.isAssignableFrom(method.getReturnType())) {\n            return false;\n        }\n        return true;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.void initChunkers()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "89",
+  "toLine": "115",
+  "size": 1211,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void initChunkers() {\n        this.chunkers = new ArrayList<>();\n        ClassPathScanningCandidateComponentProvider scanner = new ClassPathScanningCandidateComponentProvider(false);\n        scanner.addIncludeFilter(new AnnotationTypeFilter(ChunkNorrisComponent.class));\n\n        for (BeanDefinition bd : scanner.findCandidateComponents(rootPkg)) {\n            try {\n                Class<?> clazz = ClassUtils.forName(bd.getBeanClassName(), ClassUtils.getDefaultClassLoader());\n\n                // Check methods\n                for (Method method : clazz.getDeclaredMethods()) {\n                    if (isChunkerMethod(method)) {\n                        this.chunkers.add(createByMethod(clazz, method));\n                    }\n                }\n\n                // Check if class itself is annotated and not already handled by methods (or in addition)\n                if (clazz.isAnnotationPresent(Chunker.class) && PxChunker.class.isAssignableFrom(clazz)) {\n                    this.chunkers.add(createByClazz(clazz));\n                }\n\n            } catch (ClassNotFoundException e) {\n                log.error(\"Could not load class: {}\", bd.getBeanClassName(), e);\n            }\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.boolean isChunkerMethod(Method)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "116",
+  "toLine": "130",
+  "size": 556,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private boolean isChunkerMethod(Method method) {\n        if (!method.isAnnotationPresent(Chunker.class)) {\n            return false;\n        }\n        if (method.getParameterCount() != 1 || !File.class.equals(method.getParameterTypes()[0])) {\n            return false;\n        }\n        if (!Stream.class.isAssignableFrom(method.getReturnType())) {\n            return false;\n        }\n        // Additional check for generic type List<PxChunk> is tricky at runtime due to erasure,\n        // but we can check if it's a List.\n        return true;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxChunker createByMethod(Class<?>, Method)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "131",
+  "toLine": "140",
+  "size": 457,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private PxChunker createByMethod(Class<?> clazz, Method method) {\n        try {\n            Object instance = applicationContext.getBean(clazz);\n            return new PxChunkerMethodWrapper(instance, method);\n        } catch (Exception e) {\n            log.error(\"FATAL: Annotated method {} in class {} can not be invoked as PxChunker: {}\", method.getName(), clazz.getName(), e.getMessage());\n            throw new RuntimeException(e);\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxChunker createPostWalkChunkerByMethod(Class<?>, Method)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "141",
+  "toLine": "150",
+  "size": 486,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private PxChunker createPostWalkChunkerByMethod(Class<?> clazz, Method method) {\n        try {\n            Object instance = applicationContext.getBean(clazz);\n            return new PxPostWalkChunkerMethodWrapper(instance, method);\n        } catch (Exception e) {\n            log.error(\"FATAL: Annotated method {} in class {} can not be invoked as PostWalkChunker: {}\", method.getName(), clazz.getName(), e.getMessage());\n            throw new RuntimeException(e);\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxChunker createByClazz(Class<?>)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "151",
+  "toLine": "167",
+  "size": 746,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private PxChunker createByClazz(Class<?> clazz) {\n        try {\n            try {\n                Object bean = applicationContext.getBean(clazz);\n                if (!(bean instanceof PxChunker)) {\n                    throw new ClassCastException(String.format(\"Bean %s is not a PxChunker\", clazz.getName()));\n                }\n                return (PxChunker) bean;\n            } catch (NoSuchBeanDefinitionException nsbdXC) {\n                return (PxChunker) clazz.getDeclaredConstructor().newInstance();\n            }\n        } catch (Exception e) {\n            log.error(\"FATAL: Annotated class {} can not be constructed as PxChunker: {}\", clazz.getName(), e.getMessage());\n            throw new RuntimeException(e);\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": null,
+  "part": 0,
+  "total": 2,
+  "fromLine": "23",
+  "toLine": "2332",
+  "size": 1300,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno;\n\n\nimport de.spraener.prjxp.common.annotations.ChunkNorrisComponent;\nimport de.spraener.prjxp.common.annotations.Chunker;\nimport de.spraener.prjxp.common.annotations.PostWalkChunker;\nimport de.spraener.prjxp.common.model.PxChunk;\nimport lombok.extern.slf4j.Slf4j;\nimport org.springframework.beans.BeansException;\nimport org.springframework.beans.factory.NoSuchBeanDefinitionException;\nimport org.springframework.beans.factory.config.BeanDefinition;\nimport org.springframework.context.ApplicationContext;\nimport org.springframework.context.ApplicationContextAware;\nimport org.springframework.context.annotation.ClassPathScanningCandidateComponentProvider;\nimport org.springframework.core.type.filter.AnnotationTypeFilter;\nimport org.springframework.util.ClassUtils;\n\nimport java.io.File;\nimport java.lang.reflect.InvocationTargetException;\nimport java.lang.reflect.Method;\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.stream.Stream;\n\n@Slf4j\npublic abstract class AnnotationBasedChunkerBrokerImpl implements ChunkerBroker, ApplicationContextAware {\n    private final String rootPkg;\n    private List<PxChunker> chunkers;\n    private List<PxChunker> postWalkChunkers;\n    private ApplicationContext applicationContext;\n\n    @Override\n    void setApplicat"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/AnnotationBasedChunkerBrokerImpl.java",
+  "parent": null,
+  "part": 1,
+  "total": 2,
+  "fromLine": "55",
+  "toLine": "5517",
+  "size": 531,
+  "overlap": 100,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "WalkChunkers;\n    private ApplicationContext applicationContext;\n\n    @Override\n    void setApplicationContext(ApplicationContext)\n    @Override\n    Stream<PxChunker> findPxChunkers(File)\n    @Override\n    Stream<PxChunker> listPostWalkChunker()\n    void initPostWalkChunkers()\n    boolean isPostWalkChunkerMethod(Method)\n    void initChunkers()\n    boolean isChunkerMethod(Method)\n    PxChunker createByMethod(Class<?>, Method)\n    PxChunker createPostWalkChunkerByMethod(Class<?>, Method)\n    PxChunker createByClazz(Class<?>)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.PxChunker.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/PxChunker.java",
+  "parent": "de.spraener.chuno.PxChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "6",
+  "size": 102,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import de.spraener.prjxp.common.model.PxChunk;\n\nimport java.io.File;\nimport java.util.stream.Stream;\n\n"
+}
+{
+  "id": "de.spraener.chuno.PxChunker.Stream<PxChunk> chunk(File).javadoc",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/PxChunker.java",
+  "parent": "de.spraener.chuno.PxChunker.Stream<PxChunk> chunk(File)",
+  "part": 0,
+  "total": 1,
+  "fromLine": "13",
+  "toLine": "18",
+  "size": 203,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "methodDoc"
+  },
+  "content": "    /**\n     * The chunker will receive a file and converts it into a stream of chunks\n     * @param f The file fo process\n     * @return a (maybe empty) stream of chunks for further processing.\n     */\n"
+}
+{
+  "id": "de.spraener.chuno.PxChunker.Stream<PxChunk> chunk(File)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/PxChunker.java",
+  "parent": "de.spraener.chuno.PxChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "18",
+  "toLine": "19",
+  "size": 35,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    Stream<PxChunk> chunk(File f);\n"
+}
+{
+  "id": "de.spraener.chuno.PxChunker.boolean matches(File).javadoc",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/PxChunker.java",
+  "parent": "de.spraener.chuno.PxChunker.boolean matches(File)",
+  "part": 0,
+  "total": 1,
+  "fromLine": "20",
+  "toLine": "25",
+  "size": 180,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "methodDoc"
+  },
+  "content": "    /**\n     * Checks if the chunker can process the given file.\n     * @param f The file to check\n     * @return true if the chunker can process the file, false otherwise\n     */\n"
+}
+{
+  "id": "de.spraener.chuno.PxChunker.boolean matches(File)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/PxChunker.java",
+  "parent": "de.spraener.chuno.PxChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "25",
+  "toLine": "26",
+  "size": 29,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    boolean matches(File f);\n"
+}
+{
+  "id": "de.spraener.chuno.PxChunker",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/PxChunker.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "12",
+  "toLine": "27",
+  "size": 743,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno;\n\n\nimport de.spraener.prjxp.common.model.PxChunk;\n\nimport java.io.File;\nimport java.util.stream.Stream;\n\n/**\n * ProjectExpert PxChunker is the interface to chunk files into PxChunks.\n * It can be implemented directly or by adding a @Chunker annotation to a matching\n * method.\n */\n\npublic interface PxChunker {\n\n/**\n * The chunker will receive a file and converts it into a stream of chunks\n * @param f The file fo process\n * @return a (maybe empty) stream of chunks for further processing.\n */\n\n    Stream<PxChunk> chunk(File)\n/**\n * Checks if the chunker can process the given file.\n * @param f The file to check\n * @return true if the chunker can process the file, false otherwise\n */\n\n    boolean matches(File)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkProcess.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkProcess.java",
+  "parent": "de.spraener.chuno.ChunkProcess",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "16",
+  "size": 541,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import com.fasterxml.jackson.core.JsonProcessingException;\nimport com.fasterxml.jackson.databind.json.JsonMapper;\nimport de.spraener.chuno.spring.SpringPreWalkEvent;\nimport de.spraener.chuno.veto.VetoRegistry;\nimport de.spraener.prjxp.common.model.PxChunk;\nimport lombok.RequiredArgsConstructor;\nimport lombok.extern.java.Log;\nimport org.springframework.context.ApplicationEventPublisher;\nimport org.springframework.stereotype.Service;\n\nimport java.nio.file.Files;\nimport java.nio.file.Path;\nimport java.util.HashSet;\nimport java.util.Set;\n\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkProcess.void execute(ChunkNorrisConfig)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkProcess.java",
+  "parent": "de.spraener.chuno.ChunkProcess",
+  "part": 0,
+  "total": 1,
+  "fromLine": "28",
+  "toLine": "39",
+  "size": 537,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public void execute(ChunkNorrisConfig chunkNorrisConfig) throws Exception {\n        eventPublisher.publishEvent(new SpringPreWalkEvent<>(chunkNorrisConfig));\n\n        Files.walk(Path.of(chunkNorrisConfig.getRootDir()))\n                .filter(Files::isRegularFile)\n                .filter(path -> checkVetos(path))\n                .filter(path -> !processedFiles.contains(path.toAbsolutePath().toString()))\n                .forEach(path -> handlePath(chunkNorrisConfig, path));\n        ;\n        doPostWalk(chunkNorrisConfig);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkProcess.boolean checkVetos(Path)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkProcess.java",
+  "parent": "de.spraener.chuno.ChunkProcess",
+  "part": 0,
+  "total": 1,
+  "fromLine": "40",
+  "toLine": "43",
+  "size": 93,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    protected boolean checkVetos(Path p) {\n        return !vetoRegistry.shouldVeto(p);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkProcess.void handlePath(ChunkNorrisConfig, Path)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkProcess.java",
+  "parent": "de.spraener.chuno.ChunkProcess",
+  "part": 0,
+  "total": 1,
+  "fromLine": "44",
+  "toLine": "56",
+  "size": 484,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    protected void handlePath(ChunkNorrisConfig chunkNorrisConfig, Path p) {\n        factory.createChunker(p.toFile())\n                .parallel()\n                .flatMap(c -> c.chunk(p.toFile()))\n                .map(chunk -> toJSONL(chunk))\n                .forEach(\n                        str -> chunkNorrisConfig.getOutput().println(str)\n                )\n        ;\n        chunkNorrisConfig.getOutput().flush();\n        processedFiles.add(p.toAbsolutePath().toString());\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkProcess.void doPostWalk(ChunkNorrisConfig)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkProcess.java",
+  "parent": "de.spraener.chuno.ChunkProcess",
+  "part": 0,
+  "total": 1,
+  "fromLine": "57",
+  "toLine": "68",
+  "size": 420,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    protected void doPostWalk(ChunkNorrisConfig chunkNorrisConfig) {\n        factory.listPostWalkChunker()\n                .parallel()\n                .flatMap( pwChunk -> pwChunk.chunk(null))\n                .map(chunk -> toJSONL(chunk))\n                .forEach(\n                        str -> chunkNorrisConfig.getOutput().println(str)\n                )\n        ;\n        chunkNorrisConfig.getOutput().flush();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkProcess.String toJSONL(PxChunk)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkProcess.java",
+  "parent": "de.spraener.chuno.ChunkProcess",
+  "part": 0,
+  "total": 1,
+  "fromLine": "69",
+  "toLine": "77",
+  "size": 286,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public String toJSONL(PxChunk chunk) {\n        try {\n            return jsonMapper.writeValueAsString(chunk);\n        } catch( JsonProcessingException jpXC) {\n            log.severe(\"Could not write jsonl for chunk \"+chunk.getId()+\": \"+jpXC);\n            return \"\";\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkProcess",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkProcess.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "17",
+  "toLine": "78",
+  "size": 1082,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno;\n\n\nimport com.fasterxml.jackson.core.JsonProcessingException;\nimport com.fasterxml.jackson.databind.json.JsonMapper;\nimport de.spraener.chuno.spring.SpringPreWalkEvent;\nimport de.spraener.chuno.veto.VetoRegistry;\nimport de.spraener.prjxp.common.model.PxChunk;\nimport lombok.RequiredArgsConstructor;\nimport lombok.extern.java.Log;\nimport org.springframework.context.ApplicationEventPublisher;\nimport org.springframework.stereotype.Service;\n\nimport java.nio.file.Files;\nimport java.nio.file.Path;\nimport java.util.HashSet;\nimport java.util.Set;\n\n@Service\n@Log\n@RequiredArgsConstructor\npublic class ChunkProcess {\n    private final ChunkerFactory factory;\n    private final ApplicationEventPublisher eventPublisher;\n    private final VetoRegistry vetoRegistry;\n    private Set<String> processedFiles = new HashSet<>();\n    private final JsonMapper jsonMapper = new JsonMapper();\n\n    void execute(ChunkNorrisConfig)\n    boolean checkVetos(Path)\n    void handlePath(ChunkNorrisConfig, Path)\n    void doPostWalk(ChunkNorrisConfig)\n    String toJSONL(PxChunk)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.veto.StandardVetos.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/StandardVetos.java",
+  "parent": "de.spraener.chuno.veto.StandardVetos",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "11",
+  "size": 397,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import de.spraener.chuno.ChunkNorrisConfig;\nimport de.spraener.prjxp.common.annotations.ChunkVeto;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.beans.factory.annotation.Value;\nimport org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;\nimport org.springframework.stereotype.Service;\nimport org.springframework.util.StringUtils;\n\nimport java.nio.file.Path;\n\n"
+}
+{
+  "id": "de.spraener.chuno.veto.StandardVetos.boolean isBuildArtifact(Path)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/StandardVetos.java",
+  "parent": "de.spraener.chuno.veto.StandardVetos",
+  "part": 0,
+  "total": 1,
+  "fromLine": "24",
+  "toLine": "28",
+  "size": 159,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@ChunkVeto\n    @ChunkVeto\n    public boolean isBuildArtifact(Path p) {\n        return p.toString().contains(\"target\") || p.toString().contains(\"build\");\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.veto.StandardVetos.boolean fileIsToLarge(Path)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/StandardVetos.java",
+  "parent": "de.spraener.chuno.veto.StandardVetos",
+  "part": 0,
+  "total": 1,
+  "fromLine": "29",
+  "toLine": "33",
+  "size": 121,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@ChunkVeto\n    @ChunkVeto\n    public boolean fileIsToLarge(Path p) {\n        return p.toFile().length() > maxSize;\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.veto.StandardVetos.boolean isHiddenFile(Path)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/StandardVetos.java",
+  "parent": "de.spraener.chuno.veto.StandardVetos",
+  "part": 0,
+  "total": 1,
+  "fromLine": "34",
+  "toLine": "38",
+  "size": 112,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@ChunkVeto\n    @ChunkVeto\n    public boolean isHiddenFile(Path p) {\n        return p.toFile().isHidden();\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.veto.StandardVetos.boolean isImage(Path)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/StandardVetos.java",
+  "parent": "de.spraener.chuno.veto.StandardVetos",
+  "part": 0,
+  "total": 1,
+  "fromLine": "39",
+  "toLine": "44",
+  "size": 202,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@ChunkVeto\n    @ChunkVeto\n    public boolean isImage(Path p) {\n        String name = p.toFile().getName();\n        return name.endsWith(\".png\") || name.endsWith(\".jpg\") || name.endsWith(\".jpeg\");\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.veto.StandardVetos.boolean notListedInWhiteList(Path)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/StandardVetos.java",
+  "parent": "de.spraener.chuno.veto.StandardVetos",
+  "part": 0,
+  "total": 1,
+  "fromLine": "45",
+  "toLine": "53",
+  "size": 309,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "@ChunkVeto\n    @ChunkVeto\n    public boolean notListedInWhiteList(Path p) {\n        if( !StringUtils.hasText(cfg.getWhiteList()) ) {\n            return false;\n        }\n        String ending = p.toString().substring(p.toString().lastIndexOf(\".\")+1);\n        return !cfg.getWhiteList().contains(ending);\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.veto.StandardVetos",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/StandardVetos.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "12",
+  "toLine": "54",
+  "size": 1122,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.veto;\n\n\nimport de.spraener.chuno.ChunkNorrisConfig;\nimport de.spraener.prjxp.common.annotations.ChunkVeto;\nimport lombok.RequiredArgsConstructor;\nimport org.springframework.beans.factory.annotation.Value;\nimport org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;\nimport org.springframework.stereotype.Service;\nimport org.springframework.util.StringUtils;\n\nimport java.nio.file.Path;\n\n@Service()\n@RequiredArgsConstructor\n@ConditionalOnProperty(\n        name = \"no-standard-vetos\",\n        havingValue = \"false\",      // Er soll laufen, solange \"no-standard-vetos\" NICHT true ist\n        matchIfMissing = true       // Wenn der Parameter gar nicht angegeben wird, wird er als \"false\" gewertet\n)\npublic class StandardVetos {\n    @Value(\"${chunknorris.veto.maxsize:1000000}\")\nprivate long maxSize;\n    private final ChunkNorrisConfig cfg;\n\n    @ChunkVeto\n    boolean isBuildArtifact(Path)\n    @ChunkVeto\n    boolean fileIsToLarge(Path)\n    @ChunkVeto\n    boolean isHiddenFile(Path)\n    @ChunkVeto\n    boolean isImage(Path)\n    @ChunkVeto\n    boolean notListedInWhiteList(Path)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.veto.VetoRegistry.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/VetoRegistry.java",
+  "parent": "de.spraener.chuno.veto.VetoRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "13",
+  "size": 396,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import de.spraener.prjxp.common.annotations.ChunkVeto;\nimport lombok.RequiredArgsConstructor;\nimport lombok.extern.java.Log;\nimport org.springframework.beans.factory.ListableBeanFactory;\nimport org.springframework.stereotype.Service;\nimport org.springframework.util.ReflectionUtils;\n\nimport java.lang.reflect.Method;\nimport java.nio.file.Path;\nimport java.util.ArrayList;\nimport java.util.List;\n\n"
+}
+{
+  "id": "de.spraener.chuno.veto.VetoRegistry.void fillVetoMethods()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/VetoRegistry.java",
+  "parent": "de.spraener.chuno.veto.VetoRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "20",
+  "toLine": "39",
+  "size": 895,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void fillVetoMethods() {\n        // Alle Beans finden, die Methoden mit @ChunkVeto haben könnten\n        String[] beanNames = beanFactory.getBeanDefinitionNames();\n\n        for (String beanName : beanNames) {\n            Object bean = beanFactory.getBean(beanName);\n            Class<?> targetClass = bean.getClass();\n\n            // Reflection-Utility von Spring nutzen, um Methoden zu finden\n            ReflectionUtils.doWithMethods(targetClass, method -> {\n                if (method.isAnnotationPresent(ChunkVeto.class)) {\n                    // Validierung der Signatur: muss boolean liefern und Path als Argument haben\n                    if (method.getReturnType().equals(boolean.class) && method.getParameterCount() == 1) {\n                        vetoMethods.add(new VetoMethodWrapper(bean, method));\n                    }\n                }\n            });\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.veto.VetoRegistry.boolean shouldVeto(Path)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/VetoRegistry.java",
+  "parent": "de.spraener.chuno.veto.VetoRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "40",
+  "toLine": "46",
+  "size": 193,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public boolean shouldVeto(Path path) {\n        if (vetoMethods.isEmpty()) {\n            fillVetoMethods();\n        }\n        return vetoMethods.stream().anyMatch(m -> m.check(path));\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.veto.VetoRegistry",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/veto/VetoRegistry.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "14",
+  "toLine": "67",
+  "size": 677,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.veto;\n\n\nimport de.spraener.prjxp.common.annotations.ChunkVeto;\nimport lombok.RequiredArgsConstructor;\nimport lombok.extern.java.Log;\nimport org.springframework.beans.factory.ListableBeanFactory;\nimport org.springframework.stereotype.Service;\nimport org.springframework.util.ReflectionUtils;\n\nimport java.lang.reflect.Method;\nimport java.nio.file.Path;\nimport java.util.ArrayList;\nimport java.util.List;\n\n@Service\n@RequiredArgsConstructor\npublic class VetoRegistry {\n    private final List<VetoMethodWrapper> vetoMethods = new ArrayList<>();\n    private final ListableBeanFactory beanFactory;\n\n    void fillVetoMethods()\n    boolean shouldVeto(Path)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerFactory.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerFactory.java",
+  "parent": "de.spraener.chuno.ChunkerFactory",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "9",
+  "size": 185,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import org.springframework.stereotype.Service;\n\nimport java.io.File;\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.ServiceLoader;\nimport java.util.stream.Stream;\n\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerFactory.void initBrokerList().javadoc",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerFactory.java",
+  "parent": "de.spraener.chuno.ChunkerFactory.void initBrokerList()",
+  "part": 0,
+  "total": 1,
+  "fromLine": "18",
+  "toLine": "25",
+  "size": 451,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "methodDoc"
+  },
+  "content": "    /**\n     * Initialisiert die interne Liste der {@link ChunkerBroker}.\n     * Diese Methode fügt zuerst die aktuelle Instanz der {@link ChunkerFactory}\n     * zur Liste hinzu und lädt anschließend alle weiteren {@link ChunkerBroker}-Implementierungen,\n     * die über den Java {@link java.util.ServiceLoader} registriert sind.\n     * Dies ermöglicht es der {@link ChunkerFactory}, Anfragen an alle verfügbaren Chunker-Broker zu delegieren.\n     */\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerFactory.void initBrokerList()",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerFactory.java",
+  "parent": "de.spraener.chuno.ChunkerFactory",
+  "part": 0,
+  "total": 1,
+  "fromLine": "25",
+  "toLine": "33",
+  "size": 313,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    private void initBrokerList() {\n        this.brokerList = new ArrayList<>();\n        brokerList.add(this);\n        ServiceLoader<ChunkerBroker> chunkerBrokers = ServiceLoader.load(ChunkerBroker.class);\n        for( ChunkerBroker broker : chunkerBrokers ) {\n            brokerList.add(broker);\n        }\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerFactory.Stream<PxChunker> createChunker(File)",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerFactory.java",
+  "parent": "de.spraener.chuno.ChunkerFactory",
+  "part": 0,
+  "total": 1,
+  "fromLine": "34",
+  "toLine": "41",
+  "size": 229,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "method"
+  },
+  "content": "    public Stream<PxChunker> createChunker(File f) {\n        if( brokerList==null ) {\n            initBrokerList();\n        }\n        return brokerList.stream()\n                .flatMap(broker -> broker.findPxChunkers(f));\n    }\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerFactory",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/ChunkerFactory.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "10",
+  "toLine": "42",
+  "size": 833,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno;\n\n\nimport org.springframework.stereotype.Service;\n\nimport java.io.File;\nimport java.util.ArrayList;\nimport java.util.List;\nimport java.util.ServiceLoader;\nimport java.util.stream.Stream;\n\n@Service\npublic class ChunkerFactory extends AnnotationBasedChunkerBrokerImpl {\n    private List<ChunkerBroker> brokerList;\n\n/**\n * Initialisiert die interne Liste der {@link ChunkerBroker}.\n * Diese Methode fügt zuerst die aktuelle Instanz der {@link ChunkerFactory}\n * zur Liste hinzu und lädt anschließend alle weiteren {@link ChunkerBroker}-Implementierungen,\n * die über den Java {@link java.util.ServiceLoader} registriert sind.\n * Dies ermöglicht es der {@link ChunkerFactory}, Anfragen an alle verfügbaren Chunker-Broker zu delegieren.\n */\n\n    void initBrokerList()\n    Stream<PxChunker> createChunker(File)\n}\n"
+}
+{
+  "id": "de.spraener.chuno.spring.SpringPreWalkEvent.imports",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/spring/SpringPreWalkEvent.java",
+  "parent": "de.spraener.chuno.spring.SpringPreWalkEvent",
+  "part": 0,
+  "total": 1,
+  "fromLine": "2",
+  "toLine": "3",
+  "size": 45,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "imports"
+  },
+  "content": "import de.spraener.chuno.ChunkNorrisConfig;\n\n"
+}
+{
+  "id": "de.spraener.chuno.spring.SpringPreWalkEvent",
+  "mimeType": "text/x-java-code",
+  "file": "/Users/casi/Projekte/prjxp/chunk-norris/./src/main/java/de/spraener/chuno/spring/SpringPreWalkEvent.java",
+  "parent": null,
+  "part": 0,
+  "total": 1,
+  "fromLine": "4",
+  "toLine": "8",
+  "size": 168,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "classFrame"
+  },
+  "content": "package de.spraener.chuno.spring;\n\n\nimport de.spraener.chuno.ChunkNorrisConfig;\n\npublic record SpringPreWalkEvent<T extends ChunkNorrisConfig> (\n        T config\n){\n\n}\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkerFactory.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.ChunkerFactory",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "246",
+  "size": 246,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.ChunkerFactory benutzt die folgenden Klassen:\n  * de.spraener.chuno.AnnotationBasedChunkerBrokerImpl\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.ChunkerFactory:\n  * de.spraener.chuno.ChunkProcess\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependencyHandler.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.code.java.JavaDependencyHandler",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "387",
+  "size": 387,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.code.java.JavaDependencyHandler benutzt die folgenden Klassen:\n  * de.spraener.chuno.util.DependencyRegistryManager\n  * de.spraener.chuno.util.DependencyRegistry\n  * de.spraener.chuno.code.java.JavaFQNamesMapper\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.code.java.JavaDependencyHandler:\n  * de.spraener.chuno.code.java.JavaCodeChunker\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "476",
+  "size": 476,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.AnnotationBasedChunkerBrokerImpl benutzt die folgenden Klassen:\n  * de.spraener.prjxp.common.model.PxChunk\n  * de.spraener.prjxp.common.annotations.Chunker\n  * de.spraener.chuno.ChunkerBroker\n  * de.spraener.prjxp.common.annotations.ChunkNorrisComponent\n  * de.spraener.prjxp.common.annotations.PostWalkChunker\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.AnnotationBasedChunkerBrokerImpl:\n  * de.spraener.chuno.ChunkerFactory\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxChunkerMethodWrapper.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxChunkerMethodWrapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "481",
+  "size": 481,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxChunkerMethodWrapper benutzt die folgenden Klassen:\n  * de.spraener.prjxp.common.model.PxChunk\n  * de.spraener.prjxp.common.annotations.Chunker\n  * de.spraener.prjxp.common.annotations.ChunkNorrisComponent\n  * de.spraener.chuno.PxChunker\n  * de.spraener.prjxp.common.annotations.PostWalkChunker\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxChunkerMethodWrapper:\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaFQNamesMapper.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.code.java.JavaFQNamesMapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "324",
+  "size": 324,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.code.java.JavaFQNamesMapper benutzt die folgenden Klassen:\n  * de.spraener.chuno.ChunkNorrisConfig\n  * de.spraener.chuno.spring.SpringPreWalkEvent\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.code.java.JavaFQNamesMapper:\n  * de.spraener.chuno.code.java.JavaDependencyHandler\n"
+}
+{
+  "id": "de.spraener.chuno.spring.SpringPreWalkEvent.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.spring.SpringPreWalkEvent",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "303",
+  "size": 303,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.spring.SpringPreWalkEvent benutzt die folgenden Klassen:\n  * de.spraener.chuno.ChunkNorrisConfig\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.spring.SpringPreWalkEvent:\n  * de.spraener.chuno.ChunkProcess\n  * de.spraener.chuno.code.java.JavaFQNamesMapper\n"
+}
+{
+  "id": "de.spraener.chuno.veto.VetoRegistry.VetoMethodWrapper.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.veto.VetoRegistry.VetoMethodWrapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "249",
+  "size": 249,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.veto.VetoRegistry.VetoMethodWrapper benutzt die folgenden Klassen:\n  * de.spraener.prjxp.common.annotations.ChunkVeto\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.veto.VetoRegistry.VetoMethodWrapper:\n"
+}
+{
+  "id": "de.spraener.chuno.util.ChunkRange.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.util.ChunkRange",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "325",
+  "size": 325,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.util.ChunkRange benutzt die folgenden Klassen:\n  * de.spraener.chuno.util.ChunkRange\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.util.ChunkRange:\n  * de.spraener.chuno.util.ChunkRange\n  * de.spraener.chuno.util.ContentSplitter\n  * de.spraener.chuno.code.java.JavaCodeChunker\n"
+}
+{
+  "id": "de.spraener.chuno.util.ContentSplitter.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.util.ContentSplitter",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "353",
+  "size": 353,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.util.ContentSplitter benutzt die folgenden Klassen:\n  * de.spraener.chuno.util.ChunkRange\n  * de.spraener.prjxp.common.model.PxChunk\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.util.ContentSplitter:\n  * de.spraener.chuno.code.java.JavaDependenciesChunker\n  * de.spraener.chuno.code.java.JavaCodeChunker\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkNorris.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.ChunkNorris",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "225",
+  "size": 225,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.ChunkNorris benutzt die folgenden Klassen:\n  * de.spraener.chuno.ChunkNorrisConfig\n  * de.spraener.chuno.ChunkProcess\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.ChunkNorris:\n"
+}
+{
+  "id": "de.spraener.chuno.veto.StandardVetos.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.veto.StandardVetos",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "255",
+  "size": 255,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.veto.StandardVetos benutzt die folgenden Klassen:\n  * de.spraener.chuno.ChunkNorrisConfig\n  * de.spraener.prjxp.common.annotations.ChunkVeto\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.veto.StandardVetos:\n"
+}
+{
+  "id": "de.spraener.chuno.ChunkProcess.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.ChunkProcess",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "394",
+  "size": 394,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.ChunkProcess benutzt die folgenden Klassen:\n  * de.spraener.prjxp.common.model.PxChunk\n  * de.spraener.chuno.ChunkerFactory\n  * de.spraener.chuno.ChunkNorrisConfig\n  * de.spraener.chuno.veto.VetoRegistry\n  * de.spraener.chuno.spring.SpringPreWalkEvent\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.ChunkProcess:\n  * de.spraener.chuno.ChunkNorris\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaDependenciesChunker.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.code.java.JavaDependenciesChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "553",
+  "size": 553,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.code.java.JavaDependenciesChunker benutzt die folgenden Klassen:\n  * de.spraener.chuno.util.DependencyRegistryManager\n  * de.spraener.prjxp.common.model.PxChunk\n  * de.spraener.chuno.util.ContentSplitter\n  * de.spraener.chuno.util.DependencyRegistry\n  * de.spraener.prjxp.common.annotations.ChunkNorrisComponent\n  * de.spraener.prjxp.common.annotations.PostWalkChunker\n  * de.spraener.prjxp.common.code.java.JavaCodeSection\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.code.java.JavaDependenciesChunker:\n"
+}
+{
+  "id": "de.spraener.chuno.veto.VetoRegistry.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.veto.VetoRegistry",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "248",
+  "size": 248,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.veto.VetoRegistry benutzt die folgenden Klassen:\n  * de.spraener.prjxp.common.annotations.ChunkVeto\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.veto.VetoRegistry:\n  * de.spraener.chuno.ChunkProcess\n"
+}
+{
+  "id": "de.spraener.chuno.PxChunker.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.PxChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "353",
+  "size": 353,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.PxChunker benutzt die folgenden Klassen:\n  * de.spraener.prjxp.common.model.PxChunk\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.PxChunker:\n  * de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxChunkerMethodWrapper\n  * de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxPostWalkChunkerMethodWrapper\n"
+}
+{
+  "id": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxPostWalkChunkerMethodWrapper.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxPostWalkChunkerMethodWrapper",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "497",
+  "size": 497,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxPostWalkChunkerMethodWrapper benutzt die folgenden Klassen:\n  * de.spraener.prjxp.common.model.PxChunk\n  * de.spraener.prjxp.common.annotations.Chunker\n  * de.spraener.prjxp.common.annotations.ChunkNorrisComponent\n  * de.spraener.chuno.PxChunker\n  * de.spraener.prjxp.common.annotations.PostWalkChunker\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.AnnotationBasedChunkerBrokerImpl.PxPostWalkChunkerMethodWrapper:\n"
+}
+{
+  "id": "de.spraener.chuno.code.java.JavaCodeChunker.dependencies",
+  "mimeType": "text/plain",
+  "file": null,
+  "parent": "de.spraener.chuno.code.java.JavaCodeChunker",
+  "part": 0,
+  "total": 1,
+  "fromLine": "0",
+  "toLine": "562",
+  "size": 562,
+  "overlap": 0,
+  "metadata": {
+    "java_code_section": "dependenciesInfo"
+  },
+  "content": "Die Klasse de.spraener.chuno.code.java.JavaCodeChunker benutzt die folgenden Klassen:\n  * de.spraener.chuno.util.ChunkRange\n  * de.spraener.prjxp.common.model.PxChunk\n  * de.spraener.chuno.code.java.JavaDependencyHandler\n  * de.spraener.prjxp.common.annotations.Chunker\n  * de.spraener.chuno.util.ContentSplitter\n  * de.spraener.prjxp.common.util.ValueContainer\n  * de.spraener.prjxp.common.annotations.ChunkNorrisComponent\n  * de.spraener.prjxp.common.model.PxFileType\nDie folgenden Klassen verweisen auf die Klasse de.spraener.chuno.code.java.JavaCodeChunker:\n"
+}

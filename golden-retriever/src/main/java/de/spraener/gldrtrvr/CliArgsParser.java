@@ -1,0 +1,70 @@
+package de.spraener.gldrtrvr;
+
+import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
+import lombok.extern.java.Log;
+import org.apache.commons.cli.*;
+import org.springframework.stereotype.Component;
+
+import java.util.List;
+
+@Component
+@RequiredArgsConstructor
+@Log
+public class CliArgsParser {
+    private final GldRtrvrCfg cfg;
+    private Options options;
+
+    private @NonNull Options getOptions() {
+        if (options == null) {
+            options = new Options();
+            options.addOption(Option.builder("i")
+                    .longOpt("input")
+                    .numberOfArgs(1)
+                    .desc("specify the input file. Default is stdin.")
+                    .build());
+            options.addOption(Option.builder("q")
+                    .longOpt("question")
+                    .numberOfArgs(1)
+                    .desc("The question you want to ask the llm.")
+                    .build());
+            options.addOption(Option.builder("bs")
+                    .longOpt("batch-size")
+                    .numberOfArgs(1)
+                    .desc("specify the size of one embedding batch. Overwrites a potential configured batch size in the application configuration. Default is 50.")
+                    .build());
+            options.addOption(Option.builder("src")
+                    .longOpt("project-source")
+                    .numberOfArgs(1)
+                    .desc("Where to search for the java-project source code. This could be a list (,) of paths.")
+                    .build());
+        }
+        return options;
+    }
+
+    public GldRtrvrCfg parseArgs(String[] args) {
+        Options options = getOptions();
+        CommandLineParser parser = new DefaultParser();
+        HelpFormatter formatter = new HelpFormatter();
+        try {
+            CommandLine cmd = parser.parse(options, args);
+            if (cmd.hasOption("i")) {
+                cfg.setInputSource(cmd.getOptionValue("i"));
+            }
+            if (cmd.hasOption("q")) {
+                cfg.setQuestion(cmd.getOptionValue("q"));
+            }
+            if (cmd.hasOption("src")) {
+                cfg.setProjectSourceDir(cmd.getOptionValue("src"));
+            }
+            List<String> otherArgs = cmd.getArgList();
+            StringBuilder sb = new StringBuilder();
+            otherArgs.stream().forEach(str -> sb.append(str).append(" "));
+
+            return cfg;
+        } catch (Exception e) {
+            log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
+            return cfg;
+        }
+    }
+}

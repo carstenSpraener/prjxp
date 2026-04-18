@@ -1,0 +1,46 @@
+plugins {
+    id 'application'
+    alias(libs.plugins.shadow)
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Internes Modul
+    implementation project(':prjxp-common')
+
+    // Spring Boot & JSON (Versionen kommen aus dem Katalog via Root-Projekt)
+    implementation libs.spring.boot.starter
+    implementation libs.spring.boot.starter.json
+
+    // LangChain4j Bundle
+    implementation libs.bundles.langchain.stack
+
+    // Utilities
+    implementation libs.commons.cli
+    implementation libs.javaparser.core
+    implementation libs.dotenv.java
+
+    // Lombok (Katalog)
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+    testCompileOnly libs.lombok
+    testAnnotationProcessor libs.lombok
+
+    // Testing Bundle (Mockito, JUnit, Spring-Test)
+    testImplementation libs.bundles.test.bundle
+}
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'de.spraener.tibed.TiBedCliApp'
+        )
+    }
+}
+
+application {
+    mainClass = 'de.spraener.tibed.TiBedCliApp'
+}

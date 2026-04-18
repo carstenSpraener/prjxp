@@ -1,21 +1,30 @@
-.gradle
+# Gradle
+.gradle/
+build/
 **/build/
-!**/src/**/build/
-
-# Ignore Gradle GUI config
+.gradletasknamecache
 gradle-app.setting
 
-# Avoid ignoring Gradle wrapper jar file (.jar files are usually ignored)
-!gradle-wrapper.jar
-
-# Avoid ignore Gradle wrappper properties
-!gradle-wrapper.properties
-
-# Cache of project
-.gradletasknamecache
-
-# Eclipse Gradle plugin generated files
-# Eclipse Core
+# IDEs
+.idea/
+*.iml
+*.iws
 .project
-# JDT-specific (Eclipse Java Development Tools)
 .classpath
+.settings/
+.bin/
+.nb-gradle/
+
+# Secrets & Local Config
+.env
+**/.env
+.env.*
+! .env.example
+
+# App-Specific (LangChain4j / Vector DBs)
+chroma_data/
+**/chroma_data/
+
+# OS spezifisch
+.DS_Store
+Thumbs.db

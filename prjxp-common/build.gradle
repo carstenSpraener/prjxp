@@ -1,0 +1,20 @@
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring Boot Starter aus dem Version Catalog
+    implementation libs.spring.boot.starter
+
+    // Lombok (Nutzt das Bundle oder die Einzel-Library aus der TOML)
+    compileOnly libs.lombok
+    annotationProcessor libs.lombok
+    testCompileOnly libs.lombok
+    testAnnotationProcessor libs.lombok
+
+    testImplementation libs.bundles.test.bundle
+}
+
+test {
+    useJUnitPlatform()
+}

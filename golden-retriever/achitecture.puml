@@ -1,0 +1,34 @@
+@startuml
+skinparam style strictuml
+autonumber
+
+actor "Benutzer" as User
+participant "Open WebUI" as WebUI
+participant "Gemma 4 (Agent)" as Gemma
+participant "Spring Boot RAG-Service" as RAG
+database "ChromaDB" as DB
+
+User -> WebUI: "Wie funktioniert die DDL-Migration in Projekt X?"
+WebUI -> Gemma: Prompt + User Query
+
+note over Gemma: Gemma erkennt: \n"Ich brauche externe Infos \nzu Projekt X / DDL"
+
+Gemma -> WebUI: Tool Call (MCP / OpenAPI Request)
+WebUI -> RAG: GET /query?q=DDL-Migration+Projekt+X
+
+group RAG Service Logic
+    RAG -> RAG: Extract Metadata Filters (Git, Filetype)
+    RAG -> DB: Similarity Search (Embedding)
+    DB --> RAG: Chunks + Citations + Git-History
+    RAG -> RAG: Format Context & References
+end
+
+RAG --> WebUI: JSON (Context + Metadata)
+WebUI --> Gemma: Tool Response (Informationen geliefert)
+
+note over Gemma: Gemma synthetisiert Antwort \nunter Berücksichtigung \nder Quellen
+
+Gemma --> WebUI: Finale Antwort mit Quellenangaben
+WebUI --> User: Anzeige der Antwort + Referenzen
+
+@enduml
