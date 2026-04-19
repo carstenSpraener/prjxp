@@ -21,9 +21,12 @@ springBoot = { id = "org.springframework.boot", version.ref = "springBoot" }
 [libraries]
 # Spring Boot
 spring-boot-starter = { group = "org.springframework.boot", name = "spring-boot-starter", version.ref = "springBoot" }
+spring-boot-starter-web = { group = "org.springframework.boot", name = "spring-boot-starter-web", version.ref = "springBoot" }
 spring-boot-starter-json = { group = "org.springframework.boot", name = "spring-boot-starter-json", version.ref = "springBoot" }
 spring-boot-devtools = { group = "org.springframework.boot", name = "spring-boot-devtools", version.ref = "springBoot" }
 spring-boot-starter-test = { group = "org.springframework.boot", name = "spring-boot-starter-test", version.ref = "springBoot" }
+spring-boot-openapi-starter-webmvc-ui = {group = "org.springdoc", name="springdoc-openapi-starter-webmvc-ui", version = "2.6.0"}
+
 # Langchain4j
 langchain4j-core = { group = "dev.langchain4j", name = "langchain4j", version.ref = "langchain4j" }
 langchain4j-ollama = { group = "dev.langchain4j", name = "langchain4j-ollama", version.ref = "langchain4j" }

@@ -1,0 +1,45 @@
+import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
+
+plugins {
+    id 'application'
+    alias(libs.plugins.shadow)
+}
+
+// Repositories können theoretisch auch in die zentrale build.gradle,
+// aber hier schadet es nicht.
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Internes Modul
+    implementation project(':golden-retriever')
+
+    // Spring Boot
+    implementation libs.spring.boot.starter.json
+    implementation libs.spring.boot.starter.web
+    implementation libs.spring.boot.openapi.starter.webmvc.ui
+
+    // LangChain4j (Inklusive Gemini über das Bundle)
+    implementation libs.bundles.langchain.stack
+
+    // Utilities
+    implementation libs.commons.cli
+    implementation libs.javaparser.core
+    implementation libs.dotenv.java
+
+    // Testing
+    testImplementation libs.bundles.test.bundle
+}
+
+application {
+    mainClass = 'de.spraener.prjxp.gldrtrvr.GRJavaDocEnricherCli'
+}
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'de.spraener.prjxp.gldrtrvr.GRJavaDocEnricherCli'
+        )
+    }
+}

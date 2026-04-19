@@ -31,8 +31,8 @@ public class GRJavaDocEnricherCli {
     public static void main(String[] args) {
         readDotEnv();
         new SpringApplicationBuilder(GRJavaDocEnricherCli.class)
-                .logStartupInfo(false) // Versteckt "Starting OragelCliApp..."
-                .bannerMode(Banner.Mode.OFF) // Schaltet das ASCII-Spring-Logo aus
+                .logStartupInfo(false)
+                .bannerMode(Banner.Mode.OFF)
                 .headless(false)
                 .run(args);
     }

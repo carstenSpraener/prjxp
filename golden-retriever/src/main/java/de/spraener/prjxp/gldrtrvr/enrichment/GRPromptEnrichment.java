@@ -19,7 +19,7 @@ public class GRPromptEnrichment {
 
     public String enrich(String prompt) {
         return enrich(prompt, List.of(),
-                new SearchParams(10, 0.75),
+                new SearchParams(20, 0.75),
                 this::reIterate, (question, context) ->
                 String.format("""
                         Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
@@ -31,7 +31,7 @@ public class GRPromptEnrichment {
                         
                         FRAGE: %s
                         
-                        """.formatted(context, question)
+                        """, context, question
                 ), c -> c.length() > 0);
     }
 

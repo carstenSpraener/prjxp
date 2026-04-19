@@ -21,7 +21,7 @@ public class JavaPromptSession {
     private PxChunkDao chunkDao;
     private List<PxChunk> chunks;
     private List<ChunkNode> rootForrest = new ArrayList<>();
-    private final int maxContentLength = 10000;
+    private final int maxContentLength = 50000;
 
     public JavaPromptSession(PxChunkDao chunkDao) {
         this.chunkDao = chunkDao;
@@ -36,7 +36,8 @@ public class JavaPromptSession {
         for (var chunk : chunks) {
             ChunkNode root = findRootForChunk(chunk);
             if (root == null) {
-                rootForrest.add(buildGraphToRoot(chunk).root());
+                root = buildGraphToRoot(chunk).root();
+                rootForrest.add(root);
             }
             root.rank(chunk);
         }
@@ -64,6 +65,9 @@ public class JavaPromptSession {
         }
         rankedPrompts.sort((r1, r2) -> r2.rootRank() - r1.rootRank());
         for (var rp : rankedPrompts) {
+            if( rp.rootRank() == 0 ) {
+                break;
+            }
             context += rp.treeContext();
             if( context.length() > maxContentLength ) {
                 break;
