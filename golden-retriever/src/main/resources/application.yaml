@@ -12,7 +12,7 @@ gldrtrvr:
     ollamaBaseUrl: http://localhost:11434
     chroma:
       collectioName: chunk_norris
-      database: prjxp
+      database: prjxp-enriched
       tenant: prjxp
 
 

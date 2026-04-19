@@ -4,6 +4,9 @@ gldrtrvr:
     modelName: gemma-4-31b
     api-url: http://192.168.1.224:1234
     api-key: lm-studio
+  embedding:
+    chroma:
+      database: prjxp-enriched
 
 logging:
   level:

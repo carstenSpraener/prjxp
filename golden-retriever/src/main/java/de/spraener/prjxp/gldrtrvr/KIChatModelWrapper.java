@@ -14,7 +14,7 @@ public class KIChatModelWrapper implements KIChat {
 
     @Override
     public String chat(String question) {
-        log.fine("sending prompt of "+question.length()+" chars");
+        log.info("sending prompt of "+question.length()+" chars to chat model");
         return chatModel.chat(question);
     }
 }

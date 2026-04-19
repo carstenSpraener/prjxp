@@ -19,7 +19,7 @@ class JavaRetrieverTest {
     static class TestConfig {
         @Bean
         public PxChunkDao pxChunkDao(ObjectMapper objectMapper, GldRtrvrCfg cfg) {
-            cfg.setInputSource("../chunk_norris.jsonl");
+            cfg.setInputSource("../prjxp-enriched.jsonl");
             return new PxChunkDaoInMemoryImpl(objectMapper, cfg);
         }
     }
@@ -30,17 +30,18 @@ class JavaRetrieverTest {
     @Autowired
     private PxChunkDao chunkDao;
 
-    @Test
+    //@Test
     public void testJavaCodePromptByMethodChunk() {
-        List<PxChunk> chunks = chunkDao.findById("de.spraener.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)");
-        StringBuilder prompt = retriever.buildPromptForFindings(new StringBuilder(), List.of(chunks.get(chunks.size() - 1)));
+        List<PxChunk> chunks = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)");
+        chunks.addAll(chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>).javadoc"));
+        StringBuilder prompt = retriever.buildPromptForFindings(new StringBuilder(), List.of(chunks.get(0)));
         System.out.println(prompt);
     }
 
-    @Test
+    //@Test
     public void testJavaCodePromptBy2MethodChunks() {
-        List<PxChunk> chunksA = chunkDao.findById("de.spraener.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)");
-        List<PxChunk> chunksB = chunkDao.findById("de.spraener.chuno.code.java.JavaCodeChunker.void createContainedMethodChunks(File, CompilationUnit, List<PxChunk>, TypeDeclaration<?>, List<String>)");
+        List<PxChunk> chunksA = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)");
+        List<PxChunk> chunksB = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.void createContainedMethodChunks(File, CompilationUnit, List<PxChunk>, TypeDeclaration<?>, List<String>)");
         StringBuilder prompt = retriever.buildPromptForFindings(new StringBuilder(), List.of(chunksA.get(chunksA.size() - 1), chunksB.get(0)));
         System.out.println(prompt);
     }

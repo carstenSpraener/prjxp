@@ -33,6 +33,11 @@ public class JavaRetriever {
             JavaCodeSection section = JavaCodeSection.fromName(pxChunk.getMetadata().get("java_code_section"));
             switch (section) {
                 case METHOD:
+                    PxChunk javaDoc = PxChunk.combine(chunkDao.findById(pxChunk.getId()+".javadoc"));
+                    if( javaDoc!=null ) {
+                        nextPrompt = insertBefore(prompt, toMethodName(pxChunk), javaDoc.getContent());
+                        prompt = nextPrompt;
+                    }
                     nextPrompt = replaceInPrompt(prompt, toMethodName(pxChunk), pxChunk.getContent());
                     break;
                 case DEPENDENCIE_INFO:
@@ -58,7 +63,7 @@ public class JavaRetriever {
 
     private String insertBefore(String prompt, String methodName, String content) {
         int splittIdx = prompt.indexOf(methodName);
-        if (splittIdx == -1) {
+        if (splittIdx < 0) {
             log.warning("Methodenname %s nicht gefunden in Prompt: %s".formatted(methodName, prompt));
         }
         String prefix = prompt.substring(0, splittIdx);

@@ -21,9 +21,13 @@ public class JavaPromptSession {
     private PxChunkDao chunkDao;
     private List<PxChunk> chunks;
     private List<ChunkNode> rootForrest = new ArrayList<>();
+    private final int maxContentLength = 10000;
 
     public JavaPromptSession(PxChunkDao chunkDao) {
         this.chunkDao = chunkDao;
+    }
+
+    record RankedPrompt(int rootRank, String treeContext) {
     }
 
     public void setChunks(List<PxChunk> chunks) {
@@ -34,11 +38,13 @@ public class JavaPromptSession {
             if (root == null) {
                 rootForrest.add(buildGraphToRoot(chunk).root());
             }
+            root.rank(chunk);
         }
     }
 
     public String buildPrompt(BiFunction<PxChunk, String, String> promptModifier, Function<String, Boolean>... contextValidator) {
         String context = "";
+        List<RankedPrompt> rankedPrompts = new ArrayList<>();
         for (var r : this.rootForrest) {
             final ValueContainer<String> vcPrompt = new ValueContainer<String>("");
             r.visit(c -> {
@@ -54,7 +60,14 @@ public class JavaPromptSession {
                     continue;
                 }
             }
-            context += treeContext;
+            rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext));
+        }
+        rankedPrompts.sort((r1, r2) -> r2.rootRank() - r1.rootRank());
+        for (var rp : rankedPrompts) {
+            context += rp.treeContext();
+            if( context.length() > maxContentLength ) {
+                break;
+            }
         }
         return context;
     }

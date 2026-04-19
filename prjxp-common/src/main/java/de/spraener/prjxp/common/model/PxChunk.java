@@ -144,7 +144,7 @@ public class PxChunk {
     }
 
     public static PxChunk combine(List<PxChunk> chunkList) {
-        if (chunkList.isEmpty()) {
+        if (chunkList==null || chunkList.isEmpty()) {
             return null;
         }
         Collections.sort(chunkList, (c1, c2) -> c1.part - c2.part);

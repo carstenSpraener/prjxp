@@ -181,7 +181,6 @@ public class JavaCodeChunker {
             }
             content.append("\n");
             for (var m : clazz.getMethods()) {
-                m.getJavadocComment().ifPresent(jc -> content.append(jc.toString()).append('\n'));
                 addAnnotationsIfExist(content, m, "    ");
                 content.append("    ").append(m.getDeclarationAsString(false, false, false)).append('\n');
             }
