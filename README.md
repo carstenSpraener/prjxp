@@ -2,6 +2,9 @@
 
 An AI toolset to provide an expert for a Software Project
 
+## Disclaimer:
+$$\{ \langle M \rangle \mid \mathcal{P}(L(M)) = \text{true} \} \text{ is undecidable.}$$
+
 ## 🏗 Modules Overview
 
 ### 📦 Chunk-Norris
