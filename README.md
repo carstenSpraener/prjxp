@@ -90,6 +90,3 @@ You might notice that **prjxp** has absolutely zero manual Javadoc. This is a de
 
 ---
 _This README was generated with Gemini – based on code documented by Chunk-Norris._
-
----
-_This README was generated with Gemini._
