@@ -2,11 +2,14 @@ gldrtrvr:
   gemini:
     api-key: UNKNOWN
   chat:
-    modelName: deepseek-coder-v2:16b
-    ollamaUrl: http://192.168.1.228:11434
+    api-kind: openai
+    modelName: gemma-4-31b
+    api-url: http://192.168.1.224:1234
+    api-key: lm-studio
 
   embedding:
     modelName: mxbai-embed-large
+    ollamaBaseUrl: http://localhost:11434
     chroma:
       collectioName: chunk_norris
       database: prjxp

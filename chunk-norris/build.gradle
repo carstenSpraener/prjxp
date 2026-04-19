@@ -30,12 +30,12 @@ dependencies {
 jar {
     manifest {
         attributes(
-                'Main-Class': 'de.spraener.chuno.ChunkNorris' // Pfad zu deiner Main-Klasse
+                'Main-Class': 'de.spraener.prjxp.chuno.ChunkNorris' // Pfad zu deiner Main-Klasse
         )
     }
 }
 
 application {
     // Define the main class for the application.
-    mainClass = 'de.spraener.chuno.ChunkNorris'
+    mainClass = 'de.spraener.prjxp.chuno.ChunkNorris'
 }

@@ -1,7 +1,7 @@
 [versions]
 # Core Frameworks
 springBoot = "3.5.0"
-langchain4j = "1.12.1"
+langchain4j = "1.13.0"
 shadow = "8.3.0"
 
 # Libraries
@@ -27,8 +27,10 @@ spring-boot-starter-test = { group = "org.springframework.boot", name = "spring-
 # Langchain4j
 langchain4j-core = { group = "dev.langchain4j", name = "langchain4j", version.ref = "langchain4j" }
 langchain4j-ollama = { group = "dev.langchain4j", name = "langchain4j-ollama", version.ref = "langchain4j" }
+langchain4j-openai = { group = "dev.langchain4j", name = "langchain4j-open-ai", version.ref = "langchain4j" }
+
 # Sonderfall: Chroma hat ein eigenes Version Suffix
-langchain4j-chroma = { group = "dev.langchain4j", name = "langchain4j-chroma", version = "1.12.1-beta21" }
+langchain4j-chroma = { group = "dev.langchain4j", name = "langchain4j-chroma", version = "1.13.0-beta23" }
 langchain4j-google-ai-gemini = { group = "dev.langchain4j", name = "langchain4j-google-ai-gemini", version.ref = "langchain4j" }
 
 # Utilities
@@ -51,4 +53,4 @@ lombok = ["lombok"]
 # Standard Testing Stack
 test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
 # Ein Bundle für LangChain4j spart Platz im Build-Script
-langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-chroma", "langchain4j-google-ai-gemini"]
+langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-chroma", "langchain4j-google-ai-gemini", "langchain4j-openai"]

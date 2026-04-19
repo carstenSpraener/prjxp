@@ -4,6 +4,9 @@ import com.github.javaparser.ParseResult;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
+import com.github.javaparser.ast.expr.ObjectCreationExpr;
+import com.github.javaparser.javadoc.Javadoc;
+import com.github.javaparser.javadoc.description.JavadocDescription;
 import com.github.javaparser.printer.lexicalpreservation.LexicalPreservingPrinter;
 import com.github.javaparser.utils.SourceRoot;
 import de.spraener.prjxp.gldrtrvr.GldRtrvrCfg;
@@ -13,6 +16,8 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.boot.context.event.SpringApplicationEvent;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -34,10 +39,10 @@ public class JavaDocEnricher {
     private final GldRtrvrQuestioner questioner;
     private final PxChunkDao chunkDao;
     private final GldRtrvrCfg cfg;
+    private final ApplicationEventPublisher eventPublisher;
 
     public void enrichProject(Path[] paths) throws IOException {
         Arrays.asList(paths).stream()
-                .parallel()
                 .forEach(p -> {
                     try {
                         enrichProject(p);
@@ -95,8 +100,10 @@ public class JavaDocEnricher {
                             String javadoc = callGldRtrvrAndLlm(cu, method);
                             if (isJavaDoc(javadoc)) {
                                 // In JavaParser 3.25.10 wird der String automatisch als JavadocComment geparst
-                                method.setJavadocComment(sanatize(javadoc));
+                                JavadocDescription jdDscr = JavadocDescription.parseText(sanatize(javadoc));
+                                method.setJavadocComment("     ", new Javadoc(jdDscr));
                                 changed = true;
+                                eventPublisher.publishEvent(new JavaDocGeneratedEvent(toPxChunkID(method), jdDscr.toString()));
                             } else {
                                 log.warning("Für die Methode %s.%s wurde kein JavaDoc generiert: %s".formatted(cu.getPrimaryType().get().getFullyQualifiedName().get(), method.getDeclarationAsString(), javadoc));
                             }
@@ -145,20 +152,29 @@ public class JavaDocEnricher {
             sb.append("     *\n");
             sb.append("     * Hinweis: Diese Doku wurde generiert mit chunk_norris, golden_retriever und dem ChatModel " + cfg.getChatModelName() + "\n");
             sb.append("     *\n");
-            return sb.toString();
+            return sb.toString().replace(" * ", "").replace("/**", "").replace("*/", "").replace("     *\n", "\n");
         } catch (IOException xc) {
             return javadoc;
         }
     }
 
     private boolean isJavaDoc(String javadoc) {
-        return StringUtils.hasText(javadoc) && javadoc.startsWith("/**") && javadoc.endsWith("*/");
+        return StringUtils.hasText(javadoc) &&
+                javadoc.startsWith("/**") &&
+                javadoc.endsWith("*/");
     }
 
     private String callGldRtrvrAndLlm(CompilationUnit cu, MethodDeclaration method) {
-        String methodName = asMethodSignature(method);
         String methodNameInCode = toSimpleMethodName(method.getDeclarationAsString(false, false, true));
-        TypeDeclaration type = (TypeDeclaration) method.getParentNode().get();
+        Object parentNode = method.getParentNode().get();
+        if(  parentNode instanceof ObjectCreationExpr ocXpr ) {
+            parentNode = ocXpr.asObjectCreationExpr().getType();
+        }
+        if( !(parentNode instanceof TypeDeclaration) ) {
+            log.severe( "unsupported method declaration. Parent is: "+method.getParentNode().get() );
+            return "";
+        }
+        TypeDeclaration type = (TypeDeclaration) parentNode;
         if (type == null) {
             throw new IllegalArgumentException("Methodenklasse konnte nicht gefunden werden");
         }
@@ -166,11 +182,16 @@ public class JavaDocEnricher {
         if (className == null) {
             throw new IllegalArgumentException("Methodenklasse konnte nicht gefunden werden");
         }
+        String methodName = asMethodSignature(method);
+
         List<PxChunk> methodChunks = chunkDao.findById(className + "." + methodName);
         log.info("Asking for %s.%s".formatted(className, methodName));
-        String question = ("Du bist eine erfahrener Java-Entwickler und sollst mich bei der Dokumentation meines QuellCodes unterstützen." +
+        String question = (
+                "Du bist eine erfahrener Java-Entwickler und sollst mich bei der Dokumentation meines QuellCodes unterstützen." +
                 " Ich brauche JavaDoc für die Methode '%s' in der JavaClasse %s." +
-                " Antworte nur mit dem JavaDoc-Fragment auf DEUTSCH, sodass ich die Antwort direkt verwenden kann. Füge auch keine MarkDown Tags ein.").formatted(methodName, className);
+                " Erstelle die Antwort so, dass Sie als JavaDoc Kommentar verwendet werden kann. Dies beinhaltet deine gesamte Antwort." +
+                " Also auch die Erklärung, was und warum die Methode was tut. Den Code der Methode sollst Du nicht einbetten." +
+                " Füge auch keine MarkDown Tags ein.").formatted(methodName, className);
         String answer = questioner.ask(question, methodChunks,
                 context -> context.contains(className) || context.contains(methodNameInCode)
         );
@@ -193,5 +214,28 @@ public class JavaDocEnricher {
         } else {
             return methodStr;
         }
+    }
+
+    public String toPxChunkID(MethodDeclaration method) {
+        Object parentNode = method.getParentNode().get();
+        if(  parentNode instanceof ObjectCreationExpr ocXpr ) {
+            parentNode = ocXpr.asObjectCreationExpr().getType();
+        }
+        if( !(parentNode instanceof TypeDeclaration) ) {
+            log.severe( "unsupported method declaration. Parent is: "+method.getParentNode().get() );
+            return "";
+        }
+        TypeDeclaration type = (TypeDeclaration) parentNode;
+        if (type == null) {
+            throw new IllegalArgumentException("Methodenklasse konnte nicht gefunden werden");
+        }
+
+        String className = type.getFullyQualifiedName().get().toString();
+        if (className == null) {
+            throw new IllegalArgumentException("Methodenklasse konnte nicht gefunden werden");
+        }
+        String methodName = asMethodSignature(method);
+
+        return className + "." + methodName;
     }
 }

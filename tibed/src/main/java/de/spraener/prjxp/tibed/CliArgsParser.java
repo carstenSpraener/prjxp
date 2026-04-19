@@ -1,14 +1,18 @@
 package de.spraener.prjxp.tibed;
 
 import lombok.NonNull;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.apache.commons.cli.*;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 @Component
 @Log
+@RequiredArgsConstructor
 public class CliArgsParser {
     private Options options;
+    private final Environment env;
 
 
     private @NonNull Options getOptions() {
@@ -31,7 +35,26 @@ public class CliArgsParser {
     public TiBedConfig parseArgs(String[] args) {
         TiBedConfig cfg = new TiBedConfig();
         Options options = getOptions();
-        CommandLineParser parser = new DefaultParser();
+        CommandLineParser parser = new DefaultParser() {
+            @Override
+            protected void handleUnknownToken(String token) throws ParseException {
+                // Entferne die "--" am Anfang, falls vorhanden
+                String propertyKey = token.startsWith("--") ? token.substring(2) : token;
+
+                // Prüfe auf Gleichheitszeichen bei --key=value
+                if (propertyKey.contains("=")) {
+                    propertyKey = propertyKey.split("=")[0];
+                }
+
+                if (env.containsProperty(propertyKey)) {
+                    // Es ist eine gültige Spring-Property -> Einfach ignorieren für Commons-CLI
+                    return;
+                }
+
+                // Wenn es weder eine Option noch eine bekannte Property ist:
+                super.handleUnknownToken(token);
+            }
+        };
         HelpFormatter formatter = new HelpFormatter();
         try {
             CommandLine cmd = parser.parse(options, args);

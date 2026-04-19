@@ -29,8 +29,8 @@ public class EmbeddingSpringConfig {
     @Value("${tibed.embedding.chroma.tenant:prjxp}")
     private String embedChromaTenant;
 
-    @Value("${tibed.embedding.collectioName:chunk_norris}")
-    private String collectioName;
+    @Value("${tibed.embedding.collectionName:chunk_norris}")
+    private String collectionName;
 
     // --- Vektorstore Sektion ---
     @Value("${tibed.chroma.url:http://localhost:8000}")
@@ -51,7 +51,7 @@ public class EmbeddingSpringConfig {
                 .formatted(
                         embedChromaTenant,
                         embedChromaDatabase,
-                        collectioName
+                        collectionName
                 )
         );
         return ChromaEmbeddingStore.builder()
@@ -60,7 +60,7 @@ public class EmbeddingSpringConfig {
                 .tenantName(embedChromaTenant)
                 .databaseName(embedChromaDatabase)
                 .timeout(Duration.ofSeconds(60))
-                .collectionName(collectioName)
+                .collectionName(collectionName)
                 .build();
     }
 

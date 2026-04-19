@@ -1,3 +1,5 @@
+import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
+
 plugins {
     id 'application'
     alias(libs.plugins.shadow)
@@ -29,5 +31,13 @@ dependencies {
 }
 
 application {
-    mainClass = 'de.spraener.gldrtrvr.GRJavaDocEnricherCli'
+    mainClass = 'de.spraener.prjxp.gldrtrvr.GRJavaDocEnricherCli'
+}
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'de.spraener.prjxp.gldrtrvr.GRJavaDocEnricherCli'
+        )
+    }
 }

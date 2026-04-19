@@ -8,6 +8,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
+import dev.langchain4j.model.openai.OpenAiChatModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
@@ -56,21 +57,33 @@ public class GldRtrvrEmbeddingConfig {
 
     @Bean
     public KIChat chatModel(GldRtrvrCfg cfg) {
-        if (cfg.getChatModelName().contains("gemini")) {
+
+        if (cfg.getChatApiKind().equals("gemini")) {
             return new KIChatModelWrapper(GoogleAiGeminiChatModel.builder()
                     .apiKey(cfg.getGeminiApiKey())
                     .modelName(cfg.getChatModelName())
                     .temperature(0.1)
                     .build()
             );
-        } else {
+        } else if( cfg.getChatApiKind().equals("ollama")){
             return new KIChatModelWrapper(OllamaChatModel.builder()
-                    .baseUrl(cfg.getChatOllamaUrl())
+                    .baseUrl(cfg.getChatApiUrl())
                     .modelName(cfg.getChatModelName())
-                    .timeout(Duration.ofMinutes(10))
-                    .temperature(0.0)
+                    .timeout(Duration.ofMinutes(20))
+                    .temperature(0.2)
                     .build()
             );
+        } else if( cfg.getChatApiKind().equals("openai")) {
+            return new KIChatModelWrapper(
+                    OpenAiChatModel.builder()
+                            .apiKey(cfg.getChatApiKey())
+                            .modelName(cfg.getChatModelName())
+                            .temperature(0.2)
+                            .baseUrl(cfg.getChatApiUrl())
+                            .build()
+            );
+        } else {
+            throw new IllegalArgumentException("Unsupported chat API kind: " + cfg.getChatApiKind());
         }
     }
 }

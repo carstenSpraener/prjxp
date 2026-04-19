@@ -45,7 +45,8 @@ public class GRPromptEnrichment {
                 contextValidator);
     }
 
-    public String enrich(String prompt, List<PxChunk> prefetchedChunks,
+    public String enrich(String prompt,
+                         List<PxChunk> prefetchedChunks,
                          SearchParams searchParams,
                          Function<SearchParams, SearchParams> iterationHandler,
                          BiFunction<String, String, String> promptFormatter,
@@ -79,7 +80,7 @@ public class GRPromptEnrichment {
         return promptFormatter.apply(prompt, overallContext.toString());
     }
 
-    private SearchParams reIterate(SearchParams searchParams) {
+    public SearchParams reIterate(SearchParams searchParams) {
         if (searchParams.getMaxResult() < 16) {
             searchParams.setMaxResult(searchParams.getMaxResult() + 2);
         } else {

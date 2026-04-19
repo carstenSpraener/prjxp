@@ -1,0 +1,44 @@
+plugins {
+    id 'java'
+    alias(libs.plugins.shadow)
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // RAG-Kern & Common
+    implementation project(':golden-retriever')
+    implementation project(':prjxp-common')
+
+    // Spring Boot & JSON aus deinem Katalog
+    implementation libs.spring.boot.starter.json
+
+    // Utilities
+    implementation libs.dotenv.java
+}
+
+shadowJar {
+    archiveClassifier.set('all')
+    manifest {
+        attributes(
+                'Main-Class': 'de.spraener.prjxp.oragel.OragelCliApp'
+        )
+    }
+    // Wichtig für Spring Boot Beans im Fat-JAR
+    mergeServiceFiles()
+}
+
+// Damit AWT für die Zwischenablage nicht im Headless-Modus meckert
+tasks.withType(JavaExec).configureEach {
+    jvmArgs("-Djava.awt.headless=false")
+}
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'de.spraener.tibed.TiBedCliApp'
+        )
+    }
+}

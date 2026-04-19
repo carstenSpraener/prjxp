@@ -32,11 +32,19 @@ public class GldRtrvrCfg {
     @Value("${gldrtrvr.chromaCollectionName:chunk_norris}")
     private String chromaCollectionName;
 
-    @Value("${gldrtrvr.gemini.api-key}")
+    @Value("${gldrtrvr.gemini.api-key:NONE-SPECIFIED}")
     private String geminiApiKey;
 
     @Value("${gldrtrvr.chat.modelName:gemini-2.5-flash}")
     private String chatModelName;
+    @Value("${gldrtrvr.chat.api-kind:ollama}")
+    private String chatApiKind;
+
+    @Value("${gldrtrvr.chat.api-url:http://localhost:11434}")
+    private String chatApiUrl;
+
+    @Value("${gldrtrvr.chat.api-key}")
+    private String chatApiKey;
 
     private String question;
     private String projectSourceDir;

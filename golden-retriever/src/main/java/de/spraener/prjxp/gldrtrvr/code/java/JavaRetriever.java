@@ -19,7 +19,8 @@ import java.util.function.Function;
 public class JavaRetriever {
     private final PxChunkDao chunkDao;
 
-    public StringBuilder buildPromptForFindings(StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+    @SafeVarargs
+    public final StringBuilder buildPromptForFindings(StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
         JavaPromptSession session = new JavaPromptSession(chunkDao);
         session.setChunks(combineChunksByID(chunks));
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
@@ -81,7 +82,7 @@ public class JavaRetriever {
         }
         List<PxChunk> result = new ArrayList<>();
         for (var chunkList : chunkMap.values()) {
-            PxChunk c = chunkList.get(0);
+            PxChunk c = chunkList.getFirst();
             if (c.getTotal() > chunkList.size()) {
                 result.add(combineChunks(chunkDao.findById(c.getId())));
             } else {

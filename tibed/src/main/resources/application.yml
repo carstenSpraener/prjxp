@@ -5,7 +5,7 @@ tibed:
   embedding:
     modelName: mxbai-embed-large
     chroma:
-      collectioName: chunk_norris
+      collectionName: chunk_norris
       database: prjxp
       tenant: prjxp
 

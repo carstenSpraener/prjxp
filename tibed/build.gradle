@@ -27,13 +27,13 @@ dependencies {
 jar {
     manifest {
         attributes(
-                'Main-Class': 'de.spraener.tibed.TiBedCliApp'
+                'Main-Class': 'de.spraener.prjxp.tibed.TiBedCliApp'
         )
     }
 }
 
 application {
-    mainClass = 'de.spraener.tibed.TiBedCliApp'
+    mainClass = 'de.spraener.prjxp.tibed.TiBedCliApp'
 }
 
 import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
