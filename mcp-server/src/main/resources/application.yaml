@@ -1,3 +1,7 @@
+mcp:
+  cors:
+    allowed-patterns: "http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*"
+
 gldrtrvr:
   gemini:
     api-key: UNKNOWN
@@ -18,3 +22,6 @@ gldrtrvr:
 
   chromaBaseUrl: http://localhost:8000
   chromaCollectionName: chunk_norris
+
+server:
+  forward-headers-strategy: framework
