@@ -28,6 +28,14 @@ public class CliArgsParser {
                     .numberOfArgs(1)
                     .desc("specify the size of one embedding batch. Overwrites a potential configured batch size in the application configuration. Default is 50.")
                     .build());
+            options.addOption(Option.builder("R")
+                    .longOpt("reset")
+                    .desc("Reset the embedding store and remove all entries. This will start the embedding process from scratch.")
+                    .build());
+            options.addOption(Option.builder("h")
+                            .longOpt("help")
+                            .desc("Display this help message and exit.")
+                    .build());
         }
         return options;
     }

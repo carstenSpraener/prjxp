@@ -16,6 +16,7 @@ import java.util.stream.Stream;
 public class TiBedConfig {
     private String inputSource;
     private int batchSize = 0;
+    private boolean resetStore = false;
 
     public Stream<String> getJsonlStream() throws IOException {
         InputStream inputStream;
