@@ -2,6 +2,9 @@
 
 An AI toolset to provide an expert for a Software Project
 
+## Disclaimer:
+$$\{ \langle M \rangle \mid \mathcal{P}(L(M)) = \text{true} \} \text{ is undecidable.}$$
+
 ## 🏗 Modules Overview
 
 ### 📦 Chunk-Norris
@@ -89,3 +92,4 @@ You might notice that **prjxp** has absolutely zero manual Javadoc. This is a de
 _This README was generated with Gemini – based on code documented by Chunk-Norris._
 
 ---
+_This README was generated with Gemini._
