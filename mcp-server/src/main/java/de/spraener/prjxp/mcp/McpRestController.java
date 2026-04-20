@@ -33,6 +33,7 @@ public class McpRestController {
             @Parameter(description = "Die ursprüngliche Frage des Benutzers, zu der Information von den Projekten benötigt wird.")
             @RequestParam(name = "userQuestion", required = true) String userQuestion
     ) {
+        log.info("enriching question "+userQuestion);
         return enrichment.enrich(userQuestion);
     }
 }
