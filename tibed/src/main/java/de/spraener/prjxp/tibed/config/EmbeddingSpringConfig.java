@@ -12,6 +12,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.Map;
 
 @Configuration
 @Log
@@ -36,12 +37,15 @@ public class EmbeddingSpringConfig {
     @Value("${tibed.chroma.url:http://localhost:8000}")
     private String chromaUrl;
 
+    @Value("${tibed.embedding.timeoutSecs:60}")
+    private int embeddingTimeoutSecs;
+
     @Bean
     public EmbeddingModel embeddingModel() {
         return OllamaEmbeddingModel.builder()
                 .baseUrl(ollamaUrl)
                 .modelName(embeddingModelName)
-                .timeout(Duration.ofSeconds(60))
+                .timeout(Duration.ofSeconds(embeddingTimeoutSecs))
                 .build();
     }
 
@@ -59,7 +63,7 @@ public class EmbeddingSpringConfig {
                 .apiVersion(ChromaApiVersion.V2)
                 .tenantName(embedChromaTenant)
                 .databaseName(embedChromaDatabase)
-                .timeout(Duration.ofSeconds(60))
+                .timeout(Duration.ofSeconds(embeddingTimeoutSecs))
                 .collectionName(collectionName)
                 .build();
     }
