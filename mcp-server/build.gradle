@@ -45,8 +45,6 @@ application {
     mainClass = 'de.spraener.prjxp.mcp.McpServer'
 }
 
-import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
-
 shadowJar {
     archiveClassifier.set('all')
 

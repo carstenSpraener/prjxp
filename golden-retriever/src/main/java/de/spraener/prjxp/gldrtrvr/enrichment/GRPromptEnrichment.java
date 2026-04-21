@@ -21,18 +21,18 @@ public class GRPromptEnrichment {
         return enrich(prompt, List.of(),
                 new SearchParams(20, 0.75),
                 this::reIterate, (question, context) ->
-                String.format("""
-                        Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
-                        ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
-                        Wenn du die Antwort nicht im Kontext findest, sage das deutlich.
-                        
-                        KONTEXT AUS DEN PROJEKT-MODULEN:
-                        %s
-                        
-                        FRAGE: %s
-                        
-                        """, context, question
-                ), c -> c.length() > 0);
+                        String.format("""
+                                Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
+                                ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
+                                Wenn du die Antwort nicht im Kontext findest, sage das deutlich.
+                                
+                                KONTEXT AUS DEN PROJEKT-MODULEN:
+                                %s
+                                
+                                FRAGE: %s
+                                
+                                """, context, question
+                        ), c -> c.length() > 0);
     }
 
     public String enrich(String prompt, List<PxChunk> prefetchedChunks,

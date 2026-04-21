@@ -26,7 +26,7 @@ spring-boot-starter-web = { group = "org.springframework.boot", name = "spring-b
 spring-boot-starter-json = { group = "org.springframework.boot", name = "spring-boot-starter-json", version.ref = "springBoot" }
 spring-boot-devtools = { group = "org.springframework.boot", name = "spring-boot-devtools", version.ref = "springBoot" }
 spring-boot-starter-test = { group = "org.springframework.boot", name = "spring-boot-starter-test", version.ref = "springBoot" }
-spring-boot-openapi-starter-webmvc-ui = {group = "org.springdoc", name="springdoc-openapi-starter-webmvc-ui", version = "2.6.0"}
+spring-boot-openapi-starter-webmvc-ui = { group = "org.springdoc", name = "springdoc-openapi-starter-webmvc-ui", version = "2.6.0" }
 spring-ai-mcp-server = { group = "org.springframework.ai", name = "spring-ai-starter-mcp-server-webmvc", version.ref = "springAi" }
 
 # Langchain4j

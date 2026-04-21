@@ -1,9 +1,9 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
-import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
+import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
 import lombok.Data;
 import org.springframework.util.StringUtils;
 
@@ -65,11 +65,11 @@ public class JavaPromptSession {
         }
         rankedPrompts.sort((r1, r2) -> r2.rootRank() - r1.rootRank());
         for (var rp : rankedPrompts) {
-            if( rp.rootRank() == 0 ) {
+            if (rp.rootRank() == 0) {
                 break;
             }
             context += rp.treeContext();
-            if( context.length() > maxContentLength ) {
+            if (context.length() > maxContentLength) {
                 break;
             }
         }

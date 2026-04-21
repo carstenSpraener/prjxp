@@ -2,26 +2,24 @@ mcp:
   cors:
     allowed-patterns: "http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*"
 
-gldrtrvr:
+chat:
   gemini:
     api-key: UNKNOWN
-  chat:
-    api-kind: openai
-    modelName: gemma-4-31b
-    api-url: http://192.168.1.224:1234
-    api-key: lm-studio
+  api-kind: openai
+  modelName: gemma-4-31b
+  api-key: lm-studio
+  api-url: http://192.168.1.224:1234
 
-  embedding:
-    modelName: mxbai-embed-large
-    ollamaBaseUrl: http://localhost:11434
-    chroma:
-      collectioName: chunk_norris
-      database: prjxp-enriched
-      tenant: prjxp
+embedding:
+  modelName: mxbai-embed-large
+  ollama:
+    url: http://localhost:11434
 
-
-  chromaBaseUrl: http://localhost:8000
-  chromaCollectionName: chunk_norris
+chroma:
+  tenant: prjxp
+  database: prjxp-enriched
+  collectioName: chunk_norris
+  url: http://localhost:8000
 
 server:
   forward-headers-strategy: framework

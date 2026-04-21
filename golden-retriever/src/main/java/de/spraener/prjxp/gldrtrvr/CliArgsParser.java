@@ -1,9 +1,12 @@
 package de.spraener.prjxp.gldrtrvr;
 
+import de.spraener.prjxp.common.config.CliArgsParsingEvent;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.apache.commons.cli.*;
+import org.springframework.context.event.EventListener;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +16,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @Log
 public class CliArgsParser {
-    private final GldRtrvrCfg cfg;
+    private final PrjXPConfig cfg;
     private Options options;
     private final Environment env;
 
@@ -44,7 +47,8 @@ public class CliArgsParser {
         return options;
     }
 
-    public GldRtrvrCfg parseArgs(String[] args) {
+    @EventListener
+    public void parseArgs(CliArgsParsingEvent evt) {
         Options options = getOptions();
         CommandLineParser parser = new DefaultParser() {
             @Override
@@ -69,24 +73,21 @@ public class CliArgsParser {
 
         HelpFormatter formatter = new HelpFormatter();
         try {
-            CommandLine cmd = parser.parse(options, args);
+            CommandLine cmd = parser.parse(options, evt.args());
             if (cmd.hasOption("i")) {
-                cfg.setInputSource(cmd.getOptionValue("i"));
+                cfg.setGrInputSource(cmd.getOptionValue("i"));
             }
             if (cmd.hasOption("q")) {
-                cfg.setQuestion(cmd.getOptionValue("q"));
+                cfg.setGrQuestion(cmd.getOptionValue("q"));
             }
             if (cmd.hasOption("src")) {
-                cfg.setProjectSourceDir(cmd.getOptionValue("src"));
+                cfg.setGrProjectSourceDir(cmd.getOptionValue("src"));
             }
             List<String> otherArgs = cmd.getArgList();
             StringBuilder sb = new StringBuilder();
             otherArgs.stream().forEach(str -> sb.append(str).append(" "));
-
-            return cfg;
         } catch (Exception e) {
             log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
-            return cfg;
         }
     }
 }

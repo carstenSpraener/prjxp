@@ -1,14 +1,13 @@
 package de.spraener.prjxp.gldrtrvr;
 
-import de.spraener.prjxp.gldrtrvr.code.java.JavaRetriever;
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.gldrtrvr.code.java.JavaRetriever;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
 
@@ -41,18 +40,18 @@ public class GldRtrvrQuestioner {
 
     private String formatContextForJavaDoc(String question, String context) {
         return String.format("""
-                        Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
-                        ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
-                        Wenn du die Antwort nicht im Kontext findest, sage das deutlich.
-                        
-                        Beantworte zunächst das WAS und dann mit dieser Erklärung das WARUM. Wenn Du das
-                        Warum nicht ermitteln kannst beschränke dich auf das was.
-                        
-                        KONTEXT AUS DEN PROJEKT-MODULEN:
-                        %s
-                        
-                        FRAGE: %s
-                        
-                        """, context, question);
+                Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
+                ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
+                Wenn du die Antwort nicht im Kontext findest, sage das deutlich.
+                
+                Beantworte zunächst das WAS und dann mit dieser Erklärung das WARUM. Wenn Du das
+                Warum nicht ermitteln kannst beschränke dich auf das was.
+                
+                KONTEXT AUS DEN PROJEKT-MODULEN:
+                %s
+                
+                FRAGE: %s
+                
+                """, context, question);
     }
 }

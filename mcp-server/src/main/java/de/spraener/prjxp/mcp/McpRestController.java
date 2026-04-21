@@ -28,26 +28,26 @@ public class McpRestController {
     @Operation(
             // summary =  "Liefert Relevanten Kontext aus den Projekten passend zur Frage des Benutzers.",
             description = """
+                    SUCHE-TOOL: Liefert relevanten Kontext aus dem Projekt. 
+                    STRATEGIE: Wenn die erste Antwort nicht ausreicht, rufe dieses Tool bis zu 3-mal iterativ auf. 
+                    PARAMETER-REGEL: Nutze beim ersten Aufruf die User-Frage. Bei Folge-Aufrufen (Nachfragen) 
+                    formuliere bitte eine eigene, technisch präzisere Suchanfrage als 'userQuestion', 
+                    basierend auf den fehlenden Informationen aus dem vorherigen Schritt.
+                    """,
+            operationId = "readRelevantSource"
+    )
+    @McpTool(description = """
             SUCHE-TOOL: Liefert relevanten Kontext aus dem Projekt. 
             STRATEGIE: Wenn die erste Antwort nicht ausreicht, rufe dieses Tool bis zu 3-mal iterativ auf. 
             PARAMETER-REGEL: Nutze beim ersten Aufruf die User-Frage. Bei Folge-Aufrufen (Nachfragen) 
             formuliere bitte eine eigene, technisch präzisere Suchanfrage als 'userQuestion', 
             basierend auf den fehlenden Informationen aus dem vorherigen Schritt.
-            """,
-            operationId="readRelevantSource"
-    )
-    @McpTool(description = """
-    SUCHE-TOOL: Liefert relevanten Kontext aus dem Projekt. 
-    STRATEGIE: Wenn die erste Antwort nicht ausreicht, rufe dieses Tool bis zu 3-mal iterativ auf. 
-    PARAMETER-REGEL: Nutze beim ersten Aufruf die User-Frage. Bei Folge-Aufrufen (Nachfragen) 
-    formuliere bitte eine eigene, technisch präzisere Suchanfrage als 'userQuestion', 
-    basierend auf den fehlenden Informationen aus dem vorherigen Schritt.
-    """)
+            """)
     public String readRelevantSource(
             @Parameter(description = "Die ursprüngliche Frage des Benutzers, zu der Information von den Projekten benötigt wird.")
             @RequestParam(name = "userQuestion", required = true) String userQuestion
     ) {
-        log.info("enriching question "+userQuestion);
+        log.info("enriching question " + userQuestion);
         return enrichment.enrich(userQuestion);
     }
 }

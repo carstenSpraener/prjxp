@@ -1,9 +1,12 @@
 package de.spraener.prjxp.tibed;
 
+import de.spraener.prjxp.common.config.CliArgsParsingEvent;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.apache.commons.cli.*;
+import org.springframework.context.event.EventListener;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +16,6 @@ import org.springframework.stereotype.Component;
 public class CliArgsParser {
     private Options options;
     private final Environment env;
-
 
     private @NonNull Options getOptions() {
         if (options == null) {
@@ -33,15 +35,16 @@ public class CliArgsParser {
                     .desc("Reset the embedding store and remove all entries. This will start the embedding process from scratch.")
                     .build());
             options.addOption(Option.builder("h")
-                            .longOpt("help")
-                            .desc("Display this help message and exit.")
+                    .longOpt("help")
+                    .desc("Display this help message and exit.")
                     .build());
         }
         return options;
     }
 
-    public TiBedConfig parseArgs(String[] args) {
-        TiBedConfig cfg = new TiBedConfig();
+    @EventListener
+    public void parseArgs(CliArgsParsingEvent event) {
+        PrjXPConfig cfg = event.cfg();
         Options options = getOptions();
         CommandLineParser parser = new DefaultParser() {
             @Override
@@ -65,14 +68,21 @@ public class CliArgsParser {
         };
         HelpFormatter formatter = new HelpFormatter();
         try {
-            CommandLine cmd = parser.parse(options, args);
+            CommandLine cmd = parser.parse(options, event.args());
             if (cmd.hasOption("i")) {
-                cfg.setInputSource(cmd.getOptionValue("i"));
+                cfg.setTibedJsonlInputSource(cmd.getOptionValue("i"));
             }
-            return cfg;
+            if (cmd.hasOption("bs")) {
+                cfg.setTibedBatchSize(Integer.parseInt(cmd.getOptionValue("bs")));
+            }
+            if (cmd.hasOption("R")) {
+                cfg.setTibedResetStore(true);
+            }
+            if (cmd.hasOption("h")) {
+                formatter.printHelp("tibed", options);
+            }
         } catch (Exception e) {
             log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
-            return cfg;
         }
     }
 }

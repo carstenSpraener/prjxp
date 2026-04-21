@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.json.JsonMapper;
 import de.spraener.prjxp.chuno.spring.SpringPreWalkEvent;
 import de.spraener.prjxp.chuno.veto.VetoRegistry;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
@@ -24,47 +25,47 @@ public class ChunkProcess {
     private final VetoRegistry vetoRegistry;
     private Set<String> processedFiles = new HashSet<>();
     private final JsonMapper jsonMapper = new JsonMapper();
+    private final PrjXPConfig cfg;
 
+    public void execute() throws Exception {
+        eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg));
 
-    public void execute(ChunkNorrisConfig chunkNorrisConfig) throws Exception {
-        eventPublisher.publishEvent(new SpringPreWalkEvent<>(chunkNorrisConfig));
-
-        Files.walk(Path.of(chunkNorrisConfig.getRootDir()))
+        Files.walk(Path.of(cfg.getChunoRootDir()))
                 .filter(Files::isRegularFile)
                 .filter(path -> checkVetos(path))
                 .filter(path -> !processedFiles.contains(path.toAbsolutePath().toString()))
-                .forEach(path -> handlePath(chunkNorrisConfig, path));
+                .forEach(path -> handlePath(cfg, path));
         ;
-        doPostWalk(chunkNorrisConfig);
+        doPostWalk(cfg);
     }
 
     protected boolean checkVetos(Path p) {
         return !vetoRegistry.shouldVeto(p);
     }
 
-    protected void handlePath(ChunkNorrisConfig chunkNorrisConfig, Path p) {
+    protected void handlePath(PrjXPConfig cfg, Path p) {
         factory.createChunker(p.toFile())
                 .parallel()
                 .flatMap(c -> c.chunk(p.toFile()))
                 .map(chunk -> toJSONL(chunk))
                 .forEach(
-                        str -> chunkNorrisConfig.getOutput().println(str)
+                        str -> cfg.getChunoOutput().println(str)
                 )
         ;
-        chunkNorrisConfig.getOutput().flush();
+        cfg.getChunoOutput().flush();
         processedFiles.add(p.toAbsolutePath().toString());
     }
 
-    protected void doPostWalk(ChunkNorrisConfig chunkNorrisConfig) {
+    protected void doPostWalk(PrjXPConfig cfg) {
         factory.listPostWalkChunker()
                 .parallel()
                 .flatMap(pwChunk -> pwChunk.chunk(null))
                 .map(chunk -> toJSONL(chunk))
                 .forEach(
-                        str -> chunkNorrisConfig.getOutput().println(str)
+                        str -> cfg.getChunoOutput().println(str)
                 )
         ;
-        chunkNorrisConfig.getOutput().flush();
+        cfg.getChunoOutput().flush();
     }
 
     public String toJSONL(PxChunk chunk) {

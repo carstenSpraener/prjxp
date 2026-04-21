@@ -1,12 +1,12 @@
 class OragelSearch extends HTMLElement {
-        constructor() {
-                super();
-                this.attachShadow({ mode: 'open' });
-                this.lastContext = "";
-        }
+    constructor() {
+        super();
+        this.attachShadow({mode: 'open'});
+        this.lastContext = "";
+    }
 
-        connectedCallback() {
-                this.shadowRoot.innerHTML = `
+    connectedCallback() {
+        this.shadowRoot.innerHTML = `
             <style>
                 :host { font-family: sans-serif; display: block; padding: 20px; border: 1px solid #00529b; border-radius: 8px; background: #fff; }
                 .search-box { display: flex; gap: 10px; margin-bottom: 15px; }
@@ -36,57 +36,57 @@ class OragelSearch extends HTMLElement {
             </details>
         `;
 
-                const input = this.shadowRoot.getElementById('query');
-                const btn = this.shadowRoot.getElementById('searchBtn');
+        const input = this.shadowRoot.getElementById('query');
+        const btn = this.shadowRoot.getElementById('searchBtn');
 
-                // 1. Suche bei Enter
-                input.addEventListener('keypress', (e) => {
-                        if (e.key === 'Enter') this.search();
-                });
+        // 1. Suche bei Enter
+        input.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') this.search();
+        });
 
-                btn.onclick = () => this.search();
+        btn.onclick = () => this.search();
+    }
+
+    async search() {
+        const query = this.shadowRoot.getElementById('query').value;
+        const status = this.shadowRoot.getElementById('status');
+        const resPre = this.shadowRoot.getElementById('results');
+        const details = this.shadowRoot.getElementById('resultContainer');
+
+        if (!query.trim()) return;
+
+        status.className = "status-msg loading";
+        status.innerHTML = "🔍 Suche läuft und wird kopiert...";
+        details.style.display = "none";
+
+        try {
+            const response = await fetch(`./prjxp/tools/context?userQuestion=${encodeURIComponent(query)}`);
+            this.lastContext = await response.text();
+
+            // Ergebnis anzeigen
+            resPre.textContent = this.lastContext;
+            details.style.display = "block";
+            details.open = false; // Standardmäßig geschlossen
+
+            // 2. Direkt in die Zwischenablage kopieren
+            await this.copyToClipboard(this.lastContext);
+
+            status.className = "status-msg success";
+            status.innerHTML = "✅ Kontext gefunden und in Zwischenablage kopiert!";
+        } catch (err) {
+            status.innerHTML = "❌ Fehler bei der Suche.";
+            console.error(err);
         }
+    }
 
-        async search() {
-                const query = this.shadowRoot.getElementById('query').value;
-                const status = this.shadowRoot.getElementById('status');
-                const resPre = this.shadowRoot.getElementById('results');
-                const details = this.shadowRoot.getElementById('resultContainer');
-
-                if (!query.trim()) return;
-
-                status.className = "status-msg loading";
-                status.innerHTML = "🔍 Suche läuft und wird kopiert...";
-                details.style.display = "none";
-
-                try {
-                        const response = await fetch(`./prjxp/tools/context?userQuestion=${encodeURIComponent(query)}`);
-                        this.lastContext = await response.text();
-
-                        // Ergebnis anzeigen
-                        resPre.textContent = this.lastContext;
-                        details.style.display = "block";
-                        details.open = false; // Standardmäßig geschlossen
-
-                        // 2. Direkt in die Zwischenablage kopieren
-                        await this.copyToClipboard(this.lastContext);
-
-                        status.className = "status-msg success";
-                        status.innerHTML = "✅ Kontext gefunden und in Zwischenablage kopiert!";
-                } catch (err) {
-                        status.innerHTML = "❌ Fehler bei der Suche.";
-                        console.error(err);
-                }
+    async copyToClipboard(text) {
+        try {
+            await navigator.clipboard.writeText(text);
+        } catch (err) {
+            console.error('Kopieren fehlgeschlagen', err);
+            this.shadowRoot.getElementById('status').innerHTML = "⚠️ Suche OK, aber Clipboard-Zugriff verweigert (HTTPS?)";
         }
-
-        async copyToClipboard(text) {
-                try {
-                        await navigator.clipboard.writeText(text);
-                } catch (err) {
-                        console.error('Kopieren fehlgeschlagen', err);
-                        this.shadowRoot.getElementById('status').innerHTML = "⚠️ Suche OK, aber Clipboard-Zugriff verweigert (HTTPS?)";
-                }
-        }
+    }
 }
 
 customElements.define('oragel-search', OragelSearch);

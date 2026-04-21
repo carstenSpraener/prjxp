@@ -1,11 +1,10 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.gldrtrvr.GldRtrvrCfg;
 import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.PxChunkDaoInMemoryImpl;
-import de.spraener.prjxp.common.model.PxChunk;
-import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;

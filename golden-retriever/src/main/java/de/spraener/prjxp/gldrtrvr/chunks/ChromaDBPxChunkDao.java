@@ -1,7 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.chunks;
 
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;

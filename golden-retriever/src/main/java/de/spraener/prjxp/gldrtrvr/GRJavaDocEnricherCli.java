@@ -1,17 +1,17 @@
 package de.spraener.prjxp.gldrtrvr;
 
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.gldrtrvr.javadoc.JavaDocEnricher;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.annotation.Bean;
 
 import java.nio.file.Path;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"de.spraener.prjxp.gldrtrvr", "de.spraener.prjxp.common"})
 public class GRJavaDocEnricherCli {
     private static void readDotEnv() {
         Dotenv dotenv = Dotenv.configure()
@@ -39,13 +39,11 @@ public class GRJavaDocEnricherCli {
 
     @Bean
     public CommandLineRunner enricherRun(
-            CliArgsParser argsParser,
-            GldRtrvrCfg cfg,
+            PrjXPConfig cfg,
             JavaDocEnricher javaDocEnricher
     ) {
         return args -> {
-            argsParser.parseArgs(args);
-            String path = cfg.getProjectSourceDir();
+            String path = cfg.getGrProjectSourceDir();
             if (path == null) {
                 return;
             }

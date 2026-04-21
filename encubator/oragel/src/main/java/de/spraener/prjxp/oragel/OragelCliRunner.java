@@ -21,14 +21,14 @@ public class OragelCliRunner {
 
         promptSource.stream()
                 .filter(input -> !input.isBlank())
-                .forEach( q -> {
-                    if( PromptSource.isExitCommand(q) ) {
+                .forEach(q -> {
+                    if (PromptSource.isExitCommand(q)) {
                         return;
                     }
                     String p = enrichment.enrich(q);
                     eventPublisher.publishEvent(new EnrichedPromptEvent(p));
                 })
-                ;
+        ;
         log.info("--- 🔮 ORAGEL beendet ---");
     }
 }

@@ -58,15 +58,15 @@ class OragelIntegrationTest {
 
     @BeforeEach
     void setup() {
-        when(grPromptEnrichmentMock.enrich(any())).thenAnswer(i->i.getArgument(0));
+        when(grPromptEnrichmentMock.enrich(any())).thenAnswer(i -> i.getArgument(0));
         System.setProperty("java.awt.headless", "false");
     }
 
     @Test
     void testFullFlowToClipboard() throws Exception {
-        for( var b : allBeans) {
-            if( b.getClass().getName().startsWith("de.spraener.prjxp") ) {
-                System.out.println("Bean: "+b.getClass().getName());
+        for (var b : allBeans) {
+            if (b.getClass().getName().startsWith("de.spraener.prjxp")) {
+                System.out.println("Bean: " + b.getClass().getName());
             }
         }
 
@@ -87,7 +87,7 @@ class OragelIntegrationTest {
         // 4. Verifizieren: Der angereicherte Prompt muss die ID enthalten
         assertThat(clipboardContent)
                 .contains(testQuestion)
-                ;
+        ;
     }
 
     private void clearClipboard() {

@@ -1,8 +1,8 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
@@ -33,8 +33,8 @@ public class JavaRetriever {
             JavaCodeSection section = JavaCodeSection.fromName(pxChunk.getMetadata().get("java_code_section"));
             switch (section) {
                 case METHOD:
-                    PxChunk javaDoc = PxChunk.combine(chunkDao.findById(pxChunk.getId()+".javadoc"));
-                    if( javaDoc!=null ) {
+                    PxChunk javaDoc = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".javadoc"));
+                    if (javaDoc != null) {
                         nextPrompt = insertBefore(prompt, toMethodName(pxChunk), javaDoc.getContent());
                         prompt = nextPrompt;
                     }

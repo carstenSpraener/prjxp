@@ -101,10 +101,10 @@ public class JavaCodeChunkerTests {
                 )
                 .anyMatch(c -> c.getId().equals("de.spraener.test.TestClass.void testMethod(SprString)") &&
                         c.getContent().equals(
-                        "//Methode void testMethod(SprString) in class de.spraener.test.TestClass:\n" +
-                                "    public void testMethod(SprString s) {\n" +
-                                "        System.out.println(\"Hello, World!\");\n" +
-                                "    }\n")
+                                "//Methode void testMethod(SprString) in class de.spraener.test.TestClass:\n" +
+                                        "    public void testMethod(SprString s) {\n" +
+                                        "        System.out.println(\"Hello, World!\");\n" +
+                                        "    }\n")
                 )
         ;
         // Chunk TestClass.dependencies siehe JavaDependenciesChunkerTests

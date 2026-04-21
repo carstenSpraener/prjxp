@@ -7,7 +7,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Profile;
 
-@SpringBootApplication
+@SpringBootApplication(scanBasePackages = {"de.spraener.prjxp.tibed", "de.spraener.prjxp.common"})
 public class TiBedCliApp {
     private static void readDotEnv() {
         Dotenv dotenv = Dotenv.configure()
@@ -32,11 +32,11 @@ public class TiBedCliApp {
     @Bean
     @Profile("!test")
     public CommandLineRunner run(
-            EmbeddingService embedProcess,
-            CliArgsParser argsParser
+            EmbeddingService embedProcess
     ) {
         return args -> {
-            embedProcess.execute(argsParser.parseArgs(args));
+            embedProcess.execute();
         };
     }
+
 }

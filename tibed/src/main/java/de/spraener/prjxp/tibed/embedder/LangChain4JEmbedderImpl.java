@@ -23,7 +23,7 @@ public class LangChain4JEmbedderImpl implements EmbeddingExecutor {
 
     @Override
     public void execute(List<PxChunk> chunks) {
-        if( chunks.isEmpty() ) {
+        if (chunks.isEmpty()) {
             log.info("Skipping empty batch of chunks");
             return;
         }
