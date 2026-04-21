@@ -60,7 +60,14 @@ class OragelSearch extends HTMLElement {
         details.style.display = "none";
 
         try {
-            const response = await fetch(`./prjxp/tools/context?userQuestion=${encodeURIComponent(query)}`);
+            // Ermittle den Pfad zum aktuellen Script (./js/component.js)
+            // und gehe einen Ordner höher, um den App-Kontext (/osb-mcp/) zu erhalten.
+            const scriptUrl = new URL(import.meta.url);
+            const basePath = scriptUrl.pathname.replace('/js/component.js', '');
+            // Baue den URL-String zusammen
+            const apiUrl = `${basePath}/prjxp/tools/context?userQuestion=${encodeURIComponent(query)}`;
+
+            const response = await fetch(apiUrl);
             this.lastContext = await response.text();
 
             // Ergebnis anzeigen

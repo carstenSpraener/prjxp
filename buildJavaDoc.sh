@@ -3,14 +3,14 @@
 java -jar chunk-norris/build/libs/chunk-norris-0.0.1-SNAPSHOT-all.jar -o prjxp.jsonl -r . -wl java
 
 java -jar tibed/build/libs/tibed-0.0.1-SNAPSHOT-all.jar -i prjxp-enriched.jsonl \
-    --tibed.embedding.chroma.database=prjxp-enriched
+    --chroma.database=prjxp-enriched
 
 java -jar golden-retriever/build/libs/golden-retriever-0.0.1-SNAPSHOT-all.jar \
     -src prjxp-common/src/main/java,chunk-norris/src/main/java,tibed/src/main/java,golden-retriever/src/main/java \
-    --gldrtrvr.chat.api-kind=ollama \
-    --gldrtrvr.chat.api-url=http://192.168.1.228:11434 \
-    --gldrtrvr.chat.api-key=none \
-    --gldrtrvr.chat.modelName=deepseek-coder-v2:16b
+    --chat.api-kind=ollama \
+    --chat.api-url=http://192.168.1.228:11434 \
+    --chat.api-key=none \
+    --chat.modelName=deepseek-coder-v2:16b
 #
 # You can specify other chat models, server and apis like:
 # gldrtrvr.chat.modelName: Whatever is available to you (gemma-4-32b, qwen3-coder:30b, deepseek-code-v2:16B)
@@ -19,4 +19,3 @@ java -jar golden-retriever/build/libs/golden-retriever-0.0.1-SNAPSHOT-all.jar \
 # gldrtrvr.chat.api-url: The address of your chat server
 #
 #
-
