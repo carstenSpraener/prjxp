@@ -33,6 +33,18 @@ public class EmbeddingService {
     private final EmbeddingStore embeddingStore;
 
     public void execute(TiBedConfig cfg) {
+        log.info("Starting embedding process with\n" +
+                "  embedding model: '%s'\n" +
+                "  ollama server url: '%s'\n" +
+                "  chroma-tenant: '%s'\n" +
+                "  chroma-database: '%s'\n" +
+                "  chroma-collection: '%s'".formatted(
+                        cfg.getEmbeddingModelName(),
+                        cfg.getOllamaUrl(),
+                        cfg.getEmbedChromaTenant(),
+                        cfg.getEmbedChromaDatabase(),
+                        cfg.getCollectionName()
+                ));
         if( cfg.isResetStore() ) {
             embeddingStore.removeAll(metadataKey("id").isNotEqualTo(0));
         }
