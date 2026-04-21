@@ -33,15 +33,33 @@ dependencies {
     // Testing
     testImplementation libs.bundles.test.bundle
 }
-
-application {
-    mainClass = 'de.spraener.prjxp.mcp.McpServer'
-}
-
 jar {
     manifest {
         attributes(
                 'Main-Class': 'de.spraener.prjxp.mcp.McpServer'
         )
+    }
+}
+
+application {
+    mainClass = 'de.spraener.prjxp.mcp.McpServer'
+}
+
+import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
+
+shadowJar {
+    archiveClassifier.set('all')
+
+    // WICHTIG: Diese Transformer mergen die Spring-Konfigurationen
+    mergeServiceFiles()
+    append 'META-INF/spring.handlers'
+    append 'META-INF/spring.schemas'
+    append 'META-INF/spring.tooling'
+    append 'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports'
+    append 'META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports'
+
+    transform(PropertiesFileTransformer) {
+        paths = ['META-INF/spring.factories']
+        mergeStrategy = 'append'
     }
 }
