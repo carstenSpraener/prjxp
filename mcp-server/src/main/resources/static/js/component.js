@@ -24,7 +24,7 @@ class OragelSearch extends HTMLElement {
             </style>
             
             <div class="search-box">
-                <input type="text" id="query" placeholder="Frage an den Monolithen (Enter zum Suchen)...">
+                <input type="text" id="query" placeholder="Frage an den Project Expert (Enter zum Suchen)...">
                 <button id="searchBtn">Suchen</button>
             </div>
             
