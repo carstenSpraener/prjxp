@@ -1,14 +1,12 @@
 package de.spraener.prjxp.gldrtrvr.chunks;
 
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
+import de.spraener.prjxp.common.code.typescript.TypeScriptCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import lombok.Data;
 import lombok.ToString;
 
-import java.util.ArrayList;
-import java.util.HashSet;
-import java.util.List;
-import java.util.Set;
+import java.util.*;
 import java.util.function.Consumer;
 import java.util.function.Function;
 
@@ -19,7 +17,7 @@ public class ChunkNode {
     private ChunkNode parent;
     private String type;
     private String chunkID;
-    private int rootRank = 0; // only maintained for root nodes (parent == null)
+    private double rootRank = 0; // only maintained for root nodes (parent == null)
     private Set<String> childIDs = new HashSet<>();
     private List<ChunkNode> childs = new ArrayList<>();
 
@@ -51,6 +49,7 @@ public class ChunkNode {
 
     public void visit(Consumer<ChunkNode> visitor) {
         visitor.accept(this);
+        Collections.sort(childs, (c1, c2)->c1.chunkID.compareTo(c2.chunkID));
         for (var child : childs) {
             child.visit(visitor);
         }
@@ -58,26 +57,8 @@ public class ChunkNode {
 
     public ChunkNode rank(PxChunk hitChunk) {
         if (this.parent == null) {
-            this.rootRank += weightHit(hitChunk);
+            this.rootRank += ChunkRankingService.rank(hitChunk);
         }
         return this;
-    }
-
-    private static int weightHit(PxChunk hitChunk) {
-        if (hitChunk.getMetadata().containsKey("java_code_section")) {
-            JavaCodeSection section = JavaCodeSection.fromName(hitChunk.getMetadata().get("java_code_section"));
-            switch (section) {
-                case CLAZZ_FRAME:
-                    return 2;
-                case METHOD:
-                case METHOD_DOC:
-                    return 5;
-                case DEPENDENCIE_INFO:
-                    return 0;
-                case IMPORTS:
-                    return 1;
-            }
-        }
-        return 0;
     }
 }

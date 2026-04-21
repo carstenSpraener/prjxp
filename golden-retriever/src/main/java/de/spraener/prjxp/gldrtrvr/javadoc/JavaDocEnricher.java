@@ -9,14 +9,13 @@ import com.github.javaparser.javadoc.Javadoc;
 import com.github.javaparser.javadoc.description.JavadocDescription;
 import com.github.javaparser.printer.lexicalpreservation.LexicalPreservingPrinter;
 import com.github.javaparser.utils.SourceRoot;
-import de.spraener.prjxp.gldrtrvr.GldRtrvrCfg;
-import de.spraener.prjxp.gldrtrvr.GldRtrvrQuestioner;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
+import de.spraener.prjxp.gldrtrvr.GldRtrvrQuestioner;
+import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
-import org.springframework.boot.context.event.SpringApplicationEvent;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
@@ -38,7 +37,7 @@ public class JavaDocEnricher {
     public static final long MIN_WAIT = 5000;
     private final GldRtrvrQuestioner questioner;
     private final PxChunkDao chunkDao;
-    private final GldRtrvrCfg cfg;
+    private final PrjXPConfig cfg;
     private final ApplicationEventPublisher eventPublisher;
 
     public void enrichProject(Path[] paths) throws IOException {
@@ -167,11 +166,11 @@ public class JavaDocEnricher {
     private String callGldRtrvrAndLlm(CompilationUnit cu, MethodDeclaration method) {
         String methodNameInCode = toSimpleMethodName(method.getDeclarationAsString(false, false, true));
         Object parentNode = method.getParentNode().get();
-        if(  parentNode instanceof ObjectCreationExpr ocXpr ) {
+        if (parentNode instanceof ObjectCreationExpr ocXpr) {
             parentNode = ocXpr.asObjectCreationExpr().getType();
         }
-        if( !(parentNode instanceof TypeDeclaration) ) {
-            log.severe( "unsupported method declaration. Parent is: "+method.getParentNode().get() );
+        if (!(parentNode instanceof TypeDeclaration)) {
+            log.severe("unsupported method declaration. Parent is: " + method.getParentNode().get());
             return "";
         }
         TypeDeclaration type = (TypeDeclaration) parentNode;
@@ -188,10 +187,10 @@ public class JavaDocEnricher {
         log.info("Asking for %s.%s".formatted(className, methodName));
         String question = (
                 "Du bist eine erfahrener Java-Entwickler und sollst mich bei der Dokumentation meines QuellCodes unterstützen." +
-                " Ich brauche JavaDoc für die Methode '%s' in der JavaClasse %s." +
-                " Erstelle die Antwort so, dass Sie als JavaDoc Kommentar verwendet werden kann. Dies beinhaltet deine gesamte Antwort." +
-                " Also auch die Erklärung, was und warum die Methode was tut. Den Code der Methode sollst Du nicht einbetten." +
-                " Füge auch keine MarkDown Tags ein.").formatted(methodName, className);
+                        " Ich brauche JavaDoc für die Methode '%s' in der JavaClasse %s." +
+                        " Erstelle die Antwort so, dass Sie als JavaDoc Kommentar verwendet werden kann. Dies beinhaltet deine gesamte Antwort." +
+                        " Also auch die Erklärung, was und warum die Methode was tut. Den Code der Methode sollst Du nicht einbetten." +
+                        " Füge auch keine MarkDown Tags ein.").formatted(methodName, className);
         String answer = questioner.ask(question, methodChunks,
                 context -> context.contains(className) || context.contains(methodNameInCode)
         );
@@ -218,11 +217,11 @@ public class JavaDocEnricher {
 
     public String toPxChunkID(MethodDeclaration method) {
         Object parentNode = method.getParentNode().get();
-        if(  parentNode instanceof ObjectCreationExpr ocXpr ) {
+        if (parentNode instanceof ObjectCreationExpr ocXpr) {
             parentNode = ocXpr.asObjectCreationExpr().getType();
         }
-        if( !(parentNode instanceof TypeDeclaration) ) {
-            log.severe( "unsupported method declaration. Parent is: "+method.getParentNode().get() );
+        if (!(parentNode instanceof TypeDeclaration)) {
+            log.severe("unsupported method declaration. Parent is: " + method.getParentNode().get());
             return "";
         }
         TypeDeclaration type = (TypeDeclaration) parentNode;

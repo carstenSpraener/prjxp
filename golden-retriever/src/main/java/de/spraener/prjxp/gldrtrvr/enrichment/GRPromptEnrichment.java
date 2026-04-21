@@ -1,8 +1,11 @@
 package de.spraener.prjxp.gldrtrvr.enrichment;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.code.java.JavaRetriever;
+import de.spraener.prjxp.gldrtrvr.code.typescript.TypeScriptRetriever;
+import de.spraener.prjxp.gldrtrvr.md.MarkdownRetriever;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -15,28 +18,22 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class GRPromptEnrichment {
     private final PxChunkDao chunkDao;
-    private final JavaRetriever javaRetriever;
+    private final List<GoldenRetriever> retrieverList;
 
     public String enrich(String prompt) {
         return enrich(prompt, List.of(),
-                new SearchParams(20, 0.75),
-                this::reIterate, (question, context) ->
-                String.format("""
-                        Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
-                        ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
-                        Wenn du die Antwort nicht im Kontext findest, sage das deutlich.
-                        
-                        KONTEXT AUS DEN PROJEKT-MODULEN:
-                        %s
-                        
-                        FRAGE: %s
-                        
-                        """, context, question
-                ), c -> c.length() > 0);
+                new SearchParams(20, 0.85),
+                this::reIterate, (context) ->
+                        String.format("""
+                                KONTEXT AUS DEN PROJEKT-MODULEN:
+                                %s
+                                
+                                """, context
+                        ), c -> c.length() > 0);
     }
 
     public String enrich(String prompt, List<PxChunk> prefetchedChunks,
-                         BiFunction<String, String, String> promptFormatter,
+                         Function<String, String> promptFormatter,
                          Function<String, Boolean>... contextValidator) {
         return enrich(prompt, prefetchedChunks,
                 new SearchParams(8, 0.85),
@@ -49,18 +46,21 @@ public class GRPromptEnrichment {
                          List<PxChunk> prefetchedChunks,
                          SearchParams searchParams,
                          Function<SearchParams, SearchParams> iterationHandler,
-                         BiFunction<String, String, String> promptFormatter,
+                         Function<String, String> promptFormatter,
                          Function<String, Boolean>... contextValidator) {
         boolean invalidPrompt = true;
         String overallContext = "";
         do {
-            List<PxChunk> simialarChunks = chunkDao.findRelevant(prompt, searchParams.getMaxResult(), searchParams.getMinScore());
+            List<PxChunk> similarChunks = chunkDao.findRelevant(prompt, searchParams.getMaxResult(), searchParams.getMinScore());
             List<PxChunk> relevantChunks = new ArrayList<>();
             relevantChunks.addAll(prefetchedChunks);
-            relevantChunks.addAll(simialarChunks);
+            relevantChunks.addAll(similarChunks);
 
             StringBuilder sb = new StringBuilder();
-            overallContext = javaRetriever.buildPromptForFindings(sb, relevantChunks, contextValidator).toString();
+            for( var gr : retrieverList ) {
+                sb.append(gr.buildPromptForFindings(sb, relevantChunks, contextValidator));
+            }
+            overallContext = sb.toString();
             if (contextValidator != null && contextValidator.length > 0) {
                 invalidPrompt = false;
                 for (var pv : contextValidator) {
@@ -77,7 +77,7 @@ public class GRPromptEnrichment {
             }
         } while (invalidPrompt);
 
-        return promptFormatter.apply(prompt, overallContext.toString());
+        return promptFormatter.apply(overallContext.toString());
     }
 
     public SearchParams reIterate(SearchParams searchParams) {

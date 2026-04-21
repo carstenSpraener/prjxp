@@ -36,7 +36,7 @@ public class PxChunk {
     private String toLine;
     private int size;
     private int overlap;
-    private HashMap<String, String> metadata = new HashMap<>();
+    private Map<String, String> metadata = new HashMap<>();
 
     private String content;
 
@@ -144,7 +144,7 @@ public class PxChunk {
     }
 
     public static PxChunk combine(List<PxChunk> chunkList) {
-        if (chunkList==null || chunkList.isEmpty()) {
+        if (chunkList == null || chunkList.isEmpty()) {
             return null;
         }
         Collections.sort(chunkList, (c1, c2) -> c1.part - c2.part);

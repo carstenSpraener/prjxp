@@ -18,5 +18,7 @@ public class TestEventCollector {
         events.add(e);
     }
 
-    public List<EnrichedPromptEvent> getEvents() { return events; }
+    public List<EnrichedPromptEvent> getEvents() {
+        return events;
+    }
 }

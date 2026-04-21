@@ -1,7 +1,7 @@
 package de.spraener.prjxp.chuno.veto;
 
-import de.spraener.prjxp.chuno.ChunkNorrisConfig;
 import de.spraener.prjxp.common.annotations.ChunkVeto;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -20,7 +20,7 @@ import java.nio.file.Path;
 public class StandardVetos {
     @Value("${chunknorris.veto.maxsize:1000000}")
     private long maxSize;
-    private final ChunkNorrisConfig cfg;
+    private final PrjXPConfig cfg;
 
     @ChunkVeto
     public boolean isBuildArtifact(Path p) {
@@ -45,10 +45,10 @@ public class StandardVetos {
 
     @ChunkVeto
     public boolean notListedInWhiteList(Path p) {
-        if (!StringUtils.hasText(cfg.getWhiteList())) {
+        if (!StringUtils.hasText(cfg.getChunoWhiteList())) {
             return false;
         }
         String ending = p.toString().substring(p.toString().lastIndexOf(".") + 1);
-        return !cfg.getWhiteList().contains(ending);
+        return !cfg.getChunoWhiteList().contains(ending);
     }
 }

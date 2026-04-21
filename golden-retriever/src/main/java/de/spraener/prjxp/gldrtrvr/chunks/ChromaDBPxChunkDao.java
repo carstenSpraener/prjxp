@@ -1,7 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.chunks;
 
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -21,6 +21,7 @@ import org.springframework.util.StringUtils;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Service
 @Profile("!test") // Aktiv, wenn nicht im Test-Profil
@@ -105,5 +106,10 @@ public class ChromaDBPxChunkDao implements PxChunkDao {
                     return PxChunk.fromContentAndMap(segment.text(), segment.metadata().toMap());
                 })
                 .collect(Collectors.toList());
+    }
+
+    public Stream<PxChunk> findAll() {
+        // TODO: Implement this method
+        return Stream.empty();
     }
 }

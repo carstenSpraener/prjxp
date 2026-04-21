@@ -1,8 +1,9 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
+import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
@@ -16,7 +17,7 @@ import java.util.function.Function;
 @Service
 @RequiredArgsConstructor
 @Log
-public class JavaRetriever {
+public class JavaRetriever implements GoldenRetriever {
     private final PxChunkDao chunkDao;
 
     @SafeVarargs
@@ -33,8 +34,8 @@ public class JavaRetriever {
             JavaCodeSection section = JavaCodeSection.fromName(pxChunk.getMetadata().get("java_code_section"));
             switch (section) {
                 case METHOD:
-                    PxChunk javaDoc = PxChunk.combine(chunkDao.findById(pxChunk.getId()+".javadoc"));
-                    if( javaDoc!=null ) {
+                    PxChunk javaDoc = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".javadoc"));
+                    if (javaDoc != null) {
                         nextPrompt = insertBefore(prompt, toMethodName(pxChunk), javaDoc.getContent());
                         prompt = nextPrompt;
                     }
@@ -65,6 +66,7 @@ public class JavaRetriever {
         int splittIdx = prompt.indexOf(methodName);
         if (splittIdx < 0) {
             log.warning("Methodenname %s nicht gefunden in Prompt: %s".formatted(methodName, prompt));
+            return prompt;
         }
         String prefix = prompt.substring(0, splittIdx);
         String postFix = prompt.substring(splittIdx);

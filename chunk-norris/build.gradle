@@ -17,8 +17,14 @@ dependencies {
 
     // Spring & DevTools
     implementation libs.spring.boot.starter.json
-    developmentOnly libs.spring.boot.devtools
+    implementation libs.bundles.langchain.stack
 
+    implementation libs.bundles.langchain.docparser
+    implementation libs.groovy
+    implementation libs.jgrapht
+    implementation libs.bundles.conversion
+
+    developmentOnly libs.spring.boot.devtools
     // Tools
     implementation libs.commons.cli
     implementation libs.javaparser.core
@@ -38,4 +44,8 @@ jar {
 application {
     // Define the main class for the application.
     mainClass = 'de.spraener.prjxp.chuno.ChunkNorris'
+}
+
+shadowJar {
+    zip64=true
 }

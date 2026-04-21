@@ -133,7 +133,6 @@ public class JavaCodeChunker {
                 int toLine = jc.getRange().get().end.line;
                 readLines(codeLines, fromLine, toLine, l -> content.append(l).append('\n'));
                 chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap)
-                        .withContentPrefix("//Methode %s in class %s:".formatted(methodSig, clazzName))
                         .splitContent(content, fromLine, toLine, () ->
                                 PxChunk.create(
                                         c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
@@ -150,7 +149,6 @@ public class JavaCodeChunker {
             int toLine = m.getRange().get().end.line;
             readLines(codeLines, fromLine, toLine, l -> methodImpl.append(l).append('\n'));
             chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap)
-                    .withContentPrefix("//Methode %s in class %s:".formatted(methodSig, clazzName))
                     .splitContent(
                             methodImpl.toString(),
                             fromLine,

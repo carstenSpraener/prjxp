@@ -3,21 +3,18 @@ package de.spraener.prjxp.tibed;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.PxChunkFromJsonLReader;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
-import java.util.List;
-import java.util.stream.Collectors;
 
 import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metadataKey;
 
@@ -25,24 +22,31 @@ import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metad
 @RequiredArgsConstructor
 @Log
 public class EmbeddingService {
-    @Value("${tibed.batchsize:50}")
-    private int batchSize;
-
     private final ObjectMapper objMapper;
     private final EmbeddingExecutor embedder;
     private final EmbeddingStore embeddingStore;
+    private final PrjXPConfig cfg;
 
-    public void execute(TiBedConfig cfg) {
-        if( cfg.isResetStore() ) {
+    public void execute() {
+        log.info(("Starting embedding process with\n" +
+                "  embedding model: '%s'\n" +
+                "  ollama server url: '%s'\n" +
+                "  chroma-tenant: '%s'\n" +
+                "  chroma-database: '%s'\n" +
+                "  chroma-collection: '%s'").formatted(
+                        cfg.getEmbeddingModelName(),
+                        cfg.getEmbeddingOllamaUrl(),
+                        cfg.getChromaTenant(),
+                        cfg.getChromaDatabase(),
+                        cfg.getChromaCollectionname()
+                ));
+        if (cfg.isTibedResetStore()) {
+            log.warning("Resetting embedding store!");
             embeddingStore.removeAll(metadataKey("id").isNotEqualTo(0));
-        }
-        if (cfg.getBatchSize() > 0) {
-            batchSize = cfg.getBatchSize();
         }
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
-            reader.readChunksFromJsonlStreamBatched(cfg.getJsonlStream(), batchSize, this::fromJSONL)
-                    .parallel()
+            reader.readChunksFromJsonlStreamBatched(cfg.getJsonlStream(cfg.getTibedJsonlInputSource()), cfg.getTibedBatchSize(), this::fromJSONL)
                     .forEach(batch -> {
                         embedChunk(batch);
                     });

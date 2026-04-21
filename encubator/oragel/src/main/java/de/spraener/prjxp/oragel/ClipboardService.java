@@ -15,9 +15,10 @@ public class ClipboardService {
     public ClipboardService() {
         log.info("ClipboardService wurde initialisiert");
     }
+
     @EventListener
     public void copyToClipboard(EnrichedPromptEvent event) {
-        log.info("ClipboardService wurde aufgerufen mit event-Class"+event.getClass());
+        log.info("ClipboardService wurde aufgerufen mit event-Class" + event.getClass());
         try {
             StringSelection selection = new StringSelection(event.getContent());
             Clipboard clipboard = Toolkit.getDefaultToolkit().getSystemClipboard();

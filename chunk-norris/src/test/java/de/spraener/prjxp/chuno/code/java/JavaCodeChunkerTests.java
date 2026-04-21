@@ -48,19 +48,13 @@ public class JavaCodeChunkerTests {
         List<PxChunk> chunkList = uut.chunk(code).toList();
         assertThat(chunkList)
                 .isNotEmpty()
-                .anyMatch(c -> c.getId().equals("TestClass") && c.getContent().contains(
-                        """
-                                
-                                class TestClass {
-                                
-                                    void testMethod(String)
-                                }
-                                """
-                ))
-                .anyMatch(c -> c.getId().equals("TestClass.imports") && c.getContent().equals("\n"))
+                .anyMatch(c -> c.getId().equals("TestClass") &&
+                        c.getContent().contains("class TestClass {") &&
+                        c.getContent().contains("void testMethod(String)")
+                )
+                .noneMatch(c -> c.getId().equals("TestClass.imports"))
                 .anyMatch(c -> c.getId().equals("TestClass.void testMethod(String)") &&
                         c.getContent().equals(
-                                "//Methode void testMethod(String) in class TestClass:\n" +
                                         "    public void testMethod(String s) {\n" +
                                         "        System.out.println(\"Hello, World!\");\n" +
                                         "    }\n")
@@ -101,10 +95,9 @@ public class JavaCodeChunkerTests {
                 )
                 .anyMatch(c -> c.getId().equals("de.spraener.test.TestClass.void testMethod(SprString)") &&
                         c.getContent().equals(
-                        "//Methode void testMethod(SprString) in class de.spraener.test.TestClass:\n" +
-                                "    public void testMethod(SprString s) {\n" +
-                                "        System.out.println(\"Hello, World!\");\n" +
-                                "    }\n")
+                                        "    public void testMethod(SprString s) {\n" +
+                                        "        System.out.println(\"Hello, World!\");\n" +
+                                        "    }\n")
                 )
         ;
         // Chunk TestClass.dependencies siehe JavaDependenciesChunkerTests

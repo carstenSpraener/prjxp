@@ -56,7 +56,7 @@ public class VetoRegistry {
             try {
                 boolean veto = (boolean) method.invoke(bean, path);
                 if (veto) {
-                    log.info("File '%s' got a veto from '%s'".formatted(path.toAbsolutePath(), bean.getClass().getSimpleName() + "." + method.getName()));
+                    log.fine("File '%s' got a veto from '%s'".formatted(path.toAbsolutePath(), bean.getClass().getSimpleName() + "." + method.getName()));
                 }
                 return veto;
             } catch (Exception e) {

@@ -1,5 +1,3 @@
-import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
-
 plugins {
     id 'application'
     alias(libs.plugins.shadow)

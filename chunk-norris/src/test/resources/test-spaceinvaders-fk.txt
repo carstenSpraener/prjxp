@@ -1,0 +1,126 @@
+TITELSEITE: SPACE INVADERS GALACTIC DEFENSE CORE
+Projektnummer: SIG-99-2026
+Dokumententyp: Technisches Fachkonzept
+Technologie: Go (Golang) / Distributed Systems
+Status: Finaler Entwurf für Testumgebungen
+________________________________________________________________________________
+
+INHALTSVERZEICHNIS
+
+Kapitel 1: Einleitung und Vision .................................. Seite 1
+Kapitel 2: Detaillierte Systemarchitektur und Messaging ........... Seite 2
+Kapitel 3: Entitäten-Modellierung in Go ........................... Seite 3
+Kapitel 4: Mathematische Kollisionsmodelle und Rechenlast ......... Seite 4
+Kapitel 5: Netzwerk-Protokoll-Spezifikation ....................... Seite 5
+Kapitel 6: Persistenz und Datenbank-Layer ......................... Seite 6
+Kapitel 7: Sicherheit und Integritätsprüfung ...................... Seite 7
+Kapitel 8: Skalierung der Invasoren-KI ............................ Seite 8
+Kapitel 9: Garbage Collection und Performance-Tuning .............. Seite 9
+Kapitel 10: Abnahme und Betriebskonzept ........................... Seite 10
+________________________________________________________________________________
+
+Seite 1
+
+1. EINLEITUNG UND VISION
+
+Das System Galactic Defense ist eine moderne Interpretation des Klassikers Space
+Invaders, konzipiert als hochverfügbares Multi-User-System. In dieser Version
+wird das Spielfeld nicht lokal berechnet, sondern durch eine in Go geschriebene
+Zentralinstanz verwaltet, die Tausende von Projektil-Trajektorien simultan
+berechnet. Die Vision ist ein absolut synchrones Spielerlebnis über Kontinente
+hinweg, wobei die physikalischen Regeln des Originals (Beschleunigung der
+Aliens, Bunker-Zerstörung) exakt beibehalten werden.
+
+________________________________________________________________________________
+
+Seite 2
+
+2. DETAILLIERTE SYSTEMARCHITEKTUR UND MESSAGING
+
+In diesem Kapitel wird die fundamentale Struktur des Backends erläutert, welche auf einem asynchronen Message-Passing-Modell basiert, um die harten Echtzeitanforderungen eines Arcade-Shooters zu erfüllen. Das Herzstück bildet der "Galaxy-Broker", ein in Go implementierter Dienst, der eingehende Spielerinteraktionen wie Bewegungsbefehle oder Schuss-Trigger in eine hochperformante interne Warteschlange einspeist. Hierbei wird ein massiv-paralleler Ansatz verfolgt, bei dem jede Spielinstanz in einer isolierten Goroutine operiert, um gegenseitige Blockaden zu vermeiden. Ein besonders kritischer Aspekt dieser Architektur ist die Konsistenzsicherung der Weltzustände. Da wir es mit einer verteilten Umgebung zu tun haben, muss sichergestellt werden, dass ein Alien, das von Spieler A abgeschossen wurde, nicht Millisekunden später auf dem Bildschirm von Spieler B eine Bombe abwirft. Um dieses Problem der "Double-Spent-Aliens" zu lösen, implementiert das System einen globalen Zustands-Lock-Mechanismus auf Basis von atomaren Operationen im Hauptspeicher, der den Durchsatz im Vergleich zu traditionellen Datenbank-Locks um den Faktor 500 steigert. Zusätzlich wird ein Event-Sourcing-Verfahren eingesetzt, bei dem jeder Tick der Game-Engine (60 Hertz) als Delta-Update an alle verbundenen Clients gestreamt wird. Dies erfordert eine extrem effiziente Serialisierung, weshalb wir auf binäre Encodings setzen, die direkt auf den Speicher-Layouts der Go-Structs operieren. Die gesamte Kommunikation zwischen den Microservices erfolgt über dedizierte Fiber-Optic-Backbones, wobei die Softwareseite durch das robuste Context-Handling von Go sicherstellt, dass hängende Verbindungen keine Ressourcen-Leaks verursachen, was bei einem Dauerbetrieb von 24/7 unerlässlich ist.
+
+________________________________________________________________________________
+
+Seite 3
+
+3. ENTITÄTEN-MODELLIERUNG IN GO
+
+Die Abbildung der Spielobjekte erfolgt über ein komponentenbasiertes Design.
+Anstatt tiefe Vererbungshierarchien zu nutzen, verwendet die Engine Komposition.
+Ein Alien besteht aus einer Positions-Komponente, einer Render-Komponente und
+einer Bewaffnungs-Komponente. Dies erlaubt es uns, zur Laufzeit neue Typen von
+Invasoren zu generieren, ohne den Code neu kompilieren zu müssen.
+
+________________________________________________________________________________
+
+Seite 4
+
+4. MATHEMATISCHE KOLLISIONSMODELLE UND RECHENLAST
+
+Die Berechnung der Kollisionen zwischen den Lasern der Verteidiger und den Schilden der Invasoren stellt die größte rechnerische Herausforderung des gesamten Projekts dar. In herkömmlichen Implementierungen wird oft eine einfache Rechteck-Kollision (AABB) verwendet, doch für Galactic Defense benötigen wir eine pixelgenaue Erkennung, insbesondere für die stufenweise Zerstörung der Schutzbunker. Wenn ein Projektil einen Bunker trifft, muss ein Teil der Voxel-Matrix entfernt werden, was die Geometrie des Objekts permanent verändert. Um dies performant abzubilden, nutzen wir in Go eine Quadtree-Datenstruktur, die das Spielfeld rekursiv in Quadranten unterteilt. Nur Entitäten, die sich im selben Quadranten befinden, werden gegeneinander geprüft. Der Rechenaufwand wird dadurch von O(n^2) auf O(n log n) reduziert. Ein weiterer wichtiger Punkt ist die Berechnung der Flugbahnen unter Berücksichtigung einer simulierten Gravitationskonstante in höheren Leveln. Hierbei kommen Vektorberechnungen zum Einsatz, die durch die Nutzung von Gleitkomma-Registern optimiert werden. Jede Kollision löst zudem ein Event im Sound-System und im Partikel-System aus. Da diese Systeme asynchron laufen, müssen die Kollisionsdaten kopiert werden, bevor sie in die jeweiligen Channels eingespeist werden. Dies verhindert Race-Conditions, führt aber zu einer erhöhten Last auf dem Garbage Collector, wenn nicht konsequent Object-Pooling betrieben wird. Wir haben hierfür einen eigenen Speicher-Pool für Kollisions-Events entwickelt, der bereits beim Start der Engine 50.000 Objekte vorallokiert, um die Latenzspitzen während intensiver Gefechte mit hunderten Projektilen auf dem Schirm zu eliminieren und eine konstante Framerate von 60 FPS zu garantieren, selbst wenn die CPU-Last durch Hintergrundprozesse fluktuiert.
+
+________________________________________________________________________________
+
+Seite 5
+
+5. NETZWERK-PROTOKOLL-SPEZIFIKATION
+
+Das Protokoll nutzt UDP als Transportmedium für die Game-Ticks, um den Overhead
+von TCP-Handshakes und Retransmissions zu vermeiden. Wichtige Ereignisse wie
+Level-Wechsel oder Game-Over werden jedoch über einen zuverlässigen TCP-Kanal
+gesendet. Jedes Paket enthält eine 16-Bit Sequenznummer zur Erkennung von
+Paketverlusten und zur Korrektur der Reihenfolge auf Client-Seite.
+
+________________________________________________________________________________
+
+Seite 6
+
+6. PERSISTENZ UND DATENBANK-LAYER
+
+Highscores und Spielerstatistiken werden in einer verteilten NoSQL-Datenbank
+gespeichert. Die Go-Anwendung nutzt ein Interface-basiertes Repository-Pattern,
+sodass die zugrundeliegende Datenbank (z.B. Cassandra oder MongoDB) ohne
+Änderung der Geschäftslogik ausgetauscht werden kann.
+
+________________________________________________________________________________
+
+Seite 7
+
+7. SICHERHEIT UND INTEGRITÄTSPRÜFUNG
+
+Zum Schutz vor Speed-Hacks und Aimbots führt der Server eine Schatten-Simulation
+jedes Clients durch. Weichen die vom Client gemeldeten Treffer zu stark von der
+serverseitigen Berechnung ab, wird der Spieler automatisch für eine manuelle
+Überprüfung markiert oder sofort vom Spielbetrieb ausgeschlossen.
+
+________________________________________________________________________________
+
+Seite 8
+
+8. SKALIERUNG DER INVASOREN-KI
+
+Die Steuerung der Alien-Horde erfolgt über einen Schwarm-Algorithmus. Statt
+jedes Alien individuell zu berechnen, berechnet das System die Bewegung der
+"Muttergruppe". Die Einzel-Aliens leiten ihre Position relativ zu diesem
+Gruppen-Offset ab, was den CPU-Bedarf für die Pfadfindung drastisch senkt.
+
+________________________________________________________________________________
+
+Seite 9
+
+9. GARBAGE COLLECTION UND PERFORMANCE-TUNING
+
+In einer Hochsprache wie Go ist die Verwaltung des Speichers durch den Garbage Collector (GC) ein zweischneidiges Schwert für Echtzeitanwendungen wie Space Invaders. Während die automatische Speicherverwaltung die Entwicklung beschleunigt und Speicherfehler minimiert, können die gefürchteten "Stop-the-World"-Pausen des GC zum Einfrieren des Spielflusses für mehrere Millisekunden führen. Um dies zu verhindern, haben wir eine "Zero-Allocation-Policy" für die Hot-Path-Schleifen der Engine eingeführt. Das bedeutet, dass während der aktiven Spielphase keine neuen Objekte auf dem Heap alloziert werden dürfen. Stattdessen verwenden wir Pointer-Arithmetik innerhalb von vorallokierten Slices und nutzen das "Escape Analysis" Tool des Go-Compilers, um sicherzustellen, dass lokale Variablen auf dem Stack verbleiben. Ein besonderer Fokus lag auf der Reduzierung von "Write Barriers", die den GC unterstützen, aber bei hoher Schreiblast auf Pointern die Performance drücken. Durch die Verwendung von flachen Datenstrukturen (Slices von Structs statt Slices von Pointern auf Structs) konnten wir die Scangeschwindigkeit des GC um 70% steigern. In unseren Benchmarks zeigte sich, dass das System nun über 48 Stunden ohne eine einzige Pause über 5ms läuft, was für den professionellen E-Sport-Einsatz des Spiels die Grundvoraussetzung war. Zudem wurde die GOGC-Variable auf einen aggressiven Wert von 20 gesetzt, um den Speicherverbrauch kompakt zu halten, während die Runtime-Metriken kontinuierlich über einen Sidecar-Container an ein Prometheus-System exportiert werden, um Anomalien im Speicherverhalten sofort zu detektieren, bevor sie den Spielbetrieb beeinträchtigen können.
+
+________________________________________________________________________________
+
+Seite 10
+
+10. ABNAHME UND BETRIEBSKONZEPT
+
+Das System gilt als produktionsreif, wenn die Fehlerrate bei der Paketverarbeitung
+unter 0,1% liegt und die Lastverteilung (Load Balancing) zwischen drei
+geografisch getrennten Rechenzentren reibungslos funktioniert. Die Wartung der
+Infrastruktur erfolgt im laufenden Betrieb ("Zero-Downtime-Deployment").
+
+________________________________________________________________________________

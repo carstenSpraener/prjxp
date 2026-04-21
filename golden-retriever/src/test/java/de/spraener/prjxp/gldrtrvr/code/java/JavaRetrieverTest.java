@@ -1,11 +1,10 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.spraener.prjxp.gldrtrvr.GldRtrvrCfg;
+import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.PxChunkDaoInMemoryImpl;
-import de.spraener.prjxp.common.model.PxChunk;
-import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -18,9 +17,9 @@ class JavaRetrieverTest {
     @TestConfiguration
     static class TestConfig {
         @Bean
-        public PxChunkDao pxChunkDao(ObjectMapper objectMapper, GldRtrvrCfg cfg) {
-            cfg.setInputSource("../prjxp-enriched.jsonl");
-            return new PxChunkDaoInMemoryImpl(objectMapper, cfg);
+        public PxChunkDao pxChunkDao(ObjectMapper objectMapper, PrjXPConfig cfg) {
+            return new PxChunkDaoInMemoryImpl(objectMapper, cfg)
+                    .jsonlStream("../prjxp-enriched.jsonl");
         }
     }
 

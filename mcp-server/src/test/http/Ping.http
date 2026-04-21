@@ -2,3 +2,7 @@
 GET http://localhost:8080/prjxp/tools/ping
 
 ###
+
+GET http://localhost:8080/prjxp/tools/context?userQuestion=Zeige%20mir%20die%20Angular-Implementierung%20f%C3%BCr%20Route%20Guards%20(CanActivate%2FCanMatch)%20und%20HTTP%20Interceptors%2C%20die%20f%C3%BCr%20den%20automatischen%20Anhang%20des%20Authentifizierungstokens%20an%20Requests%20zust%C3%A4ndig%20sind.
+
+###

@@ -1,16 +1,13 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
-import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
+import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
 import lombok.Data;
 import org.springframework.util.StringUtils;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.BiFunction;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -27,7 +24,7 @@ public class JavaPromptSession {
         this.chunkDao = chunkDao;
     }
 
-    record RankedPrompt(int rootRank, String treeContext) {
+    record RankedPrompt(double rootRank, String treeContext) {
     }
 
     public void setChunks(List<PxChunk> chunks) {
@@ -63,13 +60,13 @@ public class JavaPromptSession {
             }
             rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext));
         }
-        rankedPrompts.sort((r1, r2) -> r2.rootRank() - r1.rootRank());
+        rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank));
         for (var rp : rankedPrompts) {
-            if( rp.rootRank() == 0 ) {
+            if (rp.rootRank() == 0) {
                 break;
             }
             context += rp.treeContext();
-            if( context.length() > maxContentLength ) {
+            if (context.length() > maxContentLength) {
                 break;
             }
         }

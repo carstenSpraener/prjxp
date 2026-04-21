@@ -14,12 +14,6 @@ import java.util.function.Supplier;
 public class ContentSplitter {
     private final int chunkSize;
     private final int overlap;
-    private String contentPrefix = "";
-
-    public ContentSplitter withContentPrefix(String contentPrefix) {
-        this.contentPrefix = contentPrefix;
-        return this;
-    }
 
     public List<PxChunk> splitContent(ChunkRange range, Supplier<PxChunk> chunkSupplier) {
         return splitContent(range.toCode(), range.getFromLine(), range.getToLine(), chunkSupplier);
@@ -31,12 +25,14 @@ public class ContentSplitter {
 
     public List<PxChunk> splitContent(StringBuilder content, int fromLine, int toLine, Supplier<PxChunk> chunkSupplier) {
         List<PxChunk> chunks = new ArrayList<>();
-        int activeChunkSize = chunkSize - contentPrefix.length() - 1; // New Line mit einrechnen
-        if (content.length() < activeChunkSize) {
+        if( content.isEmpty() ) {
+            return chunks;
+        }
+        if (content.length() < chunkSize) {
             PxChunk chunk = chunkSupplier.get();
-            chunk.setContent(contentPrefix + "\n" + content.toString());
             chunk.setTotal(1);
             chunk.setPart(0);
+            chunk.setContent(content.toString());
             chunk.setSize(chunk.getContent().length());
             chunk.setOverlap(0);
             chunk.setFromLine("" + fromLine);
@@ -47,9 +43,9 @@ public class ContentSplitter {
             int chunkStart = 0;
             int chunkStartLine = fromLine;
             for (int i = 0; chunkStart < content.length(); i++) {
-                String chunkContent = content.substring(chunkStart, Math.min(chunkStart + activeChunkSize, content.length()));
+                String chunkContent = content.substring(chunkStart, Math.min(chunkStart + chunkSize, content.length()));
                 PxChunk chunk = chunkSupplier.get();
-                chunk.setContent(contentPrefix + "\n" + chunkContent);
+                chunk.setContent(chunkContent);
                 chunk.setTotal(total);
                 chunk.setPart(i);
                 chunk.setSize(chunk.getContent().length());
@@ -59,7 +55,7 @@ public class ContentSplitter {
                 chunkStartLine += StringUtils.countOccurrencesOf(chunkContent, "\n");
 
                 chunks.add(chunk);
-                chunkStart += activeChunkSize - overlap;
+                chunkStart += chunkSize - overlap;
                 total++;
                 if (chunkStart > content.length()) {
                     break;
@@ -75,7 +71,7 @@ public class ContentSplitter {
         for (var c : chunks) {
             var content = c.getContent();
             // Remove contentPrefix
-            content = content.substring(content.indexOf('\n') + 1);
+            // content = content.substring(content.indexOf('\n') + 1);
             if (sb.isEmpty()) {
                 sb.append(content);
             } else if (content.length() > c.getOverlap()) {

@@ -1,0 +1,6 @@
+logging:
+  level:
+    org:
+      apache:
+        fontbox: ERROR
+        poi: ERROR

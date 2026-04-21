@@ -1,5 +1,6 @@
 package de.spraener.prjxp.tibed.config;
 
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
@@ -7,64 +8,42 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.extern.java.Log;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
-import java.util.Map;
 
 @Configuration
 @Log
 public class EmbeddingSpringConfig {
-    // --- Embedding Sektion ---
-    @Value("${tibed.ollama.url:http://192.168.1.228:11434}")
-    private String ollamaUrl;
 
-    @Value("${tibed.embedding.modelName:mxbai-embed-large}")
-    private String embeddingModelName;
-
-    @Value("${tibed.embedding.chroma.database:prjxp}")
-    private String embedChromaDatabase;
-
-    @Value("${tibed.embedding.chroma.tenant:prjxp}")
-    private String embedChromaTenant;
-
-    @Value("${tibed.embedding.collectionName:chunk_norris}")
-    private String collectionName;
-
-    // --- Vektorstore Sektion ---
-    @Value("${tibed.chroma.url:http://localhost:8000}")
-    private String chromaUrl;
-
-    @Value("${tibed.embedding.timeoutSecs:60}")
-    private int embeddingTimeoutSecs;
 
     @Bean
-    public EmbeddingModel embeddingModel() {
+    public EmbeddingModel embeddingModel(PrjXPConfig cfg) {
         return OllamaEmbeddingModel.builder()
-                .baseUrl(ollamaUrl)
-                .modelName(embeddingModelName)
-                .timeout(Duration.ofSeconds(embeddingTimeoutSecs))
+                .baseUrl(cfg.getEmbeddingOllamaUrl())
+                .modelName(cfg.getEmbeddingModelName())
+                .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
                 .build();
     }
 
     @Bean
-    public EmbeddingStore<TextSegment> embeddingStore() {
-        log.info("Using ChromaStore as tenant '%s', database '%s' and collection '%s'"
+    public EmbeddingStore<TextSegment> embeddingStore(PrjXPConfig cfg) {
+        log.info("Using ChromaStore at '%s' as tenant '%s', database '%s' and collection '%s'"
                 .formatted(
-                        embedChromaTenant,
-                        embedChromaDatabase,
-                        collectionName
+                        cfg.getChromaUrl(),
+                        cfg.getChromaTenant(),
+                        cfg.getChromaDatabase(),
+                        cfg.getChromaCollectionname()
                 )
         );
         return ChromaEmbeddingStore.builder()
-                .baseUrl(chromaUrl)
+                .baseUrl(cfg.getChromaUrl())
                 .apiVersion(ChromaApiVersion.V2)
-                .tenantName(embedChromaTenant)
-                .databaseName(embedChromaDatabase)
-                .timeout(Duration.ofSeconds(embeddingTimeoutSecs))
-                .collectionName(collectionName)
+                .tenantName(cfg.getChromaTenant())
+                .databaseName(cfg.getChromaDatabase())
+                .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
+                .collectionName(cfg.getChromaCollectionname())
                 .build();
     }
 

@@ -3,8 +3,8 @@ package de.spraener.prjxp.chuno.code.java;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.TypeDeclaration;
-import de.spraener.prjxp.chuno.ChunkNorrisConfig;
 import de.spraener.prjxp.chuno.spring.SpringPreWalkEvent;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -19,9 +19,9 @@ public class JavaFQNamesMapper {
     private Map<String, Set<String>> name2FQNamesMap = new ConcurrentHashMap<>();
 
     @EventListener(SpringPreWalkEvent.class)
-    public void fillFQNamesMap(SpringPreWalkEvent<ChunkNorrisConfig> event) {
+    public void fillFQNamesMap(SpringPreWalkEvent<PrjXPConfig> event) {
         try {
-            Files.walk(Path.of(event.config().getRootDir()))
+            Files.walk(Path.of(event.config().getChunoRootDir()))
                     .filter(Files::isRegularFile)
                     .filter(path -> path.toString().endsWith(".java"))
                     .forEach(path -> handleFile(path.toFile()));

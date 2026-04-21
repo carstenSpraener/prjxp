@@ -1,9 +1,13 @@
 package de.spraener.prjxp.gldrtrvr;
 
+import de.spraener.prjxp.common.PxDefaultArgsParser;
+import de.spraener.prjxp.common.config.CliArgsParsingEvent;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.apache.commons.cli.*;
+import org.springframework.context.event.EventListener;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
@@ -13,7 +17,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @Log
 public class CliArgsParser {
-    private final GldRtrvrCfg cfg;
+    private final PrjXPConfig cfg;
     private Options options;
     private final Environment env;
 
@@ -40,53 +44,43 @@ public class CliArgsParser {
                     .numberOfArgs(1)
                     .desc("Where to search for the java-project source code. This could be a list (,) of paths.")
                     .build());
+            options.addOption(Option.builder("h")
+                    .longOpt("help")
+                    .numberOfArgs(1)
+                    .desc("Prints this help message.")
+                    .build());
         }
         return options;
     }
 
-    public GldRtrvrCfg parseArgs(String[] args) {
+    @EventListener
+    public void parseArgs(CliArgsParsingEvent evt) {
         Options options = getOptions();
-        CommandLineParser parser = new DefaultParser() {
-            @Override
-            protected void handleUnknownToken(String token) throws ParseException {
-                // Entferne die "--" am Anfang, falls vorhanden
-                String propertyKey = token.startsWith("--") ? token.substring(2) : token;
-
-                // Prüfe auf Gleichheitszeichen bei --key=value
-                if (propertyKey.contains("=")) {
-                    propertyKey = propertyKey.split("=")[0];
-                }
-
-                if (env.containsProperty(propertyKey)) {
-                    // Es ist eine gültige Spring-Property -> Einfach ignorieren für Commons-CLI
-                    return;
-                }
-
-                // Wenn es weder eine Option noch eine bekannte Property ist:
-                super.handleUnknownToken(token);
-            }
-        };
+        CommandLineParser parser = new PxDefaultArgsParser(env);
 
         HelpFormatter formatter = new HelpFormatter();
         try {
-            CommandLine cmd = parser.parse(options, args);
+            CommandLine cmd = parser.parse(options, evt.args());
             if (cmd.hasOption("i")) {
-                cfg.setInputSource(cmd.getOptionValue("i"));
+                cfg.setGrInputSource(cmd.getOptionValue("i"));
             }
             if (cmd.hasOption("q")) {
-                cfg.setQuestion(cmd.getOptionValue("q"));
+                cfg.setGrQuestion(cmd.getOptionValue("q"));
             }
             if (cmd.hasOption("src")) {
-                cfg.setProjectSourceDir(cmd.getOptionValue("src"));
+                cfg.setGrProjectSourceDir(cmd.getOptionValue("src"));
+            }
+            if( cmd.hasOption("h") ) {
+                formatter.printHelp("golden-retriever", options);
+                System.exit(0);
             }
             List<String> otherArgs = cmd.getArgList();
             StringBuilder sb = new StringBuilder();
             otherArgs.stream().forEach(str -> sb.append(str).append(" "));
-
-            return cfg;
         } catch (Exception e) {
             log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
-            return cfg;
+            formatter.printHelp("golden-retriever", options);
+            System.exit(0);
         }
     }
 }

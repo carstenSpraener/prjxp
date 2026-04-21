@@ -20,7 +20,7 @@ public class ContentSplitterTest {
         final int chunkSize = 37;
         final int overlap = 13;
 
-        ContentSplitter uut = new ContentSplitter(chunkSize, overlap).withContentPrefix("FOOLISH CONTENT");
+        ContentSplitter uut = new ContentSplitter(chunkSize, overlap);
         List<PxChunk> chunks = uut.splitContent(content, 1, 4, () -> {
             PxChunk chunk = PxChunk.create(c -> {
                 c.setId("foolishContent");

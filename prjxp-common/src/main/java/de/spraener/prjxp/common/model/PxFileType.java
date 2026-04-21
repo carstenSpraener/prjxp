@@ -6,12 +6,18 @@ import java.nio.file.Path;
 public enum PxFileType {
     NONE(null),
     JAVA_CODE(".java"),
+    TYPESCRIPT_CODE(".ts"),
     JSP(".jsp"),
     XML(".xml"),
     PDF(".pdf"),
     JAVA_SCRIPT(".js"),
     HTML(".html"),
-    UNKNOWN("");
+    UNKNOWN(""),
+    TXT(".txt"),
+    WORD_DOCX(".docx"),
+    WORD_DOC(".doc"),
+    RTF(".rtf"),
+    MARK_DOWN(".md");
 
     private final String endingMatch;
 
