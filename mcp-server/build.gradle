@@ -9,6 +9,7 @@ plugins {
 // aber hier schadet es nicht.
 repositories {
     mavenCentral()
+    maven { url = uri("https://repo.spring.io/milestone") }
 }
 
 dependencies {
@@ -19,6 +20,7 @@ dependencies {
     implementation libs.spring.boot.starter.json
     implementation libs.spring.boot.starter.web
     implementation libs.spring.boot.openapi.starter.webmvc.ui
+    implementation libs.bundles.spring.ai
 
     // LangChain4j (Inklusive Gemini über das Bundle)
     implementation libs.bundles.langchain.stack
@@ -33,13 +35,13 @@ dependencies {
 }
 
 application {
-    mainClass = 'de.spraener.prjxp.gldrtrvr.GRJavaDocEnricherCli'
+    mainClass = 'de.spraener.prjxp.mcp.McpServer'
 }
 
 jar {
     manifest {
         attributes(
-                'Main-Class': 'de.spraener.prjxp.gldrtrvr.GRJavaDocEnricherCli'
+                'Main-Class': 'de.spraener.prjxp.mcp.McpServer'
         )
     }
 }
