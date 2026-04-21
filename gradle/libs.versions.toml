@@ -3,6 +3,7 @@
 springBoot = "3.5.0"
 langchain4j = "1.13.0"
 shadow = "8.3.0"
+springAi = "1.1.4"
 
 # Libraries
 commonsCli = "1.11.0"
@@ -26,6 +27,7 @@ spring-boot-starter-json = { group = "org.springframework.boot", name = "spring-
 spring-boot-devtools = { group = "org.springframework.boot", name = "spring-boot-devtools", version.ref = "springBoot" }
 spring-boot-starter-test = { group = "org.springframework.boot", name = "spring-boot-starter-test", version.ref = "springBoot" }
 spring-boot-openapi-starter-webmvc-ui = {group = "org.springdoc", name="springdoc-openapi-starter-webmvc-ui", version = "2.6.0"}
+spring-ai-mcp-server = { group = "org.springframework.ai", name = "spring-ai-starter-mcp-server-webmvc", version.ref = "springAi" }
 
 # Langchain4j
 langchain4j-core = { group = "dev.langchain4j", name = "langchain4j", version.ref = "langchain4j" }
@@ -57,3 +59,4 @@ lombok = ["lombok"]
 test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
 # Ein Bundle für LangChain4j spart Platz im Build-Script
 langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-chroma", "langchain4j-google-ai-gemini", "langchain4j-openai"]
+spring-ai = ["spring-ai-mcp-server"]
