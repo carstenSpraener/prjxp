@@ -28,12 +28,12 @@ public class EmbeddingService {
     private final PrjXPConfig cfg;
 
     public void execute() {
-        log.info("Starting embedding process with\n" +
+        log.info(("Starting embedding process with\n" +
                 "  embedding model: '%s'\n" +
                 "  ollama server url: '%s'\n" +
                 "  chroma-tenant: '%s'\n" +
                 "  chroma-database: '%s'\n" +
-                "  chroma-collection: '%s'".formatted(
+                "  chroma-collection: '%s'").formatted(
                         cfg.getEmbeddingModelName(),
                         cfg.getEmbeddingOllamaUrl(),
                         cfg.getChromaTenant(),

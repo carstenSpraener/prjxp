@@ -1,6 +1,7 @@
 package de.spraener.prjxp.common.config;
 
 import lombok.Data;
+import lombok.ToString;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -51,12 +52,14 @@ public class PrjXPConfig {
 
     // Chat
     @Value("${chat.gemini.api-key:NONE-SPECIFIED}")
+    @ToString.Exclude
     private String geminiApiKey;
     @Value("${chat.api-kind:ollama}")
     private String chatApiKind;
     @Value("${chat.modelName:gemini-2.5-flash}")
     private String chatModelName;
     @Value("${chat.apikey:lm-studio}")
+    @ToString.Exclude
     private String chatApiKey;
     @Value("${chat.api-url:http://localhost:11434}")
     private String chatApiUrl;
@@ -79,5 +82,28 @@ public class PrjXPConfig {
 
         // .lines() schließt den Reader automatisch, wenn der Stream geschlossen wird
         return reader.lines();
+    }
+
+    public Path[] getGrProjectSourceDirs() {
+        if (grProjectSourceDir == null) {
+            return null;
+        }
+        String[] paths = grProjectSourceDir.split(",");
+        Path[] p = new Path[paths.length];
+        for (int i = 0; i < paths.length; i++) {
+            p[i] = Path.of(paths[i]);
+        }
+
+        return p;
+    }
+
+    @ToString.Include(name="chatApiKey")
+    public String maskedApiKey() {
+        return "********";
+    }
+
+    @ToString.Include(name="geminiApiKey")
+    public String maskedGeminiApiKey() {
+        return maskedApiKey();
     }
 }

@@ -80,9 +80,12 @@ public class CliArgsParser {
             }
             if (cmd.hasOption("h")) {
                 formatter.printHelp("tibed", options);
+                System.exit(0);
             }
-        } catch (Exception e) {
+        } catch (ParseException e) {
             log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
+            formatter.printHelp("tibed", options);
+            System.exit(0);
         }
     }
 }

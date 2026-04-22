@@ -3,7 +3,8 @@ repositories {
 }
 
 dependencies {
-
+    implementation libs.spring.boot.starter
+    implementation libs.dotenv.java
 }
 
 test {

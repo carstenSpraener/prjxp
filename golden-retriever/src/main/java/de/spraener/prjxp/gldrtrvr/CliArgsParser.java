@@ -43,6 +43,11 @@ public class CliArgsParser {
                     .numberOfArgs(1)
                     .desc("Where to search for the java-project source code. This could be a list (,) of paths.")
                     .build());
+            options.addOption(Option.builder("h")
+                    .longOpt("help")
+                    .numberOfArgs(1)
+                    .desc("Prints this help message.")
+                    .build());
         }
         return options;
     }
@@ -83,11 +88,17 @@ public class CliArgsParser {
             if (cmd.hasOption("src")) {
                 cfg.setGrProjectSourceDir(cmd.getOptionValue("src"));
             }
+            if( cmd.hasOption("h") ) {
+                formatter.printHelp("golden-retriever", options);
+                System.exit(0);
+            }
             List<String> otherArgs = cmd.getArgList();
             StringBuilder sb = new StringBuilder();
             otherArgs.stream().forEach(str -> sb.append(str).append(" "));
         } catch (Exception e) {
             log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
+            formatter.printHelp("golden-retriever", options);
+            System.exit(0);
         }
     }
 }

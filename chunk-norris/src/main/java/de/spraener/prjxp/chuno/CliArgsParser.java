@@ -3,6 +3,7 @@ package de.spraener.prjxp.chuno;
 import de.spraener.prjxp.common.config.CliArgsParsingEvent;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import lombok.NonNull;
+import lombok.extern.java.Log;
 import org.apache.commons.cli.*;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
@@ -11,6 +12,7 @@ import java.io.FileWriter;
 import java.io.PrintWriter;
 
 @Component
+@Log
 public class CliArgsParser {
     private Options options;
 
@@ -24,7 +26,8 @@ public class CliArgsParser {
             CommandLine cmd = parser.parse(options, evt.args());
 
             if (cmd.hasOption("h")) {
-                formatter.printHelp("chunk-norris", options);
+                formatter.printHelp("chuno", options);
+                System.exit(0);
             }
             if (cmd.hasOption("r")) {
                 cfg.setChunoRootDir(cmd.getOptionValue("r"));
@@ -41,8 +44,10 @@ public class CliArgsParser {
                 cfg.setChunoWhiteList(cmd.getOptionValue("wl"));
             }
         } catch (Exception e) {
-            System.err.println(e.getMessage());
-            throw new RuntimeException("Configuration failed!");
+            log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
+            e.printStackTrace();
+            formatter.printHelp("chuno", options);
+            System.exit(0);
         }
     }
 
