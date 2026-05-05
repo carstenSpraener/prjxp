@@ -28,3 +28,4 @@ chroma_data/
 # OS spezifisch
 .DS_Store
 Thumbs.db
+/chunk-norris/src/test/resources/*.pdf

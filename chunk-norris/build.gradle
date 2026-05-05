@@ -17,8 +17,13 @@ dependencies {
 
     // Spring & DevTools
     implementation libs.spring.boot.starter.json
-    developmentOnly libs.spring.boot.devtools
+    implementation libs.bundles.langchain.stack
 
+    implementation libs.bundles.langchain.docparser
+    implementation libs.groovy
+    implementation libs.jgrapht
+
+    developmentOnly libs.spring.boot.devtools
     // Tools
     implementation libs.commons.cli
     implementation libs.javaparser.core

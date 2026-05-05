@@ -1,7 +1,8 @@
 [versions]
 # Core Frameworks
-springBoot = "3.5.0"
+springBoot = "3.5.13"
 langchain4j = "1.13.0"
+langchain4j-beta = "1.13.0-beta23"
 shadow = "8.3.0"
 springAi = "1.1.4"
 
@@ -11,6 +12,7 @@ javaparser = "3.25.10"
 dotenv = "3.0.0"
 commonsIo = "2.21.0"
 lombok = "1.18.34"
+groovy = "5.0.5"
 
 # Test
 mockito = "5.11.0"
@@ -30,12 +32,14 @@ spring-boot-openapi-starter-webmvc-ui = { group = "org.springdoc", name = "sprin
 spring-ai-mcp-server = { group = "org.springframework.ai", name = "spring-ai-starter-mcp-server-webmvc", version.ref = "springAi" }
 
 # Langchain4j
-langchain4j-core = { group = "dev.langchain4j", name = "langchain4j", version.ref = "langchain4j" }
+langchain4j-core   = { group = "dev.langchain4j", name = "langchain4j", version.ref = "langchain4j" }
 langchain4j-ollama = { group = "dev.langchain4j", name = "langchain4j-ollama", version.ref = "langchain4j" }
 langchain4j-openai = { group = "dev.langchain4j", name = "langchain4j-open-ai", version.ref = "langchain4j" }
+langchain4j-tika-docparser = { group = "dev.langchain4j", name = "langchain4j-document-parser-apache-tika", version.ref = "langchain4j-beta" }
+langchain4j-pdf-docparser = { group = "dev.langchain4j", name = "langchain4j-document-parser-apache-pdfbox", version.ref = "langchain4j-beta"}
 
 # Sonderfall: Chroma hat ein eigenes Version Suffix
-langchain4j-chroma = { group = "dev.langchain4j", name = "langchain4j-chroma", version = "1.13.0-beta23" }
+langchain4j-chroma = { group = "dev.langchain4j", name = "langchain4j-chroma", version.ref = "langchain4j-beta" }
 langchain4j-google-ai-gemini = { group = "dev.langchain4j", name = "langchain4j-google-ai-gemini", version.ref = "langchain4j" }
 
 # Utilities
@@ -43,9 +47,13 @@ commons-cli = { group = "commons-cli", name = "commons-cli", version.ref = "comm
 javaparser-core = { group = "com.github.javaparser", name = "javaparser-core", version.ref = "javaparser" }
 dotenv-java = { group = "io.github.cdimascio", name = "dotenv-java", version.ref = "dotenv" }
 commons-io = { group = "commons-io", name = "commons-io", version.ref = "commonsIo" }
+jgrapht = { group = "org.jgrapht", name="jgrapht-core", version="1.5.3"}
 
 # Annotation Processors
 lombok = { group = "org.projectlombok", name = "lombok", version.ref = "lombok" }
+
+# Embedded Scripting
+groovy = { group = "org.apache.groovy", name = "groovy-all", version.ref = "groovy"}
 
 # Testing
 mockito-core = { group = "org.mockito", name = "mockito-core", version.ref = "mockito" }
@@ -59,4 +67,6 @@ lombok = ["lombok"]
 test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
 # Ein Bundle für LangChain4j spart Platz im Build-Script
 langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-chroma", "langchain4j-google-ai-gemini", "langchain4j-openai"]
+langchain-docparser = ["langchain4j-tika-docparser", "langchain4j-pdf-docparser"]
+
 spring-ai = ["spring-ai-mcp-server"]

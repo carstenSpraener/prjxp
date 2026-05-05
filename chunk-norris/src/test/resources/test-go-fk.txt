@@ -1,0 +1,305 @@
+================================================================================
+Projekt Sente - Go Engine Core              Titelseite
+================================================================================
+
+
+                         FACHKONZEPT: PROJECT SENTE
+
+                 Entwicklung einer hochperformanten Go-Engine
+                         basierend auf der Sprache Go
+
+
+                         Status:      Testdaten / Entwurf
+                         Version:     1.0.4
+                         Datum:       24.04.2026
+                         Autor:       System-Architect Gopher
+
+
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Inhaltsverzeichnis
+================================================================================
+
+ABSCHNITT                                                           SEITE
+--------------------------------------------------------------------------------
+
+1.  Einleitung und Zielsetzung .................................... Seite 1
+2.  Fachliche Domäne und Regelwerk ................................ Seite 2
+3.  Technische Architektur: Go-Implementierung .................... Seite 3
+4.  Algorithmen: Monte Carlo Tree Search (MCTS) ................... Seite 4
+5.  Datenstrukturen und Typen ..................................... Seite 5
+6.  Schnittstellen und Integration ................................ Seite 6
+7.  Bewertungsfunktionen und Heuristiken .......................... Seite 7
+8.  Fehlermanagement und Robustheit ............................... Seite 8
+9.  Performance-Optimierung ....................................... Seite 9
+10. Testdaten und Abnahmekriterien ................................ Seite 10
+
+--------------------------------------------------------------------------------
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 1 von 10
+================================================================================
+
+1. EINLEITUNG UND ZIELSETZUNG
+
+Das Projekt "Sente" umfasst die Konzeption und Implementierung einer 
+hochperformanten Analyse-Engine für das Brettspiel Go (Weiqi/Baduk). 
+Ziel ist es, eine skalierbare Architektur in der Programmiersprache Go 
+(Golang) zu schaffen, die sowohl die Spielregeln perfekt abbildet als auch 
+komplexe Baumsuche-Algorithmen parallelisiert.
+
+Die Wahl der Implementierungssprache fiel auf Go, da die nativen Concurrency-
+Primitive (Goroutinen und Channels) ideal geeignet sind, um die massiv 
+parallelen Anforderungen einer Monte-Carlo-Baumsuche (MCTS) abzubilden. 
+
+Das System soll als Backend-Dienst fungieren, der über gRPC-Schnittstellen 
+mit verschiedenen Frontends (Web, Mobile, Desktop) kommuniziert.
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 2 von 10
+================================================================================
+
+2. FACHLICHE DOMÄNE UND REGELWERK
+
+Das System muss in der Lage sein, unterschiedliche Regelsätze (Japanisch, 
+Chinesisch, AGA) zu interpretieren. Die Kernlogik muss folgende 
+Spielmechaniken fehlerfrei beherrschen:
+
+2.1 FREIHEITEN UND KETTENBILDUNG
+Steine gleicher Farbe, die horizontal oder vertikal benachbart sind, bilden 
+eine Kette. Eine Kette teilt sich ihre Freiheiten (Liberties). Sobald eine 
+Kette null Freiheiten besitzt, wird sie vom Brett entfernt.
+
+2.2 DIE KO-REGEL
+Um endlose Schlag-Zyklen zu vermeiden, darf ein Spieler keinen Zug machen, 
+der den exakten Brettzustand seines vorherigen Zuges wiederholt. Das System 
+muss hierzu einen Hash-Verlauf (Zobrist Hashing) der Brettzustände führen.
+
+2.3 KOMI-VERWALTUNG
+Da Schwarz den ersten Zug hat, erhält Weiß einen Punktvorsprung (Komi). 
+Dieser ist in der Konfiguration variabel zu halten (Standard: 6.5 oder 7.5).
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 3 von 10
+================================================================================
+
+3. TECHNISCHE ARCHITEKTUR: GO-IMPLEMENTIERUNG
+
+3.1 BOARD-REPRÄSENTATION
+Das Spielfeld (19x19) wird als flaches Array der Länge 361 abgebildet. 
+Dies optimiert den CPU-Cache-Zugriff im Vergleich zu zweidimensionalen 
+Slices. Jedes Element nutzt einen benutzerdefinierten Typ 'Color', der 
+über Konstanten (Empty, Black, White, Border) definiert ist.
+
+3.2 BITBOARDS VS. STRING-LISTS
+Zur Beschleunigung der Abfragen, ob eine Gruppe gefangen ist, implementiert 
+die Engine 'Bitboards' für die schnelle Breitensuche. Ergänzend wird ein 
+Union-Find-Algorithmus verwendet, um die Gruppenzugehörigkeit in O(alpha(n)) 
+Zeit zu bestimmen.
+
+3.3 CONCURRENCY-MODELL
+Jeder Analyse-Request initiiert einen 'Searcher'-Prozess. Dieser spawnt 
+Tausende von Goroutinen für die Simulationen (Playouts). Die Synchronisation 
+erfolgt über 'Sync.Pool', um den Druck auf den Garbage Collector zu minimieren.
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 4 von 10
+================================================================================
+
+4. ALGORITHMEN: MONTE CARLO TREE SEARCH (MCTS)
+
+Die Engine nutzt den UCT-Algorithmus (Upper Confidence Bound applied to Trees), 
+um den Spielbaum zu traversieren.
+
+4.1 SELEKTION
+Basierend auf der Winrate und der Besuchsanzahl eines Knotens wird der 
+vielversprechendste Pfad gewählt.
+
+4.2 EXPANSION
+Neue Knoten werden dem Baum hinzugefügt, sobald eine bestimmte Schwelle an 
+Simulationen im Vaterknoten überschritten wurde.
+
+4.3 SIMULATION (PLAYOUT)
+Vom aktuellen Knoten aus wird die Partie mittels einer Heuristik (oder 
+Zufallszügen) bis zum Ende durchgespielt. In Go ist dieser Teil besonders 
+rechenintensiv, da das Spielende (Life/Death) schwer zu definieren ist.
+
+4.4 BACKPROPAGATION
+Das Ergebnis der Simulation wird im Baum nach oben gereicht, um die 
+Statistiken aller betroffenen Knoten zu aktualisieren.
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 5 von 10
+================================================================================
+
+5. DATENSTRUKTUREN UND TYPEN
+
+Im Folgenden werden die zentralen Go-Structs definiert, die für die 
+Verarbeitung des Go-Spiels essenziell sind:
+
+type Move struct {
+    X, Y   int
+    Player Color
+}
+
+type GameState struct {
+    Board     []Color
+    History   []uint64 // Zobrist Hashes
+    LastMove  Move
+    Komi      float64
+    Captures  map[Color]int
+}
+
+Diese Strukturen sind so optimiert, dass sie bei Deep-Copy-Operationen 
+während der Baumsuche minimalen Overhead verursachen. Es wird massiv von 
+Pointer-Arithmetik abgesehen, um die Sicherheit der Go-Runtime zu nutzen.
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 6 von 10
+================================================================================
+
+6. SCHNITTSTELLEN UND INTEGRATION
+
+6.1 SGF-PARSER (SMART GAME FORMAT)
+Das System muss in der Lage sein, SGF-Dateien der Version 4 zu parsen. 
+Hierbei wird ein zustandsorientierter Lexer implementiert, der die 
+Baumstruktur der Datei in eine interne Knoten-Struktur überführt.
+
+6.2 GRPV-API DEFINITION
+Die Kommunikation erfolgt über folgende rpc-Aufrufe:
+- StreamAnalysis: Liefert einen kontinuierlichen Stream von Bewertungen.
+- ExecuteMove: Validiert und führt einen Zug auf dem Server aus.
+- GetBestMove: Fordert die Engine auf, nach X Sekunden den besten Zug zu nennen.
+
+6.3 PROMETHEUS METRIKEN
+Zur Überwachung der Performance werden Metriken wie 'simulations_per_second' 
+und 'active_goroutines' über einen HTTP-Endpoint (/metrics) bereitgestellt.
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 7 von 10
+================================================================================
+
+7. BEWERTUNGSFUNKTIONEN UND HEURISTIKEN
+
+Da eine reine Zufallssimulation in Go oft zu ungenauen Ergebnissen führt, 
+implementiert Sente eine "Knowledge-Layer".
+
+7.1 MUSTERERKENNUNG
+Das System erkennt lokale 3x3 Muster (Joseki), um die Wahrscheinlichkeit 
+guter Züge während des Playouts zu erhöhen.
+
+7.2 LIBERTY-HEURISTIK
+Ketten mit nur zwei Freiheiten werden in der Bewertung priorisiert, da sie 
+unmittelbar von 'Atari' bedroht sind.
+
+7.3 AUGEN-ERKENNUNG
+Ein fundamentaler Teil der Go-Logik ist die Unterscheidung zwischen 
+echten und falschen Augen. Die Engine nutzt einen statischen Analyse-
+Algorithmus, um Gruppen als "unsterblich" (Alive) zu markieren, sobald sie 
+zwei getrennte Augen besitzen.
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 8 von 10
+================================================================================
+
+8. FEHLERMANAGEMENT UND ROBUSTHEIT
+
+In einem System, das massiv auf Nebenläufigkeit setzt, ist das 
+Fehlermanagement kritisch.
+
+8.1 PANIC RECOVERY
+Innerhalb der Worker-Goroutinen wird jede 'Panic' abgefangen, protokolliert 
+und führt lediglich zum Abbruch des aktuellen Suchzweigs, nicht zum 
+Absturz der gesamten Engine.
+
+8.2 TIMEOUT HANDLING
+Jeder Analyse-Task ist an einen 'context.Context' gebunden. Bei 
+Überschreitung der maximalen Rechenzeit oder bei Client-Abbruch werden alle 
+zugehörigen Goroutinen sofort terminiert, um Ressourcen freizugeben.
+
+8.3 VALIDIERUNG ILLEGALER ZÜGE
+Jeder eingehende Zug wird gegen den aktuellen GameState geprüft. 
+Suizid-Züge (Züge ohne Freiheiten, die nichts schlagen) werden mit einer 
+spezifischen Error-Meldung abgelehnt.
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 9 von 10
+================================================================================
+
+9. PERFORMANCE-OPTIMIERUNG
+
+9.1 ZERO-COPY ARCHITEKTUR
+Bei der Übergabe von Brettzuständen zwischen den Analyse-Modulen wird 
+versucht, Kopien zu vermeiden. Stattdessen werden Read-Only-Slices 
+verwendet, wo immer dies möglich ist.
+
+9.2 COMPILER-HINTS
+Durch Inlining von häufig aufgerufenen Funktionen (wie der 
+Koordinaten-Umrechnung) wird der Funktionsaufruf-Overhead reduziert.
+
+9.3 GARBAGE COLLECTION TUNING
+Da die Baumsuche viele kurzlebige Objekte erzeugt, wird die 
+GOGC-Variable dynamisch an den verfügbaren Arbeitsspeicher angepasst, 
+um unnötige Stop-the-World Pausen zu vermeiden.
+
+9.4 ASSEMBLER-OPTIMIERUNG
+Kritische Pfade wie das Zobrist-Hashing oder Bit-Manipulationen auf den 
+Bitboards können bei Bedarf in Plan9-Assembler (Go-spezifisch) 
+implementiert werden.
+
+--------------------------------------------------------------------------------
+
+
+================================================================================
+Projekt Sente - Go Engine Core              Seite 10 von 10
+================================================================================
+
+10. TESTDATEN UND ABNAHMEKRITERIEN
+
+Um die Korrektheit der Implementierung sicherzustellen, werden folgende 
+Test-Szenarien definiert:
+
+10.1 LADDER-TEST (TREPPEN)
+Die Engine muss in der Lage sein, eine Treppe über das gesamte Brett bis 
+zum Ende korrekt zu lesen, ohne in den Simulationen steckenzubleiben.
+
+10.2 KO-KAMPF
+Simulation eines komplexen Ko-Kampfes mit mehreren Drohungen. Prüfung, ob 
+die Engine die Ko-Regel strikt einhält.
+
+10.3 ENDSPIEL-ZÄHLUNG (SCORING)
+Vergleich der automatischen Zählung mit professionell kommentierten 
+Partien. Die Fehlerquote bei der Gebietsbestimmung muss unter 1% liegen.
+
+10.4 LASTTEST
+Parallelbetrieb von 100 Analyse-Sessions auf einer 32-Kern-Maschine. 
+Die durchschnittliche Antwortzeit darf 200ms nicht überschreiten.
+
+================================================================================

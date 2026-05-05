@@ -1,16 +1,12 @@
 package de.spraener.prjxp.gldrtrvr;
 
-import de.spraener.prjxp.common.PrjXPCli;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.gldrtrvr.javadoc.JavaDocEnricher;
-import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.annotation.Bean;
-
-import java.nio.file.Path;
 
 import static de.spraener.prjxp.common.PrjXPCli.readDotEnv;
 
@@ -26,7 +22,7 @@ public class GRJavaDocEnricherCli {
                 .run(args);
     }
 
-    @Bean
+    //@Bean
     public CommandLineRunner enricherRun(
             PrjXPConfig cfg,
             JavaDocEnricher javaDocEnricher

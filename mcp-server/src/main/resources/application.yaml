@@ -23,3 +23,9 @@ chroma:
 
 server:
   forward-headers-strategy: framework
+
+spring:
+  ai:
+    mcp:
+      server:
+        protocol: streamable

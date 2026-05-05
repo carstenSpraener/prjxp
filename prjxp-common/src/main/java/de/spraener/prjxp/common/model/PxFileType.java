@@ -11,7 +11,9 @@ public enum PxFileType {
     PDF(".pdf"),
     JAVA_SCRIPT(".js"),
     HTML(".html"),
-    UNKNOWN("");
+    UNKNOWN(""),
+    TXT(".txt")
+    ;
 
     private final String endingMatch;
 

@@ -36,7 +36,7 @@ public class PxChunk {
     private String toLine;
     private int size;
     private int overlap;
-    private HashMap<String, String> metadata = new HashMap<>();
+    private Map<String, String> metadata = new HashMap<>();
 
     private String content;
 
