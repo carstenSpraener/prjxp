@@ -22,6 +22,7 @@ dependencies {
     implementation libs.bundles.langchain.docparser
     implementation libs.groovy
     implementation libs.jgrapht
+    implementation libs.pdfbox
 
     developmentOnly libs.spring.boot.devtools
     // Tools

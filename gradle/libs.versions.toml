@@ -48,6 +48,7 @@ javaparser-core = { group = "com.github.javaparser", name = "javaparser-core", v
 dotenv-java = { group = "io.github.cdimascio", name = "dotenv-java", version.ref = "dotenv" }
 commons-io = { group = "commons-io", name = "commons-io", version.ref = "commonsIo" }
 jgrapht = { group = "org.jgrapht", name="jgrapht-core", version="1.5.3"}
+pdfbox = {group = "org.apache.pdfbox", name="pdfbox", version="3.0.7"}
 
 # Annotation Processors
 lombok = { group = "org.projectlombok", name = "lombok", version.ref = "lombok" }
@@ -63,6 +64,7 @@ assertj-core = { group = "org.assertj", name = "assertj-core", version.ref = "as
 [bundles]
 # Ein Bundle für die Lombok-Konfiguration (spart Zeilen im Build-Script)
 lombok = ["lombok"]
+
 # Standard Testing Stack
 test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
 # Ein Bundle für LangChain4j spart Platz im Build-Script
