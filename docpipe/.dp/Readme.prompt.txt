@@ -20,4 +20,4 @@ Create a MarkDown-File as a Readme to explain the usage of DocPipe. As a title i
 {{#URL this file:../src/main/java/de/spraener/prjxp/docpipe/model/DPJob.java}}{{/URL}}
 ```
 
-Answer in plain MarkDown and only with the source of the document. No further explanation.
+Answer in plain MarkDown and only with the source of the document. No further explanation and no surrounding markdown block
