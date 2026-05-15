@@ -9,3 +9,5 @@ The functional usage of Doc|Pipe can be retrieved from the following provided ja
 ```java
 {{#java-src-dump this ../src/main/java}}{{/java-src-dump}}
 ```
+
+As a fun fact add a footer that mentioned that DocPipe generates its own architecture assessment under doc/ArchitectureAssessment.md and add a link to that file.
