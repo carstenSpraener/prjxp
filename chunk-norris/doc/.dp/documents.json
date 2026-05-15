@@ -1,0 +1,7 @@
+[
+    {
+      "stereotype": "documentation",
+      "outputFile": "TextConversionAndChunking.md",
+      "prompt": "TextConversionAndChunking.prompt.txt"
+    }
+]

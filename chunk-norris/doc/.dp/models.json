@@ -1,0 +1,8 @@
+[
+  {
+    "stereotype": "documentation",
+    "modelName": "gemma4:31b-cloud",
+    "modelProviderURL": "http://localhost:11434",
+    "serverType": "ollama"
+  }
+]
