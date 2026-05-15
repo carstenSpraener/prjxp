@@ -4,6 +4,7 @@ import com.github.jknack.handlebars.Handlebars;
 import com.github.jknack.handlebars.Helper;
 import com.github.jknack.handlebars.Options;
 import de.spraener.prjxp.docpipe.DocPipeConfig;
+import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import lombok.Data;
@@ -23,20 +24,18 @@ import java.util.logging.Level;
 @Log
 public class PromptResolvingService {
     private final List<TemplateResolver> templateResolvers;
+    private final DotDPFilesService dpFilesService;
 
     public String resolve(ContentCreationTask ccTask) throws IOException {
-        File baseDir = new File(ccTask.getDpJob().getRootDir().getAbsolutePath() +"/" + DocPipeConfig.DP_DIR);
-
+        File cfgDir = dpFilesService.dotPipeDir(ccTask);
         DPContentCreation dpcc = ccTask.getDpContentCreation();
-        File ccDir = ccTask.getDpJob().getRootDir();
-        File cfgDir = new File(ccTask.getDpJob().getRootDir().getAbsolutePath() +"/" + DocPipeConfig.DP_DIR);
 
         String promptTemplate = readTemplate(cfgDir, dpcc.getPrompt());
         Handlebars handlebars = new Handlebars();
         handlebars.setStringParams(true);
 
         for( var tr :  templateResolvers ) {
-            TRHelper trh = new TRHelper(baseDir, tr);
+            TRHelper trh = new TRHelper(cfgDir, tr);
             handlebars.registerHelper(tr.getID(),trh);
         }
         var template = handlebars.compileInline(promptTemplate);

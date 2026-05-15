@@ -1,6 +1,7 @@
 package de.spraener.prjxp.docpipe;
 
 import de.spraener.prjxp.docpipe.config.ConfigException;
+import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.config.JobCreationService;
 import de.spraener.prjxp.docpipe.config.ModelConfigLoader;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
@@ -10,7 +11,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Component;
 
-import java.io.File;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -24,10 +24,11 @@ public class DocPipeRunner {
     private final JobCreationService jobCreationService;
     private final ContentCreationService contentCreationService;
     private final ModelConfigLoader modelConfigLoader;
+    private final DotDPFilesService dpFilesService;
 
     public void run(DocPipeConfig cfg) throws Exception {
         try {
-            String globalModelFileName = cfg.getProjectDir() + "/" + DocPipeConfig.DP_DIR + "/models.json";
+            String globalModelFileName = dpFilesService.globalModelsFileName(cfg);
             if( Files.exists(Path.of(globalModelFileName)) ) {
                 cfg.setGlobalModels(modelConfigLoader.listFrom(globalModelFileName));
             }

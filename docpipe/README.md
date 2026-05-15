@@ -2,53 +2,63 @@
 
 ![Doc|Pipe](doc/images/docpipe.png)
 
-Doc|Pipe is a command-line tool designed to automate content creation by piping structured job definitions through configured AI models. It allows users to define specific "stereotypes" for AI models and map them to content creation tasks.
+Doc|Pipe is a CLI-based content generation pipeline that leverages Large Language Models (LLMs) to automate the creation of documentation and content based on predefined job configurations.
 
-## Getting Started
+## 🚀 Getting Started
+
+### Prerequisites
+- Java Runtime Environment (JRE)
+- A configured LLM provider (e.g., Ollama)
 
 ### Configuration
-Doc|Pipe supports environment variable configuration via a `.env` file located in the root directory. This file is automatically loaded at startup and integrated into the system properties.
+Doc|Pipe uses a `.env` file located in the root directory to manage environment variables. The application automatically loads these properties at startup to configure the system.
+
+**Example `.env`:**
+```env
+SOME_API_KEY=your_key_here
+CUSTOM_CONFIG_PATH=/path/to/config
+```
+
+## 🛠 Usage
 
 ### Execution
-The application is a Spring Boot CLI application. It parses command-line arguments to determine the project directory and then executes the defined jobs.
+The application is run as a Spring Boot CLI application. It parses command-line arguments to determine the project directory and then executes the defined jobs.
 
-## How it Works
+```bash
+java -jar docpipe.jar [arguments]
+```
 
-### 1. Project Structure
-Doc|Pipe looks for a project directory containing:
-- A `.dp` directory (defined as `DP_DIR` in config).
-- A `models.json` file within the `.dp` directory for global model configurations.
-- Job definition files that specify which content to create.
+### How it Works
+1. **Initialization**: The app reads the `.env` file and initializes the Spring context.
+2. **Global Models**: It checks for a global `models.json` file (defined in the configuration) to load shared model settings.
+3. **Job Processing**: 
+   - The `JobCreationService` scans the project directory for job definitions.
+   - For each job found, it identifies the required content creation tasks.
+   - The `ContentCreationService` executes these tasks by matching the required **Stereotype** with the corresponding **Model Configuration**.
 
-### 2. Model Configuration (`DPModelConfig`)
-Models are defined by a **stereotype**, which acts as a unique identifier. This allows you to switch between different AI providers or models without changing the individual content tasks.
+## 📋 Configuration Models
 
-**Configurable parameters include:**
-- `stereotype`: Unique identifier for the model.
-- `modelName`: The name of the AI model.
-- `modelProviderURL`: The endpoint of the AI provider.
+### Model Configuration (`DPModelConfig`)
+Defines how the application connects to an AI provider.
+- `stereotype`: A unique identifier (e.g., "technical-writer", "summarizer") used to map tasks to models.
+- `modelName`: The name of the model to use.
+- `modelProviderURL`: The endpoint of the AI server.
 - `serverType`: The type of server (defaults to `ollama`).
 - `temperature`: Controls randomness (default: `0.2`).
 - `timeOutSeconds`: Request timeout (default: `60`).
 - `metadata`: Additional key-value pairs for model-specific settings.
 
-### 3. Job Definitions (`DPJob`)
-A job consists of:
-- **Model Configs**: A list of models available for this specific job.
-- **Content Creation List**: A series of tasks to be executed.
-
-### 4. Content Creation Tasks (`DPContentCreation`)
-Each task defines how a specific piece of content should be generated:
+### Content Creation Task (`DPContentCreation`)
+Defines what content needs to be generated.
 - `outputFile`: The destination path for the generated content.
-- `stereotype`: The model stereotype to be used for this task.
-- `prompt`: The main instruction for the AI.
-- `ps`: Additional post-script or supplementary instructions.
+- `stereotype`: The identifier of the model configuration to be used for this task.
+- `prompt`: The primary instruction for the AI.
+- `ps`: Post-script or additional context for the prompt.
 
-## Workflow Summary
-1. **Initialization**: Loads `.env` and parses CLI arguments.
-2. **Global Config**: Loads global model definitions from `models.json`.
-3. **Job Discovery**: Scans the project directory for job definitions.
-4. **Task Mapping**: For every `DPContentCreation` entry in a job, Doc|Pipe matches the required `stereotype` with the available `DPModelConfig`.
-5. **Execution**: The `ContentCreationService` processes each task and writes the result to the specified `outputFile`.
+### Job Definition (`DPJob`)
+A job acts as a container for a specific project scope, containing:
+- `rootDir`: The base directory for the job.
+- `modelConfigs`: A list of model configurations available for this job.
+- `contentCreationList`: A list of specific content tasks to be executed.
 
 _This document was generated with Doc|Pipe and gemma4:31B_

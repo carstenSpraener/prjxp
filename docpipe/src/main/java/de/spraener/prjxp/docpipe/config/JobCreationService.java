@@ -24,12 +24,13 @@ import java.util.stream.Stream;
 public class JobCreationService {
     private final DocPipeConfig docPipeConfig;
     private final ObjectMapper objectMapper;
+    private final DotDPFilesService dpFilesService;
 
     public Stream<DPJob> readJobs(Path rootDir) throws IOException {
         return Files.walk(rootDir)
                 .map(Path::toFile)
                 .filter(File::isDirectory)
-                .filter(d -> new File(d.getAbsolutePath() +"/"+ DocPipeConfig.DP_DIR).exists())
+                .filter(dpFilesService::hasDocPipeDir)
                 .map(this::createDPJob)
                 .filter(j->j!=null && j.getContentCreationList()!=null)
                 ;
@@ -38,31 +39,30 @@ public class JobCreationService {
     private DPJob createDPJob(File directory) {
         DPJob dpJob = new DPJob();
         dpJob.setRootDir(directory);
-        File configDir = new File(directory.getAbsolutePath() + "/"+DocPipeConfig.DP_DIR);
 
         try {
-            File modelsJson = new File(configDir.getAbsolutePath() + "/models.json");
+            File modelsJson = dpFilesService.getModelsJsonFrom(directory);
             if (modelsJson.exists()) {
                 dpJob.setModelConfigs(this.objectMapper.readValue(modelsJson, new TypeReference<List<DPModelConfig>>(){}));
             } else if( !docPipeConfig.getGlobalModels().isEmpty() ) {
-                log.info("No model configs found for "+configDir.getAbsolutePath()+". Using global models.");
+                log.fine("No models.json found for "+modelsJson.getAbsolutePath()+". Using global models.");
                 dpJob.setModelConfigs(docPipeConfig.getGlobalModels());
             } else {
-                log.warning("No model configs found for "+configDir.getAbsolutePath());
+                log.warning("expected models.json does not exist: "+modelsJson.getAbsolutePath());
             }
         } catch (IOException e) {
             log.log(Level.SEVERE, "Error reading models.json from " + directory.getAbsolutePath(), e);
             return DPJob.EMPTY_JOB;
         }
 
+        File documentsJson = dpFilesService.getDocumentsJsonFrom(directory);;
         try {
-            File documentsJson = new File(configDir.getAbsolutePath() +"/documents.json");
             if (documentsJson.exists()) {
                 List< DPContentCreation> creations = this.objectMapper.readValue(documentsJson, new TypeReference<List<DPContentCreation>>() {});
                 dpJob.setContentCreationList(creations);
             }
         } catch( Exception e) {
-            log.severe("Error reading documents.json from " + directory.getAbsolutePath());
+            log.severe("Error reading documents.json from " + documentsJson.getAbsolutePath()+": "+e.getMessage());
             return DPJob.EMPTY_JOB;
         }
         return dpJob;

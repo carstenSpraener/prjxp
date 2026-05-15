@@ -26,6 +26,7 @@ import java.util.logging.Level;
 public class ContentCreationService {
     private final PromptResolvingService promptResolvingService;
     private final LLMService llmService;
+    private final ContentUpdateRequiredController updater;
 
     public void createContent(ContentCreationTask ccTask) {
         try {
@@ -33,17 +34,21 @@ public class ContentCreationService {
             File ccDir = ccTask.getDpJob().getRootDir();
 
             String prompt = promptResolvingService.resolve(ccTask);
-            log.info("Creating content of "+dpcc.getOutputFile());
-            String content = llmService.chat(ccTask, prompt);
-            if(StringUtils.hasText(dpcc.getPs()) ) {
-                content = content+ccTask.getDpContentCreation().getPs();
-            }
-            String outputFile = ccDir.getAbsoluteFile()+"/"+ccTask.getDpContentCreation().getOutputFile();
-            try (OutputStream os = Files.newOutputStream(Path.of(outputFile))) {
-                IOUtils.write(content, os, StandardCharsets.UTF_8);
-            }
-        } catch( IOException | TemplateException e) {
-            log.log(Level.SEVERE, "Error while trying to create content for "+ccTask.getDpJob().getRootDir().getAbsolutePath()+": "+e.getMessage(), e);
+            updater.onUpdateRequired(prompt, ccTask, () -> {
+                log.info("Creating content of " + dpcc.getOutputFile());
+                String content = llmService.chat(ccTask, prompt);
+                if (StringUtils.hasText(dpcc.getPs())) {
+                    content = content + ccTask.getDpContentCreation().getPs();
+                }
+                String outputFile = ccDir.getAbsoluteFile() + "/" + ccTask.getDpContentCreation().getOutputFile();
+                try (OutputStream os = Files.newOutputStream(Path.of(outputFile))) {
+                    IOUtils.write(content, os, StandardCharsets.UTF_8);
+                } catch (IOException e) {
+                    log.log(Level.SEVERE, "Error while trying to create content for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage(), e);
+                }
+            });
+        } catch (TemplateException | IOException e) {
+            log.log(Level.SEVERE, "Error while trying to create prompt for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage(), e);
         }
     }
 }

@@ -7,6 +7,8 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Profile;
 
+import java.io.File;
+
 @SpringBootApplication
 public class DocPipeCliApp {
     public static void main(String[] args) {
@@ -15,6 +17,7 @@ public class DocPipeCliApp {
     }
 
     private static void readDotEnv() {
+        System.out.println("Reading dotenv properties file from "+(new File(".env").getAbsolutePath()));
         Dotenv dotenv = Dotenv.configure()
                 .directory(".")
                 .filename(".env")

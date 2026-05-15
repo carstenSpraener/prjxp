@@ -9,17 +9,26 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.time.Duration;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 @Service
 @RequiredArgsConstructor
 public class ChatModelFactory {
     private final List<ChatModelSupplier> chatModelSuppliers;
+    private Map<String, ChatModel> chatModels = new HashMap<>();
 
     public ChatModel create(DPModelConfig cfg) {
+        String modelKey = cfg.getModelProviderURL() +":"+ cfg.getModelName();
+        if( chatModels.containsKey(modelKey) ) {
+            return chatModels.get(modelKey);
+        }
         for (ChatModelSupplier cms : chatModelSuppliers) {
             if (cms.canProvide(cfg)) {
-                return cms.provide(cfg);
+                ChatModel cm =  cms.provide(cfg);
+                chatModels.put(modelKey, cm);
+                return cm;
             }
         }
         throw new IllegalStateException("There is no supplier for server model type " + cfg.getServerType() + ". Please check configuration.");
