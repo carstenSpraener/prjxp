@@ -20,7 +20,6 @@
   {
     "stereotype": "detailed",
     "serverType": "gemini",
-    "modelName": "gemini-3-flash-preview",
-    "apiKey": "{GOOGLE_AI_API_KEY}"
+    "modelName": "gemini-3-flash-preview"
   }
 ]
