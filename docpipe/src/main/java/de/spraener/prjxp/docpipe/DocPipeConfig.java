@@ -5,6 +5,7 @@ import lombok.Data;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 @Component
@@ -12,5 +13,5 @@ import java.util.List;
 public class DocPipeConfig {
     public static final String DP_DIR=".dp";
     private Path projectDir;
-    private List<DPModelConfig> globalModels;
+    private List<DPModelConfig> globalModels = new ArrayList<>();
 }

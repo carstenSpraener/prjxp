@@ -4,6 +4,7 @@ import de.spraener.prjxp.docpipe.DocPipeConfig;
 import de.spraener.prjxp.docpipe.llm.LLMService;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import de.spraener.prjxp.docpipe.prompt.PromptResolvingService;
+import de.spraener.prjxp.docpipe.prompt.TemplateException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.apache.commons.io.IOUtils;
@@ -13,8 +14,11 @@ import org.springframework.util.StringUtils;
 import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
+import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.logging.Level;
 
 @Service
 @RequiredArgsConstructor
@@ -23,31 +27,23 @@ public class ContentCreationService {
     private final PromptResolvingService promptResolvingService;
     private final LLMService llmService;
 
-    public void createContent(ContentCreation cc) {
+    public void createContent(ContentCreationTask ccTask) {
         try {
-            DPContentCreation dbCC = cc.getDpContentCreation();
-            File ccDir = cc.getDpJob().getRootDir();
-            File cfgDir = new File(cc.getDpJob().getRootDir().getAbsolutePath() +"/" + DocPipeConfig.DP_DIR);
+            DPContentCreation dpcc = ccTask.getDpContentCreation();
+            File ccDir = ccTask.getDpJob().getRootDir();
 
-            String promptTemplate = readTemplate(cfgDir, dbCC.getPrompt());
-            String prompt = promptResolvingService.resolve(
-                    promptTemplate,
-                    cfgDir
-            );
-            log.finer(()-> "Prompt for creation of File "+dbCC.getOutputFile()+" is: " + prompt);
-            log.info("Creating content of "+dbCC.getOutputFile());
-            String content = llmService.chat(cc.getDpJob(), cc.getDpContentCreation(), prompt);
-            if(StringUtils.hasText(cc.getDpContentCreation().getPs()) ) {
-                content = content+cc.getDpContentCreation().getPs();
+            String prompt = promptResolvingService.resolve(ccTask);
+            log.info("Creating content of "+dpcc.getOutputFile());
+            String content = llmService.chat(ccTask, prompt);
+            if(StringUtils.hasText(dpcc.getPs()) ) {
+                content = content+ccTask.getDpContentCreation().getPs();
             }
-            String outputFile = ccDir.getAbsoluteFile()+"/"+cc.getDpContentCreation().getOutputFile();
-            IOUtils.write(content, Files.newOutputStream(Path.of(outputFile)));
-        } catch( Exception e) {
-            log.severe("Error while trying to create content for "+cc.getDpJob().getRootDir().getAbsolutePath()+": "+e.getMessage());
+            String outputFile = ccDir.getAbsoluteFile()+"/"+ccTask.getDpContentCreation().getOutputFile();
+            try (OutputStream os = Files.newOutputStream(Path.of(outputFile))) {
+                IOUtils.write(content, os, StandardCharsets.UTF_8);
+            }
+        } catch( IOException | TemplateException e) {
+            log.log(Level.SEVERE, "Error while trying to create content for "+ccTask.getDpJob().getRootDir().getAbsolutePath()+": "+e.getMessage(), e);
         }
-    }
-
-    private String readTemplate(File cfgDir, String prompt) throws IOException {
-        return IOUtils.toString(new FileReader(cfgDir.getAbsolutePath()+"/"+prompt));
     }
 }

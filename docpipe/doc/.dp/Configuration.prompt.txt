@@ -1,4 +1,4 @@
-Create a MarkDown-File as a Readme to explain how the DocPipe is actually working. As source use the provided source codes.
+Create a MarkDown-File as a Readme to explain how the Doc|Pipe is actually working. As source use the provided source codes.
 
 ```java
 {{#URL this file:../../src/main/java/de/spraener/prjxp/docpipe/DocPipeRunner.java}}{{/URL}}

@@ -16,11 +16,7 @@ public class URLResolver implements TemplateResolver {
 
     @Override
     public String resolve(File baseDir, Options options) throws Exception{
-        // Holt den Wert aus 'file:path/to/file'
         String fileParam = options.param(0).toString();
-
-        // Relativ zum Speicherort der Prompt-Datei auflösen
-
         File value = new File(baseDir.getAbsolutePath()+"/"+(new URL(fileParam).getFile()));
         return Files.readString(value.toPath());
     }

@@ -15,6 +15,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.logging.Level;
 import java.util.stream.Stream;
 
 @Service
@@ -49,9 +50,9 @@ public class JobCreationService {
             } else {
                 log.warning("No model configs found for "+configDir.getAbsolutePath());
             }
-        } catch (Exception e) {
-            log.severe("Error reading models.json from " + directory.getAbsolutePath());
-            return null;
+        } catch (IOException e) {
+            log.log(Level.SEVERE, "Error reading models.json from " + directory.getAbsolutePath(), e);
+            return DPJob.EMPTY_JOB;
         }
 
         try {
@@ -62,7 +63,7 @@ public class JobCreationService {
             }
         } catch( Exception e) {
             log.severe("Error reading documents.json from " + directory.getAbsolutePath());
-            return null;
+            return DPJob.EMPTY_JOB;
         }
         return dpJob;
     }

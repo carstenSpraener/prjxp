@@ -4,5 +4,23 @@
     "modelName": "gemma4:31b-cloud",
     "modelProviderURL": "http://localhost:11434",
     "serverType": "ollama"
+  },
+  {
+    "stereotype": "javadoc",
+    "modelName": "deepseek-coder-v2:16b",
+    "modelProviderURL": "http://localhost:11434",
+    "serverType": "ollama"
+  },
+  {
+    "stereotype": "faq",
+    "modelName": "qwen3.6-31b",
+    "modelProviderURL": "http://192.168.1.228:1234",
+    "serverType": "openapi"
+  },
+  {
+    "stereotype": "detailed",
+    "serverType": "gemini",
+    "modelName": "gemini-3-flash-preview",
+    "apiKey": "{GOOGLE_AI_API_KEY}"
   }
 ]

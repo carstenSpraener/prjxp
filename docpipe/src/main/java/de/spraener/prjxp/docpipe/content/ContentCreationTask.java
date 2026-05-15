@@ -9,7 +9,7 @@ import lombok.extern.java.Log;
 @Data
 @RequiredArgsConstructor
 @Log
-public class ContentCreation {
+public class ContentCreationTask {
     private final DPJob dpJob;
     private final DPContentCreation dpContentCreation;
 

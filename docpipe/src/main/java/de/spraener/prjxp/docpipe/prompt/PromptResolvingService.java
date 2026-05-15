@@ -3,21 +3,35 @@ package de.spraener.prjxp.docpipe.prompt;
 import com.github.jknack.handlebars.Handlebars;
 import com.github.jknack.handlebars.Helper;
 import com.github.jknack.handlebars.Options;
+import de.spraener.prjxp.docpipe.DocPipeConfig;
+import de.spraener.prjxp.docpipe.content.ContentCreationTask;
+import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.apache.commons.io.IOUtils;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.io.FileReader;
 import java.io.IOException;
 import java.util.List;
+import java.util.logging.Level;
 
 @Service
 @RequiredArgsConstructor
+@Log
 public class PromptResolvingService {
     private final List<TemplateResolver> templateResolvers;
 
-    public String resolve(String promptTemplateContent, File baseDir) throws IOException {
+    public String resolve(ContentCreationTask ccTask) throws IOException {
+        File baseDir = new File(ccTask.getDpJob().getRootDir().getAbsolutePath() +"/" + DocPipeConfig.DP_DIR);
+
+        DPContentCreation dpcc = ccTask.getDpContentCreation();
+        File ccDir = ccTask.getDpJob().getRootDir();
+        File cfgDir = new File(ccTask.getDpJob().getRootDir().getAbsolutePath() +"/" + DocPipeConfig.DP_DIR);
+
+        String promptTemplate = readTemplate(cfgDir, dpcc.getPrompt());
         Handlebars handlebars = new Handlebars();
         handlebars.setStringParams(true);
 
@@ -25,9 +39,16 @@ public class PromptResolvingService {
             TRHelper trh = new TRHelper(baseDir, tr);
             handlebars.registerHelper(tr.getID(),trh);
         }
-        var template = handlebars.compileInline(promptTemplateContent);
-        return template.apply(new Object());
+        var template = handlebars.compileInline(promptTemplate);
+        String prompt = template.apply(new Object());
+        log.finer(()-> "Prompt for creation of File "+dpcc.getOutputFile()+" is: " + prompt);
+        return prompt;
     }
+
+    private String readTemplate(File cfgDir, String prompt) throws IOException {
+        return IOUtils.toString(new FileReader(cfgDir.getAbsolutePath()+"/"+prompt));
+    }
+
 
     @Data
     @RequiredArgsConstructor
@@ -41,8 +62,7 @@ public class PromptResolvingService {
             try {
                 return templateResolver.resolve(baseDir,options);
             } catch( Exception e) {
-                log.severe("Could not resolve "+templateResolver.getID()+" in directory "+baseDir+": "+e.getMessage());
-                return "ERROR IN RESOLVING: "+e.getMessage();
+                throw new TemplateException(e);
             }
         }
     }
