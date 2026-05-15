@@ -15,3 +15,4 @@ rootProject.name = 'prjxp'
 include('prjxp-common', 'chunk-norris', 'tibed', 'golden-retriever', 'mcp-server')
 
 include 'mcp-server'
+include 'docpipe'

@@ -1,70 +1,39 @@
-# Document Conversion System
+# Document Conversion Mechanism in Chunk Norris
 
-The **DocConversionRouter** is the central orchestrator of the document conversion pipeline. Its primary purpose is to transform various input formats (like PDF, DOCX, or HTML) into a structured format—typically **Markdown**—to enable efficient semantic chunking for LLM processing.
+The `DocConversionRouter` is the central orchestrator responsible for transforming documents from a source format to a target format. It treats the available conversion agents as a weighted graph and finds the most efficient path to achieve the desired output.
 
-## Core Concepts
+## Core Architecture
 
-### 1. The Conversion Graph
-The system treats document formats as **nodes** and conversion agents as **edges** in a directed weighted graph.
-* **Nodes:** `DocArtifaktType` (e.g., `PDF`, `DOCX`, `MARKDOWN`).
-* **Edges:** `DocConversionAgent` implementations that know how to convert from a source format to a target format.
+### 1. Graph-Based Routing
+The system models document formats as **vertices** and `DocConversionAgent` implementations as **weighted edges**. 
 
-### 2. Pathfinding (Dijkstra)
-To find the most efficient way to convert a file from its current state to the desired target, the router uses **Dijkstra’s Shortest Path Algorithm** (via JGraphT).
+- **Vertices**: `DocArtifaktType` (e.g., PDF, DOCX, TXT).
+- **Edges**: `DocConversionAgent` (the logic that converts Format A $\rightarrow$ Format B).
 
-The "weight" of an edge is not just a constant; it is dynamically calculated based on:
-* **Base Costs:** The computational effort defined by the agent.
-* **Quantity Estimation:** How many artifacts (pages, sections) the agent expects to produce.
-* **Accuracy Surcharge:** If an agent's `ConversionAccuracy` is lower than the requested accuracy, a configurable `inaccurateSurcharge` is added to the weight to prioritize higher-quality paths.
+### 2. Pathfinding Logic
+To determine the best sequence of conversions, the router follows this priority:
 
-## Key Components
+1.  **Predefined Routes**: It first checks `ConversionRoutesConfig`. If a hard-coded optimal path exists for the requested source and target, it is used immediately.
+2.  **Dynamic Pathfinding (Dijkstra)**: If no predefined route exists, the system builds a directed graph and uses the **Dijkstra Shortest Path** algorithm to find the "cheapest" route.
 
-| Component | Description |
-| :--- | :--- |
-| **DocConversionRouter** | The main service that builds the graph and executes the conversion. |
-| **DocConversionAgent** | Specialized workers (e.g., `PdfToMarkdownAgent`) that handle the actual transformation logic. |
-| **DocArtifakt** | A recursive container representing the document and its parts (child artifacts) during the conversion process. |
-| **ConversionRoutesConfig** | Allows for defining "short-circuits" or hard-coded paths that bypass the dynamic pathfinding logic. |
+### 3. Cost Estimation & Accuracy
+The "weight" of an edge is not static; it is calculated dynamically based on the specific file and requested accuracy:
 
-## Usage
+$$\text{Total Cost} = (\text{Unit Cost} \times \text{Estimated Quantity}) + \text{Surcharge}$$
 
-### Simple Text Conversion
-If you simply want the final text content (e.g., Markdown) of a file:
+- **Unit Cost & Quantity**: Provided by the agent based on the `DocArtifakt`.
+- **Accuracy Surcharge**: If an agent's accuracy rank is lower than the requested `ConversionAccuracy`, a significant penalty (`inaccurateSurcharge`) is added to the cost, steering the router toward more accurate (though potentially more expensive) agents.
 
-```java
-String markdownContent = router.doConversion(
-    new File("manual.pdf"), 
-    DocArtifaktType.PDF, 
-    DocArtifaktType.MARKDOWN, 
-    ConversionAccuracy.HIGH
-);
+## Conversion Process
+
+The conversion is executed in a recursive pipeline:
+
+1.  **Path Selection**: `findBestPath()` identifies the list of agents to be used.
+2.  **Recursive Execution**: 
+    - The first agent in the path converts the `DocArtifakt`.
+    - If the conversion results in child artifacts (splitting a document into chunks), the remaining agents in the path are applied recursively to every child.
+3.  **Content Collection**: Once the final agent in the path has processed the artifacts, the `DocContentCollector` aggregates the resulting content into the final output.
+
+## Summary Flow
+`File` $\rightarrow$ `DocConversionRouter` $\rightarrow$ `Pathfinding (Predefined or Dijkstra)` $\rightarrow$ `Sequential Agent Execution` $\rightarrow$ `Content Collection` $\rightarrow$ `Final String/Artifact`
 ```
-
-## Advanced Artifact Collection
-If you need to process individual artifacts (like images or specific sections) during conversion, use the Consumer variant:
-
-```java
-router.doConversion(myFile, startType, endType, accuracy, artifact -> {
-    // Process each artifact as it is converted
-    System.out.println("Converted artifact: " + artifact.getId());
-});
-```
-
-## Configuration
-The router can be tuned via Spring properties:
-
-* prjxp.conversion.inaccurateSurcharge: (Default: 1000000.0) The penalty 
-added to the path weight when an agent does not meet the required accuracy level. High values ensure the system only chooses low-accuracy paths if no other options exist.
-
-## Technical Implementation Details
-* Dynamic Weighting: Unlike static graphs, weights are recalculated for each 
-specific file via estimateConversionCosts. This allows the router to choose different paths based on the specific characteristics of the input file.
-
-* Recursive Execution: The doConversion method handles document trees. If a 
-conversion produces multiple child artifacts (e.g., a PDF split into pages), the remaining conversion path is applied recursively to every child.
-
-* Logging: The router logs the selected "Conversion Path" (e.g., 
-PdfToHtmlAgent[PDF>>HTML] -> HtmlToMarkdownAgent[HTML>>MARKDOWN]) at the FINE level for debugging.
-
-
-_This documentation was generated by gemini 3_

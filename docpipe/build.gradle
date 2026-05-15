@@ -1,0 +1,37 @@
+plugins {
+    id 'application'
+    alias(libs.plugins.shadow)
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // Spring & DevTools
+    implementation libs.spring.boot.starter.json
+    implementation libs.bundles.langchain.stack
+    developmentOnly libs.spring.boot.devtools
+    implementation libs.commons.cli
+    implementation libs.javaparser.core
+    implementation libs.dotenv.java
+    implementation libs.commons.io
+    implementation 'com.github.jknack:handlebars:4.5.1'
+}
+
+jar {
+    manifest {
+        attributes(
+                'Main-Class': 'de.spraener.prjxp.docpipe.DocPipeCliApp' // Pfad zu deiner Main-Klasse
+        )
+    }
+}
+
+application {
+    // Define the main class for the application.
+    mainClass = 'de.spraener.prjxp.docpipe.DocPipeCliApp'
+}
+
+shadowJar {
+    zip64=true
+}

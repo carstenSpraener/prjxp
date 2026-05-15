@@ -1,0 +1,8 @@
+Create a MarkDown-File as a Readme to explain the document conversion mechanism in chunk norris.
+The core implementation of the mechanism is here:
+
+```java
+{{#URL this file:../../src/main/java/de/spraener/prjxp/chuno/docs/DocConversionRouter.java}}{{/URL}}
+```
+
+Answer in plain MarkDown and only with the source of the document. No further explanation.

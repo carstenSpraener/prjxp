@@ -1,0 +1,8 @@
+[
+    {
+      "outputFile": "Configuration.md",
+      "stereotype": "documentation",
+      "prompt": "Configuration.prompt.txt",
+      "ps": "\n_This file was generated with gemma4:31b_\n"
+    }
+]

@@ -1,0 +1,19 @@
+Create a MarkDown-File as a Readme to explain how the DocPipe is actually working. As source use the provided source codes.
+
+```java
+{{#URL this file:../../src/main/java/de/spraener/prjxp/docpipe/DocPipeRunner.java}}{{/URL}}
+```
+
+```java
+{{#URL this file:../../src/main/java/de/spraener/prjxp/docpipe/config/JobCreationService.java}}{{/URL}}
+```
+
+```java
+{{#URL this file:../../src/main/java/de/spraener/prjxp/docpipe/model/DPModelConfig.java}}{{/URL}}
+```
+
+```java
+{{#URL this file:../../src/main/java/de/spraener/prjxp/docpipe/model/DPContentCreation.java}}{{/URL}}
+```
+
+Answer in plain MarkDown and only with the source of the document. No further explanation.
