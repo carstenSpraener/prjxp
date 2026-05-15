@@ -2,58 +2,63 @@
 
 ![DocPipe](doc/images/docpipe.png)
 
-DocPipe is a command-line tool designed to automate the generation of documentation and content by piping project data through Large Language Models (LLMs). It allows users to define specific "Jobs" that map content requirements to specific model configurations.
+DocPipe is a command-line tool designed to automate content creation by piping project data through Large Language Models (LLMs). It allows users to define specific "jobs" that map content requirements to specific model configurations.
 
-## 🚀 Getting Started
-
-### Prerequisites
-- Java Runtime Environment (JRE)
-- A configured LLM server (e.g., Ollama)
+## Getting Started
 
 ### Configuration
-DocPipe supports environment variables via a `.env` file located in the root directory. This is used to configure system properties and API keys required for the LLM services.
+DocPipe supports environment variable configuration via a `.env` file located in the root directory. This is primarily used for sensitive information such as API keys or server URLs.
 
-Create a `.env` file in the project root:
+**Example `.env`:**
 ```env
-# Example environment variables
 LLM_API_KEY=your_key_here
-LLM_SERVER_URL=http://localhost:11434
+OLLAMA_HOST=http://localhost:11434
 ```
 
-## 🛠 Usage
+### Usage
+The application is executed as a Spring Boot CLI application. It parses arguments provided at runtime to locate the project directory and then executes the defined jobs.
 
-DocPipe operates as a CLI application. It parses arguments to locate a project directory, reads the job definitions, and executes the content creation process.
+```bash
+java -jar docpipe.jar [project-directory]
+```
 
-### How it Works
-1. **Job Discovery**: The application scans the specified project directory for job definitions.
-2. **Model Mapping**: Each job contains a list of `DPModelConfig` (defining the provider URL and server type, e.g., Ollama) and `DPContentCreation` requirements.
-3. **Content Generation**: For every content item requested, DocPipe:
-    - Identifies the correct LLM model based on the assigned `stereotype`.
-    - Resolves the prompt and associated parameters.
-    - Generates the content and writes it to the specified `outputFile`.
+## How it Works
 
-## 📋 Data Model
+### 1. Job Definition
+DocPipe operates based on a project structure. A **Job** (`DPJob`) consists of:
+- **Project Directory**: The root folder containing the source materials.
+- **Model Configurations**: A list of available LLM providers and their settings.
+- **Content Creation Tasks**: A list of specific outputs to be generated.
 
-### Job Structure
-A **Job** (`DPJob`) consists of:
-- **Root Directory**: The base path for the project.
-- **Model Configurations**: A list of available models, their providers, and their stereotypes.
-- **Content Creation List**: A list of specific tasks to be performed.
+### 2. Model Mapping
+The system uses a "Stereotype" mechanism to decouple the content request from the specific model implementation. 
 
-### Content Creation (`DPContentCreation`)
-Each content task is defined by:
-- `outputFile`: The destination path for the generated text.
-- `stereotype`: The category of the content (used to select the appropriate LLM model).
+- **`DPModelConfig`**: Defines a `stereotype` (e.g., "creative-writer" or "technical-expert"), the `modelName`, and the `modelProviderURL`.
+- **`DPContentCreation`**: Requests a specific `stereotype` to handle the prompt.
+
+When the `DocPipeRunner` processes a task, it matches the requested stereotype from the content creation definition to the corresponding model configuration.
+
+### 3. Execution Pipeline
+The processing flow follows these steps:
+1. **Initialization**: Loads `.env` variables and parses CLI arguments.
+2. **Job Discovery**: The `JobCreationService` reads the jobs from the specified project directory.
+3. **Task Expansion**: Each job is broken down into individual `ContentCreation` units.
+4. **Content Generation**: The `ContentCreationService` utilizes the `LLMService` and `PromptResolvingService` to generate text based on the provided prompt and output it to the specified `outputFile`.
+
+## Data Models
+
+### Content Creation Definition
+The following fields are used to define what needs to be generated:
+- `outputFile`: The path where the resulting content will be saved.
+- `stereotype`: The identifier for the LLM model to be used.
 - `prompt`: The instruction for the LLM.
-- `ps`: Additional post-script or supplementary instructions.
+- `ps`: Additional post-script or context for the generation.
 
-### Model Configuration (`DPModelConfig`)
-- `stereotype`: The unique identifier for the model's role.
-- `modelName`: The name of the LLM (e.g., `llama3`).
+### Model Configuration
+The system supports flexible model providers (defaulting to `ollama`):
+- `stereotype`: Unique identifier for the model role.
+- `modelName`: The specific model version (e.g., `llama3`).
 - `modelProviderURL`: The endpoint of the LLM server.
-- `serverType`: The type of server (defaults to `ollama`).
-
-## 💻 Execution Flow
-`DocPipeCliApp` $\rightarrow$ `DocPipeArgsParser` $\rightarrow$ `DocPipeRunner` $\rightarrow$ `JobCreationService` $\rightarrow$ `ContentCreationService`
+- `serverType`: The type of server implementation.
 ```
 _This file was generated with gemma4:31b_

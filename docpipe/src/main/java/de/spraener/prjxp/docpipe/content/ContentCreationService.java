@@ -1,5 +1,6 @@
 package de.spraener.prjxp.docpipe.content;
 
+import de.spraener.prjxp.docpipe.DocPipeConfig;
 import de.spraener.prjxp.docpipe.llm.LLMService;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import de.spraener.prjxp.docpipe.prompt.PromptResolvingService;
@@ -26,7 +27,7 @@ public class ContentCreationService {
         try {
             DPContentCreation dbCC = cc.getDpContentCreation();
             File ccDir = cc.getDpJob().getRootDir();
-            File cfgDir = new File(cc.getDpJob().getRootDir().getAbsolutePath() + "/.contentCreation");
+            File cfgDir = new File(cc.getDpJob().getRootDir().getAbsolutePath() +"/" + DocPipeConfig.DP_DIR);
 
             String promptTemplate = readTemplate(cfgDir, dbCC.getPrompt());
             String prompt = promptResolvingService.resolve(
@@ -34,6 +35,7 @@ public class ContentCreationService {
                     cfgDir
             );
             log.finer(()-> "Prompt for creation of File "+dbCC.getOutputFile()+" is: " + prompt);
+            log.info("Creating content of "+dbCC.getOutputFile());
             String content = llmService.chat(cc.getDpJob(), cc.getDpContentCreation(), prompt);
             if(StringUtils.hasText(cc.getDpContentCreation().getPs()) ) {
                 content = content+cc.getDpContentCreation().getPs();

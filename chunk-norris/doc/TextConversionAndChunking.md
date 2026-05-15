@@ -1,39 +1,43 @@
 # Document Conversion Mechanism in Chunk Norris
 
-The `DocConversionRouter` is the central orchestrator responsible for transforming documents from a source format to a target format. It treats the available conversion agents as a weighted graph and finds the most efficient path to achieve the desired output.
+The `DocConversionRouter` is the central orchestrator responsible for transforming documents from a source format to a target format. Instead of relying on a static mapping, it treats document formats as nodes in a graph and conversion agents as weighted edges, allowing it to find the most efficient conversion path.
 
 ## Core Architecture
 
 ### 1. Graph-Based Routing
-The system models document formats as **vertices** and `DocConversionAgent` implementations as **weighted edges**. 
-
-- **Vertices**: `DocArtifaktType` (e.g., PDF, DOCX, TXT).
-- **Edges**: `DocConversionAgent` (the logic that converts Format A $\rightarrow$ Format B).
+The system models the conversion process as a directed weighted graph:
+- **Vertices**: `DocArtifaktType` (e.g., PDF, DOCX, HTML).
+- **Edges**: `DocConversionAgent` instances that can transform one specific format into another.
 
 ### 2. Pathfinding Logic
-To determine the best sequence of conversions, the router follows this priority:
+To convert a document, the router determines the "best" path using the following priority:
 
-1.  **Predefined Routes**: It first checks `ConversionRoutesConfig`. If a hard-coded optimal path exists for the requested source and target, it is used immediately.
-2.  **Dynamic Pathfinding (Dijkstra)**: If no predefined route exists, the system builds a directed graph and uses the **Dijkstra Shortest Path** algorithm to find the "cheapest" route.
+1.  **Predefined Routes**: It first checks `ConversionRoutesConfig`. If a manually configured route exists for the source and target formats, it is used immediately.
+2.  **Dynamic Pathfinding (Dijkstra)**: If no predefined route exists, the system builds a graph of all available agents and uses **Dijkstra's Shortest Path Algorithm** to find the optimal sequence of conversions.
 
 ### 3. Cost Estimation & Accuracy
-The "weight" of an edge is not static; it is calculated dynamically based on the specific file and requested accuracy:
+The "weight" of an edge in the graph is not static; it is calculated dynamically based on the document and desired accuracy:
 
-$$\text{Total Cost} = (\text{Unit Cost} \times \text{Estimated Quantity}) + \text{Surcharge}$$
+- **Base Cost**: Calculated as `agent.estimateCosts(f) * agent.estimateQuantity(f)`.
+- **Accuracy Surcharge**: If an agent's accuracy rank is lower than the requested `ConversionAccuracy`, a significant penalty (`inaccurateSurcharge`) is added to the edge weight. This pushes the router to prefer more accurate (though potentially more "expensive") paths.
 
-- **Unit Cost & Quantity**: Provided by the agent based on the `DocArtifakt`.
-- **Accuracy Surcharge**: If an agent's accuracy rank is lower than the requested `ConversionAccuracy`, a significant penalty (`inaccurateSurcharge`) is added to the cost, steering the router toward more accurate (though potentially more expensive) agents.
+## Conversion Workflow
 
-## Conversion Process
+The conversion process follows these steps:
 
-The conversion is executed in a recursive pipeline:
+1.  **Path Discovery**: `findBestPath()` identifies the sequence of `DocConversionAgent`s.
+2.  **Recursive Transformation**: 
+    - The `doConversion` method applies the first agent in the path to the `DocArtifakt`.
+    - If the conversion results in child artifacts (fragmentation), the process recursively applies the remaining agents in the path to each child.
+3.  **Content Collection**: Once the final target format is reached, the `DocContentCollector` aggregates the resulting text or artifacts.
 
-1.  **Path Selection**: `findBestPath()` identifies the list of agents to be used.
-2.  **Recursive Execution**: 
-    - The first agent in the path converts the `DocArtifakt`.
-    - If the conversion results in child artifacts (splitting a document into chunks), the remaining agents in the path are applied recursively to every child.
-3.  **Content Collection**: Once the final agent in the path has processed the artifacts, the `DocContentCollector` aggregates the resulting content into the final output.
+## Key Components
 
-## Summary Flow
-`File` $\rightarrow$ `DocConversionRouter` $\rightarrow$ `Pathfinding (Predefined or Dijkstra)` $\rightarrow$ `Sequential Agent Execution` $\rightarrow$ `Content Collection` $\rightarrow$ `Final String/Artifact`
+| Component | Responsibility |
+| :--- | :--- |
+| `DocConversionAgent` | Performs the actual transformation from source to target format. |
+| `DocArtifakt` | Represents the document state and its hierarchical structure during conversion. |
+| `ConversionRoutesConfig` | Provides overrides for the automated pathfinding. |
+| `ConversionAccuracy` | Defines the required quality level, influencing the path selection. |
+| `DocContentCollector` | Extracts the final processed content from the resulting artifact tree. |
 ```

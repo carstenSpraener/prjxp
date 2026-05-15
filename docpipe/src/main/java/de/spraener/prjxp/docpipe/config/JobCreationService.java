@@ -2,6 +2,7 @@ package de.spraener.prjxp.docpipe.config;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.spraener.prjxp.docpipe.DocPipeConfig;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import de.spraener.prjxp.docpipe.model.DPJob;
 import de.spraener.prjxp.docpipe.model.DPModelConfig;
@@ -20,27 +21,31 @@ import java.util.stream.Stream;
 @RequiredArgsConstructor
 @Log
 public class JobCreationService {
+    private final DocPipeConfig docPipeConfig;
     private final ObjectMapper objectMapper;
 
     public Stream<DPJob> readJobs(Path rootDir) throws IOException {
         return Files.walk(rootDir)
                 .map(Path::toFile)
                 .filter(File::isDirectory)
-                .filter(d -> new File(d.getAbsolutePath() + "/.contentCreation").exists())
+                .filter(d -> new File(d.getAbsolutePath() +"/"+ DocPipeConfig.DP_DIR).exists())
                 .map(this::createDPJob)
-                .filter(j->j!=null)
+                .filter(j->j!=null && j.getContentCreationList()!=null)
                 ;
     }
 
     private DPJob createDPJob(File directory) {
         DPJob dpJob = new DPJob();
         dpJob.setRootDir(directory);
-        File configDir = new File(directory.getAbsolutePath() + "/.contentCreation");
+        File configDir = new File(directory.getAbsolutePath() + "/"+DocPipeConfig.DP_DIR);
 
         try {
             File modelsJson = new File(configDir.getAbsolutePath() + "/models.json");
             if (modelsJson.exists()) {
                 dpJob.setModelConfigs(this.objectMapper.readValue(modelsJson, new TypeReference<List<DPModelConfig>>(){}));
+            } else if( !docPipeConfig.getGlobalModels().isEmpty() ) {
+                log.info("No model configs found for "+configDir.getAbsolutePath()+". Using global models.");
+                dpJob.setModelConfigs(docPipeConfig.getGlobalModels());
             } else {
                 log.warning("No model configs found for "+configDir.getAbsolutePath());
             }

@@ -32,11 +32,12 @@ public class DocPipeCliApp {
     @Bean
     @Profile(("!test"))
     public CommandLineRunner commandLineRunner(
+            DocPipeConfig cfg,
             DocPipeArgsParser argsParser,
             DocPipeRunner runner
     ) {
         return args -> {
-            DocPipeConfig cfg = argsParser.parseArgs(args);
+            argsParser.parseArgs(cfg, args);
             runner.run(cfg);
         };
     }
