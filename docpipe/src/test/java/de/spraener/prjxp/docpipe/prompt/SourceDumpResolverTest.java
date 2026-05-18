@@ -20,6 +20,6 @@ class SourceDumpResolverTest {
         Options optionsMock = Mockito.mock(Options.class);
         when(optionsMock.param(any(Integer.class))).thenReturn("src/main/java");
         String prompt = resolver.resolve(new File("."), optionsMock);
-        System.out.println(prompt);
+
     }
 }

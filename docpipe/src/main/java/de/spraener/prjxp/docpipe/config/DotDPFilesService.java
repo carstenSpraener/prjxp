@@ -42,4 +42,8 @@ public class DotDPFilesService {
     public File getContentHashesFrom(ContentCreationTask cct) {
         return getContentHashesFrom(cct.getDpJob().getRootDir());
     }
+
+    public String getOutputFilePath(ContentCreationTask cct) {
+        return cct.getDpJob().getRootDir().getAbsoluteFile() + "/" + cct.getDpContentCreation().getOutputFile();
+    }
 }

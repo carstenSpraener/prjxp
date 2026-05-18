@@ -1,22 +1,18 @@
 package de.spraener.prjxp.docpipe.content;
 
-import de.spraener.prjxp.docpipe.DocPipeConfig;
+import de.spraener.prjxp.docpipe.config.DotDPFilesService;
+import de.spraener.prjxp.docpipe.io.OutputSink;
+import de.spraener.prjxp.docpipe.io.OutputSinkFactory;
 import de.spraener.prjxp.docpipe.llm.LLMService;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import de.spraener.prjxp.docpipe.prompt.PromptResolvingService;
 import de.spraener.prjxp.docpipe.prompt.TemplateException;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
-import org.apache.commons.io.IOUtils;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
-import java.io.File;
-import java.io.FileReader;
 import java.io.IOException;
-import java.io.OutputStream;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.logging.Level;
 
@@ -27,11 +23,12 @@ public class ContentCreationService {
     private final PromptResolvingService promptResolvingService;
     private final LLMService llmService;
     private final ContentUpdateRequiredController updater;
+    private final OutputSinkFactory outputSinkFactory;
+    private final DotDPFilesService dpFilesService;
 
     public void createContent(ContentCreationTask ccTask) {
         try {
             DPContentCreation dpcc = ccTask.getDpContentCreation();
-            File ccDir = ccTask.getDpJob().getRootDir();
 
             String prompt = promptResolvingService.resolve(ccTask);
             updater.onUpdateRequired(prompt, ccTask, () -> {
@@ -40,9 +37,9 @@ public class ContentCreationService {
                 if (StringUtils.hasText(dpcc.getPs())) {
                     content = content + ccTask.getDpContentCreation().getPs();
                 }
-                String outputFile = ccDir.getAbsoluteFile() + "/" + ccTask.getDpContentCreation().getOutputFile();
-                try (OutputStream os = Files.newOutputStream(Path.of(outputFile))) {
-                    IOUtils.write(content, os, StandardCharsets.UTF_8);
+                String outputFile = dpFilesService.getOutputFilePath(ccTask);
+                try (OutputSink sink = outputSinkFactory.createSink(Path.of(outputFile))) {
+                    sink.println(content);
                 } catch (IOException e) {
                     log.log(Level.SEVERE, "Error while trying to create content for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage(), e);
                 }
