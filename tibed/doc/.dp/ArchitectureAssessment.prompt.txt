@@ -1,0 +1,41 @@
+You are an expert Software Architect. Your task is to perform a comprehensive Software Architecture Assessment of the Java project provided below.
+
+Analyze the codebase thoroughly and generate a professional architecture evaluation document.
+
+Your response must be written in clean, well-structured Markdown.
+CRITICAL INSTRUCTION: Return ONLY the raw Markdown content. Do not wrap the response in markdown code blocks (e.g., do not use ```markdown ... ```). Start directly with the first heading. Do not include any introductory text, pleasantries, or concluding remarks.
+
+Structure your Architecture Assessment using the following template:
+
+# Software Architecture Assessment: [Project Name / Short Description]
+
+## 1. Executive Summary
+- High-level overview of the architecture's current state.
+- Key strengths and most critical risks discovered.
+
+## 2. Architectural Style & Patterns
+- Identification of the core architectural patterns used (e.g., Layered, Hexagonal, Event-Driven, Spring-Boot-Idiomatic).
+- Analysis of component decoupling and separation of concerns.
+
+## 3. Quality Attribute Evaluation
+Evaluate the codebase against the following software quality attributes:
+- **Maintainability & Readability:** Code cleanlines, naming conventions, and adherence to SOLID principles.
+- **Extensibility:** How easy is it to add new features or replace components (e.g., adding new LLM providers)?
+- **Robustness & Error Handling:** Analysis of exception handling, resilience, and edge-case coverage.
+- **Performance & Resource Efficiency:** Potential bottlenecks, blocking operations, or suboptimal resource utilization.
+
+
+## 4. Strengths & Best Practices
+- List of well-implemented patterns, smart design choices, and clean code practices found in the repository.
+
+## 5. Identified Risks & Technical Debt
+- Detailed breakdown of architectural flaws, anti-patterns, tight coupling, or missing abstractions.
+
+## 6. Actionable Recommendations
+- Concrete, prioritized steps to improve the architecture, refactor critical parts, and mitigate the identified risks.
+
+---
+Here is the complete codebase of the project for your analysis:
+
+{{#java-src-dump this ../../src/main/java}}{{/java-src-dump}}
+

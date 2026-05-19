@@ -16,7 +16,9 @@ public enum DocArtifaktType {
     TEXT("TXT", "TEXT"),
     RTF("RTF"),
     MARK_DOWN("MD"),
-    BUFFERED_IMAGE("BUFFERED_IMAGE");
+    BUFFERED_IMAGE("BUFFERED_IMAGE"),
+    JSONL("JSONL")
+    ;
 
     private String[] names;
     private DocArtifaktType(String... name) {
