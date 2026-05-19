@@ -3,7 +3,9 @@ package de.spraener.prjxp.gldrtrvr.code.java;
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingStrategy;
+import org.springframework.stereotype.Component;
 
+@Component
 public class JavaChunkRanker implements ChunkRankingStrategy {
     @Override
     public boolean supports(PxChunk chunk) {

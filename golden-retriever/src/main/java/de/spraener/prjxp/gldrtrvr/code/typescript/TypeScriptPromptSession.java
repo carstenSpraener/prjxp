@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
 import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
+import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import lombok.Data;
 import org.springframework.util.StringUtils;
 
@@ -19,9 +20,11 @@ public class TypeScriptPromptSession {
     private List<PxChunk> chunks;
     private List<ChunkNode> rootForrest = new ArrayList<>();
     private final int maxContentLength = 50000;
+    private final ChunkRankingService rankingService;
 
-    public TypeScriptPromptSession(PxChunkDao chunkDao) {
+    public TypeScriptPromptSession(PxChunkDao chunkDao, ChunkRankingService rankingService) {
         this.chunkDao = chunkDao;
+        this.rankingService = rankingService;
     }
 
     record RankedPrompt(double rootRank, String treeContext) {
@@ -36,7 +39,7 @@ public class TypeScriptPromptSession {
                 root = buildGraphToRoot(chunk).root();
                 rootForrest.add(root);
             }
-            root.rank(chunk);
+            root.rank(chunk, rankingService);
         }
     }
 
@@ -57,7 +60,7 @@ public class TypeScriptPromptSession {
             }
             rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext));
         }
-        rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank));
+        rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
         StringBuilder contextBuilder = new StringBuilder();
         for (var rp : rankedPrompts) {
             if (rp.rootRank() == 0) {

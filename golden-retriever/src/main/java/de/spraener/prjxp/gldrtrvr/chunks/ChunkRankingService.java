@@ -14,25 +14,13 @@ import java.util.List;
 @RequiredArgsConstructor
 public class ChunkRankingService {
     private final List<ChunkRankingStrategy> strategies;
-    private static ChunkRankingService self;
 
-    public static double rank(PxChunk chunk) {
-        if( self==null ) {
-            return 0.0;
-        }
-        for (ChunkRankingStrategy strategy : self.strategies) {
+    public double rank(PxChunk chunk) {
+        for (ChunkRankingStrategy strategy : strategies) {
             if( strategy.supports(chunk)) {
                 return strategy.rank(chunk);
             }
         }
         return 0.0;
-    }
-
-    @Component
-    public static class SelfSetter implements ApplicationContextAware {
-        @Override
-        public void setApplicationContext(ApplicationContext applicationContext) throws BeansException {
-            ChunkRankingService.self = applicationContext.getBean(ChunkRankingService.class);
-        }
     }
 }

@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
@@ -19,11 +20,16 @@ import java.util.function.Function;
 @Log
 public class JavaRetriever implements GoldenRetriever {
     private final PxChunkDao chunkDao;
+    private final ChunkRankingService rankingService;
 
     @SafeVarargs
     public final StringBuilder buildPromptForFindings(StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
-        JavaPromptSession session = new JavaPromptSession(chunkDao);
-        session.setChunks(combineChunksByID(chunks));
+        List<PxChunk> javaChunks = combineChunksByID(chunks);
+        if( javaChunks.isEmpty() ) {
+            return prompt;
+        }
+        JavaPromptSession session = new JavaPromptSession(chunkDao, rankingService);
+        session.setChunks(javaChunks);
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
     }
@@ -84,8 +90,10 @@ public class JavaRetriever implements GoldenRetriever {
     private List<PxChunk> combineChunksByID(List<PxChunk> chunks) {
         Map<String, List<PxChunk>> chunkMap = new HashMap<>();
         for (var c : chunks) {
-            List<PxChunk> idList = chunkMap.computeIfAbsent(c.getId(), k -> new ArrayList<>());
-            idList.add(c);
+            if( isJavaChunk(c) ) {
+                List<PxChunk> idList = chunkMap.computeIfAbsent(c.getId(), k -> new ArrayList<>());
+                idList.add(c);
+            }
         }
         List<PxChunk> result = new ArrayList<>();
         for (var chunkList : chunkMap.values()) {
@@ -97,6 +105,10 @@ public class JavaRetriever implements GoldenRetriever {
             }
         }
         return result;
+    }
+
+    private boolean isJavaChunk(PxChunk c) {
+        return c.getMetadata().containsKey("java_code_section");
     }
 
     private PxChunk combineChunks(List<PxChunk> chunkList) {

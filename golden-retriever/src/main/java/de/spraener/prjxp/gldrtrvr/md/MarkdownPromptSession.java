@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
 import de.spraener.prjxp.gldrtrvr.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
+import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import lombok.Data;
 import org.springframework.util.StringUtils;
 
@@ -19,9 +20,11 @@ public class MarkdownPromptSession {
     private List<PxChunk> chunks;
     private List<ChunkNode> rootForrest = new ArrayList<>();
     private final int maxContentLength = 5000;
+    private final ChunkRankingService rankingService;
 
-    public MarkdownPromptSession(PxChunkDao chunkDao) {
+    public MarkdownPromptSession(PxChunkDao chunkDao, ChunkRankingService rankingService) {
         this.chunkDao = chunkDao;
+        this.rankingService = rankingService;
     }
 
     record RankedPrompt(double rootRank, String treeContext) {
@@ -36,7 +39,7 @@ public class MarkdownPromptSession {
                 root = buildGraphToRoot(chunk).root();
                 rootForrest.add(root);
             }
-            root.rank(chunk);
+            root.rank(chunk, rankingService);
         }
     }
 

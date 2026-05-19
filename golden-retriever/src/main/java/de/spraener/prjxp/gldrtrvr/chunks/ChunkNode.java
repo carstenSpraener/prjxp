@@ -55,9 +55,9 @@ public class ChunkNode {
         }
     }
 
-    public ChunkNode rank(PxChunk hitChunk) {
+    public ChunkNode rank(PxChunk hitChunk, ChunkRankingService rankingService) {
         if (this.parent == null) {
-            this.rootRank += ChunkRankingService.rank(hitChunk);
+            this.rootRank += rankingService.rank(hitChunk);
         }
         return this;
     }
