@@ -2,7 +2,7 @@ package de.spraener.prjxp.gldrtrvr.md;
 
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import lombok.Data;

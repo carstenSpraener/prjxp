@@ -3,8 +3,10 @@ package de.spraener.prjxp.gldrtrvr.chunks;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.PxChunkFromJsonLReader;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
+import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.model.PxChunk;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.Accessors;
@@ -12,23 +14,21 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
-import java.nio.file.Files;
-import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Stream;
 
-@Service
-@Profile("test")
 @RequiredArgsConstructor
 @Accessors(fluent = true)
 @Data
 public class PxChunkDaoInMemoryImpl implements PxChunkDao {
-    private Map<String, List<PxChunk>> chunkDB = null;
+    private final PrjXPEmbeddingStoreReference  storeReference;
     private final ObjectMapper objectMapper;
-    private final PrjXPConfig cfg;
+    private final PrjXPJsonStreamProvider streamProvider;
+
+    private Map<String, List<PxChunk>> chunkDB = null;
     private String jsonlStream;
 
     private PxChunk fromJSONL(String jsonl) {
@@ -43,7 +43,7 @@ public class PxChunkDaoInMemoryImpl implements PxChunkDao {
         if (chunkDB == null) {
             try {
                 chunkDB = new HashMap<>();
-                new PxChunkFromJsonLReader().readChunksFromJsonlStreamBatched(cfg.getJsonlStream(jsonlStream), 50, this::fromJSONL)
+                new PxChunkFromJsonLReader().readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(jsonlStream), 50, this::fromJSONL)
                         .forEach(batch -> {
                             for (var chunk : batch) {
                                 List<PxChunk> cList = chunkDB.computeIfAbsent(chunk.getId(), k -> new ArrayList<>());
@@ -56,6 +56,11 @@ public class PxChunkDaoInMemoryImpl implements PxChunkDao {
             }
         }
         return chunkDB;
+    }
+
+    @Override
+    public PrjXPEmbeddingStoreReference getStoreReference() {
+        return null;
     }
 
     @Override
@@ -75,7 +80,7 @@ public class PxChunkDaoInMemoryImpl implements PxChunkDao {
 
     public Stream<PxChunk> findAll() {
         try {
-            return cfg.getJsonlStream(jsonlStream)
+            return streamProvider.getJsonlStream(jsonlStream)
                     .map(line -> {
                         try {
                             return objectMapper.readValue(line, PxChunk.class);

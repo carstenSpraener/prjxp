@@ -430,7 +430,7 @@ package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
@@ -539,7 +539,7 @@ package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
 import lombok.Data;
 import org.springframework.util.StringUtils;

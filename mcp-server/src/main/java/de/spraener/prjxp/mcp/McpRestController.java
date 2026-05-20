@@ -45,7 +45,8 @@ public class McpRestController {
             """)
     public String readRelevantSource(
             @Parameter(description = "Die ursprüngliche Frage des Benutzers, zu der Information von den Projekten benötigt wird.")
-            @RequestParam(name = "userQuestion", required = true) String userQuestion
+            @RequestParam(name = "userQuestion", required = true) String userQuestion,
+            @RequestParam(name="project", required = false, defaultValue = "default") String projectName
     ) {
         log.info("enriching question " + userQuestion);
         String prefix = """
@@ -53,7 +54,7 @@ public class McpRestController {
                 ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
                 Wenn du die Antwort nicht im Kontext findest, sage das deutlich.                                
                 """;
-        String context = enrichment.enrich(userQuestion);
+        String context = enrichment.enrich(projectName, userQuestion);
         return "%s\n%s\nFRAGE: %s".format(prefix, context, userQuestion);
     }
 }

@@ -6,5 +6,5 @@ import java.util.List;
 import java.util.function.Function;
 
 public interface GoldenRetriever {
-    StringBuilder buildPromptForFindings(StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators);
+    StringBuilder buildPromptForFindings(String projectName, StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators);
 }

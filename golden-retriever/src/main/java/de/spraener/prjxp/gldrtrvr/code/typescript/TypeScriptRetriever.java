@@ -2,8 +2,9 @@ package de.spraener.prjxp.gldrtrvr.code.typescript;
 
 import de.spraener.prjxp.common.code.typescript.TypeScriptCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
@@ -19,12 +20,13 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 @Log
 public class TypeScriptRetriever implements GoldenRetriever {
-    private final PxChunkDao chunkDao;
+    private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
-        List<PxChunk> tsChunks = combineChunksByID(chunks);
+    public final StringBuilder buildPromptForFindings(String projectName, StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+        PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
+        List<PxChunk> tsChunks = combineChunksByID(chunkDao, chunks);
         if( tsChunks.isEmpty() ) {
             return prompt;
         }
@@ -34,7 +36,7 @@ public class TypeScriptRetriever implements GoldenRetriever {
         return prompt;
     }
 
-    private String modifyPromptByChunk(PxChunk pxChunk, String prompt) {
+    private String modifyPromptByChunk(PxChunkDao chunkDao, PxChunk pxChunk, String prompt) {
         String nextPrompt = prompt;
         if (isTypeScriptChunk(pxChunk)) {
             TypeScriptCodeSection section = TypeScriptCodeSection.fromName(pxChunk.getMetadata().get("typescript_code_section"));
@@ -86,7 +88,7 @@ public class TypeScriptRetriever implements GoldenRetriever {
         return c.getId().substring(c.getId().lastIndexOf('.') + 1);
     }
 
-    private List<PxChunk> combineChunksByID(List<PxChunk> chunks) {
+    private List<PxChunk> combineChunksByID(PxChunkDao chunkDao, List<PxChunk> chunks) {
         Map<String, List<PxChunk>> chunkMap = new HashMap<>();
         for (var c : chunks) {
             if( isTypeScriptChunk(c) ) {

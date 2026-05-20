@@ -1,7 +1,8 @@
 package de.spraener.prjxp.gldrtrvr.chunks;
 
 import de.spraener.prjxp.common.model.PxChunk;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -11,9 +12,13 @@ import java.util.stream.Stream;
 @Service
 @RequiredArgsConstructor
 public class PxChunkService {
-    private final PxChunkDao chunkDao;
+    private final PxChunkDaoProvider chunkDaoProvider;
+
+    public Stream<PxChunk> findByPredicate(String projectName, Predicate<PxChunk> p) {
+        return this.chunkDaoProvider.get(projectName).get().findAll().filter(p);
+    }
 
     public Stream<PxChunk> findByPredicate(Predicate<PxChunk> p) {
-        return this.chunkDao.findAll().filter(p);
+        return this.chunkDaoProvider.get("default").get().findAll().filter(p);
     }
 }

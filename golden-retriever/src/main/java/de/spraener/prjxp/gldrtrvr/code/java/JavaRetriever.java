@@ -2,8 +2,9 @@ package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
@@ -19,22 +20,23 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 @Log
 public class JavaRetriever implements GoldenRetriever {
-    private final PxChunkDao chunkDao;
+    private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
         List<PxChunk> javaChunks = combineChunksByID(chunks);
         if( javaChunks.isEmpty() ) {
             return prompt;
         }
+        PxChunkDao chunkDao = chunkDaoProvider.get(projectName).get();
         JavaPromptSession session = new JavaPromptSession(chunkDao, rankingService);
         session.setChunks(javaChunks);
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
     }
 
-    private String modifyPromptByChunk(PxChunk pxChunk, String prompt) {
+    private String modifyPromptByChunk(PxChunkDao chunkDao, PxChunk pxChunk, String prompt) {
         String nextPrompt = prompt;
         if (pxChunk.getMetadata().containsKey("java_code_section")) {
             JavaCodeSection section = JavaCodeSection.fromName(pxChunk.getMetadata().get("java_code_section"));
@@ -88,6 +90,7 @@ public class JavaRetriever implements GoldenRetriever {
     }
 
     private List<PxChunk> combineChunksByID(List<PxChunk> chunks) {
+        PxChunkDao chunkDao = chunkDaoProvider.get("default").get();
         Map<String, List<PxChunk>> chunkMap = new HashMap<>();
         for (var c : chunks) {
             if( isJavaChunk(c) ) {

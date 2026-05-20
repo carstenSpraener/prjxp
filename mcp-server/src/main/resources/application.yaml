@@ -2,24 +2,32 @@ mcp:
   cors:
     allowed-patterns: "http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*"
 
-chat:
-  gemini:
-    api-key: UNKNOWN
-  api-kind: openai
-  modelName: gemma-4-31b
-  api-key: lm-studio
-  api-url: http://192.168.1.224:1234
+prjxp:
+  # Embedding Stores
+  embedding-stores:
+    - project-name: "prjxp"
+      store-URL: "http://localhost:8000"
+      store-tenant: "prjxp"
+      store-db-name: "prjxp"
+      store-collection-name: "prjxp"
+      default: true
 
-embedding:
-  modelName: mxbai-embed-large
-  ollama:
-    url: http://localhost:11434
+    - project-name: "kigbau"
+      store-uRL: "http://localhost:8000"
+      store-dBName: "kigbau"
+      store-tenant: "kigbau"
+      store-collection-name: "kigbau-src"
 
-chroma:
-  tenant: prjxp
-  database: prjxp-enriched
-  collectioName: chunk_norris
-  url: http://localhost:8000
+  embedding-ollama-url: http://192.168.188.92:11434
+  embedding-model-name: mxbai-embed-large
+  embedding-timeout-secs: 60
+
+  # Chat-Schnittstelle
+  chat-models:
+    - model-name: "gemma-4-31b"
+      api-url: "http://localhost:1234"
+      api-key: "lm-studio"
+      provider-type: "openAI"
 
 server:
   forward-headers-strategy: framework

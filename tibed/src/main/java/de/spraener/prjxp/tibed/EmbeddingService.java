@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.PxChunkFromJsonLReader;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.model.PxChunk;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
@@ -25,6 +26,7 @@ public class EmbeddingService {
     private final ObjectMapper objMapper;
     private final EmbeddingExecutor embedder;
     private final EmbeddingStore embeddingStore;
+    private final PrjXPJsonStreamProvider streamProvider;
     private final PrjXPConfig cfg;
 
     public void execute() {
@@ -46,7 +48,7 @@ public class EmbeddingService {
         }
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
-            reader.readChunksFromJsonlStreamBatched(cfg.getJsonlStream(cfg.getTibedJsonlInputSource()), cfg.getTibedBatchSize(), this::fromJSONL)
+            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(cfg.getTibedJsonlInputSource()), cfg.getTibedBatchSize(), this::fromJSONL)
                     .forEach(batch -> {
                         embedChunk(batch);
                     });

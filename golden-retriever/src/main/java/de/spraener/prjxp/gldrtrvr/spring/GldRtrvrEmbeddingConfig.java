@@ -1,8 +1,11 @@
 package de.spraener.prjxp.gldrtrvr.spring;
 
+import de.spraener.prjxp.common.chat.EmptyKiChat;
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.KIChatModelWrapper;
+import de.spraener.prjxp.gldrtrvr.chunks.ChromaDBPxChunkDao;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
@@ -17,6 +20,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.List;
 
 @Configuration
 @Log
@@ -42,82 +47,86 @@ public class GldRtrvrEmbeddingConfig {
     }
 
     @Bean
-    public EmbeddingStore<TextSegment> embeddingStore(PrjXPConfig cfg) {
-        try {
-            return ChromaEmbeddingStore.builder()
-                    .baseUrl(cfg.getChromaUrl())
-                    .apiVersion(ChromaApiVersion.V2)
-                    .tenantName(cfg.getChromaTenant())
-                    .databaseName(cfg.getChromaDatabase())
-                    .collectionName(cfg.getChromaCollectionname())
-                    .build();
-        } catch (Exception e) {
-            log.severe(String.format(
-                    "Connection to ChromaStore failed! \n" +
-                            "   chromaURL: '%s'\n" +
-                            "   Tenant: '%s'\n" +
-                            "   ChromaDatabase: '%s'\n" +
-                            "   Collection: '%s'",
-                    cfg.getChromaUrl(),
-                    cfg.getChromaTenant(),
-                    cfg.getChromaDatabase(),
-                    cfg.getChromaCollectionname()
-            ));
-            throw new RuntimeException(e);
+    public List<PxChunkDao> embeddingStore(PrjXPConfig cfg, EmbeddingModel embeddingModel) {
+        List<PxChunkDao> embeddingStores = new ArrayList<>();
+        for( var r : cfg.getEmbeddingStores() ) {
+            try {
+                EmbeddingStore<TextSegment> store = ChromaEmbeddingStore.builder()
+                        .baseUrl(r.getStoreURL())
+                        .apiVersion(ChromaApiVersion.V2)
+                        .tenantName(r.getStoreTenant())
+                        .databaseName(r.getStoreDBName())
+                        .collectionName(r.getStoreCollectionName())
+                        .build();
+                embeddingStores.add( new ChromaDBPxChunkDao(store, embeddingModel, r));
+            } catch (Exception e) {
+                log.severe(String.format(
+                        "Connection to ChromaStore failed! \n" +
+                                "   chromaURL: '%s'\n" +
+                                "   Tenant: '%s'\n" +
+                                "   ChromaDatabase: '%s'\n" +
+                                "   Collection: '%s'",
+                        cfg.getChromaUrl(),
+                        cfg.getChromaTenant(),
+                        cfg.getChromaDatabase(),
+                        cfg.getChromaCollectionname()
+                ));
+                throw new RuntimeException(e);
+            }
         }
+        return embeddingStores;
     }
 
     @Bean
-    public KIChat chatModel(PrjXPConfig cfg) {
-        try {
-            if (cfg.getChatApiKind().equals("gemini")) {
-                return new KIChatModelWrapper(GoogleAiGeminiChatModel.builder()
-                        .apiKey(cfg.getGeminiApiKey())
-                        .modelName(cfg.getChatModelName())
-                        .temperature(0.1)
-                        .build()
-                );
-            } else if (cfg.getChatApiKind().equals("ollama")) {
-                return new KIChatModelWrapper(OllamaChatModel.builder()
-                        .baseUrl(cfg.getChatApiUrl())
-                        .modelName(cfg.getChatModelName())
-                        .timeout(Duration.ofMinutes(20))
-                        .temperature(0.2)
-                        .build()
-                );
-            } else if (cfg.getChatApiKind().equals("openai")) {
-                return new KIChatModelWrapper(
-                        OpenAiChatModel.builder()
-                                .apiKey(cfg.getChatApiKey())
-                                .modelName(cfg.getChatModelName())
-                                .temperature(0.2)
-                                .baseUrl(cfg.getChatApiUrl())
-                                .build()
-                );
-            } else if (cfg.getChatApiKind().equals("none")) {
-                return new KIChat() {
-                    @Override
-                    public String chat(String question) {
-                        return "";
-                    }
-                };
-            } else {
-                throw new IllegalArgumentException("Unsupported chat API kind: " + cfg.getChatApiKind());
-            }
-        } catch (Exception e) {
-            log.severe(String.format(
-                    "Connection to ChatModel failed! \n" +
-                            "   api-kind: '%s'\n" +
-                            "   api-url: '%s'\n" +
-                            "   modelName: '%s'\n" +
-                            "   gemine.apikey (only required for gemini models): '%s'",
-                    cfg.getChatApiKind(),
-                    cfg.getChatApiUrl(),
-                    cfg.getChatModelName(),
-                    cfg.getGeminiApiKey()
-            ));
+    public List<KIChat> chatModel(PrjXPConfig cfg) {
+        List<KIChat> chatModels = new ArrayList<>();
+        for( var r :  cfg.getChatModels() ) {
+            try {
+                if (r.getProviderType().equals("gemini")) {
+                    chatModels.add(new KIChatModelWrapper(GoogleAiGeminiChatModel.builder()
+                            .apiKey(r.getApiKey())
+                            .modelName(r.getModelName())
+                            .temperature(0.1)
+                            .build(),
+                            r
+                    ));
+                } else if (r.getProviderType().equals("ollama")) {
+                    chatModels.add(new KIChatModelWrapper(OllamaChatModel.builder()
+                            .baseUrl(r.getApiUrl())
+                            .modelName(r.getModelName())
+                            .timeout(Duration.ofMinutes(20))
+                            .temperature(0.2)
+                            .build(), r
+                    ));
+                } else if (r.getProviderType().equals("openAI")) {
+                    chatModels.add(new KIChatModelWrapper(
+                            OpenAiChatModel.builder()
+                                    .apiKey(r.getApiKey())
+                                    .modelName(r.getModelName())
+                                    .temperature(0.2)
+                                    .baseUrl(r.getApiUrl())
+                                    .build(), r)
+                    );
+                } else if (r.getProviderType().equals("none")) {
+                    chatModels.add( new EmptyKiChat(r));
+                } else {
+                    throw new IllegalArgumentException("Unsupported chat API kind: " + r.getProviderType());
+                }
+            } catch (Exception e) {
+                log.severe(String.format(
+                        "Connection to ChatModel failed! \n" +
+                                "   provider-type: '%s'\n" +
+                                "   api-url: '%s'\n" +
+                                "   modelName: '%s'\n" +
+                                "",
+                        r.getProviderType(),
+                        r.getApiUrl(),
+                        r.getModelName()
+                ));
 
-            throw new RuntimeException(e);
+                throw new RuntimeException(e);
+            }
         }
+        return chatModels;
     }
 }

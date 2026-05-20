@@ -5,12 +5,26 @@ class OragelSearch extends HTMLElement {
         this.lastContext = "";
     }
 
+    static get observedAttributes() {
+        return ['projects'];
+    }
+
+    get projects() {
+        const attr = this.getAttribute('projects');
+        return attr ? attr.split(',').map(p => p.trim()) : [];
+    }
+
     connectedCallback() {
+        const projectOptions = this.projects.map((p, i) =>
+            `<option value="${p}" ${i === 0 ? 'selected' : ''}>${p}</option>`
+        ).join('');
+
         this.shadowRoot.innerHTML = `
             <style>
                 :host { font-family: sans-serif; display: block; padding: 20px; border: 1px solid #00529b; border-radius: 8px; background: #fff; }
                 .search-box { display: flex; gap: 10px; margin-bottom: 15px; }
                 input { flex-grow: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
+                select { padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 1rem; }
                 button { padding: 10px 20px; cursor: pointer; background: #00529b; color: white; border: none; border-radius: 4px; font-weight: bold; }
                 button:hover { background: #003e75; }
                 
@@ -24,6 +38,7 @@ class OragelSearch extends HTMLElement {
             </style>
             
             <div class="search-box">
+                <select id="projectSelect">${projectOptions}</select>
                 <input type="text" id="query" placeholder="Frage an den Project Expert (Enter zum Suchen)...">
                 <button id="searchBtn">Suchen</button>
             </div>
@@ -39,7 +54,6 @@ class OragelSearch extends HTMLElement {
         const input = this.shadowRoot.getElementById('query');
         const btn = this.shadowRoot.getElementById('searchBtn');
 
-        // 1. Suche bei Enter
         input.addEventListener('keypress', (e) => {
             if (e.key === 'Enter') this.search();
         });
@@ -49,6 +63,7 @@ class OragelSearch extends HTMLElement {
 
     async search() {
         const query = this.shadowRoot.getElementById('query').value;
+        const project = this.shadowRoot.getElementById('projectSelect').value;
         const status = this.shadowRoot.getElementById('status');
         const resPre = this.shadowRoot.getElementById('results');
         const details = this.shadowRoot.getElementById('resultContainer');
@@ -60,22 +75,17 @@ class OragelSearch extends HTMLElement {
         details.style.display = "none";
 
         try {
-            // Ermittle den Pfad zum aktuellen Script (./js/component.js)
-            // und gehe einen Ordner höher, um den App-Kontext (/osb-mcp/) zu erhalten.
             const scriptUrl = new URL(import.meta.url);
             const basePath = scriptUrl.pathname.replace('/js/component.js', '');
-            // Baue den URL-String zusammen
-            const apiUrl = `${basePath}/prjxp/tools/context?userQuestion=${encodeURIComponent(query)}`;
+            const apiUrl = `${basePath}/tools/context?project=${encodeURIComponent(project)}&userQuestion=${encodeURIComponent(query)}`;
 
             const response = await fetch(apiUrl);
             this.lastContext = await response.text();
 
-            // Ergebnis anzeigen
             resPre.textContent = this.lastContext;
             details.style.display = "block";
-            details.open = false; // Standardmäßig geschlossen
+            details.open = false;
 
-            // 2. Direkt in die Zwischenablage kopieren
             await this.copyToClipboard(this.lastContext);
 
             status.className = "status-msg success";

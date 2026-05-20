@@ -202,7 +202,7 @@ public class TypeScriptCodeChunker {
                 StringBuilder methodImpl = new StringBuilder();
                 readLines(codeLines, methodStartLine, methodEndLine, l -> methodImpl.append(l).append('\n'));
                 if (!hasDoc) {
-                    methodImpl.append(prefix);
+                    methodImpl.insert(0,prefix);
                 }
                 chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap)
                         .splitContent(

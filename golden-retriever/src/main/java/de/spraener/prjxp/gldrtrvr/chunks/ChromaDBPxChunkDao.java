@@ -1,7 +1,8 @@
 package de.spraener.prjxp.gldrtrvr.chunks;
 
+import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -12,6 +13,7 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.logical.And;
+import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import org.springframework.context.annotation.Primary;
 import org.springframework.context.annotation.Profile;
@@ -23,16 +25,12 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-@Service
-@Profile("!test") // Aktiv, wenn nicht im Test-Profil
+@Data
 @RequiredArgsConstructor
-@Primary
 public class ChromaDBPxChunkDao implements PxChunkDao {
-
     private final EmbeddingStore<TextSegment> embeddingStore;
     private final EmbeddingModel embeddingModel;
-    // Wir brauchen kein EmbeddingModel für findById/Metadata,
-    // da wir nur Metadata-Filter nutzen, keine Vektor-Suche.
+    private final PrjXPEmbeddingStoreReference storeReference;
 
     @Override
     public List<PxChunk> findById(String id) {

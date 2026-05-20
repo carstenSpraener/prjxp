@@ -2,7 +2,7 @@ package de.spraener.prjxp.gldrtrvr.code.typescript;
 
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import lombok.Data;
@@ -15,6 +15,10 @@ import java.util.stream.Stream;
 
 @Data
 public class TypeScriptPromptSession {
+    public interface PromptModifier {
+        String modifyPrompt(PxChunkDao chunkDao, PxChunk chunk, String prompt);
+    }
+
     private Map<String, PxChunk> chunkStore = new HashMap<>();
     private PxChunkDao chunkDao;
     private List<PxChunk> chunks;
@@ -43,11 +47,11 @@ public class TypeScriptPromptSession {
         }
     }
 
-    public String buildPrompt(BiFunction<PxChunk, String, String> promptModifier, Function<String, Boolean>... contextValidator) {
+    public String buildPrompt(PromptModifier promptModifier, Function<String, Boolean>... contextValidator) {
         List<RankedPrompt> rankedPrompts = new ArrayList<>();
         for (var r : this.rootForrest) {
             final ValueContainer<String> vcPrompt = new ValueContainer<>("");
-            r.visit(c -> vcPrompt.setValue(promptModifier.apply(c.getChunk(), vcPrompt.getValue())));
+            r.visit(c -> vcPrompt.setValue(promptModifier.modifyPrompt(chunkDao, c.getChunk(), vcPrompt.getValue())));
             String treeContext = vcPrompt.getValue();
             if (contextValidator != null) {
                 boolean valid = true;

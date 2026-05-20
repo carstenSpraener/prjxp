@@ -11,9 +11,10 @@ import com.github.javaparser.printer.lexicalpreservation.LexicalPreservingPrinte
 import com.github.javaparser.utils.SourceRoot;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.util.ValueContainer;
 import de.spraener.prjxp.gldrtrvr.GldRtrvrQuestioner;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.context.ApplicationEventPublisher;
@@ -36,8 +37,7 @@ public class JavaDocEnricher {
 
     public static final long MIN_WAIT = 5000;
     private final GldRtrvrQuestioner questioner;
-    private final PxChunkDao chunkDao;
-    private final PrjXPConfig cfg;
+    private final PxChunkDaoProvider chunkDaoProvider;
     private final ApplicationEventPublisher eventPublisher;
 
     public void enrichProject(Path[] paths) throws IOException {
@@ -134,6 +134,7 @@ public class JavaDocEnricher {
 
     private String sanatize(String javadoc) {
         try {
+            String modelName = chunkDaoProvider.getModelName("default");
             BufferedReader br = new BufferedReader(new StringReader(javadoc));
             String line;
             StringBuilder sb = new StringBuilder();
@@ -149,7 +150,7 @@ public class JavaDocEnricher {
                 sb.append("     ").append(line.trim()).append("\n");
             }
             sb.append("     *\n");
-            sb.append("     * Hinweis: Diese Doku wurde generiert mit chunk_norris, golden_retriever und dem ChatModel " + cfg.getChatModelName() + "\n");
+            sb.append("     * Hinweis: Diese Doku wurde generiert mit chunk_norris, golden_retriever und dem ChatModel " + modelName + "\n");
             sb.append("     *\n");
             return sb.toString().replace(" * ", "").replace("/**", "").replace("*/", "").replace("     *\n", "\n");
         } catch (IOException xc) {
@@ -183,7 +184,7 @@ public class JavaDocEnricher {
         }
         String methodName = asMethodSignature(method);
 
-        List<PxChunk> methodChunks = chunkDao.findById(className + "." + methodName);
+        List<PxChunk> methodChunks = chunkDaoProvider.get("default").get().findById(className + "." + methodName);
         log.info("Asking for %s.%s".formatted(className, methodName));
         String question = (
                 "Du bist eine erfahrener Java-Entwickler und sollst mich bei der Dokumentation meines QuellCodes unterstützen." +

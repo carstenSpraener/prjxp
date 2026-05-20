@@ -1,7 +1,9 @@
 package de.spraener.prjxp.gldrtrvr;
 
+import de.spraener.prjxp.common.chat.ChatModelProvider;
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.code.java.JavaRetriever;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
@@ -15,8 +17,8 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class GldRtrvrQuestioner {
     private final JavaRetriever javaRetriever;
-    private final PxChunkDao chunkDao;
-    private final KIChat chat;
+    private final PxChunkDaoProvider chunkDao;
+    private final ChatModelProvider chatProvider;
     private final GRPromptEnrichment promptEnrichment;
 
     public String ask(String question, Function<String, Boolean>... contextValidator) {
@@ -24,14 +26,18 @@ public class GldRtrvrQuestioner {
     }
 
     public String ask(String question, List<PxChunk> prefetchedChunks, Function<String, Boolean>... contextValidator) {
-        String prompt = promptEnrichment.enrich(
+        return ask("default", prefetchedChunks, contextValidator);
+    }
+
+    public String ask(String storeName, String question, List<PxChunk> prefetchedChunks, Function<String, Boolean>... contextValidator) {
+        String prompt = promptEnrichment.enrich(storeName,
                 question,
                 prefetchedChunks,
                 new SearchParams(8, 0.85),
                 promptEnrichment::reIterate,
                 this::formatContextForJavaDoc,
                 contextValidator);
-        return chat.chat(prompt+"\nFRAGE: "+question);
+        return chatProvider.get("default").get().chat(prompt+"\nFRAGE: "+question);
     }
 
     public String askForJavaDoc(String template, String method, String className) {

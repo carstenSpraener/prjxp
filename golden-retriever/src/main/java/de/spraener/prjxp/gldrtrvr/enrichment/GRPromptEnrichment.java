@@ -1,48 +1,47 @@
 package de.spraener.prjxp.gldrtrvr.enrichment;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
-import de.spraener.prjxp.gldrtrvr.code.java.JavaRetriever;
-import de.spraener.prjxp.gldrtrvr.code.typescript.TypeScriptRetriever;
-import de.spraener.prjxp.gldrtrvr.md.MarkdownRetriever;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.function.BiFunction;
 import java.util.function.Function;
 
 @Service
 @RequiredArgsConstructor
 public class GRPromptEnrichment {
-    private final PxChunkDao chunkDao;
+    private final PxChunkDaoProvider chunkDaoProvider;
     private final List<GoldenRetriever> retrieverList;
 
-    public String enrich(String prompt) {
-        return enrich(prompt, List.of(),
+    public String enrich(String projectName, String prompt) {
+        return enrich(projectName, prompt, List.of(),
                 new SearchParams(20, 0.85),
-                this::reIterate, (context) ->
+                this::reIterate,
+                (context) ->
                         String.format("""
-                                KONTEXT AUS DEN PROJEKT-MODULEN:
+                                Relevante Information aus dem Projekt '%s':
                                 %s
                                 
-                                """, context
-                        ), c -> c.length() > 0);
+                                """, projectName, context
+                        ),
+                c -> c.length() > 0);
     }
 
-    public String enrich(String prompt, List<PxChunk> prefetchedChunks,
+    public String enrich(String projectName, String prompt, List<PxChunk> prefetchedChunks,
                          Function<String, String> promptFormatter,
                          Function<String, Boolean>... contextValidator) {
-        return enrich(prompt, prefetchedChunks,
+        return enrich(projectName, prompt, prefetchedChunks,
                 new SearchParams(8, 0.85),
                 this::reIterate,
                 promptFormatter,
                 contextValidator);
     }
 
-    public String enrich(String prompt,
+    public String enrich(String projectName, String prompt,
                          List<PxChunk> prefetchedChunks,
                          SearchParams searchParams,
                          Function<SearchParams, SearchParams> iterationHandler,
@@ -51,14 +50,14 @@ public class GRPromptEnrichment {
         boolean invalidPrompt = true;
         String overallContext = "";
         do {
-            List<PxChunk> similarChunks = chunkDao.findRelevant(prompt, searchParams.getMaxResult(), searchParams.getMinScore());
+            List<PxChunk> similarChunks = chunkDaoProvider.get(projectName).get().findRelevant(prompt, searchParams.getMaxResult(), searchParams.getMinScore());
             List<PxChunk> relevantChunks = new ArrayList<>();
             relevantChunks.addAll(prefetchedChunks);
             relevantChunks.addAll(similarChunks);
 
             StringBuilder sb = new StringBuilder();
             for( var gr : retrieverList ) {
-                sb.append(gr.buildPromptForFindings(sb, relevantChunks, contextValidator));
+                sb.append(gr.buildPromptForFindings(projectName, sb, relevantChunks, contextValidator));
             }
             overallContext = sb.toString();
             if (contextValidator != null && contextValidator.length > 0) {

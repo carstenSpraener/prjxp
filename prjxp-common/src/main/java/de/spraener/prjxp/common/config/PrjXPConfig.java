@@ -2,7 +2,7 @@ package de.spraener.prjxp.common.config;
 
 import lombok.Data;
 import lombok.ToString;
-import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.io.*;
@@ -10,100 +10,61 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.stream.Stream;
 
 @Component
+@ConfigurationProperties(prefix = "prjxp") // <--- Das magische Prefix
 @Data
 public class PrjXPConfig {
-    // General via CLI
 
-    // Chunk Norris
+    // Spring matcht YAML-Keys im "Kebab-Case" (chuno-root-dir)
+    // automatisch auf CamelCase-Felder (chunoRootDir).
     private String chunoRootDir;
     private PrintWriter chunoOutput;
     private String chunoWhiteList;
 
-    // Tibed
-    public String tibedJsonlInputSource;
+    private String tibedJsonlInputSource;
     private int tibedBatchSize = 50;
     private boolean tibedResetStore = false;
 
-    // Golden Retriever
     private String grInputSource;
     private String grQuestion;
     private String grProjectSourceDir;
 
     // --- Embedding Sektion ---
-    @Value("${embedding.ollama.url:http://192.168.1.228:11434}")
-    private String embeddingOllamaUrl;
-    @Value("${embedding.modelName:mxbai-embed-large}")
-    private String embeddingModelName;
-    @Value("${embedding.timeoutSecs:60}")
-    private int embeddingTimeoutSecs;
+    // Standardwerte setzt du einfach direkt am Feld!
+    private String embeddingOllamaUrl = "http://192.168.1.228:11434";
+    private String embeddingModelName = "mxbai-embed-large";
+    private int embeddingTimeoutSecs = 60;
 
     // Chroma Section
-    @Value("${chroma.tenant:prjxp}")
-    private String chromaTenant;
-    @Value("${chroma.database:prjxp}")
-    private String chromaDatabase;
-    @Value("${chroma.collectionname:prjxp}")
-    private String chromaCollectionname;
-    @Value("${chroma.url:http://localhost:8000}")
-    private String chromaUrl;
+    private String chromaTenant = "prjxp";
+    private String chromaDatabase = "prjxp";
+    private String chromaCollectionname = "prjxp";
+    private String chromaUrl = "http://localhost:8000";
 
-    // Chat
-    @Value("${chat.gemini.api-key:NONE-SPECIFIED}")
-    @ToString.Exclude
-    private String geminiApiKey;
-    @Value("${chat.api-kind:ollama}")
-    private String chatApiKind;
-    @Value("${chat.modelName:gemini-2.5-flash}")
-    private String chatModelName;
-    @Value("${chat.apikey:lm-studio}")
-    @ToString.Exclude
-    private String chatApiKey;
-    @Value("${chat.api-url:http://localhost:11434}")
-    private String chatApiUrl;
+    // Hierarchische Listen MÜSSEN vorinitialisiert sein
+    private List<PrjXPEmbeddingStoreReference> embeddingStores = new ArrayList<>();
+    private List<PrjXPChatModelReference> chatModels = new ArrayList<>();
 
+    {
+        PrjXPEmbeddingStoreReference local = new PrjXPEmbeddingStoreReference();
+        local.setProjectName("default");
+        local.setStoreURL("http://localhost:8000");
+        local.setStoreDBName("prjxp");
+        local.setStoreTenant("prjxp");
+        local.setStoreCollectionName("prjxp");
+        embeddingStores.add(local);
 
-    public Stream<String> getJsonlStream(String inputSource) throws IOException {
-        InputStream inputStream;
+        PrjXPChatModelReference chatModelReference = new PrjXPChatModelReference();
+        chatModelReference.setName("default");
+        chatModelReference.setApiUrl("http://192.168.1.224:1234");
+        chatModelReference.setModelName("gemma-4-31b");
+        chatModelReference.setProviderType("openAI");
+        chatModelReference.setApiKey("lm-studio");
 
-        if (inputSource == null || "-".equals(inputSource) || inputSource == null || inputSource.isEmpty()) {
-            // Nutze stdin (Standard Input)
-            inputStream = System.in;
-        } else {
-            // Nutze die Datei
-            Path path = Paths.get(inputSource);
-            inputStream = Files.newInputStream(path);
-        }
-
-        // Erstelle einen BufferedReader und wandle ihn in einen Stream um
-        BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
-
-        // .lines() schließt den Reader automatisch, wenn der Stream geschlossen wird
-        return reader.lines();
-    }
-
-    public Path[] getGrProjectSourceDirs() {
-        if (grProjectSourceDir == null) {
-            return null;
-        }
-        String[] paths = grProjectSourceDir.split(",");
-        Path[] p = new Path[paths.length];
-        for (int i = 0; i < paths.length; i++) {
-            p[i] = Path.of(paths[i]);
-        }
-
-        return p;
-    }
-
-    @ToString.Include(name="chatApiKey")
-    public String maskedApiKey() {
-        return "********";
-    }
-
-    @ToString.Include(name="geminiApiKey")
-    public String maskedGeminiApiKey() {
-        return maskedApiKey();
+        chatModels.add(chatModelReference);
     }
 }

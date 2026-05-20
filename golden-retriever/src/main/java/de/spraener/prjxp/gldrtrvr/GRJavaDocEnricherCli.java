@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.gldrtrvr.javadoc.JavaDocEnricher;
 import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
@@ -12,6 +13,7 @@ import static de.spraener.prjxp.common.PrjXPCli.readDotEnv;
 
 @SpringBootApplication(scanBasePackages = {"de.spraener.prjxp.gldrtrvr", "de.spraener.prjxp.common"})
 public class GRJavaDocEnricherCli {
+    private PrjXPJsonStreamProvider jsonStreamProvider;
 
     public static void main(String[] args) {
         readDotEnv(args);
@@ -28,7 +30,7 @@ public class GRJavaDocEnricherCli {
             JavaDocEnricher javaDocEnricher
     ) {
         return args -> {
-            javaDocEnricher.enrichProject(cfg.getGrProjectSourceDirs());
+            javaDocEnricher.enrichProject(jsonStreamProvider.getGrProjectSourceDirs());
         };
     }
 }

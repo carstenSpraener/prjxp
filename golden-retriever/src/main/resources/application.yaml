@@ -1,20 +1,28 @@
-gldrtrvr:
-  gemini:
-    api-key: UNKNOWN
-  chat:
-    api-kind: openai
-    modelName: gemma-4-31b
-    api-url: http://192.168.1.224:1234
-    api-key: lm-studio
+prjxp:
+  # Embedding Stores
+  embedding-stores:
+    - project-name: "prjxp"
+      store-URL: "http://localhost:8000"
+      store-tenant: "prjxp"
+      store-DB-name: "prjxp"
+      store-collection-name: "prjxp"
+
+    - project-name: "kigbau"
+      store-uRL: "http://localhost:8000"
+      store-dBName: "kigbau"
+      store-tenant: "kigbau"
+      store-collection-name: "kigbau-src"
 
   embedding:
-    modelName: mxbai-embed-large
-    ollamaBaseUrl: http://localhost:11434
-    chroma:
-      collectioName: chunk_norris
-      database: prjxp-enriched
-      tenant: prjxp
+    ollama-url: http://192.168.188.92:11434
+    model-name: mxbai-embed-large
+    timeout-secs: 60
 
+  # Chat-Schnittstelle
+  chat-models:
+    - model-name: "gemma-4-31b"
+      name: "gemma4"
+      api-url: "http://localhost:1234"
+      api-key: "lm-studio"
+      provider-type: "openAI"
 
-  chromaBaseUrl: http://localhost:8000
-  chromaCollectionName: chunk_norris

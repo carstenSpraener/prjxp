@@ -1,13 +1,13 @@
 package de.spraener.prjxp.gldrtrvr.md;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
-import de.spraener.prjxp.gldrtrvr.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -19,14 +19,15 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 @Log
 public class MarkdownRetriever implements GoldenRetriever {
-    private final PxChunkDao chunkDao;
+    private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+        PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
         // Die Session verwaltet den Baum-Aufbau der Dokumente
         MarkdownPromptSession session = new MarkdownPromptSession(chunkDao, rankingService);
-        session.setChunks(combineChunksByID(chunks));
+        session.setChunks(combineChunksByID(chunkDao, chunks));
 
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
@@ -46,7 +47,7 @@ public class MarkdownRetriever implements GoldenRetriever {
         return sb.toString();
     }
 
-    private List<PxChunk> combineChunksByID(List<PxChunk> chunks) {
+    private List<PxChunk> combineChunksByID(PxChunkDao chunkDao, List<PxChunk> chunks) {
         Map<String, List<PxChunk>> chunkMap = new HashMap<>();
         for (var c : chunks) {
             chunkMap.computeIfAbsent(c.getId(), k -> new ArrayList<>()).add(c);
