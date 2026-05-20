@@ -25,7 +25,9 @@ public class PxChunkDaoProvider implements Function<Predicate<PrjXPEmbeddingStor
 
     public Optional<PxChunkDao> get(String prjName) {
         if( "default".equalsIgnoreCase(prjName) ) {
-            return apply(m->m.isDefault());
+            return apply(m->
+                    m.isDefault()
+            );
         } else {
             return apply(m->m.getProjectName().equals(prjName));
         }

@@ -53,7 +53,8 @@ public class JavaPromptSession {
         for (var r : this.rootForrest) {
             final ValueContainer<String> vcPrompt = new ValueContainer<String>("");
             r.visit(c -> {
-                vcPrompt.setValue(promptModifier.modifyPrompt(chunkDao, c.getChunk(), vcPrompt.getValue()));
+                vcPrompt.setValue(promptModifier.modifyPrompt(chunkDao,
+                        c.getChunk(), vcPrompt.getValue()));
             });
             String treeContext = vcPrompt.getValue();
             if (contextValidator != null) {

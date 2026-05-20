@@ -60,12 +60,12 @@ public class PxChunkDaoInMemoryImpl implements PxChunkDao {
 
     @Override
     public PrjXPEmbeddingStoreReference getStoreReference() {
-        return null;
+        return storeReference;
     }
 
     @Override
     public List<PxChunk> findById(String id) {
-        return getChunkDB().get(id);
+        return getChunkDB().getOrDefault(id, null);
     }
 
     @Override
@@ -91,5 +91,10 @@ public class PxChunkDaoInMemoryImpl implements PxChunkDao {
         } catch( IOException e ) {
             throw new RuntimeException(e);
         }
+    }
+
+    public PxChunkDaoInMemoryImpl addChunk(PxChunk pxChunk) {
+        getChunkDB().computeIfAbsent(pxChunk.getId(), k -> new ArrayList<>()).add(pxChunk);
+        return this;
     }
 }

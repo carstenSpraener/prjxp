@@ -77,7 +77,7 @@ class OragelSearch extends HTMLElement {
         try {
             const scriptUrl = new URL(import.meta.url);
             const basePath = scriptUrl.pathname.replace('/js/component.js', '');
-            const apiUrl = `${basePath}/tools/context?project=${encodeURIComponent(project)}&userQuestion=${encodeURIComponent(query)}`;
+            const apiUrl = `${basePath}/prjxp/tools/context?project=${encodeURIComponent(project)}&userQuestion=${encodeURIComponent(query)}`;
 
             const response = await fetch(apiUrl);
             this.lastContext = await response.text();

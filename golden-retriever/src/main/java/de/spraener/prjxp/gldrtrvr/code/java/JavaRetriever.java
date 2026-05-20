@@ -25,11 +25,11 @@ public class JavaRetriever implements GoldenRetriever {
 
     @SafeVarargs
     public final StringBuilder buildPromptForFindings(String projectName, StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
-        List<PxChunk> javaChunks = combineChunksByID(chunks);
+        PxChunkDao chunkDao = chunkDaoProvider.get(projectName).get();
+        List<PxChunk> javaChunks = combineChunksByID(chunkDao, chunks);
         if( javaChunks.isEmpty() ) {
             return prompt;
         }
-        PxChunkDao chunkDao = chunkDaoProvider.get(projectName).get();
         JavaPromptSession session = new JavaPromptSession(chunkDao, rankingService);
         session.setChunks(javaChunks);
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
@@ -89,8 +89,7 @@ public class JavaRetriever implements GoldenRetriever {
         return c.getId().substring(c.getId().lastIndexOf('.') + 1);
     }
 
-    private List<PxChunk> combineChunksByID(List<PxChunk> chunks) {
-        PxChunkDao chunkDao = chunkDaoProvider.get("default").get();
+    private List<PxChunk> combineChunksByID(PxChunkDao chunkDao, List<PxChunk> chunks) {
         Map<String, List<PxChunk>> chunkMap = new HashMap<>();
         for (var c : chunks) {
             if( isJavaChunk(c) ) {
@@ -102,7 +101,12 @@ public class JavaRetriever implements GoldenRetriever {
         for (var chunkList : chunkMap.values()) {
             PxChunk c = chunkList.getFirst();
             if (c.getTotal() > chunkList.size()) {
-                result.add(combineChunks(chunkDao.findById(c.getId())));
+                PxChunk combinedChunk = combineChunks(chunkDao.findById(c.getId()));
+                if( combinedChunk != null ) {
+                    result.add(combinedChunk);
+                } else {
+                    log.warning("The chunk [id='"+c.getId()+"'] to combine does not exist in the embedding store. Check your configuration.");
+                }
             } else {
                 result.add(combineChunks(chunkList));
             }
@@ -111,7 +115,7 @@ public class JavaRetriever implements GoldenRetriever {
     }
 
     private boolean isJavaChunk(PxChunk c) {
-        return c.getMetadata().containsKey("java_code_section");
+        return c!=null && c.getMetadata().containsKey("java_code_section");
     }
 
     private PxChunk combineChunks(List<PxChunk> chunkList) {

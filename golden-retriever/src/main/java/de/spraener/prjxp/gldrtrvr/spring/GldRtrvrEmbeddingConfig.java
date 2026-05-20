@@ -18,6 +18,7 @@ import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.extern.java.Log;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 
 import java.time.Duration;
 import java.util.ArrayList;
@@ -47,6 +48,7 @@ public class GldRtrvrEmbeddingConfig {
     }
 
     @Bean
+    @Profile("!test")
     public List<PxChunkDao> embeddingStore(PrjXPConfig cfg, EmbeddingModel embeddingModel) {
         List<PxChunkDao> embeddingStores = new ArrayList<>();
         for( var r : cfg.getEmbeddingStores() ) {
