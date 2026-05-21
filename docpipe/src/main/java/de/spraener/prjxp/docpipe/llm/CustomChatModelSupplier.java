@@ -24,7 +24,7 @@ public class CustomChatModelSupplier implements ChatModelSupplier, ApplicationCo
             log.warning("Configured custom model-access "+cfg+" is missing implementation class!");
             return false;
         }
-        if( classIsAccessible(cfg.getKiChatImpl()) ) {
+        if( !classIsAccessible(cfg.getKiChatImpl()) ) {
             log.warning("Configured custom model-access "+cfg+" can not be instantiated.");
             return false;
         }
