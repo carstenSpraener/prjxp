@@ -1,5 +1,6 @@
 package de.spraener.prjxp.docpipe;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -30,6 +31,11 @@ public class DocPipeCliApp {
                 System.setProperty(entry.getKey(), entry.getValue());
             }
         });
+    }
+
+    @Bean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
     }
 
     @Bean
