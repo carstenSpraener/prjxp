@@ -1,54 +1,76 @@
-# Software Architecture Assessment: Chunk Norris (chuno)
+# Software Architecture Assessment: Chunk Norris (Project Expert Chunker)
 
 ## 1. Executive Summary
-The "Chunk Norris" project is a sophisticated Java-based document and source code processing engine designed to decompose heterogeneous data (Java, TypeScript, PDF, Word, etc.) into semantic units ("chunks") suitable for LLM indexing and RAG (Retrieval-Augmented Generation) pipelines. 
+The "Chunk Norris" project is a Spring Boot-based framework designed to decompose heterogeneous data sources (source code, documents, images) into semantic "chunks" suitable for Large Language Model (LLM) ingestion or vector indexing. 
 
-The architecture is highly extensible, leveraging a plugin-based approach via Spring Boot and custom annotations. Its most innovative feature is a dynamic conversion router that uses Dijkstra’s shortest path algorithm to find the most efficient transformation path from binary formats to Markdown. While the core logic is robust, there is a notable discrepancy in parsing quality between different languages (AST-based for Java vs. Regex-based for TypeScript) and some risks regarding resource management in deep conversion chains.
+The architecture is highly modular and extensible, leveraging a sophisticated **Dijkstra-based routing engine** for document conversion and an **annotation-driven plugin system** for discovery. While the core logic is robust and follows modern Java practices, there are identified risks regarding side-effect management (I/O within processing logic), inconsistent error handling, and tight coupling to the local filesystem.
+
+**Key Strengths:**
+- Advanced conversion routing using graph theory.
+- High extensibility via custom annotations and Spring-managed components.
+- Semantic awareness for Java and TypeScript code.
+
+**Critical Risks:**
+- Side-effects (writing files) embedded deep within chunking logic.
+- Potential performance bottlenecks in pre-processing (blocking I/O in event listeners).
+- Reliance on reflection and manual classpath scanning which may bypass Spring's standard lifecycle benefits.
 
 ## 2. Architectural Style & Patterns
-The system follows a **Modular Monolith** approach with a strong emphasis on **Strategy** and **Registry** patterns.
+The system employs a hybrid architectural style, primarily a **Micro-kernel (Plugin) Architecture** combined with **Pipes and Filters**.
 
-*   **Plugin-Based Discovery:** The system uses custom annotations (`@Chunker`, `@PostWalkChunker`, `@ChunkVeto`) and Spring’s `ApplicationContext` to dynamically discover and register processing logic. This decouples the orchestrator (`ChunkProcess`) from specific file-type implementations.
-*   **Graph-Based Routing:** The `DocConversionRouter` implements a **Directed Weighted Graph** (using JGraphT). This allows the system to calculate the "cheapest" or "most accurate" conversion path (e.g., PDF -> Image -> OCR -> Markdown vs. PDF -> Text -> Markdown).
-*   **Event-Driven Initialization:** Spring Events are used to trigger pre-processing tasks, such as the `JavaFQNamesMapper` building a symbol table before the main chunking walk begins.
-*   **Wrapper/Adapter Pattern:** The `AnnotationBasedChunkerBrokerImpl` uses internal wrapper classes to adapt methods annotated with `@Chunker` into the `PxChunker` interface, allowing for a flexible, non-intrusive programming model.
+- **Strategy Pattern:** Used extensively for `PxChunker` and `DocConversionAgent` implementations. The system selects the appropriate strategy at runtime based on file type or conversion requirements.
+- **Graph-Based Routing:** The `DocConversionRouter` uses a directed weighted graph (via JGraphT) to find the "cheapest" path from a source format (e.g., PDF) to a target format (e.g., Markdown).
+- **Event-Driven Architecture:** Utilizes Spring's `ApplicationEventPublisher` for lifecycle hooks (e.g., `SpringPreWalkEvent`), allowing decoupled components like `JavaFQNamesMapper` to prepare metadata before processing begins.
+- **Annotation-Driven Discovery:** Custom annotations (`@Chunker`, `@PostWalkChunker`, `@ChunkVeto`) allow for a declarative programming model, reducing the need for manual registration of new processors.
 
 ## 3. Quality Attribute Evaluation
 
 ### Maintainability & Readability
-*   **Strengths:** The project uses clean, idiomatic Java 17+ features (records, streams, var). The separation of concerns between "Conversion Agents" and "Chunkers" is excellent.
-*   **Weaknesses:** The `TypeScriptCodeChunker` relies heavily on complex Regular Expressions. This makes the code harder to maintain and more prone to "brittle" parsing compared to the AST-based `JavaCodeChunker`.
+- **Code Cleanliness:** Generally high. The use of Lombok reduces boilerplate, and naming conventions follow standard Java idioms.
+- **SOLID Adherence:** 
+    - **Single Responsibility:** Most classes have a clear purpose (e.g., `Pdf2TextConversionAgent`). However, `MarkdownChunker` violates this by performing both conversion and file I/O (writing `.md` files to disk).
+    - **Open/Closed:** Excellent. New file types can be supported by adding new beans without modifying the core orchestrator.
 
 ### Extensibility
-*   **Strengths:** Extremely high. Adding support for a new file format requires only a new `@Component` with a `@Chunker` method. The conversion graph automatically incorporates new `DocConversionAgent` implementations into its pathfinding logic.
-*   **Weaknesses:** The `PxFileType` enum is a central point of coupling. Adding a new file type requires modifying this common enum, which slightly violates the Open/Closed Principle.
+- The system is designed for growth. Adding support for a new LLM provider or a new document format requires only implementing an interface and annotating the class.
+- The `DocConversionRouter` automatically incorporates new agents into its pathfinding logic, which is a highly resilient design choice.
 
 ### Robustness & Error Handling
-*   **Strengths:** The `VetoRegistry` provides a clean way to prevent the system from crashing on large or irrelevant files (e.g., build artifacts).
-*   **Weaknesses:** There are several instances of "silent failures" where exceptions are caught and logged, but an empty Stream is returned. While this prevents the entire process from crashing, it makes debugging missing data difficult.
+- **Weakness:** There is a pattern of "catch and log" or "catch and return empty" (e.g., in `JavaCodeChunker` and `TypeScriptCodeChunker`). While this prevents the entire process from crashing, it can hide systemic issues like permission errors or corrupted files.
+- **Resilience:** The `VetoRegistry` provides a clean way to skip problematic files (too large, hidden, etc.) before they enter the pipeline.
 
 ### Performance & Resource Efficiency
-*   **Strengths:** Extensive use of `parallel()` streams in the `ChunkProcess` allows for high throughput during I/O-heavy file walking.
-*   **Weaknesses:** The `Pdf2ImageConversionAgent` holds a `PDDocument` open and relies on a `postConversionAction` callback for cleanup. In a large-scale parallel process, this could lead to memory pressure or file handle exhaustion if the lifecycle of `DocArtifakt` is not strictly managed.
+- **Parallelism:** `ChunkProcess` uses `parallelStream()`, which is effective for I/O-bound tasks but can lead to thread exhaustion if not tuned, especially since some agents (like `Image2MDConversionAgent`) call external AI services.
+- **Memory Management:** The use of `Stream<PxChunk>` is memory-efficient. However, `JavaFQNamesMapper` performs a full project walk and parses all Java files into memory-heavy ASTs (`CompilationUnit`) during the pre-walk phase, which could be a bottleneck for large repositories.
 
 ## 4. Strengths & Best Practices
-*   **Semantic Awareness:** Unlike naive character-count splitters, the chunkers are "code-aware" (extracting method signatures, JSDoc, and class frames), which significantly improves the quality of downstream RAG applications.
-*   **Dijkstra Routing:** The use of a weighted graph for document conversion is a "smart" architectural choice. It allows the system to prioritize "Analytic" (100% accurate) paths over "AI-Driven" (probabilistic) paths automatically.
-*   **Sidecar Metadata:** The `MetaInfReader` implementation for `.meta` files allows for external metadata injection without modifying the original source files.
-*   **Dependency Tracking:** The `JavaDependencyHandler` builds a cross-reference map, allowing chunks to contain information about what they use and what uses them, providing rich context for LLMs.
+- **Semantic Chunking:** Unlike naive character-count splitters, the `JavaCodeChunker` and `TypeScriptCodeChunker` understand code structure (methods, classes, imports), which significantly improves the quality of downstream RAG (Retrieval-Augmented Generation) systems.
+- **Dijkstra Routing:** Using a weighted graph for document conversion is an elegant solution to the "N-to-M" conversion problem, allowing the system to automatically find multi-step paths (e.g., Word -> HTML -> Markdown).
+- **Declarative Veto Logic:** The `@ChunkVeto` system is a clean implementation of the Interceptor pattern, allowing easy configuration of file exclusion rules.
+- **Context Awareness:** The `TextDocChunkContext` and `PdfDocSplittingSession` track state across chunks, ensuring that metadata like page numbers and section headers are preserved.
 
 ## 5. Identified Risks & Technical Debt
-*   **Regex-Based Parsing (TypeScript):** The `TypeScriptCodeChunker` attempts to parse class structures and method boundaries using Regex. This is notoriously difficult to get right (e.g., nested braces, template strings) and should be replaced with a proper parser (like `typescript-parser` or a Tree-sitter binding).
-*   **State Management in Conversion:** The `DocArtifakt` tree structure is mutable and grows during conversion. If a conversion path is long (e.g., 5 steps), the memory footprint of the `DocArtifakt` tree could become significant.
-*   **Tight Coupling to Spring:** While Spring provides great DI, the `AnnotationBasedChunkerBrokerImpl` is deeply tied to the Spring `ApplicationContext`, making it difficult to use the core logic in a non-Spring environment or a lightweight CLI.
-*   **Hardcoded Configuration:** Some logic (like `inaccurateSurcharge` or `chunkSize`) is spread across `@Value` annotations in multiple classes, making it difficult to provide a unified configuration profile.
+
+### 1. Side-Effect Pollution
+`MarkdownChunker.processFile` creates a `PrintWriter` and writes a `.md` file to the filesystem. This makes the component hard to unit test, creates unexpected files on the user's disk, and limits the tool's use in read-only environments or stream-based pipelines.
+
+### 2. Reflection and Scanning Overhead
+`AnnotationBasedChunkerBrokerImpl` performs manual classpath scanning using `ClassPathScanningCandidateComponentProvider`. This overlaps with Spring's own component scanning and uses reflection to invoke methods. This can lead to "hidden" dependencies that aren't visible in the Spring Bean Graph.
+
+### 3. Tight Coupling to Filesystem
+Most interfaces (`PxChunker`, `DocConversionAgent`) are hardcoded to use `java.io.File`. This prevents the system from processing data from S3 buckets, databases, or network streams without first writing them to a local temporary directory.
+
+### 4. Inconsistent Error Propagation
+In `JavaDependencyHandler`, exceptions are wrapped in `RuntimeException`, while in `TypeScriptCodeChunker`, they are swallowed and logged. A unified error handling strategy (e.g., a `Result<T>` wrapper or a dedicated `ErrorCollector`) is missing.
 
 ## 6. Actionable Recommendations
-1.  **Standardize Parsing:** Replace the Regex logic in `TypeScriptCodeChunker` with a formal AST parser to match the robustness of the `JavaCodeChunker`.
-2.  **Formalize Resource Lifecycle:** Implement `AutoCloseable` on `DocArtifakt` or introduce a formal `ResourceScope` to ensure that binary resources (like PDF handles and BufferedImages) are guaranteed to be released, even if a conversion step fails.
-3.  **Centralize Configuration:** Create a `ChunkingProperties` configuration class to group all `chunkSize`, `overlap`, and `surcharge` settings in one place, rather than scattering them across components.
-4.  **Improve Error Propagation:** Instead of returning `Stream.empty()` on error, consider returning a specialized `ErrorChunk` or using a Result/Either pattern to allow the caller to report on *why* certain files were skipped.
-5.  **Decouple File Types:** Move from a hardcoded `PxFileType` enum to a string-based or MIME-type-based registry to allow third-party libraries to provide chunkers for new formats without modifying the core library.
+
+1.  **Abstract the I/O Layer:** Replace `java.io.File` with Spring's `Resource` abstraction or a custom `DataSource` interface. This will allow the architecture to support cloud storage and improve testability using in-memory filesystems.
+2.  **Decouple Conversion from Storage:** Refactor `MarkdownChunker` to return the converted string rather than writing it to a file. Move the "save to disk" logic to a dedicated `OutputHandler` or `PostProcessor`.
+3.  **Optimize Pre-Walk Phase:** In `JavaFQNamesMapper`, consider using a more lightweight indexing library (like Lucene or a simple regex-based scanner) instead of full `StaticJavaParser` ASTs if only FQNs are needed.
+4.  **Standardize Plugin Discovery:** Instead of manual scanning in `AnnotationBasedChunkerBrokerImpl`, utilize Spring's ability to inject a `List<Object>` of all beans annotated with a specific type, or use `SmartLifecycle` for initialization.
+5.  **Implement a Progress Monitor:** Since processing large directories with AI-based conversion (Ollama) can take significant time, implement an observer pattern or use Spring Boot Actuator to provide real-time progress updates.
+6.  **Enhance Error Metadata:** Instead of returning an empty `Stream` on failure, return a `PxChunk` with a specific `error` metadata tag. This allows the final output (JSONL) to reflect which files failed and why.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 

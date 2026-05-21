@@ -20,6 +20,7 @@
   {
     "stereotype": "detailed",
     "serverType": "gemini",
-    "modelName": "gemini-3-flash-preview"
+    "modelName": "gemini-3-flash-preview",
+    "timeOutSeconds": "240"
   }
 ]

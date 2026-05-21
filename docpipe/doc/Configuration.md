@@ -1,57 +1,51 @@
-```markdown
-# Doc|Pipe Technical Documentation
+# Doc|Pipe Documentation
 
 ## Overview
-Doc|Pipe is a document generation pipeline that automates the creation of content based on predefined model configurations and job definitions. It scans a project directory for specific configuration files, resolves the appropriate AI models, and executes content creation tasks.
+Doc|Pipe is a document generation pipeline that automates the creation of content based on predefined model configurations and job definitions. It scans a project directory for specific configuration files, resolves the necessary AI model settings, and executes content creation tasks.
 
-## Workflow Architecture
+## How it Works
 
 ### 1. Initialization and Global Configuration
-The process begins in the `DocPipeRunner`. Before processing jobs, the system checks for a global configuration file:
-- It uses `DotDPFilesService` to locate the global `models.json`.
-- If found, `ModelConfigLoader` loads these global model definitions into the `DocPipeConfig`.
-- These global models serve as a fallback if local directory configurations are missing.
+The process starts in the `DocPipeRunner`. Before processing jobs, the system checks for a global `models.json` file via the `DotDPFilesService`. If found, these global model configurations are loaded into the main configuration to serve as defaults for any job that lacks its own specific model definitions.
 
-### 2. Job Discovery (`JobCreationService`)
-The system performs a recursive scan of the provided project directory:
-- **Directory Walking**: It walks through the file system searching for directories that qualify as "DocPipe directories" (via `dpFilesService.hasDocPipeDir`).
-- **Job Creation**: For every valid directory found, a `DPJob` object is instantiated.
+### 2. Job Discovery
+The `JobCreationService` performs a recursive walk through the provided project root directory. It identifies "DocPipe directories" based on specific criteria:
+- It filters for directories that are recognized as DocPipe-enabled.
+- For every valid directory found, it attempts to create a `DPJob`.
 
-### 3. Configuration Resolution
-For each discovered job, the system resolves two primary components:
+### 3. Job Configuration Loading
+For each identified directory, the system looks for two primary JSON configuration files:
 
-#### A. Model Configuration (`DPModelConfig`)
-The system determines which AI model to use in the following order of priority:
-1. **Local**: Looks for a `models.json` within the specific job directory.
-2. **Global**: If no local file exists, it falls back to the global models loaded during initialization.
-3. **Failure**: If neither is available, a warning is logged.
+#### A. Model Configuration (`models.json`)
+- The system looks for a local `models.json` within the job directory.
+- **Priority:** Local `models.json` $\rightarrow$ Global Models $\rightarrow$ Warning (if neither exists).
+- The `DPModelConfig` object stores details such as:
+    - `modelProviderURL` and `serverType` (e.g., "ollama").
+    - `kiChatImpl` (the implementation of the AI chat).
+    - Hyperparameters like `temperature` and `timeOutSeconds`.
 
-The `DPModelConfig` defines the technical parameters for the AI provider, including:
-- `serverType` (e.g., "ollama")
-- `modelProviderURL` and `modelName`
-- `temperature` and `timeOutSeconds`
-- `stereotype` (used to map specific model roles to tasks)
-
-#### B. Content Definitions (`DPContentCreation`)
-The system looks for a `documents.json` file in the job directory. This file contains a list of content creation requirements, specifying:
-- `outputFile`: The destination path for the generated content.
-- `stereotype`: The required model type/role.
-- `prompt`: The instruction for the AI.
-- `ps`: Additional post-script or context.
+#### B. Content Definition (`documents.json`)
+- The system reads `documents.json` to determine what needs to be created.
+- This file is mapped to a list of `DPContentCreation` objects, which define:
+    - `outputFile`: Where the result should be saved.
+    - `stereotype`: The type of content/model to use.
+    - `prompt`: The instruction for the AI.
+    - `ps`: Additional parameters or post-scripts.
 
 ### 4. Execution Pipeline
-Once the jobs are read and configurations are resolved, the `DocPipeRunner` flattens the structure:
-1. **Task Mapping**: Each `DPContentCreation` entry within a `DPJob` is wrapped into a `ContentCreationTask`.
-2. **Processing**: The `ContentCreationService` iterates through these tasks and executes the `createContent` method to generate the final documents.
+Once the jobs are loaded, the `DocPipeRunner` flattens the structure:
+1. **Mapping:** Each `DPContentCreation` entry within a `DPJob` is wrapped into a `ContentCreationTask`.
+2. **Processing:** The `ContentCreationService` iterates through these tasks and executes the `createContent` method to generate the final documents.
 
 ## Data Model Summary
 
-| Class | Responsibility | Key Fields |
-| :--- | :--- | :--- |
-| `DPJob` | Represents a processing unit tied to a directory | `rootDir`, `modelConfigs`, `contentCreationList` |
-| `DPModelConfig` | Technical AI model settings | `modelName`, `serverType`, `temperature`, `stereotype` |
-| `DPContentCreation` | Definition of a single document to be created | `outputFile`, `prompt`, `stereotype` |
-| `DocPipeRunner` | Orchestrates the entire flow | `run()` |
-```
+| Class | Responsibility |
+| :--- | :--- |
+| `DocPipeRunner` | Orchestrates the overall flow from config loading to execution. |
+| `JobCreationService` | Scans the filesystem and parses JSON files into Job objects. |
+| `DPJob` | Represents a specific directory containing model and content definitions. |
+| `DPModelConfig` | Defines the AI backend settings (URL, Server Type, Temperature). |
+| `DPContentCreation` | Defines the specific output file and the prompt to be used. |
 
 _This document was generated with Doc|Pipe and gemma4:31B_
+
