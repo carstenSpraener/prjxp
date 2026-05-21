@@ -3,6 +3,7 @@ package de.spraener.prjxp.chuno.code.ts;
 import de.spraener.prjxp.chuno.PxChunkTestUtil;
 import de.spraener.prjxp.chuno.code.typescript.TypeScriptCodeChunker;
 import de.spraener.prjxp.common.model.PxChunk;
+import org.apache.commons.io.IOUtils;
 import org.assertj.core.api.Assertions;
 import org.jspecify.annotations.NonNull;
 import org.junit.jupiter.api.Test;
@@ -11,6 +12,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.io.File;
+import java.io.FileWriter;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -98,7 +100,12 @@ public class TypeScriptChunkerTests {
         return chunkList;
     }
 
-    private @NonNull List<PxChunk> chhunkTypeScriptString(String code) {
-        File tmpFile = new File("src/test/tmp");
+    private @NonNull List<PxChunk> chhunkTypeScriptString(String code) throws Exception {
+        File tmpFileDir = new File("src/test/tmp");
+        tmpFileDir.mkdirs();
+        File tmp = File.createTempFile("example", ".ts", tmpFileDir);
+        IOUtils.write(code, new FileWriter(tmp));
+        tmp.deleteOnExit();
+        return uut.chunk(tmp).toList();
     }
 }
