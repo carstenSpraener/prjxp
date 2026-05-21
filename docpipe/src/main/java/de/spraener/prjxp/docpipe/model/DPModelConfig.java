@@ -18,8 +18,9 @@ public class DPModelConfig {
     private String stereotype;
     private String modelName;
     private String modelProviderURL;
+    private String kiChatImpl;
     private String serverType = "ollama";
     private double temperature = 0.2;
     private int timeOutSeconds = 60;
-    private Map<String,String> metadata;
+    private Map<String,String> args;
 }
