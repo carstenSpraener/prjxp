@@ -78,6 +78,11 @@ public class TypeScriptChunkerTests {
         ;
     }
 
+    @Test
+    public void testGlobalFunction() throws Exception {
+
+    }
+
     private boolean hasCodeSection(PxChunk c, String codeSectionName) {
         return codeSectionName.equals(c.getMetadata().get(TypeScriptCodeChunker.MDKEY_CODESECTION));
     }
@@ -91,5 +96,9 @@ public class TypeScriptChunkerTests {
         Stream<PxChunk> chunks = uut.chunk(new File(srcFileName));
         List<PxChunk> chunkList = chunks.toList();
         return chunkList;
+    }
+
+    private @NonNull List<PxChunk> chhunkTypeScriptString(String code) {
+        File tmpFile = new File("src/test/tmp");
     }
 }
