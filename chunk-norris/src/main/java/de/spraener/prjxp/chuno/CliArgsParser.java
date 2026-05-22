@@ -41,9 +41,7 @@ public class CliArgsParser {
             }
             if (cmd.hasOption("o")) {
                 String outputFileName = cmd.getOptionValue("o");
-                cfg.setChunoOutput(new PrintWriter(new FileWriter(outputFileName)));
-            } else {
-                cfg.setChunoOutput(new PrintWriter(System.out));
+                cfg.setChunoOutput(outputFileName);
             }
             if (cmd.hasOption("wl")) {
                 cfg.setChunoWhiteList(cmd.getOptionValue("wl"));

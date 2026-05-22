@@ -6,7 +6,9 @@ import de.spraener.prjxp.common.PxChunkFromJsonLReader;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
@@ -25,32 +27,21 @@ import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metad
 public class EmbeddingService {
     private final ObjectMapper objMapper;
     private final EmbeddingExecutor embedder;
-    private final EmbeddingStore embeddingStore;
+    private final EmbeddingStoreSupplier embeddingStoreSupplier;
     private final PrjXPJsonStreamProvider streamProvider;
     private final PrjXPConfig cfg;
 
     public void execute() {
-        log.info(("Starting embedding process with\n" +
-                "  embedding model: '%s'\n" +
-                "  ollama server url: '%s'\n" +
-                "  chroma-tenant: '%s'\n" +
-                "  chroma-database: '%s'\n" +
-                "  chroma-collection: '%s'").formatted(
-                        cfg.getEmbeddingModelName(),
-                        cfg.getEmbeddingOllamaUrl(),
-                        cfg.getChromaTenant(),
-                        cfg.getChromaDatabase(),
-                        cfg.getChromaCollectionname()
-                ));
+        EmbeddingStore<TextSegment> store = embeddingStoreSupplier.getStore(cfg.getProjectName());
         if (cfg.isTibedResetStore()) {
             log.warning("Resetting embedding store!");
-            embeddingStore.removeAll(metadataKey("id").isNotEqualTo(0));
+            store.removeAll(metadataKey("id").isNotEqualTo(0));
         }
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
-            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(cfg.getTibedJsonlInputSource()), cfg.getTibedBatchSize(), this::fromJSONL)
+            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(cfg.getTibedInput()), cfg.getTibedBatchSize(), this::fromJSONL)
                     .forEach(batch -> {
-                        embedChunk(batch);
+                        embedChunk(store, batch);
                     });
             ;
         } catch (Exception e) {
@@ -58,11 +49,11 @@ public class EmbeddingService {
         }
     }
 
-    private void embedChunk(PxChunk[] chunks) {
+    private void embedChunk(EmbeddingStore<TextSegment> store, PxChunk[] chunks) {
         try {
-            embedder.execute(Arrays.asList(chunks)
+            embedder.execute(store, Arrays.asList(chunks)
                     .stream()
-                    .filter(this::needsEmbeddeding)
+                    .filter( c -> needsEmbedding(store, c))
                     .toList()
             );
             log.info("Embedded batch of " + chunks.length + " chunks");
@@ -71,9 +62,9 @@ public class EmbeddingService {
         }
     }
 
-    private boolean needsEmbeddeding(PxChunk chunk) {
+    private boolean needsEmbedding(EmbeddingStore embeddingStore, PxChunk chunk) {
         Filter filter = new IsEqualTo(PxChunk.PXCHUNK_ID, chunk.getId());
-        return !hasEntriesWithFilter(filter);
+        return !hasEntriesWithFilter(embeddingStore, filter);
     }
 
     private PxChunk fromJSONL(String line) {
@@ -85,7 +76,7 @@ public class EmbeddingService {
         }
     }
 
-    private boolean hasEntriesWithFilter(Filter filter) {
+    private boolean hasEntriesWithFilter(EmbeddingStore embeddingStore, Filter filter) {
         Embedding dummyEmbedding = Embedding.from(new float[1024]);
         // Wir führen eine Suche aus, die nur auf Metadaten basiert (max 100 Treffer)
         // Hinweis: EmbeddingStore.search gibt oft Scored-Matches zurück
@@ -94,7 +85,6 @@ public class EmbeddingService {
                 .filter(filter)
                 .maxResults(100)
                 .build();
-
         return !embeddingStore.search(request)
                 .matches().isEmpty();
     }

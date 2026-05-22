@@ -1,6 +1,8 @@
 package de.spraener.prjxp.tibed;
 
+import de.spraener.prjxp.common.PxDefaultArgsParser;
 import de.spraener.prjxp.common.config.CliArgsParsingEvent;
+import de.spraener.prjxp.common.config.PrjXPArgsParser;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
@@ -34,6 +36,11 @@ public class CliArgsParser {
                     .longOpt("reset")
                     .desc("Reset the embedding store and remove all entries. This will start the embedding process from scratch.")
                     .build());
+            options.addOption(Option.builder("p")
+                    .longOpt("project")
+                    .numberOfArgs(1)
+                    .desc("Specify which project should be embedded. Default is 'default' (prjxp).")
+                    .build());
             options.addOption(Option.builder("h")
                     .longOpt("help")
                     .desc("Display this help message and exit.")
@@ -46,37 +53,21 @@ public class CliArgsParser {
     public void parseArgs(CliArgsParsingEvent event) {
         PrjXPConfig cfg = event.cfg();
         Options options = getOptions();
-        CommandLineParser parser = new DefaultParser() {
-            @Override
-            protected void handleUnknownToken(String token) throws ParseException {
-                // Entferne die "--" am Anfang, falls vorhanden
-                String propertyKey = token.startsWith("--") ? token.substring(2) : token;
-
-                // Prüfe auf Gleichheitszeichen bei --key=value
-                if (propertyKey.contains("=")) {
-                    propertyKey = propertyKey.split("=")[0];
-                }
-
-                if (env.containsProperty(propertyKey)) {
-                    // Es ist eine gültige Spring-Property -> Einfach ignorieren für Commons-CLI
-                    return;
-                }
-
-                // Wenn es weder eine Option noch eine bekannte Property ist:
-                super.handleUnknownToken(token);
-            }
-        };
+        CommandLineParser parser = new PxDefaultArgsParser(env);
         HelpFormatter formatter = new HelpFormatter();
         try {
             CommandLine cmd = parser.parse(options, event.args());
             if (cmd.hasOption("i")) {
-                cfg.setTibedJsonlInputSource(cmd.getOptionValue("i"));
+                cfg.setTibedInput(cmd.getOptionValue("i"));
             }
             if (cmd.hasOption("bs")) {
                 cfg.setTibedBatchSize(Integer.parseInt(cmd.getOptionValue("bs")));
             }
             if (cmd.hasOption("R")) {
                 cfg.setTibedResetStore(true);
+            }
+            if( cmd.hasOption("p") ) {
+                cfg.setProjectName(cmd.getOptionValue("p"));
             }
             if (cmd.hasOption("h")) {
                 formatter.printHelp("tibed", options);

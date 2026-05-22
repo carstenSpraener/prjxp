@@ -57,7 +57,7 @@ public class GRPromptEnrichment {
 
             StringBuilder sb = new StringBuilder();
             for( var gr : retrieverList ) {
-                sb.append(gr.buildPromptForFindings(projectName, sb, relevantChunks, contextValidator));
+                sb.append(gr.buildPromptForFindings(projectName, relevantChunks, contextValidator));
             }
             overallContext = sb.toString();
             if (contextValidator != null && contextValidator.length > 0) {

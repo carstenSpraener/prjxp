@@ -68,10 +68,10 @@ public class GldRtrvrEmbeddingConfig {
                                 "   Tenant: '%s'\n" +
                                 "   ChromaDatabase: '%s'\n" +
                                 "   Collection: '%s'",
-                        cfg.getChromaUrl(),
-                        cfg.getChromaTenant(),
-                        cfg.getChromaDatabase(),
-                        cfg.getChromaCollectionname()
+                        r.getStoreURL(),
+                        r.getStoreTenant(),
+                        r.getStoreDBName(),
+                        r.getStoreCollectionName()
                 ));
                 throw new RuntimeException(e);
             }

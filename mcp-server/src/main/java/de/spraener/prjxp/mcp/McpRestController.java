@@ -55,6 +55,8 @@ public class McpRestController {
                 Wenn du die Antwort nicht im Kontext findest, sage das deutlich.                                
                 """;
         String context = enrichment.enrich(projectName, userQuestion);
-        return "%s\n%s\nFRAGE: %s".format(prefix, context, userQuestion);
+        String result = String.format("%s\n%s\nFRAGE: %s",prefix, context, userQuestion);
+        log.info("Returning:\n"+result+"\n---------\n");
+        return result;
     }
 }

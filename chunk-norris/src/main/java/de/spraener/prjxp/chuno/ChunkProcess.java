@@ -11,11 +11,13 @@ import lombok.extern.java.Log;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
+
+import static java.lang.System.out;
 
 @Service
 @Log
@@ -29,22 +31,35 @@ public class ChunkProcess {
     private final PrjXPConfig cfg;
 
     public void execute() throws Exception {
+        final PrintStream out = createWriter(cfg);
         eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg));
 
         Files.walk(Path.of(cfg.getChunoRootDir()))
                 .filter(Files::isRegularFile)
                 .filter(path -> checkVetos(path))
                 .filter(path -> !processedFiles.contains(path.toAbsolutePath().toString()))
-                .forEach(path -> handlePath(cfg, path));
+                .forEach(path -> handlePath(out, cfg, path));
         ;
-        doPostWalk(cfg);
+        doPostWalk(out);
+    }
+
+    private PrintStream createWriter(PrjXPConfig cfg) {
+        if( cfg.getChunoOutput()==null ) {
+            return System.out;
+        }
+        try {
+            return new PrintStream(cfg.getChunoOutput());
+        } catch( FileNotFoundException fnfXC) {
+            log.warning("Coulde not find output file "+cfg.getChunoOutput()+". Using stdout. Error is: "+fnfXC.getMessage());
+            return System.out;
+        }
     }
 
     protected boolean checkVetos(Path p) {
         return !vetoRegistry.shouldVeto(p);
     }
 
-    protected void handlePath(PrjXPConfig cfg, Path p) {
+    protected void handlePath(PrintStream out, PrjXPConfig cfg, Path p) {
         final String rootDir = new File(cfg.getChunoRootDir()).getAbsolutePath();
         factory.createChunker(p.toFile())
                 .parallel()
@@ -55,23 +70,23 @@ public class ChunkProcess {
                 })
                 .map(chunk -> toJSONL(chunk))
                 .forEach(
-                        str -> cfg.getChunoOutput().println(str)
+                        str -> out.println(str)
                 )
         ;
-        cfg.getChunoOutput().flush();
+        out.flush();
         processedFiles.add(p.toAbsolutePath().toString());
     }
 
-    protected void doPostWalk(PrjXPConfig cfg) {
+    protected void doPostWalk(PrintStream out) {
         factory.listPostWalkChunker()
                 .parallel()
                 .flatMap(pwChunk -> pwChunk.chunk(null))
                 .map(chunk -> toJSONL(chunk))
                 .forEach(
-                        str -> cfg.getChunoOutput().println(str)
+                        str -> out.println(str)
                 )
         ;
-        cfg.getChunoOutput().flush();
+        out.flush();
     }
 
     public String toJSONL(PxChunk chunk) {

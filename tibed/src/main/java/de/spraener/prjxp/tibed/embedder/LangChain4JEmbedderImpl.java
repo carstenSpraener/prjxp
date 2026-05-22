@@ -1,8 +1,10 @@
 package de.spraener.prjxp.tibed.embedder;
 
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.PxChunk2TextSegmentConverter;
+import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -19,10 +21,10 @@ import java.util.List;
 @Log
 public class LangChain4JEmbedderImpl implements EmbeddingExecutor {
     public final EmbeddingModel embeddingModel;
-    public final EmbeddingStore<TextSegment> store;
+    public final EmbeddingStoreSupplier storeSupplier;
 
     @Override
-    public void execute(List<PxChunk> chunks) {
+    public void execute(EmbeddingStore<TextSegment> store, List<PxChunk> chunks) {
         if (chunks.isEmpty()) {
             log.info("Skipping empty batch of chunks");
             return;
@@ -36,7 +38,7 @@ public class LangChain4JEmbedderImpl implements EmbeddingExecutor {
         List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
 
         // Nur das Schreiben in die DB synchronisieren
-        synchronized (store) {
+        synchronized (storeSupplier) {
             store.addAll(embeddings, segments);
         }
     }

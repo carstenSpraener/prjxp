@@ -68,7 +68,7 @@ public class JavaPromptSession {
             }
             rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext));
         }
-        rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank));
+        rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
         for (var rp : rankedPrompts) {
             if (rp.rootRank() == 0) {
                 break;

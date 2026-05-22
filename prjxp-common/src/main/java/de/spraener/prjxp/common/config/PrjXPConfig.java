@@ -18,14 +18,16 @@ import java.util.stream.Stream;
 @ConfigurationProperties(prefix = "prjxp") // <--- Das magische Prefix
 @Data
 public class PrjXPConfig {
+    // For tools operating on a designated project (like TiBed)
+    private String projectName = "default";
 
     // Spring matcht YAML-Keys im "Kebab-Case" (chuno-root-dir)
     // automatisch auf CamelCase-Felder (chunoRootDir).
     private String chunoRootDir;
-    private PrintWriter chunoOutput;
+    private String chunoOutput;
     private String chunoWhiteList;
 
-    private String tibedJsonlInputSource;
+    private String tibedInput;
     private int tibedBatchSize = 50;
     private boolean tibedResetStore = false;
 
@@ -38,12 +40,6 @@ public class PrjXPConfig {
     private String embeddingOllamaUrl = "http://192.168.1.228:11434";
     private String embeddingModelName = "mxbai-embed-large";
     private int embeddingTimeoutSecs = 60;
-
-    // Chroma Section
-    private String chromaTenant = "prjxp";
-    private String chromaDatabase = "prjxp";
-    private String chromaCollectionname = "prjxp";
-    private String chromaUrl = "http://localhost:8000";
 
     // Hierarchische Listen MÜSSEN vorinitialisiert sein
     private List<PrjXPEmbeddingStoreReference> embeddingStores = new ArrayList<>();

@@ -24,7 +24,8 @@ public class TypeScriptRetriever implements GoldenRetriever {
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(String projectName, StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+        StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
         List<PxChunk> tsChunks = combineChunksByID(chunkDao, chunks);
         if( tsChunks.isEmpty() ) {

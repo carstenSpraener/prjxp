@@ -1,15 +1,13 @@
 package de.spraener.prjxp.common;
 
+import lombok.RequiredArgsConstructor;
 import org.apache.commons.cli.DefaultParser;
 import org.apache.commons.cli.ParseException;
 import org.springframework.core.env.Environment;
 
+@RequiredArgsConstructor
 public class PxDefaultArgsParser extends DefaultParser {
     private final Environment env;
-
-    public PxDefaultArgsParser(Environment env) {
-        this.env = env;
-    }
 
     @Override
     protected void handleUnknownToken(String token) throws ParseException {
