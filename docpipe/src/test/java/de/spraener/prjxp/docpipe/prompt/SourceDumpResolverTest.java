@@ -5,12 +5,10 @@ import org.apache.commons.io.IOUtils;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
-import org.mockito.configuration.IMockitoConfiguration;
 
 import java.io.File;
 import java.io.FileWriter;
 
-import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.when;
 
@@ -22,7 +20,7 @@ class SourceDumpResolverTest {
         SourceDumpResolver resolver = new SourceDumpResolver();
         Options optionsMock = Mockito.mock(Options.class);
         when(optionsMock.param(any(Integer.class))).thenReturn("src/main/java");
-        String prompt = resolver.resolve(new File("."), optionsMock);
+        String prompt = resolver.resolve(new File("."), null, optionsMock);
     }
 
     @Test
@@ -31,7 +29,7 @@ class SourceDumpResolverTest {
         SourceDumpResolver uut = new SourceDumpResolver();
         Options optionsMock = Mockito.mock(Options.class);
         when(optionsMock.param(any(Integer.class))).thenReturn("../chunk-norris/src/main/java");
-        String dump = uut.resolve(new File("."), optionsMock);
+        String dump = uut.resolve(new File("."), null, optionsMock);
         Assertions.assertThat(dump).isNotEmpty();
         new File("./src/test/tmp").mkdirs();
         IOUtils.write(dump, new FileWriter("./src/test/tmp/src-dmp.txt"));

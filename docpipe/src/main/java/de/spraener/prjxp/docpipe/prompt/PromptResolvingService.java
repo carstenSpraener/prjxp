@@ -31,6 +31,12 @@ public class PromptResolvingService {
         DPContentCreation dpcc = ccTask.getDpContentCreation();
 
         String promptTemplate = readTemplate(cfgDir, dpcc.getPrompt());
+        String prompt = resolve(promptTemplate, cfgDir);
+        log.finer(()-> "Prompt for creation of File "+dpcc.getOutputFile()+" is: " + prompt);
+        return prompt;
+    }
+
+    public String resolve(String promptTemplate, File cfgDir) throws IOException {
         Handlebars handlebars = new Handlebars();
         handlebars.setStringParams(true);
 
@@ -40,7 +46,6 @@ public class PromptResolvingService {
         }
         var template = handlebars.compileInline(promptTemplate);
         String prompt = template.apply(new Object());
-        log.finer(()-> "Prompt for creation of File "+dpcc.getOutputFile()+" is: " + prompt);
         return prompt;
     }
 
@@ -59,7 +64,7 @@ public class PromptResolvingService {
         @Override
         public Object apply(Object context, Options options) throws IOException {
             try {
-                return templateResolver.resolve(baseDir,options);
+                return templateResolver.resolve(baseDir, context, options);
             } catch( Exception e) {
                 throw new TemplateException(e);
             }

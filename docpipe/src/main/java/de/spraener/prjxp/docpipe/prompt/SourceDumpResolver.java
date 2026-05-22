@@ -22,7 +22,7 @@ public class SourceDumpResolver implements TemplateResolver {
     }
 
     @Override
-    public String resolve(File baseDir, Options options) throws Exception {
+    public String resolve(File baseDir, Object context, Options options) throws Exception {
         String srcDir = baseDir.getAbsolutePath()+"/"+options.param(0).toString();
         StringBuilder sb = new StringBuilder("\n");
         Files.walk(Path.of(srcDir))

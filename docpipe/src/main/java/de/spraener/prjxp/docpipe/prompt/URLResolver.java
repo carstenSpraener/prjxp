@@ -15,7 +15,7 @@ public class URLResolver implements TemplateResolver {
     }
 
     @Override
-    public String resolve(File baseDir, Options options) throws Exception{
+    public String resolve(File baseDir, Object context, Options options) throws Exception{
         String fileParam = options.param(0).toString();
         File value = new File(baseDir.getAbsolutePath()+"/"+(new URL(fileParam).getFile()));
         return Files.readString(value.toPath());

@@ -6,5 +6,5 @@ import java.io.File;
 
 public interface TemplateResolver {
     String getID();
-    String resolve(File baseDir, Options options) throws Exception;
+    String resolve(File baseDir, Object context, Options options) throws Exception;
 }
