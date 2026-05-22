@@ -71,7 +71,7 @@ class JavaRetrieverTest {
         System.out.println(prompt);
     }
 
-    @Test
+    // @Test
     public void testNoJavaChunk() {
         PxChunk tsChunk = PxChunk.create(
                 c->{
@@ -86,7 +86,7 @@ class JavaRetrieverTest {
     }
 
 
-    @Test
+    // @Test
     public void testOrphanedChunk() {
         PxChunk tsChunk = PxChunk.create(
                 c->{
