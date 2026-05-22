@@ -20,7 +20,7 @@
   {
     "outputFile": "FAQ.md",
     "stereotype": "detailed",
-    "prompt": "FAQ.prompt.groovy",
+    "prompt": "FAQ.prompt.txt",
     "ps": "\n\n_This document was generated with .dp and gemini-3-flash-preview_\n"
   }
 ]

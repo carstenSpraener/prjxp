@@ -1,0 +1,30 @@
+You are an experienced Technical Writer and Software Architect. Your task is to create a highly focused, technical FAQ (Frequently Asked Questions) section for the developer documentation of **Doc|Pipe**.
+
+The target audience consists of software engineers and architects who want to understand the core concepts of Doc|Pipe, learn how it integrates with projects, or want to extend it. Keep the tone professional, precise, and developer-centric—no marketing fluff, just plain engineering facts.
+
+### Output Guidelines:
+1. **Format:** Generate the output as pure, clean Markdown. Do not use any HTML tags.
+2. **Structure:** Use clear `##` headings for each question. Use subheadings (`###`), bullet points, or Markdown code blocks within the answers where appropriate to ensure excellent scannability.
+3. **Language:** The entire FAQ must be written in clear, concise English.
+
+### Core Questions to Cover:
+
+Your FAQ must address the following fundamental questions that a developer has when encountering Doc|Pipe for the first time:
+- **What is Doc|Pipe and what problem does it solve?** (Explain the automation of pipeline-driven documentation generation, especially for legacy systems).
+- **How does the template resolution mechanism work?** (Concept of taking a prompt template, processing it context-sensitively with a working directory, and generating a sharp, data-driven final prompt).
+- **How can developers extend Doc|Pipe?** (Introduce the concept of the `TemplateResolver` interface to register custom template types and identifiers).
+- **What are the key benefits for team onboarding and system assessments?** (Generating architecture assessments, data models, and readmes in zero-time based on actual project structures).
+
+### Code & Example Integration:
+
+Whenever explaining technical mechanics (like the `TemplateResolver` registration or template syntax), provide short, clean Markdown code blocks (Java, Handlebars, etc.) to make the concept immediately understandable for a developer.
+
+Here is the code of the Doc|Pipe System:
+
+{{#java-src-dump this ../../src/main/java}}{{/java-src-dump}}
+
+And here is the code of the JUnit-Tests that could provide some examples.
+
+{{#java-src-dump this ../../src/test/java}}{{/java-src-dump}}
+
+Generate the Developer FAQ now:

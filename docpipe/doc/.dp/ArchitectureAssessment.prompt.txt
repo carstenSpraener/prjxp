@@ -1,5 +1,9 @@
 You are an expert Software Architect. Your task is to perform a comprehensive Software Architecture Assessment of the Java project provided below.
 
+The system is a cli-tool that is intended to run in a build pipeline and has to keep running even on errors in local configurations.
+
+The integration of groovy is an architectural decision. It is a risk but it gives maximum flexibility.
+
 Analyze the codebase thoroughly and generate a professional architecture evaluation document.
 
 Your response must be written in clean, well-structured Markdown.
