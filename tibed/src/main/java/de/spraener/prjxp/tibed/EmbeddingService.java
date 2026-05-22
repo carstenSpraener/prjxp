@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.PxChunkFromJsonLReader;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
+import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import dev.langchain4j.data.embedding.Embedding;
@@ -32,14 +33,15 @@ public class EmbeddingService {
     private final PrjXPConfig cfg;
 
     public void execute() {
-        EmbeddingStore<TextSegment> store = embeddingStoreSupplier.getStore(cfg.getProjectName());
-        if (cfg.isTibedResetStore()) {
+        ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException("No active project!"));
+        EmbeddingStore<TextSegment> store = embeddingStoreSupplier.getStore(pd.getName());
+        if (pd.isTibedResetStore()) {
             log.warning("Resetting embedding store!");
             store.removeAll(metadataKey("id").isNotEqualTo(0));
         }
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
-            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(cfg.getTibedInput()), cfg.getTibedBatchSize(), this::fromJSONL)
+            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(pd.getJsonlFile()), pd.getTibedBatchSize(), this::fromJSONL)
                     .forEach(batch -> {
                         embedChunk(store, batch);
                     });

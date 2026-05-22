@@ -45,10 +45,10 @@ public class StandardVetos {
 
     @ChunkVeto
     public boolean notListedInWhiteList(Path p) {
-        if (!StringUtils.hasText(cfg.getChunoWhiteList())) {
+        if (!StringUtils.hasText(cfg.getActiveProject().get().getChunoWhiteList())) {
             return false;
         }
         String ending = p.toString().substring(p.toString().lastIndexOf(".") + 1);
-        return !cfg.getChunoWhiteList().contains(ending);
+        return !cfg.getActiveProject().get().getChunoWhiteList().contains(ending);
     }
 }

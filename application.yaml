@@ -1,0 +1,35 @@
+prjxp:
+  # which project to work on if none is on command line.
+  activeProject: "prjxp"
+
+  projects:
+    - name: "prjxp"
+      rootDir: "."
+      jsonlFile: "prjxp-src.jsonl"
+      chunoWhiteList: "java"
+      tibedBatchSive: 50
+      tibedResetStore: true
+
+  # Use Ollama on SteamDeck for Embedding
+  embeddingOllamaUrl: http://192.168.188.114:11434
+  embeddingModelName: mxbai-embed-large
+  embeddingTimeoutSecs: 60
+
+  embeddingStores:
+    - projectName: prjxp
+      storeURL: http://localhost:8000
+      storeTenant: prjxp
+      storeDBName: prjxp
+      storeCollectionName: prjxp-src
+      isDefault: true
+
+  chatModels:
+    - name: gpt-oss
+      providerType: ollama
+      modelName: gpt-oss-120B
+      apiUrl: http://localhost:11434
+
+    - name: gemini-3
+      providerType: gemini
+      modelName: gemini-3-flash
+      apiKey: ${GOOGLE_API_KEY}

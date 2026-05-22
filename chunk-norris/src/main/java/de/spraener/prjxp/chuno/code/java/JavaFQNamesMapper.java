@@ -21,12 +21,12 @@ public class JavaFQNamesMapper {
     @EventListener(SpringPreWalkEvent.class)
     public void fillFQNamesMap(SpringPreWalkEvent<PrjXPConfig> event) {
         try {
-            Files.walk(Path.of(event.config().getChunoRootDir()))
+            Files.walk(Path.of(event.config().getActiveProject().get().getRootDir()))
                     .filter(Files::isRegularFile)
                     .filter(path -> path.toString().endsWith(".java"))
                     .forEach(path -> handleFile(path.toFile()));
         } catch (Exception e) {
-
+            // FIXME: handle exceptions!!!
         }
     }
 
