@@ -2,6 +2,8 @@ package de.spraener.prjxp.docpipe.config;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.spraener.prjxp.docpipe.DPLogMessage;
+import de.spraener.prjxp.docpipe.DPLogService;
 import de.spraener.prjxp.docpipe.DocPipeConfig;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import de.spraener.prjxp.docpipe.model.DPJob;
@@ -9,6 +11,8 @@ import de.spraener.prjxp.docpipe.model.DPModelConfig;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
+import org.springframework.validation.Errors;
+import org.springframework.validation.Validator;
 
 import java.io.File;
 import java.io.IOException;
@@ -25,6 +29,8 @@ public class JobCreationService {
     private final DocPipeConfig docPipeConfig;
     private final ObjectMapper objectMapper;
     private final DotDPFilesService dpFilesService;
+    private final Validator validator;
+    private final DPLogService logService;
 
     public Stream<DPJob> readJobs(Path rootDir) throws IOException {
         return Files.walk(rootDir)
@@ -44,6 +50,13 @@ public class JobCreationService {
             File modelsJson = dpFilesService.getModelsJsonFrom(directory);
             if (modelsJson.exists()) {
                 dpJob.setModelConfigs(this.objectMapper.readValue(modelsJson, new TypeReference<List<DPModelConfig>>(){}));
+                Errors errors = validator.validateObject(dpJob.getModelConfigs());
+                if(errors.hasErrors()) {
+                    logService.logMessage(
+                      new DPLogMessage(Level.SEVERE,   "Configuration-Errors ")
+                    );
+                    return DPJob.EMPTY_JOB;
+                }
             } else if( !docPipeConfig.getGlobalModels().isEmpty() ) {
                 log.fine("No models.json found for "+modelsJson.getAbsolutePath()+". Using global models.");
                 dpJob.setModelConfigs(docPipeConfig.getGlobalModels());
@@ -51,7 +64,9 @@ public class JobCreationService {
                 log.warning("expected models.json does not exist: "+modelsJson.getAbsolutePath());
             }
         } catch (IOException e) {
-            log.log(Level.SEVERE, "Error reading models.json from " + directory.getAbsolutePath(), e);
+            logService.logMessage(
+                new DPLogMessage(Level.SEVERE, "Error reading models.json from " + directory.getAbsolutePath()+": "+e.getMessage())
+            );
             return DPJob.EMPTY_JOB;
         }
 
@@ -62,7 +77,9 @@ public class JobCreationService {
                 dpJob.setContentCreationList(creations);
             }
         } catch( Exception e) {
-            log.severe("Error reading documents.json from " + documentsJson.getAbsolutePath()+": "+e.getMessage());
+            logService.logMessage(
+                    new DPLogMessage(Level.SEVERE, "Error reading documents.json from " + documentsJson.getAbsolutePath()+": "+e.getMessage())
+            );
             return DPJob.EMPTY_JOB;
         }
         return dpJob;

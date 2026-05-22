@@ -1,42 +1,49 @@
-# Doc|Pipe
+# Doc|Pipe Technical Documentation
 
-Doc|Pipe is a document generation pipeline designed to automate the creation of content based on model configurations and job definitions. It scans project directories for specific configuration files and processes content creation tasks in parallel.
+## Overview
+**Doc|Pipe** is a multi-threaded content generation pipeline designed to automate the creation of documents based on model configurations and job definitions. It scans a project directory for specific configuration files, resolves the required LLM (Large Language Model) settings, and executes content creation tasks in parallel.
 
-## How it Works
+## Architecture & Workflow
 
 ### 1. Initialization and Global Configuration
-The process starts in the `DocPipeRunner`. Before processing jobs, the system checks for a global `models.json` file via the `DotDPFilesService`. If found, these global model configurations are loaded into the system to serve as defaults for jobs that do not define their own models.
+The process starts in the `DocPipeRunner`. Before processing individual jobs, the system checks for a global models configuration file via the `DotDPFilesService`. If found, these global models are loaded into the `DocPipeConfig` to serve as defaults for jobs that lack their own specific model definitions.
 
-### 2. Job Discovery
-The `JobCreationService` scans the provided project directory recursively. It identifies "DocPipe directories" (folders containing specific markers) and converts each valid directory into a `DPJob`.
+### 2. Job Discovery (`JobCreationService`)
+The system recursively walks through the provided project directory to identify "DocPipe directories." A directory is considered a valid job location if it contains the required configuration files.
 
-For each discovered directory, the service looks for two primary JSON files:
-- **`models.json`**: Defines the AI models to be used. If this file is missing, the system falls back to the global models loaded during initialization.
-- **`documents.json`**: Defines the specific content creation tasks (output files, prompts, and stereotypes) to be executed.
+For every valid directory found, a `DPJob` is created:
+- **Model Resolution**: The service looks for a `models.json` file.
+    - If `models.json` exists: It loads the local model configurations and validates them.
+    - If `models.json` is missing: It falls back to the global models loaded during initialization.
+- **Content Definition**: The service looks for a `documents.json` file, which contains a list of `DPContentCreation` objects defining what needs to be generated.
 
-### 3. Task Mapping
-Once the jobs are read, the `DocPipeRunner` flattens the structure. It maps every `DPContentCreation` entry within every `DPJob` into a `ContentCreationTask`. This decouples the file-system job structure from the actual execution units.
+### 3. Task Execution (`DocPipeRunner`)
+Once all jobs are read, the `DocPipeRunner` flattens the hierarchy:
+- It maps every `DPContentCreation` entry within every `DPJob` into a `ContentCreationTask`.
+- These tasks are submitted to a fixed thread pool (`ExecutorService`) with a configurable number of threads (default: 5).
+- The `ContentCreationService` then processes each task to generate the actual content.
 
-### 4. Parallel Execution
-To optimize performance, Doc|Pipe uses a fixed thread pool (configurable via `prjxp.docpipe.maxthreads`, defaulting to 5). Each `ContentCreationTask` is submitted to the `ExecutorService`, where the `ContentCreationService` handles the actual generation of the content.
+### 4. Error Handling and Logging
+The system utilizes a `DPLogService` to capture issues during the pipeline execution. If any errors with a level of `SEVERE` or higher are encountered during the run, the system logs a summary of all critical errors and terminates the process with an exit code of `1`.
 
 ## Data Models
 
 ### DPModelConfig
-Defines the AI backend and parameters:
-- **Provider Details**: `modelName`, `modelProviderURL`, `kiChatImpl`, and `serverType` (default: "ollama").
-- **Hyperparameters**: `temperature` (default: 0.2) and `timeOutSeconds` (default: 60).
-- **Additional Args**: A map of flexible arguments for the model.
+Defines the connection and behavior of the AI model:
+- **Stereotype**: A unique identifier used to reference the model.
+- **Model Name**: The specific LLM name to be used.
+- **Server Type**: The provider (e.g., `ollama`, `gemini`, `openai`, or `custom`).
+- **Parameters**: Includes `temperature`, `timeOutSeconds`, and a map of additional `args`.
 
 ### DPContentCreation
-Defines what needs to be generated:
-- **`outputFile`**: The destination path for the generated content.
-- **`stereotype`**: Links the task to a specific `DPModelConfig`.
-- **`prompt`**: The instruction sent to the AI.
-- **`ps`**: Additional post-script or context.
+Defines the specific output requirements:
+- **outputFile**: The destination path for the generated content.
+- **stereotype**: The model stereotype to be used for this specific piece of content.
+- **prompt**: The instruction sent to the LLM.
+- **ps**: Additional post-script or supplementary information.
 
-## Workflow Summary
-`DocPipeRunner` $\rightarrow$ `JobCreationService` (Scan Folders) $\rightarrow$ `DPJob` (Load JSONs) $\rightarrow$ `ContentCreationTask` (Flatten) $\rightarrow$ `ExecutorService` (Parallel Run) $\rightarrow$ `ContentCreationService` (Generate)
+## Summary Flow
+`DocPipeRunner` $\rightarrow$ `JobCreationService` (Scan Files) $\rightarrow$ `DPJob` (Resolve Models/Docs) $\rightarrow$ `ContentCreationTask` $\rightarrow$ `ExecutorService` (Parallel Execution) $\rightarrow$ `ContentCreationService`.
 
 _This document was generated with Doc|Pipe and gemma4:31B_
 

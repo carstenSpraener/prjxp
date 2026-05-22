@@ -21,17 +21,16 @@ public class ChatModelFactory {
     private Map<String, ChatModel> chatModels = new ConcurrentHashMap<>();
 
     public ChatModel create(DPModelConfig cfg) {
-        String modelKey = cfg.getModelProviderURL() +":"+ cfg.getModelName();
-        if( chatModels.containsKey(modelKey) ) {
-            return chatModels.get(modelKey);
-        }
-        for (ChatModelSupplier cms : chatModelSuppliers) {
-            if (cms.canProvide(cfg)) {
-                ChatModel cm =  cms.provide(cfg);
-                chatModels.put(modelKey, cm);
-                return cm;
+        String modelKey = cfg.getModelProviderURL() + ":" + cfg.getModelName();
+        return chatModels.computeIfAbsent(modelKey, (k) -> {
+                for (ChatModelSupplier cms : chatModelSuppliers) {
+                    if (cms.canProvide(cfg)) {
+                        ChatModel cm = cms.provide(cfg);
+                        return cm;
+                    }
+                }
+                throw new IllegalStateException("There is no supplier for server model stereotype " + cfg.getServerType() + ". Please check configuration.");
             }
-        }
-        throw new IllegalStateException("There is no supplier for server model type " + cfg.getServerType() + ". Please check configuration.");
+        );
     }
 }

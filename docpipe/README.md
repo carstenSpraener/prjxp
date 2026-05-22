@@ -1,123 +1,101 @@
+# Doc|Pipe - Intelligent Document Generation Pipeline
+
 ![Doc|Pipe](doc/images/docpipe.png)
 
-# Doc|Pipe
-
-Doc|Pipe is a powerful CLI-driven pipeline designed to automate the generation of documentation and content using Large Language Models (LLMs). It transforms your project structure into a documentation engine by mapping specific content requirements to specialized AI models.
+Doc|Pipe is a powerful CLI tool designed to automate the generation of documentation and content using Large Language Models (LLMs). It streamlines the process of turning templates and source data into finished documents while keeping costs low and performance high.
 
 ## Core Concept
 
-Doc|Pipe scans your project for configuration directories named `.dp`. Each directory defines a "Job" consisting of what needs to be generated, which prompt to use, and which LLM should handle the task.
+Doc|Pipe scans your project for specific configuration folders (`.dp`). Each folder defines a "Job" consisting of what to generate, which LLM to use, and where to save the result.
 
-### Key Features
-
-*   **Smart Hashing:** Doc|Pipe calculates a SHA-256 hash of your resolved prompts. If the prompt hasn't changed, it skips the LLM call, saving you time and API credits.
-*   **Multi-LLM Mapping:** Assign different "stereotypes" to models. Use a cheap, fast model (like Ollama) for simple summaries and a high-end model (like Gemini or GPT-4) for complex architectural analysis.
-*   **Handlebars Templating:** Prompts are not just static text. They are dynamic templates powered by Handlebars.
-*   **Groovy Integration:** Need logic inside your prompt? You can embed Groovy scripts directly in your templates with full access to the Spring application context.
-*   **Easy Extensibility:** Add custom Chat Model suppliers or new Template Resolvers (like the built-in Java source code dumper) with minimal effort.
-
----
-
-## How it Works
+### How it works
 
 ```text
-[ Project Root ]
-      │
-      ├── .dp/                      <-- Configuration Folder
-      │    ├── models.json          <-- Which LLMs to use
-      │    ├── documents.json       <-- What to generate
-      │    └── my-prompt.hbs        <-- The instructions
-      │
-      ├── src/                      <-- Your Source Code
-      │
-      └── generated-doc.md          <-- The Output
+[ Template File ] ----> [ Prompt Resolver ] ----> [ Prompt Hash Check ]
+                               |                         |
+                      (Handlebars + Groovy)        (Skip if unchanged)
+                               |                         |
+                               v                         v
+[ LLM Mapping ] <---- [ Final Prompt ]           [ LLM Provider ]
+(Stereotypes)                                    (Ollama, Gemini, etc.)
+       |                                                 |
+       +-------------------------------------------------+
+                               |
+                               v
+                        [ Output File ]
 ```
 
-1.  **Scan:** Doc|Pipe finds all `.dp` folders.
-2.  **Resolve:** It processes the Handlebars templates (fetching URLs, dumping source code, or running Groovy).
-3.  **Hash Check:** It compares the new prompt hash against `content-hashes.properties`.
-4.  **Generate:** If changed, it sends the prompt to the LLM assigned to that specific "stereotype".
-5.  **Output:** The result is written to your specified output file.
+## Top Features
 
----
+*   **Smart Hashing:** Doc|Pipe calculates a SHA-256 hash of every generated prompt. If the prompt hasn't changed since the last run, the LLM call is skipped. This saves time and significant token costs.
+*   **Multi-LLM Mapping:** Use "Stereotypes" to route different tasks to different models. Use a "cheap" local model (via Ollama) for simple summaries and a "smart" model (via Gemini or OpenAI) for complex architectural analysis.
+*   **Handlebars Templates:** Templates use the familiar Handlebars syntax, making it easy to inject variables and structure your prompts.
+*   **Groovy Scripting:** Need logic inside your prompt? You can embed Groovy code directly within your templates. It has full access to the Spring Application Context, allowing for advanced data retrieval.
+*   **Easy Extensibility:** The system is built to be extended. You can easily add custom Chat Model suppliers or new Template Resolvers.
 
-## Usage
+## Getting Started
 
-### 1. Define your Models (`.dp/models.json`)
-Map stereotypes to specific providers. Doc|Pipe supports **Ollama, Gemini, OpenAI, LM Studio**, and **Custom** implementations.
+### 1. Configuration
+
+Doc|Pipe looks for a `.dp` directory in your project. Inside, you define two main files:
+
+#### `models.json`
+Define which LLMs are available and assign them a **stereotype**.
 
 ```json
 [
   {
-    "stereotype": "architect",
+    "stereotype": "fast",
+    "serverType": "ollama",
+    "modelName": "llama3",
+    "modelProviderURL": "http://localhost:11434"
+  },
+  {
+    "stereotype": "expert",
     "serverType": "gemini",
     "modelName": "gemini-1.5-pro",
     "temperature": 0.1
-  },
-  {
-    "stereotype": "summarizer",
-    "serverType": "ollama",
-    "modelProviderURL": "http://localhost:11434",
-    "modelName": "llama3",
-    "temperature": 0.7
   }
 ]
 ```
 
-### 2. Define your Documents (`.dp/documents.json`)
-Specify which files to create and which prompt/model to use.
+#### `documents.json`
+Define what files should be generated.
 
 ```json
 [
   {
-    "outputFile": "../README.md",
-    "stereotype": "summarizer",
-    "prompt": "readme-template.hbs"
+    "outputFile": "docs/Architecture.md",
+    "stereotype": "expert",
+    "prompt": "arch-template.hbs"
   }
 ]
 ```
 
-### 3. Create a Template (`.dp/readme-template.hbs`)
-Use powerful helpers to build your prompt.
+### 2. Templates
 
-```handlebars
-Write a README for the following Java project:
+Create your prompt template (e.g., `arch-template.hbs`) inside the `.dp` folder. You can use specialized helpers:
 
-{{java-src-dump "../src/main/java"}}
+*   `{{java-src-dump "src/main/java"}}`: Automatically includes all Java source code from a directory into the prompt.
+*   `{{#groovy}} ... {{/groovy}}`: Execute logic to fetch data or format strings.
 
-{{#groovy}}
-  // You can use Groovy logic here!
-  return "The current directory is: " + dir.getName();
-{{/groovy}}
-```
+### 3. Running the CLI
 
-### 4. Run the CLI
-Run Doc|Pipe from your terminal. It will automatically look for a `.env` file for API keys.
+Run Doc|Pipe from your terminal. It will automatically pick up your `.env` file for API keys.
 
 ```bash
 java -jar docpipe.jar --root ./my-project
 ```
 
----
-
-## Advanced Templating
-
-Doc|Pipe comes with built-in resolvers to make prompts context-aware:
-
-*   `{{java-src-dump "path"}}`: Recursively finds all `.java` files in a directory and wraps them in Markdown code blocks.
-*   `{{URL "http://..."}}`: Fetches content from a URL to include in your prompt.
-*   `{{#groovy}} ... {{/groovy}}`: Executes Groovy code. It has access to the `applicationContext`, allowing you to interact with the internal state of the application.
-
----
-
 ## Further Reading
 
 *   [HowTo](doc/HowTo.md): Detailed guide for developers on how to use and extend Doc|Pipe.
 *   [FAQs](doc/FAQ.md): Answers to the most frequently asked questions.
-*   [ArchitectureAssessment](doc/ArchitectureAssessment.md): An in-depth look at the internal structure and design decisions of Doc|Pipe.
+*   [ArchitectureAssessment](doc/ArchitectureAssessment.md): A deep dive into the internal architecture of Doc|Pipe.
 
----
-**Fun Fact:** Doc|Pipe is self-documenting! It uses its own engine to generate the [Architecture Assessment](doc/ArchitectureAssessment.md) based on its own source code.
+***
+
+**Fun Fact:** Doc|Pipe is self-documenting! It generates its own [Architecture Assessment](doc/ArchitectureAssessment.md) by analyzing its own source code through the pipeline.
 
 _This document was generated with Doc|Pipe and gemini-3-flash-preview_
 

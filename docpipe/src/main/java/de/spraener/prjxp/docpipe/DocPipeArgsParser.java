@@ -11,6 +11,7 @@ import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.logging.Level;
 
 @Component
 @RequiredArgsConstructor
@@ -19,6 +20,7 @@ public class DocPipeArgsParser {
     private final ObjectMapper objectMapper;
     private final Environment env;
     private final ModelConfigLoader modelConfigLoader;
+    private final DPLogService logService;
 
     public Options getOptions() {
         Options options = new Options();
@@ -54,7 +56,9 @@ public class DocPipeArgsParser {
                 cfg.setProjectDir(Path.of(cmd.getOptionValue("r")));
             }
         } catch (Exception e) {
-            log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
+            logService.logMessage(
+                    new DPLogMessage(Level.SEVERE, "Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!")
+            );
             formatter.printHelp("docpipe", options);
             throw  new RuntimeException(e);
         }
