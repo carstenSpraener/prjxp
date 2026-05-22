@@ -1,113 +1,127 @@
 # Doc|Pipe User Guide
 
-Doc|Pipe is a documentation generation pipeline designed for Java developers to automate the creation of technical documents using Large Language Models (LLMs). It allows you to map specific documentation tasks (stereotypes) to different LLM providers, use Handlebars-based templates for prompts, and optimize costs and performance through prompt hashing.
+Doc|Pipe is a powerful Java-based CLI tool designed to automate the generation of documentation and software artifacts using Large Language Models (LLMs). By mapping specific documentation tasks to specialized LLM providers, Doc|Pipe allows developers to orchestrate complex documentation workflows while maintaining cost-efficiency and consistency.
 
 ## Overview
 
-Doc|Pipe scans your project for configuration directories, resolves complex prompt templates, and interacts with LLM providers to generate files like READMEs, FAQs, or Architecture Assessments.
+Doc|Pipe operates on a "Job" basis. It scans your project for configuration directories, resolves prompt templates using Handlebars and Groovy, and interacts with various LLM backends (Ollama, Gemini, OpenAI) to produce the final output.
 
 **Key Features:**
-* **Prompt Hashing**: Prevents unnecessary LLM calls by only regenerating documents when the prompt content changes.
-* **Multi-LLM Mapping**: Assign different models (Ollama, Gemini, OpenAI) to different tasks to balance cost and quality.
-* **Handlebars Templates**: Use a familiar templating engine for prompt engineering.
-* **Extensible Resolvers**: Built-in support for dumping Java source code into prompts and executing Groovy scripts with full Spring context access.
+*   **Prompt Hashing**: Prevents unnecessary API calls by only regenerating documents when the prompt content changes.
+*   **Stereotype Mapping**: Assigns different LLMs to different tasks (e.g., using a fast model for Javadoc and a reasoning model for architecture assessments).
+*   **Dynamic Templates**: Uses Handlebars as the root structure with the ability to execute Groovy scripts and dump source code directly into prompts.
+*   **Extensibility**: Easily add custom LLM providers or template resolvers.
 
 ## Prerequisites & Setup
 
-### Dependencies
-Doc|Pipe is built on Spring Boot and LangChain4j. Ensure your environment has:
-* **Java 17** or higher.
-* **API Keys**: Required for cloud providers (Gemini, OpenAI).
+### System Requirements
+*   **Java 17** or higher.
+*   **Access to an LLM provider**: Local (Ollama, LM Studio) or Cloud (Google Gemini, OpenAI).
 
-### Configuration Files
-Doc|Pipe looks for a `.dp` directory in your project. This directory should contain:
-1. `models.json`: Defines the LLM providers and their "stereotypes".
-2. `documents.json`: Defines the output files and which prompt templates to use.
-3. Prompt files: Plain text or Handlebars templates (e.g., `Readme.prompt.txt`).
+### Configuration
+Doc|Pipe uses a `.env` file or system properties for sensitive credentials. Create a `.env` file in your execution directory:
 
-### Environment Variables
-Create a `.env` file in your root directory to manage sensitive credentials:
 ```properties
-chat.gemini.apikey=your_gemini_key
-chat.openapi.api-key=your_openai_key
+chat.gemini.apikey=your_google_gemini_api_key
+chat.openapi.api-key=your_openai_api_key
+prjxp.docpipe.maxthreads=5
 ```
+
+### Project Structure
+Doc|Pipe looks for a `.dp` folder within your project directories. This folder must contain:
+1.  `models.json`: Defines available LLM providers.
+2.  `documents.json`: Defines the documents to be generated.
+3.  Prompt files: Text files containing the instructions for the LLM.
 
 ## Quick Start
 
-1. **Define your Models** (`.dp/models.json`):
-```json
-[
-  {
-    "stereotype": "documentation",
-    "modelName": "gemini-1.5-flash",
-    "serverType": "gemini",
-    "timeOutSeconds": 120
-  },
-  {
-    "stereotype": "local-check",
-    "modelName": "llama3",
-    "modelProviderURL": "http://localhost:11434",
-    "serverType": "ollama"
-  }
-]
-```
+1.  **Initialize the configuration**: Create a folder named `.dp` in your project root.
+2.  **Define your models**: Create `.dp/models.json`.
+    ```json
+    [
+      {
+        "stereotype": "documentation",
+        "modelName": "gemma2:27b",
+        "modelProviderURL": "http://localhost:11434",
+        "serverType": "ollama"
+      }
+    ]
+    ```
+3.  **Define your document**: Create `.dp/documents.json`.
+    ```json
+    [
+      {
+        "stereotype": "documentation",
+        "outputFile": "README.md",
+        "prompt": "README.prompt.txt"
+      }
+    ]
+    ```
+4.  **Create the prompt**: Create `.dp/README.prompt.txt`.
+    ```text
+    Generate a README for the following source code:
+    {{#java-src-dump this "../src/main/java"}}{{/java-src-dump}}
+    ```
+5.  **Run Doc|Pipe**:
+    ```bash
+    java -jar docpipe.jar --root /path/to/your/project
+    ```
 
-2. **Define your Documents** (`.dp/documents.json`):
-```json
-[
-  {
-    "stereotype": "documentation",
-    "outputFile": "README.md",
-    "prompt": "Readme.prompt.txt",
-    "ps": "\n\n_Generated by Doc|Pipe_"
-  }
-]
-```
-
-3. **Create a Prompt Template** (`.dp/Readme.prompt.txt`):
-```text
-Create a README for this project. 
-The project structure is based on the following source code:
-{{#java-src-dump this ../src/main/java}}{{/java-src-dump}}
-```
-
-4. **Run Doc|Pipe**:
-```bash
-java -jar docpipe.jar --root /path/to/your/project
-```
-
-## Core Concepts / Advanced Usage
+## Core Concepts & Advanced Usage
 
 ### Stereotypes
-Stereotypes act as a bridge between a document task and an LLM configuration. This allows you to use a cheap, fast model for simple Javadoc generation and a powerful, expensive model for architectural analysis.
+Stereotypes act as a bridge between a document requirement and a specific model configuration. In `documents.json`, you specify a `stereotype`. Doc|Pipe then looks up the corresponding configuration in `models.json`.
 
 ### Template Resolvers
-Doc|Pipe provides specialized Handlebars helpers to enrich your prompts:
+Doc|Pipe provides built-in Handlebars helpers to enrich prompts:
 
-* **Source Dump**: `{{#java-src-dump context path}}`
-  Recursively scans the provided path for `.java` files and wraps them in Markdown code blocks within the prompt.
-* **Groovy Scripting**: `{{#groovy}} ... {{/groovy}}`
-  Executes Groovy code during prompt resolution. You have access to the `applicationContext` (Spring), the current `dir`, and template `options`.
-* **URL Fetcher**: `{{#URL url}}`
-  Downloads content from a URL to include in the prompt.
+*   **`{{#java-src-dump context path}}`**: Recursively scans the specified path and appends all `.java` files into the prompt inside Markdown code blocks.
+*   **`{{#groovy}} ... {{/groovy}}`**: Executes Groovy code. The script has access to the `applicationContext` (Spring), the current `dir`, and template `options`.
+*   **`{{#URL url}}`**: Fetches content from a specific URL to include in the prompt.
 
 ### Supported Server Types
 Configure the `serverType` in `models.json` using one of the following:
-* `ollama`: For local models running via Ollama.
-* `gemini`: For Google Gemini models.
-* `openapi` / `lm.studio`: For OpenAI-compatible APIs.
-* `custom`: Allows you to provide your own `ChatModel` implementation via the `kiChatImpl` property.
+*   `ollama`: For local Ollama instances.
+*   `gemini`: For Google Gemini (requires API key).
+*   `openapi`: For OpenAI or compatible APIs.
+*   `lm.studio`: For local LM Studio instances (uses OpenAI protocol).
+*   `custom`: For providing your own `ChatModel` implementation via the `kiChatImpl` field.
 
 ### Custom Model Implementation
-If you use `serverType: "custom"`, you must provide a class name in `kiChatImpl`. Doc|Pipe will attempt to load this from the Spring Context or instantiate it via a constructor accepting `DPModelConfig`.
+To use a custom model, implement the `ChatModelSupplier` interface or provide a class that can be instantiated by the `CustomChatModelSupplier`.
 
-## Best Practices / Common Pitfalls
+```java
+public class MyCustomSupplier implements ChatModelSupplier {
+    @Override
+    public boolean canProvide(DPModelConfig cfg) {
+        return "my-type".equals(cfg.getServerType());
+    }
 
-* **Prompt Hashing**: Doc|Pipe stores hashes in `.dp/content-hashes.properties`. If you want to force a regeneration without changing the prompt, delete this file or the specific entry.
-* **Context Window Limits**: When using `java-src-dump` on large projects, be mindful of the LLM's token limit. Filter your source paths to only include relevant modules.
-* **Timeout Configuration**: For complex prompts (like large source dumps), increase the `timeOutSeconds` in `models.json` (default is 60s).
-* **Base URL for OpenAI**: When using `openapi` or `lm.studio`, the `modelProviderURL` is automatically appended with `/v1` if not already present.
-* **Thread Safety**: The `ChatModelFactory` caches model instances by provider URL and name to optimize resource usage.
+    @Override
+    public ChatModel provide(DPModelConfig cfg) {
+        // Return a LangChain4j ChatModel
+    }
+}
+```
+
+## Best Practices & Common Pitfalls
+
+### Performance and Threading
+Doc|Pipe processes document generation in parallel. You can control the concurrency level using the property `prjxp.docpipe.maxthreads` (default is 5). If using local LLMs (like Ollama), setting this too high may overwhelm your GPU/CPU.
+
+### Token Limits and Source Dumps
+The `java-src-dump` helper is powerful but can easily exceed the context window of smaller LLMs if pointed at a large source tree. Always ensure your `modelName` supports the context size required for your codebase.
+
+### Environment Variable Resolution
+You can use environment variables inside your JSON configurations using the `${VAR_NAME}` syntax. This is highly recommended for `modelProviderURL` or sensitive parameters.
+
+### Hashing Mechanism
+Doc|Pipe generates a `content-hashes.properties` file inside the `.dp` directory. 
+*   **Behavior**: If the resolved prompt (after Handlebars/Groovy processing) matches the stored hash, the LLM call is skipped.
+*   **Force Update**: To force a regeneration without changing the prompt, delete the `content-hashes.properties` file or the specific entry within it.
+
+### Timeout Configuration
+For complex prompts or slow models, increase the `timeOutSeconds` in `models.json` (default is 60 seconds) to prevent `java.util.concurrent.TimeoutException`.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 

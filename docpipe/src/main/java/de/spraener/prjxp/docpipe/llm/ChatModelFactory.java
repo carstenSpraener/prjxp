@@ -12,12 +12,13 @@ import java.time.Duration;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @RequiredArgsConstructor
 public class ChatModelFactory {
     private final List<ChatModelSupplier> chatModelSuppliers;
-    private Map<String, ChatModel> chatModels = new HashMap<>();
+    private Map<String, ChatModel> chatModels = new ConcurrentHashMap<>();
 
     public ChatModel create(DPModelConfig cfg) {
         String modelKey = cfg.getModelProviderURL() +":"+ cfg.getModelName();
