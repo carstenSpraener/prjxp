@@ -5,17 +5,21 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import de.spraener.prjxp.chuno.spring.SpringPreWalkEvent;
 import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
+import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 
-import java.io.File;
+import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
+
+import static java.lang.System.out;
 
 @Service
 @Log
@@ -24,28 +28,42 @@ public class ChunkProcess {
     private final ChunkerFactory factory;
     private final ApplicationEventPublisher eventPublisher;
     private final VetoRegistry vetoRegistry;
-    private Set<String> processedFiles = new HashSet<>();
+    private final Set<String> processedFiles = new HashSet<>();
     private final JsonMapper jsonMapper = new JsonMapper();
     private final PrjXPConfig cfg;
 
     public void execute() throws Exception {
+        final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException("No active project!"));
+        final PrintStream out = createWriter(pd);
         eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg));
 
-        Files.walk(Path.of(cfg.getChunoRootDir()))
+        Files.walk(Path.of(pd.getRootDir()))
                 .filter(Files::isRegularFile)
                 .filter(path -> checkVetos(path))
                 .filter(path -> !processedFiles.contains(path.toAbsolutePath().toString()))
-                .forEach(path -> handlePath(cfg, path));
+                .forEach(path -> handlePath(out, pd, path));
         ;
-        doPostWalk(cfg);
+        doPostWalk(out);
+    }
+
+    private PrintStream createWriter(ProjectDefinition pd) {
+        if( pd.getJsonlFile()==null ) {
+            return System.out;
+        }
+        try {
+            return new PrintStream(pd.getJsonlFile());
+        } catch( FileNotFoundException fnfXC) {
+            log.warning("Coulde not find output file "+pd.getJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
+            return System.out;
+        }
     }
 
     protected boolean checkVetos(Path p) {
         return !vetoRegistry.shouldVeto(p);
     }
 
-    protected void handlePath(PrjXPConfig cfg, Path p) {
-        final String rootDir = new File(cfg.getChunoRootDir()).getAbsolutePath();
+    protected void handlePath(PrintStream out, ProjectDefinition pd, Path p) {
+        final String rootDir = new File(pd.getRootDir()).getAbsolutePath();
         factory.createChunker(p.toFile())
                 .parallel()
                 .flatMap(c -> c.chunk(p.toFile()))
@@ -55,23 +73,23 @@ public class ChunkProcess {
                 })
                 .map(chunk -> toJSONL(chunk))
                 .forEach(
-                        str -> cfg.getChunoOutput().println(str)
+                        str -> out.println(str)
                 )
         ;
-        cfg.getChunoOutput().flush();
+        out.flush();
         processedFiles.add(p.toAbsolutePath().toString());
     }
 
-    protected void doPostWalk(PrjXPConfig cfg) {
+    protected void doPostWalk(PrintStream out) {
         factory.listPostWalkChunker()
                 .parallel()
                 .flatMap(pwChunk -> pwChunk.chunk(null))
                 .map(chunk -> toJSONL(chunk))
                 .forEach(
-                        str -> cfg.getChunoOutput().println(str)
+                        str -> out.println(str)
                 )
         ;
-        cfg.getChunoOutput().flush();
+        out.flush();
     }
 
     public String toJSONL(PxChunk chunk) {

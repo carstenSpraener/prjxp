@@ -1,6 +1,7 @@
 package de.spraener.prjxp.tibed.config;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
@@ -12,6 +13,8 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
 import java.time.Duration;
+import java.util.function.Function;
+import java.util.function.Supplier;
 
 @Configuration
 @Log
@@ -24,26 +27,6 @@ public class EmbeddingSpringConfig {
                 .baseUrl(cfg.getEmbeddingOllamaUrl())
                 .modelName(cfg.getEmbeddingModelName())
                 .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
-                .build();
-    }
-
-    @Bean
-    public EmbeddingStore<TextSegment> embeddingStore(PrjXPConfig cfg) {
-        log.info("Using ChromaStore at '%s' as tenant '%s', database '%s' and collection '%s'"
-                .formatted(
-                        cfg.getChromaUrl(),
-                        cfg.getChromaTenant(),
-                        cfg.getChromaDatabase(),
-                        cfg.getChromaCollectionname()
-                )
-        );
-        return ChromaEmbeddingStore.builder()
-                .baseUrl(cfg.getChromaUrl())
-                .apiVersion(ChromaApiVersion.V2)
-                .tenantName(cfg.getChromaTenant())
-                .databaseName(cfg.getChromaDatabase())
-                .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
-                .collectionName(cfg.getChromaCollectionname())
                 .build();
     }
 

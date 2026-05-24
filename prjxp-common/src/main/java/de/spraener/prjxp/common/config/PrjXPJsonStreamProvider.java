@@ -37,18 +37,4 @@ public class PrjXPJsonStreamProvider {
         return reader.lines();
     }
 
-
-    public Path[] getGrProjectSourceDirs() {
-        if (config.getGrProjectSourceDir() == null) {
-            return null;
-        }
-        String[] paths = config.getGrProjectSourceDir().split(",");
-        Path[] p = new Path[paths.length];
-        for (int i = 0; i < paths.length; i++) {
-            p[i] = Path.of(paths[i]);
-        }
-
-        return p;
-    }
-
 }

@@ -1,6 +1,7 @@
 package de.spraener.prjxp.docpipe;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
@@ -43,13 +44,13 @@ public class DocPipeCliApp {
     @Bean
     @Profile(("!test"))
     public CommandLineRunner commandLineRunner(
-            DocPipeConfig cfg,
+            PrjXPConfig pxCfg,
             DocPipeArgsParser argsParser,
             DocPipeRunner runner
     ) {
         return args -> {
-            argsParser.parseArgs(cfg, args);
-            runner.run(cfg);
+            argsParser.parseArgs(pxCfg, args);
+            runner.run(pxCfg);
         };
     }
 }

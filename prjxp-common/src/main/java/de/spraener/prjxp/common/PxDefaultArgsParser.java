@@ -1,14 +1,46 @@
 package de.spraener.prjxp.common;
 
-import org.apache.commons.cli.DefaultParser;
-import org.apache.commons.cli.ParseException;
+import de.spraener.prjxp.common.config.PrjXPConfig;
+import lombok.RequiredArgsConstructor;
+import org.apache.commons.cli.*;
+import org.apache.commons.cli.help.HelpFormatter;
 import org.springframework.core.env.Environment;
 
+import java.io.IOException;
+import java.util.logging.Level;
+
+@RequiredArgsConstructor
 public class PxDefaultArgsParser extends DefaultParser {
     private final Environment env;
 
-    public PxDefaultArgsParser(Environment env) {
-        this.env = env;
+    public Options getOptions() {
+        Options options = new Options();
+        options.addOption(Option.builder("p")
+                .longOpt("project")
+                .numberOfArgs(1)
+                .desc("specify the active project to work on.")
+                .build());
+        return  options;
+    }
+
+    public PrjXPConfig parseArgs(PrjXPConfig cfg, String[] args) {
+        Options options = getOptions();
+        cfg.setActiveProject("default");
+        HelpFormatter formatter = HelpFormatter.builder().get();
+        try {
+            CommandLine cmd = parse(options, args);
+            if (cmd.hasOption("p")) {
+                cfg.setActiveProject(cmd.getOptionValue("p"));
+            }
+        } catch (ParseException pe) {
+            try {
+                formatter.printHelp("docpipe [-p | --project porjectname]", "docpipe", options, "---", true);
+                throw new RuntimeException(pe);
+            } catch( IOException ioxc ) {
+                throw new RuntimeException(ioxc);
+            }
+        }
+        return cfg;
     }
 
     @Override

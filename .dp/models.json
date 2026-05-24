@@ -1,9 +1,9 @@
 [
   {
     "stereotype": "documentation",
-    "modelName": "gemma4:31b-cloud",
-    "modelProviderURL": "http://localhost:11434",
-    "serverType": "ollama"
+    "serverType": "gemini",
+    "modelName": "gemini-3-flash-preview",
+    "timeOutSeconds": "240"
   },
   {
     "stereotype": "javadoc",

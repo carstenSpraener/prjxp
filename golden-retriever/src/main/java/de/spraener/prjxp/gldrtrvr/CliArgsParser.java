@@ -61,15 +61,6 @@ public class CliArgsParser {
         HelpFormatter formatter = new HelpFormatter();
         try {
             CommandLine cmd = parser.parse(options, evt.args());
-            if (cmd.hasOption("i")) {
-                cfg.setGrInputSource(cmd.getOptionValue("i"));
-            }
-            if (cmd.hasOption("q")) {
-                cfg.setGrQuestion(cmd.getOptionValue("q"));
-            }
-            if (cmd.hasOption("src")) {
-                cfg.setGrProjectSourceDir(cmd.getOptionValue("src"));
-            }
             if( cmd.hasOption("h") ) {
                 formatter.printHelp("golden-retriever", options);
                 System.exit(0);

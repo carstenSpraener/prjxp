@@ -1,7 +1,3 @@
-plugins {
-    id 'application'
-    alias(libs.plugins.shadow)
-}
 
 // Repositories können theoretisch auch in die zentrale build.gradle,
 // aber hier schadet es nicht.
@@ -26,16 +22,4 @@ dependencies {
 
     // Testing
     testImplementation libs.bundles.test.bundle
-}
-
-application {
-    mainClass = 'de.spraener.prjxp.gldrtrvr.GRJavaDocEnricherCli'
-}
-
-jar {
-    manifest {
-        attributes(
-                'Main-Class': 'de.spraener.prjxp.gldrtrvr.GRJavaDocEnricherCli'
-        )
-    }
 }

@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp;
 
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Log
 public class McpRestController {
     private final GRPromptEnrichment enrichment;
+    private final PrjXPConfig cfg;
 
     @GetMapping("/ping")
     @Operation(description = "Answers a request with 'pong!' in order to check network functionality.")
@@ -54,7 +56,12 @@ public class McpRestController {
                 ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
                 Wenn du die Antwort nicht im Kontext findest, sage das deutlich.                                
                 """;
+        if( projectName.equals("default") ) {
+            projectName = cfg.getActiveProject().get().getName();
+        }
         String context = enrichment.enrich(projectName, userQuestion);
-        return "%s\n%s\nFRAGE: %s".format(prefix, context, userQuestion);
+        String result = String.format("%s\n%s\nFRAGE: %s",prefix, context, userQuestion);
+        log.info("Returning:\n"+result+"\n---------\n");
+        return result;
     }
 }

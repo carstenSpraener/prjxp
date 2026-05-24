@@ -57,7 +57,7 @@ class JavaRetrieverTest {
         PxChunkDao chunkDao = chunkDaoProvider.get("default").get();
         List<PxChunk> chunks = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)");
         chunks.addAll(chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>).javadoc"));
-        StringBuilder prompt = retriever.buildPromptForFindings("default", new StringBuilder(), List.of(chunks.get(0)));
+        StringBuilder prompt = retriever.buildPromptForFindings("default", List.of(chunks.get(0)));
         System.out.println(prompt);
     }
 
@@ -67,7 +67,7 @@ class JavaRetrieverTest {
         PxChunkDao chunkDao = chunkDaoProvider.get("default").get();
         List<PxChunk> chunksA = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)");
         List<PxChunk> chunksB = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.void createContainedMethodChunks(File, CompilationUnit, List<PxChunk>, TypeDeclaration<?>, List<String>)");
-        StringBuilder prompt = retriever.buildPromptForFindings("default", new StringBuilder(), List.of(chunksA.get(chunksA.size() - 1), chunksB.get(0)));
+        StringBuilder prompt = retriever.buildPromptForFindings("default", List.of(chunksA.get(chunksA.size() - 1), chunksB.get(0)));
         System.out.println(prompt);
     }
 
@@ -81,7 +81,7 @@ class JavaRetrieverTest {
                 }
         );
         pxChunkDaoInMemory.addChunk(tsChunk);
-        String prompt = retriever.buildPromptForFindings("default", new StringBuilder(), List.of(tsChunk)).toString();
+        String prompt = retriever.buildPromptForFindings("default", List.of(tsChunk)).toString();
         assertTrue("".equals(prompt));
     }
 
@@ -115,7 +115,7 @@ class JavaRetrieverTest {
         chunkList.add(tsChunk);
         chunkList.add(null);
         chunkList.add(noneDBChunk);
-        String prompt = retriever.buildPromptForFindings("default", new StringBuilder(), chunkList).toString();
+        String prompt = retriever.buildPromptForFindings("default", chunkList).toString();
         assertTrue("".equals(prompt));
     }
 

@@ -9,7 +9,6 @@ import org.springframework.stereotype.Component;
 
 import javax.script.Bindings;
 import java.io.File;
-import java.util.Map;
 
 @Component
 @Log

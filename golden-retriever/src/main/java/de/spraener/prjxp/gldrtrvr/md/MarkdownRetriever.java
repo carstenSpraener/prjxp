@@ -23,7 +23,8 @@ public class MarkdownRetriever implements GoldenRetriever {
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(String projectName, StringBuilder prompt, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+        StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
         // Die Session verwaltet den Baum-Aufbau der Dokumente
         MarkdownPromptSession session = new MarkdownPromptSession(chunkDao, rankingService);
