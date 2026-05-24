@@ -11,7 +11,7 @@ import java.time.Duration;
 
 @Component
 public class GeminiSupplier implements ChatModelSupplier {
-    @Value("${chat.gemini.apikey:NONE-SPECIFIED}")
+    @Value("${GOOGLE_AI_API_KEY:NONE-SPECIFIED}")
     @ToString.Exclude
     private String apiKey;
     @Override

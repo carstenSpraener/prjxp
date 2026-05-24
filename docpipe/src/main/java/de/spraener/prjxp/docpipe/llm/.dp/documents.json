@@ -1,0 +1,9 @@
+[
+    {
+      "stereotype": "javadoc",
+      "outputFile": "package-info.java",
+      "prompt": "PackageInfo.prompt.txt",
+      "ps": "\n\n//_This document was generated with Doc|Pipe and qwen3.6-27b-ud-mlx_\n",
+      "filterList": "noSurroundingCodeBlock"
+    }
+]

@@ -33,25 +33,27 @@ public class JobCreationService {
     private final DPLogService logService;
 
     public Stream<DPJob> readJobs(Optional<ProjectDefinition> pd) throws IOException {
-        Path rootPath = Path.of("");
         if( pd.isPresent() ) {
-            rootPath = Path.of(pd.get().getRootDir());
+            Path rootPath = Path.of(pd.get().getRootDir());
+            return Files.walk(rootPath)
+                    .filter(Files::isDirectory)
+                    .filter(dpFilesService::hasDocPipeDir)
+                    .map(this::createDPJob)
+                    .filter(j ->
+                            j != null && j.getContentCreationList() != null
+                    )
+                    ;
+        } else {
+            return Stream.empty();
         }
-        return Files.walk(rootPath)
-                .map(Path::toFile)
-                .filter(File::isDirectory)
-                .filter(dpFilesService::hasDocPipeDir)
-                .map(this::createDPJob)
-                .filter(j -> j != null && j.getContentCreationList() != null)
-                ;
     }
 
-    private DPJob createDPJob(File directory) {
+    private DPJob createDPJob(Path directory) {
         DPJob dpJob = new DPJob();
-        dpJob.setRootDir(directory);
+        dpJob.setRootDir(directory.toFile());
         dpJob.setPxCfg(pxCfg);
 
-        File documentsJson = dpFilesService.getDocumentsJsonFrom(directory);;
+        File documentsJson = dpFilesService.getDocumentsJsonFrom(directory.toFile());;
         try {
             if (documentsJson.exists()) {
                 List< DPContentCreation> creations = this.objectMapper.readValue(documentsJson, new TypeReference<List<DPContentCreation>>() {});

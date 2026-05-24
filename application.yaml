@@ -26,24 +26,26 @@ prjxp:
 
   chatModels:
     - stereoType: documentation
-      serverType: gemini
-      modelName: gemini-3-flash
+      serverType: lm-studio
+      modelName: gpt-oss-safeguard-120b-mlx
+      providerUrl: http://localhost:1234/v1
+      timeoutSecs: 600
 
     - stereoType: javadoc
-      modelName: deepseek-coder-v2:16b
-      providerUrl: http://localhost:11434
-      serverType: ollama
-      timeoutSecs: 120
-
-    - stereoType: faq
-      modelName: qwen3.6-31b
+      modelName: qwen3.6-27b-ud-mlx
       providerUrl: http://localhost:1234/v1
       serverType: lm-studio
-      timeoutSecs: 120
+      timeoutSecs: 600
+
+    - stereoType: faq
+      modelName: gemma-4-31b-it-mlx
+      providerUrl: http://localhost:1234/v1
+      serverType: lm-studio
+      timeoutSecs: 600
 
     - stereotype: detailed
-      serverType: gemini
       modelName: gemini-3-flash-preview
+      serverType: gemini
       timeoutSecs: 240
 
     - stereoType: embedding
@@ -51,3 +53,9 @@ prjxp:
       providerUrl: http://localhost:1234/v1
       modelName: mxbai-embed-large
       timeoutSecs: 60
+
+spring:
+  devtools:
+    restart:
+      # Schließt alle package-info.java Dateien vom automatischen Restart aus
+      additional-exclude: "**/package-info.java"

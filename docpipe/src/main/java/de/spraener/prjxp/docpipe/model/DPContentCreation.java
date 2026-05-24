@@ -8,4 +8,5 @@ public class DPContentCreation {
     private String stereotype;
     private String prompt;
     private String ps;
+    private String filterList;
 }

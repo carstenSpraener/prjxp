@@ -1,6 +1,5 @@
-
-
-    {
+[
+  {
       "stereotype": "detailed",
       "outputFile": "README.md",
       "prompt": "Readme.prompt.txt",

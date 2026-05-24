@@ -11,6 +11,7 @@ repositories {
 
 dependencies {
     implementation project(':prjxp-common')
+    implementation project(':golden-retriever')
 
     // Spring & DevTools
     implementation libs.spring.boot.starter.json

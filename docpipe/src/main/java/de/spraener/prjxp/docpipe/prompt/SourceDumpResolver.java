@@ -11,6 +11,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.logging.Level;
+import java.util.stream.Stream;
 
 @Component
 @Log
@@ -22,18 +23,23 @@ public class SourceDumpResolver implements TemplateResolver {
 
     @Override
     public String resolve(File baseDir, Object context, Options options) throws Exception {
-        String srcDir = baseDir.getAbsolutePath()+"/"+options.param(0).toString();
+        final Path srcPath = baseDir.toPath().resolve(options.param(0).toString());
+        final boolean scanSubs = options.hash("scanSubs", false);
+        final String ending = options.hash("ending", "java");
         StringBuilder sb = new StringBuilder("\n");
-        Files.walk(Path.of(srcDir))
-                .filter(path -> path.toString().endsWith(".java"))
+        try (Stream<Path> walk = scanSubs ? Files.walk(srcPath) : Files.walk(srcPath, 1)) {
+            walk.filter(Files::isRegularFile)
+                .filter(path -> path.toString().endsWith(ending))
+                .filter(path -> !path.toString().endsWith("package-info.java"))
                 .forEach(path -> {
-                    try {
-                        String content = IOUtils.toString(new FileInputStream(path.toFile()), StandardCharsets.UTF_8);
-                        sb.append("```java\n").append(content).append("```\n\n");
-                    } catch( Exception e) {
-                        log.log(Level.WARNING, "Error while adding source code:"+e.getMessage());
+                    try(FileInputStream fis = new FileInputStream(path.toFile())) {
+                        String content = IOUtils.toString(fis, StandardCharsets.UTF_8);
+                        sb.append("```"+ending+"\n").append(content).append("```\n\n");
+                    } catch (Exception e) {
+                        log.log(Level.WARNING, "Error while adding source code:" + e.getMessage());
                     }
                 });
-        return sb.toString();
+            return sb.toString();
+        }
     }
 }

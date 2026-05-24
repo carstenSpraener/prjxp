@@ -36,8 +36,10 @@ public class DocPipeRunner {
     public void run(PrjXPConfig cfg) throws Exception {
         List<ContentCreationTask> allTasks = jobCreationService
                 .readJobs(cfg.getActiveProject())
-                .flatMap(dpj -> dpj.getContentCreationList().stream()
-                        .map(cc -> new ContentCreationTask(dpj, cc)))
+                .flatMap(dpj ->
+                        dpj.getContentCreationList().stream()
+                        .map(cc -> new ContentCreationTask(dpj, cc))
+                )
                 .collect(Collectors.toList());
 
         try (ExecutorService executor = Executors.newFixedThreadPool(maxThreads)) {

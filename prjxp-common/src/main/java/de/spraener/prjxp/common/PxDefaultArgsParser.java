@@ -5,6 +5,7 @@ import lombok.RequiredArgsConstructor;
 import org.apache.commons.cli.*;
 import org.apache.commons.cli.help.HelpFormatter;
 import org.springframework.core.env.Environment;
+import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.util.logging.Level;
@@ -25,7 +26,6 @@ public class PxDefaultArgsParser extends DefaultParser {
 
     public PrjXPConfig parseArgs(PrjXPConfig cfg, String[] args) {
         Options options = getOptions();
-        cfg.setActiveProject("default");
         HelpFormatter formatter = HelpFormatter.builder().get();
         try {
             CommandLine cmd = parse(options, args);

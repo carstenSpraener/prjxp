@@ -33,9 +33,11 @@ public class LLMService {
         DPContentCreation dpCC =  ccTask.getDpContentCreation();
         DPJob dpJob =  ccTask.getDpJob();
 
-        String stereotype = dpCC.getStereotype();
+        final String stereotype = dpCC.getStereotype();
         PrjXPChatModelReference cmRef = cfg.getChatModels().stream()
-                .filter( cm->cm.getServerType().equals(stereotype))
+                .filter( cm->
+                        cm.getStereoType().equals(stereotype)
+                )
                 .findFirst()
                 .orElseThrow(
                     () -> new IllegalArgumentException("No Model found for Stereotype " + stereotype)

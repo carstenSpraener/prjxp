@@ -16,6 +16,7 @@ import org.springframework.util.StringUtils;
 
 import java.io.IOException;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.logging.Level;
 
 @Service
@@ -28,6 +29,7 @@ public class ContentCreationService {
     private final OutputSinkFactory outputSinkFactory;
     private final DotDPFilesService dpFilesService;
     private final DPLogService logService;
+    private final List<ContentFilter> contentFilterList;
 
     public void createContent(ContentCreationTask ccTask) {
         try {
@@ -35,12 +37,15 @@ public class ContentCreationService {
 
             String prompt = promptResolvingService.resolve(ccTask);
             updater.onUpdateRequired(prompt, ccTask, () -> {
-                log.info("Creating content of " + dpcc.getOutputFile());
+                String outputFile = dpFilesService.getOutputFilePath(ccTask);
+                log.info("Creating content of " + outputFile);
                 String content = llmService.chat(ccTask, prompt);
+                if( StringUtils.hasText(dpcc.getFilterList()) ) {
+                    content = applyContentFilters(content, dpcc.getFilterList());
+                }
                 if (StringUtils.hasText(dpcc.getPs())) {
                     content = content + ccTask.getDpContentCreation().getPs();
                 }
-                String outputFile = dpFilesService.getOutputFilePath(ccTask);
                 try (OutputSink sink = outputSinkFactory.createSink(Path.of(outputFile))) {
                     sink.println(content);
                 } catch (IOException e) {
@@ -54,5 +59,18 @@ public class ContentCreationService {
                     new DPLogMessage(Level.SEVERE, "Error while trying to create prompt for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage())
             );
         }
+    }
+
+    private String applyContentFilters(String content, String filterList) {
+        for(String filterName : filterList.split(",")) {
+            ContentFilter filter = contentFilterList.stream()
+                .filter(f -> f.name().equals(filterName))
+                .findFirst()
+                .orElse(null);
+            if( filter != null ) {
+                content = filter.filter(content);
+            }
+        }
+        return content;
     }
 }

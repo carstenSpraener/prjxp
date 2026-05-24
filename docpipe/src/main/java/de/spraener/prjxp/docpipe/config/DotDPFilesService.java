@@ -5,11 +5,12 @@ import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
+import java.nio.file.Path;
 
 @Component
 public class DotDPFilesService {
     private static final String HASH_FILE_PATH = "content-hashes.properties";
-    public static final String DP_DIR= "de/spraener/prjxp/docpipe/.dp";
+    public static final String DP_DIR= ".dp";
 
     public File dotPipeDir(ContentCreationTask cct) {
         return new File(cct.getDpJob().getRootDir().getAbsolutePath() +"/" + DP_DIR);
@@ -19,8 +20,8 @@ public class DotDPFilesService {
         return cfg.getProjectDir() + "/" + DP_DIR + "/models.json";
     }
 
-    public boolean hasDocPipeDir(File dir) {
-        return new File(dir.getAbsolutePath() +"/"+ DP_DIR).exists();
+    public boolean hasDocPipeDir(Path dir) {
+        return dir.resolve(DP_DIR).toFile().exists();
     }
 
     public File getDotPipeDir(File directory) {
