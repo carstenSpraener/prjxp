@@ -27,7 +27,7 @@ public class PrjXPConfig {
     private List<PrjXPEmbeddingStoreReference> embeddingStores = new ArrayList<>();
     private List<PrjXPChatModelReference> chatModels = new ArrayList<>();
 
-    {
+    private ProjectDefinition createCwdFallback() {
         ProjectDefinition cwd = new ProjectDefinition();
         cwd.setName("cwd");
         cwd.setRootDir(".");
@@ -35,31 +35,16 @@ public class PrjXPConfig {
         cwd.setChunoWhiteList("java,ts");
         cwd.setTibedBatchSize(50);
         cwd.setTibedResetStore(true);
-        projects.add(cwd);
-
-        PrjXPEmbeddingStoreReference local = new PrjXPEmbeddingStoreReference();
-        local.setProjectName("default");
-        local.setProviderUrl("http://localhost:8000");
-        local.setDbName("prjxp");
-        local.setTenant("prjxp");
-        local.setCollectionName("prjxp");
-        embeddingStores.add(local);
-
-        PrjXPChatModelReference chatModelReference = new PrjXPChatModelReference();
-        chatModelReference.setStereoType("default");
-        chatModelReference.setProviderUrl("http://192.168.1.224:1234");
-        chatModelReference.setModelName("gemma-4-31b");
-        chatModelReference.setServerType("openAI");
-        chatModelReference.setApiKey("lm-studio");
-
-        chatModels.add(chatModelReference);
+        return cwd;
     }
 
     public Optional<ProjectDefinition> getProjectDefinition(String name) {
+        if (projects.isEmpty() && "cwd".equals(name)) {
+            return Optional.of(createCwdFallback());
+        }
         return projects.stream()
-                .filter(
-                pd -> pd.getName().equals(name)
-                ).findFirst();
+                .filter(pd -> pd.getName().equals(name))
+                .findFirst();
     }
 
     public Optional<ProjectDefinition> getActiveProject() {

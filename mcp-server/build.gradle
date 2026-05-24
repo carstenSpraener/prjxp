@@ -48,6 +48,7 @@ application {
 
 shadowJar {
     archiveClassifier.set('all')
+    exclude 'application.yaml'
 
     // WICHTIG: Diese Transformer mergen die Spring-Konfigurationen
     mergeServiceFiles()
