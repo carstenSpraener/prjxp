@@ -1,76 +1,56 @@
-# Software Architecture Assessment: Chunk Norris (Project Expert Chunker)
+# Software Architecture Assessment: Chunk Norris (chuno) - Document Processing & Chunking Engine
 
 ## 1. Executive Summary
-The "Chunk Norris" project is a Spring Boot-based framework designed to decompose heterogeneous data sources (source code, documents, images) into semantic "chunks" suitable for Large Language Model (LLM) ingestion or vector indexing. 
+The "Chunk Norris" project is a sophisticated Java-based document processing engine designed to decompose heterogeneous file formats (Source Code, PDF, Office documents) into semantic "chunks" (PxChunks). The architecture is built on Spring Boot and leverages a plugin-based discovery mechanism to handle various file types.
 
-The architecture is highly modular and extensible, leveraging a sophisticated **Dijkstra-based routing engine** for document conversion and an **annotation-driven plugin system** for discovery. While the core logic is robust and follows modern Java practices, there are identified risks regarding side-effect management (I/O within processing logic), inconsistent error handling, and tight coupling to the local filesystem.
-
-**Key Strengths:**
-- Advanced conversion routing using graph theory.
-- High extensibility via custom annotations and Spring-managed components.
-- Semantic awareness for Java and TypeScript code.
-
-**Critical Risks:**
-- Side-effects (writing files) embedded deep within chunking logic.
-- Potential performance bottlenecks in pre-processing (blocking I/O in event listeners).
-- Reliance on reflection and manual classpath scanning which may bypass Spring's standard lifecycle benefits.
+The architecture's current state is highly extensible and modular. It features a unique graph-based routing system for document conversion, allowing it to find optimal paths between source formats and target formats (primarily Markdown). However, the system relies heavily on reflection and custom annotation scanning, which introduces complexity in debugging. The most critical risks identified are inconsistent error handling (swallowed exceptions) and a high reliance on regular expressions for semantic parsing of complex languages like TypeScript.
 
 ## 2. Architectural Style & Patterns
-The system employs a hybrid architectural style, primarily a **Micro-kernel (Plugin) Architecture** combined with **Pipes and Filters**.
+The project follows a **Modular Monolith** approach with strong elements of the **Strategy** and **Broker** patterns.
 
-- **Strategy Pattern:** Used extensively for `PxChunker` and `DocConversionAgent` implementations. The system selects the appropriate strategy at runtime based on file type or conversion requirements.
-- **Graph-Based Routing:** The `DocConversionRouter` uses a directed weighted graph (via JGraphT) to find the "cheapest" path from a source format (e.g., PDF) to a target format (e.g., Markdown).
-- **Event-Driven Architecture:** Utilizes Spring's `ApplicationEventPublisher` for lifecycle hooks (e.g., `SpringPreWalkEvent`), allowing decoupled components like `JavaFQNamesMapper` to prepare metadata before processing begins.
-- **Annotation-Driven Discovery:** Custom annotations (`@Chunker`, `@PostWalkChunker`, `@ChunkVeto`) allow for a declarative programming model, reducing the need for manual registration of new processors.
+*   **Plugin-based Architecture:** Through the use of custom annotations (`@Chunker`, `@PostWalkChunker`, `@ChunkNorrisComponent`), the system implements a discovery-based plugin model. This allows new processing capabilities to be added by simply dropping in new Spring Components.
+*   **Graph-based Routing (Dijkstra):** The `DocConversionRouter` uses a directed weighted graph (via JGraphT) to determine the "cheapest" or most "accurate" conversion path between document types (e.g., PDF -> Image -> OCR -> Markdown vs. PDF -> Text -> Markdown).
+*   **Broker Pattern:** The `ChunkerBroker` and `ChunkerFactory` act as intermediaries that decouple the orchestration logic (`ChunkProcess`) from the specific implementation of file parsers.
+*   **Event-Driven Initialization:** The system uses Spring's `ApplicationEventPublisher` to trigger pre-processing tasks (like `SpringPreWalkEvent`), ensuring that global state (like Java FQNs) is prepared before the main processing loop begins.
 
 ## 3. Quality Attribute Evaluation
 
 ### Maintainability & Readability
-- **Code Cleanliness:** Generally high. The use of Lombok reduces boilerplate, and naming conventions follow standard Java idioms.
-- **SOLID Adherence:** 
-    - **Single Responsibility:** Most classes have a clear purpose (e.g., `Pdf2TextConversionAgent`). However, `MarkdownChunker` violates this by performing both conversion and file I/O (writing `.md` files to disk).
-    - **Open/Closed:** Excellent. New file types can be supported by adding new beans without modifying the core orchestrator.
+*   **Strengths:** The code follows standard Java naming conventions and utilizes Project Lombok to reduce boilerplate. The separation of concerns between "Chunkers" (parsing) and "Agents" (conversion) is clear.
+*   **Weaknesses:** The `TypeScriptCodeChunker` relies on complex, nested Regular Expressions for semantic analysis. This is brittle compared to an AST-based approach (which is correctly used in the `JavaCodeChunker` via JavaParser).
 
 ### Extensibility
-- The system is designed for growth. Adding support for a new LLM provider or a new document format requires only implementing an interface and annotating the class.
-- The `DocConversionRouter` automatically incorporates new agents into its pathfinding logic, which is a highly resilient design choice.
+*   **Strengths:** This is the architecture's greatest asset. Adding support for a new file type or a new LLM provider (via LangChain4j) requires minimal changes to the core logic. The `DocConversionAgent` interface is well-defined.
+*   **Analysis:** The Dijkstra-based router allows the system to automatically incorporate new conversion steps into existing pipelines without manual reconfiguration.
 
 ### Robustness & Error Handling
-- **Weakness:** There is a pattern of "catch and log" or "catch and return empty" (e.g., in `JavaCodeChunker` and `TypeScriptCodeChunker`). While this prevents the entire process from crashing, it can hide systemic issues like permission errors or corrupted files.
-- **Resilience:** The `VetoRegistry` provides a clean way to skip problematic files (too large, hidden, etc.) before they enter the pipeline.
+*   **Risks:** There are several instances of "catch-all" blocks (e.g., `catch (Exception e)`) that either log a warning and return an empty stream or contain `FIXME` comments (e.g., in `JavaFQNamesMapper`). This can lead to silent failures where specific files are skipped without clear diagnostic data.
+*   **Resilience:** The use of `parallelStream()` in `ChunkProcess` provides performance but lacks a dedicated thread pool configuration, which could lead to `ForkJoinPool` exhaustion during heavy I/O or AI-driven OCR tasks.
 
 ### Performance & Resource Efficiency
-- **Parallelism:** `ChunkProcess` uses `parallelStream()`, which is effective for I/O-bound tasks but can lead to thread exhaustion if not tuned, especially since some agents (like `Image2MDConversionAgent`) call external AI services.
-- **Memory Management:** The use of `Stream<PxChunk>` is memory-efficient. However, `JavaFQNamesMapper` performs a full project walk and parses all Java files into memory-heavy ASTs (`CompilationUnit`) during the pre-walk phase, which could be a bottleneck for large repositories.
+*   **Bottlenecks:** The `Image2MDConversionAgent` performs synchronous calls to a local Ollama instance. In a parallel processing scenario, this could lead to significant latency and resource contention.
+*   **Efficiency:** The `ContentSplitter` utility is used consistently to manage chunk sizes and overlaps, which is essential for downstream LLM token limits.
 
 ## 4. Strengths & Best Practices
-- **Semantic Chunking:** Unlike naive character-count splitters, the `JavaCodeChunker` and `TypeScriptCodeChunker` understand code structure (methods, classes, imports), which significantly improves the quality of downstream RAG (Retrieval-Augmented Generation) systems.
-- **Dijkstra Routing:** Using a weighted graph for document conversion is an elegant solution to the "N-to-M" conversion problem, allowing the system to automatically find multi-step paths (e.g., Word -> HTML -> Markdown).
-- **Declarative Veto Logic:** The `@ChunkVeto` system is a clean implementation of the Interceptor pattern, allowing easy configuration of file exclusion rules.
-- **Context Awareness:** The `TextDocChunkContext` and `PdfDocSplittingSession` track state across chunks, ensuring that metadata like page numbers and section headers are preserved.
+*   **Semantic Chunking:** Unlike naive character-count splitters, the engine attempts to understand document structure (Methods in Java/TS, Headers in Markdown, Pages in PDF).
+*   **Sidecar Metadata:** The `MetaInfReader` allows for external metadata injection via `.meta` files, providing a clean way to enrich chunks without modifying source files.
+*   **Veto System:** The `VetoRegistry` provides a clean, annotation-driven way to implement "Ignore" logic (e.g., skipping build artifacts or hidden files) without cluttering the main logic.
+*   **AST Usage:** Using `StaticJavaParser` for Java files ensures high-fidelity chunking that respects class and method boundaries.
 
 ## 5. Identified Risks & Technical Debt
-
-### 1. Side-Effect Pollution
-`MarkdownChunker.processFile` creates a `PrintWriter` and writes a `.md` file to the filesystem. This makes the component hard to unit test, creates unexpected files on the user's disk, and limits the tool's use in read-only environments or stream-based pipelines.
-
-### 2. Reflection and Scanning Overhead
-`AnnotationBasedChunkerBrokerImpl` performs manual classpath scanning using `ClassPathScanningCandidateComponentProvider`. This overlaps with Spring's own component scanning and uses reflection to invoke methods. This can lead to "hidden" dependencies that aren't visible in the Spring Bean Graph.
-
-### 3. Tight Coupling to Filesystem
-Most interfaces (`PxChunker`, `DocConversionAgent`) are hardcoded to use `java.io.File`. This prevents the system from processing data from S3 buckets, databases, or network streams without first writing them to a local temporary directory.
-
-### 4. Inconsistent Error Propagation
-In `JavaDependencyHandler`, exceptions are wrapped in `RuntimeException`, while in `TypeScriptCodeChunker`, they are swallowed and logged. A unified error handling strategy (e.g., a `Result<T>` wrapper or a dedicated `ErrorCollector`) is missing.
+*   **Reflection Overhead:** The `AnnotationBasedChunkerBrokerImpl` performs manual class-path scanning and reflection-based method invocation. This bypasses some of Spring's native dependency injection benefits and makes the startup phase slower and harder to trace.
+*   **State Management:** `JavaFQNamesMapper` and `DependencyRegistry` maintain in-memory maps of the entire project structure. For extremely large codebases, this could lead to `OutOfMemoryError` as there is no persistence or cache-eviction strategy.
+*   **Brittle Parsing:** The `TypeScriptCodeChunker` attempts to track curly brace counts manually (`braceCount++`) to find method ends. This is prone to failure with complex syntax (template literals, nested objects, etc.).
+*   **Hardcoded Configuration:** While some values are externalized via `@Value`, several logic-heavy parameters (like the `inaccurateSurcharge` in the router) are deeply embedded in the service logic.
 
 ## 6. Actionable Recommendations
 
-1.  **Abstract the I/O Layer:** Replace `java.io.File` with Spring's `Resource` abstraction or a custom `DataSource` interface. This will allow the architecture to support cloud storage and improve testability using in-memory filesystems.
-2.  **Decouple Conversion from Storage:** Refactor `MarkdownChunker` to return the converted string rather than writing it to a file. Move the "save to disk" logic to a dedicated `OutputHandler` or `PostProcessor`.
-3.  **Optimize Pre-Walk Phase:** In `JavaFQNamesMapper`, consider using a more lightweight indexing library (like Lucene or a simple regex-based scanner) instead of full `StaticJavaParser` ASTs if only FQNs are needed.
-4.  **Standardize Plugin Discovery:** Instead of manual scanning in `AnnotationBasedChunkerBrokerImpl`, utilize Spring's ability to inject a `List<Object>` of all beans annotated with a specific type, or use `SmartLifecycle` for initialization.
-5.  **Implement a Progress Monitor:** Since processing large directories with AI-based conversion (Ollama) can take significant time, implement an observer pattern or use Spring Boot Actuator to provide real-time progress updates.
-6.  **Enhance Error Metadata:** Instead of returning an empty `Stream` on failure, return a `PxChunk` with a specific `error` metadata tag. This allows the final output (JSONL) to reflect which files failed and why.
+1.  **Refactor TypeScript Parsing:** Replace the regex-based `TypeScriptCodeChunker` with a proper AST parser (e.g., using a library like `tree-sitter` or a specialized TS parser) to improve reliability.
+2.  **Standardize Error Handling:** Replace `FIXME` comments and generic `Exception` catches with custom Checked Exceptions and a dedicated `ProcessingErrorHandler` that can report exactly why a file failed.
+3.  **Optimize AI Agents:** Implement an asynchronous pattern or a dedicated task queue for `Image2MDConversionAgent` to prevent blocking the main processing threads during long-running OCR/Vision tasks.
+4.  **Formalize Chunker Discovery:** Instead of manual classpath scanning in `AnnotationBasedChunkerBrokerImpl`, leverage Spring’s `List<PxChunker>` injection or `ObjectProvider` to let the framework handle bean discovery natively.
+5.  **Resource Management:** Introduce a `ProjectContext` object to wrap the `DependencyRegistry` and `processedFiles` set, allowing for better lifecycle management and potential persistence for very large projects.
+6.  **Enhance Logging:** Transition from `java.util.logging` and `System.out` to a structured logging framework (SLF4J/Logback) to allow for better log aggregation and level management in production environments.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 

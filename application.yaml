@@ -17,19 +17,25 @@ prjxp:
 
   embeddingStores:
     - projectName: prjxp
-      storeURL: http://localhost:8000
-      storeTenant: prjxp
-      storeDBName: prjxp
-      storeCollectionName: prjxp-src
+      providerUrl: http://localhost:8000
+      tenant: prjxp
+      dbName: prjxp
+      collectionName: prjxp-src
       isDefault: true
 
   chatModels:
-    - name: gpt-oss
-      providerType: ollama
+    - stereotype: detailed
+      serverType: ollama
       modelName: gpt-oss-120B
-      apiUrl: http://localhost:11434
+      providerUrl: http://localhost:11434
 
-    - name: gemini-3
-      providerType: gemini
+    - stereoType: expert
+      serverType: gemini
       modelName: gemini-3-flash
       apiKey: ${GOOGLE_API_KEY}
+
+    - stereoType: embedding
+      serverType: ollama
+      providerUrl: http://192.168.188.114:11434
+      modelName: mxbai-embed-large
+      timeoutSecs: 60

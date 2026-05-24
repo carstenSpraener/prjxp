@@ -26,18 +26,18 @@ public class EmbeddingStoreSupplier {
                 .orElseThrow(() -> new IllegalStateException("No store found for project " + pd.getName()));
         log.info(
                 String.format("Using ChromaStore at '%s' as tenant '%s', database '%s' and collection '%s'",
-                        ref.getStoreURL(),
-                        ref.getStoreTenant(),
-                        ref.getStoreDBName(),
-                        ref.getStoreCollectionName()
+                        ref.getProviderUrl(),
+                        ref.getTenant(),
+                        ref.getDbName(),
+                        ref.getCollectionName()
                 )
         );
         return ChromaEmbeddingStore.builder()
-                .baseUrl(ref.getStoreURL())
+                .baseUrl(ref.getProviderUrl())
                 .apiVersion(ChromaApiVersion.V2)
-                .tenantName(ref.getStoreTenant())
-                .databaseName(ref.getStoreDBName())
-                .collectionName(ref.getStoreCollectionName())
+                .tenantName(ref.getTenant())
+                .databaseName(ref.getDbName())
+                .collectionName(ref.getCollectionName())
                 .build();
     }
 }

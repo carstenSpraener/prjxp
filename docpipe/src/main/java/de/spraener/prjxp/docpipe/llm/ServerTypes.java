@@ -1,11 +1,13 @@
 package de.spraener.prjxp.docpipe.llm;
 
 public enum ServerTypes {
-    UNKNOWN("Unknown"),
+    UNKNOWN("unknown"),
     OLLAMA("ollama"),
     GEMINI("gemini"),
-    LM_STUDIO("lm.studio"),
+    LM_STUDIO("lmstudio"),
     OPEN_API("openapi"),
+    // This value is for other server types not directly supported
+    // by PrjXP. It enables new implementation without changing this enum.
     CUSTOM("custom")
     ;
 

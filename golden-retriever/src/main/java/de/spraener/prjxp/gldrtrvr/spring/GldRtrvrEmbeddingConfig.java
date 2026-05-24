@@ -54,11 +54,11 @@ public class GldRtrvrEmbeddingConfig {
         for( var r : cfg.getEmbeddingStores() ) {
             try {
                 EmbeddingStore<TextSegment> store = ChromaEmbeddingStore.builder()
-                        .baseUrl(r.getStoreURL())
+                        .baseUrl(r.getProviderUrl())
                         .apiVersion(ChromaApiVersion.V2)
-                        .tenantName(r.getStoreTenant())
-                        .databaseName(r.getStoreDBName())
-                        .collectionName(r.getStoreCollectionName())
+                        .tenantName(r.getTenant())
+                        .databaseName(r.getDbName())
+                        .collectionName(r.getCollectionName())
                         .build();
                 embeddingStores.add( new ChromaDBPxChunkDao(store, embeddingModel, r));
             } catch (Exception e) {
@@ -68,10 +68,10 @@ public class GldRtrvrEmbeddingConfig {
                                 "   Tenant: '%s'\n" +
                                 "   ChromaDatabase: '%s'\n" +
                                 "   Collection: '%s'",
-                        r.getStoreURL(),
-                        r.getStoreTenant(),
-                        r.getStoreDBName(),
-                        r.getStoreCollectionName()
+                        r.getProviderUrl(),
+                        r.getTenant(),
+                        r.getDbName(),
+                        r.getCollectionName()
                 ));
                 throw new RuntimeException(e);
             }
@@ -84,7 +84,7 @@ public class GldRtrvrEmbeddingConfig {
         List<KIChat> chatModels = new ArrayList<>();
         for( var r :  cfg.getChatModels() ) {
             try {
-                if (r.getProviderType().equals("gemini")) {
+                if (r.getServerType().equals("gemini")) {
                     chatModels.add(new KIChatModelWrapper(GoogleAiGeminiChatModel.builder()
                             .apiKey(r.getApiKey())
                             .modelName(r.getModelName())
@@ -92,27 +92,27 @@ public class GldRtrvrEmbeddingConfig {
                             .build(),
                             r
                     ));
-                } else if (r.getProviderType().equals("ollama")) {
+                } else if (r.getServerType().equals("ollama")) {
                     chatModels.add(new KIChatModelWrapper(OllamaChatModel.builder()
-                            .baseUrl(r.getApiUrl())
+                            .baseUrl(r.getProviderUrl())
                             .modelName(r.getModelName())
                             .timeout(Duration.ofMinutes(20))
                             .temperature(0.2)
                             .build(), r
                     ));
-                } else if (r.getProviderType().equals("openAI")) {
+                } else if (r.getServerType().equals("openAI")) {
                     chatModels.add(new KIChatModelWrapper(
                             OpenAiChatModel.builder()
                                     .apiKey(r.getApiKey())
                                     .modelName(r.getModelName())
                                     .temperature(0.2)
-                                    .baseUrl(r.getApiUrl())
+                                    .baseUrl(r.getProviderUrl())
                                     .build(), r)
                     );
-                } else if (r.getProviderType().equals("none")) {
+                } else if (r.getServerType().equals("none")) {
                     chatModels.add( new EmptyKiChat(r));
                 } else {
-                    throw new IllegalArgumentException("Unsupported chat API kind: " + r.getProviderType());
+                    throw new IllegalArgumentException("Unsupported chat API kind: " + r.getServerType());
                 }
             } catch (Exception e) {
                 log.severe(String.format(
@@ -121,8 +121,8 @@ public class GldRtrvrEmbeddingConfig {
                                 "   api-url: '%s'\n" +
                                 "   modelName: '%s'\n" +
                                 "",
-                        r.getProviderType(),
-                        r.getApiUrl(),
+                        r.getServerType(),
+                        r.getProviderUrl(),
                         r.getModelName()
                 ));
 

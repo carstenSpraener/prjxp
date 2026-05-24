@@ -38,17 +38,17 @@ public class PrjXPConfig {
 
         PrjXPEmbeddingStoreReference local = new PrjXPEmbeddingStoreReference();
         local.setProjectName("default");
-        local.setStoreURL("http://localhost:8000");
-        local.setStoreDBName("prjxp");
-        local.setStoreTenant("prjxp");
-        local.setStoreCollectionName("prjxp");
+        local.setProviderUrl("http://localhost:8000");
+        local.setDbName("prjxp");
+        local.setTenant("prjxp");
+        local.setCollectionName("prjxp");
         embeddingStores.add(local);
 
         PrjXPChatModelReference chatModelReference = new PrjXPChatModelReference();
-        chatModelReference.setName("default");
-        chatModelReference.setApiUrl("http://192.168.1.224:1234");
+        chatModelReference.setStereoType("default");
+        chatModelReference.setProviderUrl("http://192.168.1.224:1234");
         chatModelReference.setModelName("gemma-4-31b");
-        chatModelReference.setProviderType("openAI");
+        chatModelReference.setServerType("openAI");
         chatModelReference.setApiKey("lm-studio");
 
         chatModels.add(chatModelReference);

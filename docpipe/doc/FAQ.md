@@ -1,46 +1,40 @@
 # Doc|Pipe Developer FAQ
 
-This FAQ provides technical insights into the architecture, extension points, and core mechanics of **Doc|Pipe**. It is intended for software engineers and architects integrating or extending the system.
+This FAQ provides technical insights into the architecture, extension points, and operational mechanics of **Doc|Pipe**. It is intended for software engineers and architects integrating or extending the system.
 
 ## What is Doc|Pipe and what problem does it solve?
 
-**Doc|Pipe** is a pipeline-driven documentation engine designed to automate the generation of technical documentation using Large Language Models (LLMs). It is specifically built to address the "documentation debt" often found in legacy systems or rapidly evolving microservices.
+**Doc|Pipe** is a pipeline-oriented documentation engine designed to automate the generation of technical documentation using Large Language Models (LLMs). 
 
-Instead of manual authoring, Doc|Pipe scans your project structure for configuration markers and generates context-aware documentation (like READMEs, architecture assessments, or data models) by feeding project artifacts directly into LLM prompts.
-
-### Key Problems Solved:
-*   **Outdated Documentation:** By tying documentation generation to the actual source code and project state.
-*   **Onboarding Friction:** Automatically generating system overviews and component descriptions for new developers.
-*   **Legacy Analysis:** Using LLMs to "dump" and analyze source code to create high-level architectural summaries.
-
----
+In many software projects—particularly legacy systems—documentation is either non-existent, outdated, or disconnected from the actual source code. Doc|Pipe solves this by:
+*   **Context-Aware Generation:** It scans project structures to identify documentation "jobs" defined in local `.dp` directories.
+*   **Source-Truth Integration:** It extracts actual code structures (e.g., Java source dumps) and feeds them into LLM prompts.
+*   **Incremental Updates:** It uses a SHA-256 hashing mechanism to ensure LLM calls are only made when the underlying prompt or context has changed, preventing unnecessary API costs and latency.
 
 ## How does the template resolution mechanism work?
 
-Doc|Pipe uses a context-sensitive resolution process powered by **Handlebars**. The goal is to transform a high-level prompt template into a "sharp," data-driven final prompt.
+The core of Doc|Pipe's prompt engineering is the `PromptResolvingService`. It transforms raw templates into high-fidelity LLM prompts by resolving context-sensitive data.
 
-1.  **Discovery:** The `JobCreationService` identifies directories containing a `.dp` folder.
-2.  **Loading:** It reads the `prompt` file defined in `documents.json`.
-3.  **Resolution:** The `PromptResolvingService` processes the template. It injects project-specific context using `TemplateResolver` implementations.
-4.  **Execution:** Helpers like `{{java-src-dump "src/main/java"}}` or `{{#groovy}}...{{/groovy}}` are executed to pull real-time data from the working directory into the prompt.
+1.  **Template Discovery:** The system identifies a `.dp/documents.json` file which points to a prompt template.
+2.  **Handlebars Integration:** Templates are processed using the Handlebars templating engine.
+3.  **Context Injection:** The `TemplateResolver` interface allows the engine to inject dynamic content based on the project's working directory.
+4.  **Final Compilation:** The engine executes helpers (like Groovy scripts or source code crawlers) to produce the final string sent to the LLM.
 
-### Example Template Syntax:
+### Example: Prompt Template with Source Injection
 ```handlebars
-Analyze the following Java classes and create a technical summary:
+Analyze the following Java classes and generate a Mermaid class diagram:
 
-{{java-src-dump "src/main/java/de/example/api"}}
+{{java-src-dump "src/main/java/com/example/model"}}
 
-Focus on the interaction between the controllers and services.
+Focus on the relationships between entities.
 ```
-
----
 
 ## How can developers extend Doc|Pipe?
 
-Doc|Pipe is designed with a modular architecture, allowing developers to extend both the prompt logic and the LLM integration.
+Doc|Pipe is built on a modular Spring Boot architecture, allowing developers to extend it in two primary ways:
 
 ### 1. Custom Template Resolvers
-To add new capabilities to the prompt engine (e.g., querying a database, reading specific file types), implement the `TemplateResolver` interface and register it as a Spring `@Component`.
+To add new logic for prompt generation (e.g., querying a database or parsing a specific file format), implement the `TemplateResolver` interface and register it as a Spring `@Component`.
 
 ```java
 @Component
@@ -51,16 +45,15 @@ public class MyCustomResolver implements TemplateResolver {
     }
 
     @Override
-    public String resolve(File baseDir, Object context, Options options) throws Exception {
-        String param = options.param(0).toString();
+    public String resolve(File baseDir, Object context, Options options) {
         // Custom logic to return data into the prompt
-        return "Data processed from " + param;
+        return "Dynamic data from " + baseDir.getName();
     }
 }
 ```
 
-### 2. Custom Chat Models
-If you need to support a proprietary LLM provider not covered by the default suppliers (Ollama, Gemini, OpenAI), implement the `CustomChatModel` interface.
+### 2. Custom Chat Model Suppliers
+If you need to integrate an LLM provider not supported out-of-the-box, implement the `ChatModelSupplier` or `CustomChatModel` interface. This allows the `ChatModelFactory` to resolve your custom implementation based on the `serverType` defined in `models.json`.
 
 ```java
 @Component
@@ -72,83 +65,53 @@ public class MyPrivateLLMSupplier implements ChatModelSupplier {
 
     @Override
     public ChatModel provide(DPModelConfig cfg) {
-        return MyPrivateLLMClient.builder()
-                .endpoint(cfg.getModelProviderURL())
+        return MyPrivateChatModel.builder()
+                .url(cfg.getModelProviderURL())
                 .build();
     }
 }
 ```
 
----
+## How does Doc|Pipe handle incremental builds?
+
+To avoid redundant LLM processing, Doc|Pipe implements a `ContentUpdateRequiredController`. 
+
+*   **Hashing:** For every task, it generates a SHA-256 hash of the *fully resolved* prompt.
+*   **Persistence:** These hashes are stored in `.dp/content-hashes.properties`.
+*   **Comparison:** Before execution, the system compares the current prompt hash against the stored hash. If they match, the LLM call is skipped.
 
 ## What are the key benefits for team onboarding and system assessments?
 
-Doc|Pipe enables "zero-time" documentation, which is critical during the initial phases of a project or when a new member joins a team.
+Doc|Pipe is particularly effective for rapid system discovery:
 
-*   **Automated Architecture Assessments:** By using the `SourceDumpResolver`, Doc|Pipe can feed entire packages into an LLM to generate ADRs (Architecture Decision Records) or identify architectural violations.
-*   **Dynamic READMEs:** Generate README files that stay in sync with the actual code structure, exported API endpoints, or database schemas.
-*   **Contextual Intelligence:** Because the `GroovyResolver` has access to the `ApplicationContext`, you can write scripts that inspect the running environment or build-time metadata to enrich the documentation.
+*   **Zero-Time Assessments:** By using the `SourceDumpResolver`, architects can generate comprehensive system overviews, security assessments, or data models from a codebase they have never seen before.
+*   **Automated READMEs:** Teams can maintain high-quality README files in sub-modules that automatically update as the code evolves.
+*   **Scriptable Context:** Using the `GroovyResolver`, developers can write logic to filter specific parts of the codebase to be included in the prompt, ensuring the LLM receives only the most relevant context.
 
----
+### Example: Groovy-based Context Filtering
+```handlebars
+{{#groovy}}
+// Logic to only include classes annotated with @Entity
+def files = new File(dir, "src/main/java").collectMany { it.listFiles() }
+return files.findAll { it.text.contains("@Entity") }.join("\n")
+{{/groovy}}
+```
 
-## How does Doc|Pipe manage LLM configurations?
+## How is the configuration structured?
 
-Configurations are decoupled from the code using a `models.json` file, typically located in the `.dp` directory. This allows different projects or sub-modules to use different LLMs (e.g., a local Ollama instance for sensitive code and Gemini for general summaries).
+Doc|Pipe looks for a `.dp` directory at the project root or sub-module levels.
 
-### Example `models.json`:
+*   **`models.json`**: Defines the LLM configurations (model name, temperature, API keys/endpoints).
+*   **`documents.json`**: Defines the documentation artifacts to be created, their output paths, and the prompt templates to use.
+
 ```json
 [
   {
+    "outputFile": "docs/architecture.md",
     "stereotype": "architect",
-    "modelName": "gemini-1.5-pro",
-    "serverType": "gemini",
-    "temperature": 0.1,
-    "timeOutSeconds": 120
-  },
-  {
-    "stereotype": "coder",
-    "modelName": "codellama",
-    "serverType": "ollama",
-    "modelProviderURL": "http://localhost:11434"
+    "prompt": "prompts/arch-assessment.hbs"
   }
 ]
-```
-
-The `LLMService` uses the `stereotype` defined in `documents.json` to select the correct model configuration at runtime.
-
----
-
-## Does Doc|Pipe regenerate documentation on every run?
-
-No. Doc|Pipe includes a `ContentUpdateRequiredController` that implements a hashing mechanism to optimize LLM usage and reduce costs/latency.
-
-*   **Hashing:** It calculates a SHA-256 hash of the fully resolved prompt.
-*   **Persistence:** These hashes are stored in `.dp/content-hashes.properties`.
-*   **Change Detection:** The system only triggers a call to the LLM if the prompt content has changed or if the output file is missing.
-
----
-
-## How is the project structured for local execution?
-
-Doc|Pipe is a Spring Boot CLI application. It expects a root directory (via the `-r` flag) and looks for `.dp` configurations recursively.
-
-### Directory Structure Example:
-```text
-my-project/
-├── .dp/
-│   ├── models.json        # LLM Provider configs
-│   └── global-readme.hbs  # Shared prompt templates
-├── module-a/
-│   ├── .dp/
-│   │   └── documents.json # Defines what to generate
-│   └── src/
-└── module-b/
-    ...
-```
-
-To run the CLI:
-```bash
-java -jar docpipe.jar -r /path/to/your/project
 ```
 
 _This document was generated with .dp and gemini-3-flash-preview_
