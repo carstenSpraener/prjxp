@@ -54,14 +54,16 @@ public class McpRestController {
         String prefix = """
                 Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
                 ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
-                Wenn du die Antwort nicht im Kontext findest, sage das deutlich.                                
+                Wenn du die Antwort nicht im Kontext findest, sage das deutlich.
+                
+                Solltest Du noch weitere Informationen benötigen, frormuliere einen möglichst präzise und technisch
+                genaue Frage, die der Benutzer beantworten kann.                                
                 """;
         if( projectName.equals("default") ) {
             projectName = cfg.getActiveProject().get().getName();
         }
         String context = enrichment.enrich(projectName, userQuestion);
         String result = String.format("%s\n%s\nFRAGE: %s",prefix, context, userQuestion);
-        log.info("Returning:\n"+result+"\n---------\n");
         return result;
     }
 }

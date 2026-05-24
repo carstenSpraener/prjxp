@@ -27,7 +27,7 @@ prjxp:
   chatModels:
     - stereoType: documentation
       serverType: lm-studio
-      modelName: gpt-oss-safeguard-120b-mlx
+      modelName: gemma-4-31b-it-mlx
       providerUrl: http://localhost:1234/v1
       timeoutSecs: 600
 
@@ -57,5 +57,4 @@ prjxp:
 spring:
   devtools:
     restart:
-      # Schließt alle package-info.java Dateien vom automatischen Restart aus
       additional-exclude: "**/package-info.java"
