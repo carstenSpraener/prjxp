@@ -62,10 +62,6 @@ public class MarkdownChunker {
             if (mdText == null || mdText.isBlank()) {
                 return Stream.empty();
             }
-            PrintWriter mdOut = new PrintWriter(input.getAbsolutePath() + ".md");
-            mdOut.println(mdText);
-            mdOut.flush();
-            mdOut.close();
 
             // 3. Das generierte Markdown in strukturierte PxChunks zerlegen
             return chunkMarkdownText(input, mdText);

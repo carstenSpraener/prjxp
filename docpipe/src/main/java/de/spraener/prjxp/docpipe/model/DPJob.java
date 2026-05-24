@@ -1,5 +1,7 @@
 package de.spraener.prjxp.docpipe.model;
 
+import de.spraener.prjxp.common.config.PrjXPChatModelReference;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import lombok.Data;
 
 import java.io.File;
@@ -14,19 +16,21 @@ public class DPJob {
     // in order to not stop the whole processing.
     private static DPJob createEmptyJob() {
         DPJob job = new DPJob();
-        job.setModelConfigs(List.of());
         job.setContentCreationList(List.of());
         job.setRootDir(new File(""));
+        PrjXPConfig dummyCfg = new PrjXPConfig();
+        dummyCfg.setChatModels(List.of());
+        job.setPxCfg(dummyCfg);
         return job;
     }
 
     private File rootDir;
-    private List<DPModelConfig> modelConfigs;
+    private PrjXPConfig pxCfg;
     private List<DPContentCreation> contentCreationList;
 
-    public Optional<DPModelConfig> getModelForStereotype(String stereotype) {
-        return modelConfigs.stream()
-                .filter(c -> c.getStereotype().equals(stereotype))
+    public Optional<PrjXPChatModelReference> getModelForStereotype(String stereotype) {
+        return pxCfg.getChatModels().stream()
+                .filter(ref -> ref.getStereoType().equals(stereotype))
                 .findFirst()
         ;
     }

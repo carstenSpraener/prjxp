@@ -4,7 +4,7 @@ public enum ServerTypes {
     UNKNOWN("unknown"),
     OLLAMA("ollama"),
     GEMINI("gemini"),
-    LM_STUDIO("lmstudio"),
+    LM_STUDIO("lm-studio"),
     OPEN_API("openapi"),
     // This value is for other server types not directly supported
     // by PrjXP. It enables new implementation without changing this enum.

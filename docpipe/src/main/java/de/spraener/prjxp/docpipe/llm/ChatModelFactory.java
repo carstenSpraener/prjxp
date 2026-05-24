@@ -1,15 +1,10 @@
 package de.spraener.prjxp.docpipe.llm;
 
-import de.spraener.prjxp.docpipe.model.DPModelConfig;
+import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
-import dev.langchain4j.model.ollama.OllamaChatModel;
-import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.time.Duration;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -20,16 +15,16 @@ public class ChatModelFactory {
     private final List<ChatModelSupplier> chatModelSuppliers;
     private Map<String, ChatModel> chatModels = new ConcurrentHashMap<>();
 
-    public ChatModel create(DPModelConfig cfg) {
-        String modelKey = cfg.getModelProviderURL() + ":" + cfg.getModelName();
+    public ChatModel create(PrjXPChatModelReference cmRef) {
+        String modelKey = cmRef.getProviderUrl() + ":" + cmRef.getModelName();
         return chatModels.computeIfAbsent(modelKey, (k) -> {
                 for (ChatModelSupplier cms : chatModelSuppliers) {
-                    if (cms.canProvide(cfg)) {
-                        ChatModel cm = cms.provide(cfg);
+                    if (cms.canProvide(cmRef)) {
+                        ChatModel cm = cms.provide(cmRef);
                         return cm;
                     }
                 }
-                throw new IllegalStateException("There is no supplier for server model stereotype " + cfg.getServerType() + ". Please check configuration.");
+                throw new IllegalStateException("There is no supplier for server model stereotype " + cmRef.getServerType() + ". Please check configuration.");
             }
         );
     }

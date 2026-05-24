@@ -109,6 +109,15 @@ public class GldRtrvrEmbeddingConfig {
                                     .baseUrl(r.getProviderUrl())
                                     .build(), r)
                     );
+                } else if (r.getServerType().equals("lm-studio")) {
+                    chatModels.add(new KIChatModelWrapper(
+                            OpenAiChatModel.builder()
+                                    .apiKey(r.getApiKey())
+                                    .modelName(r.getModelName())
+                                    .temperature(0.2)
+                                    .baseUrl(r.getProviderUrl())
+                                    .build(), r)
+                    );
                 } else if (r.getServerType().equals("none")) {
                     chatModels.add( new EmptyKiChat(r));
                 } else {

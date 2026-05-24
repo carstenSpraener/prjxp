@@ -3,11 +3,11 @@ prjxp:
   activeProject: "prjxp"
 
   projects:
-    - name: "prjxp"
+    - name: prjxp
       rootDir: "."
-      jsonlFile: "prjxp-src.jsonl"
-      chunoWhiteList: "java"
-      tibedBatchSive: 50
+      jsonlFile: "px-chunks.jsonl"
+      chunoWhiteList: "java,ts"
+      tibedBatchSize: 50
       tibedResetStore: true
 
   # Use Ollama on SteamDeck for Embedding
@@ -23,19 +23,31 @@ prjxp:
       collectionName: prjxp-src
       isDefault: true
 
-  chatModels:
-    - stereotype: detailed
-      serverType: ollama
-      modelName: gpt-oss-120B
-      providerUrl: http://localhost:11434
 
-    - stereoType: expert
+  chatModels:
+    - stereoType: documentation
       serverType: gemini
       modelName: gemini-3-flash
-      apiKey: ${GOOGLE_API_KEY}
+
+    - stereoType: javadoc
+      modelName: deepseek-coder-v2:16b
+      providerUrl: http://localhost:11434
+      serverType: ollama
+      timeoutSecs: 120
+
+    - stereoType: faq
+      modelName: qwen3.6-31b
+      providerUrl: http://localhost:1234/v1
+      serverType: lm-studio
+      timeoutSecs: 120
+
+    - stereotype: detailed
+      serverType: gemini
+      modelName: gemini-3-flash-preview
+      timeoutSecs: 240
 
     - stereoType: embedding
-      serverType: ollama
-      providerUrl: http://192.168.188.114:11434
+      serverType: lm-studio
+      providerUrl: http://localhost:1234/v1
       modelName: mxbai-embed-large
       timeoutSecs: 60

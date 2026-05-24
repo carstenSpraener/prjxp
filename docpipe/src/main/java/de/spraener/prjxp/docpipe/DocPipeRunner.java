@@ -1,13 +1,12 @@
 package de.spraener.prjxp.docpipe;
 
-import de.spraener.prjxp.common.util.ValueContainer;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.docpipe.config.ConfigException;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.config.JobCreationService;
 import de.spraener.prjxp.docpipe.config.ModelConfigLoader;
-import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.docpipe.content.ContentCreationService;
-import de.spraener.prjxp.docpipe.model.DPContentCreation;
+import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.beans.factory.annotation.Value;
@@ -15,7 +14,6 @@ import org.springframework.stereotype.Component;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -35,21 +33,9 @@ public class DocPipeRunner {
     private final DotDPFilesService dpFilesService;
     private final DPLogService logService;
 
-    public void run(DocPipeConfig cfg) throws Exception {
-        try {
-            String globalModelFileName = dpFilesService.globalModelsFileName(cfg);
-            if( Files.exists(Path.of(globalModelFileName)) ) {
-                cfg.setGlobalModels(modelConfigLoader.listFrom(globalModelFileName));
-            }
-        } catch( ConfigException ce ) {
-            logService.logMessage(
-               new DPLogMessage(Level.SEVERE, "Error while reading global models.json. Check your configuration: "+ ce.getMessage())
-            );
-            return;
-        }
-
+    public void run(PrjXPConfig cfg) throws Exception {
         List<ContentCreationTask> allTasks = jobCreationService
-                .readJobs(cfg.getProjectDir())
+                .readJobs(cfg.getActiveProject())
                 .flatMap(dpj -> dpj.getContentCreationList().stream()
                         .map(cc -> new ContentCreationTask(dpj, cc)))
                 .collect(Collectors.toList());

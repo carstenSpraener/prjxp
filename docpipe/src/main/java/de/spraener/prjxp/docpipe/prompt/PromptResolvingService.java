@@ -3,7 +3,6 @@ package de.spraener.prjxp.docpipe.prompt;
 import com.github.jknack.handlebars.Handlebars;
 import com.github.jknack.handlebars.Helper;
 import com.github.jknack.handlebars.Options;
-import de.spraener.prjxp.docpipe.DocPipeConfig;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
@@ -17,7 +16,6 @@ import java.io.File;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.List;
-import java.util.logging.Level;
 
 @Service
 @RequiredArgsConstructor

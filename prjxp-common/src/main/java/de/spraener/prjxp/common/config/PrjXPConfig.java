@@ -4,6 +4,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -12,7 +13,7 @@ import java.util.Optional;
 @ConfigurationProperties(prefix = "prjxp") // <--- Das magische Prefix
 @Data
 public class PrjXPConfig {
-    private String activeProject;
+    private String activeProject = "cwd";
     private List<ProjectDefinition> projects = new ArrayList<>();
 
     // --- Embedding Sektion ---
@@ -27,14 +28,14 @@ public class PrjXPConfig {
     private List<PrjXPChatModelReference> chatModels = new ArrayList<>();
 
     {
-        ProjectDefinition prjxp = new ProjectDefinition();
-        prjxp.setName("prjxp");
-        prjxp.setRootDir(".");
-        prjxp.setJsonlFile("prjxp-src.jsonl");
-        prjxp.setChunoWhiteList("java,ts");
-        prjxp.setTibedBatchSize(50);
-        prjxp.setTibedResetStore(true);
-        projects.add(prjxp);
+        ProjectDefinition cwd = new ProjectDefinition();
+        cwd.setName("cwd");
+        cwd.setRootDir(".");
+        cwd.setJsonlFile("px-chunks.jsonl");
+        cwd.setChunoWhiteList("java,ts");
+        cwd.setTibedBatchSize(50);
+        cwd.setTibedResetStore(true);
+        projects.add(cwd);
 
         PrjXPEmbeddingStoreReference local = new PrjXPEmbeddingStoreReference();
         local.setProjectName("default");
