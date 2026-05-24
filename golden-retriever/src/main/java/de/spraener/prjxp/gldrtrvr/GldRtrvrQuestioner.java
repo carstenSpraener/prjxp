@@ -1,7 +1,6 @@
 package de.spraener.prjxp.gldrtrvr;
 
-import de.spraener.prjxp.common.chat.ChatModelProvider;
-import de.spraener.prjxp.common.chat.KIChat;
+import de.spraener.prjxp.common.chat.KIChatProvider;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.code.java.JavaRetriever;
@@ -18,7 +17,7 @@ import java.util.function.Function;
 public class GldRtrvrQuestioner {
     private final JavaRetriever javaRetriever;
     private final PxChunkDaoProvider chunkDao;
-    private final ChatModelProvider chatProvider;
+    private final KIChatProvider chatProvider;
     private final GRPromptEnrichment promptEnrichment;
 
     public String ask(String question, Function<String, Boolean>... contextValidator) {

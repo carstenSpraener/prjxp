@@ -11,7 +11,7 @@ import java.util.function.Predicate;
 
 @Component
 @RequiredArgsConstructor
-public class ChatModelProvider implements Function<Predicate<PrjXPChatModelReference>,Optional<KIChat>> {
+public class KIChatProvider implements Function<Predicate<PrjXPChatModelReference>,Optional<KIChat>> {
     private final List<KIChat> chatModels;
 
     @Override
