@@ -1,6 +1,6 @@
 package de.spraener.prjxp.docpipe.llm;
 
-import de.spraener.prjxp.docpipe.model.DPModelConfig;
+import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import org.springframework.beans.factory.annotation.Value;
@@ -14,21 +14,23 @@ public class OpenAPISupplier implements ChatModelSupplier {
     private String apiKey;
 
     @Override
-    public boolean canProvide(DPModelConfig cfg) {
-        return cfg.getServerType().equals(ServerTypes.OPEN_API.serverType()) || cfg.getServerType().equals(ServerTypes.LM_STUDIO.serverType());
+    public boolean canProvide(PrjXPChatModelReference cmRef) {
+        return cmRef.getServerType().equals(
+                ServerTypes.OPEN_API.serverType()
+        );
     }
 
     @Override
-    public ChatModel provide(DPModelConfig cfg) {
-        String baseUrl = cfg.getModelProviderURL();
+    public ChatModel provide(PrjXPChatModelReference cmRef) {
+        String baseUrl = cmRef.getProviderUrl();
         if (baseUrl != null && !baseUrl.endsWith("/v1") && !baseUrl.endsWith("/v1/")) {
             baseUrl = baseUrl.replaceAll("/$", "") + "/v1";
         }
         return OpenAiChatModel.builder()
-                .modelName(cfg.getModelName())
+                .modelName(cmRef.getModelName())
                 .apiKey(apiKey)
-                .temperature(cfg.getTemperature())
-                .timeout(Duration.ofSeconds(cfg.getTimeOutSeconds()))
+                .temperature(cmRef.getTemperature())
+                .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
                 .baseUrl(baseUrl)
                 .build();
     }

@@ -2,7 +2,7 @@ package de.spraener.prjxp.docpipe.config;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import de.spraener.prjxp.docpipe.model.DPModelConfig;
+import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
@@ -17,13 +17,14 @@ import java.util.logging.Level;
 public class ModelConfigLoader {
     private final ObjectMapper objectMapper;
 
-    public List<DPModelConfig> listFrom(String fileName) throws ConfigException {
+    public List<PrjXPChatModelReference> listFrom(String fileName) throws ConfigException {
         File file = new File(fileName);
         if( !file.exists() ) {
             return List.of();
         }
+        // TODO: Refactor to use yaml instead of json
         try {
-            return objectMapper.readValue(file, new TypeReference<List<DPModelConfig>>() {});
+            return objectMapper.readValue(file, new TypeReference<List<PrjXPChatModelReference>>() {});
         } catch( Exception e ) {
             log.log(Level.WARNING, "Error reading file " + fileName, e);
             throw new ConfigException(e);

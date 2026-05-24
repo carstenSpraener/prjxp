@@ -21,6 +21,7 @@ subprojects {
     dependencies {
         // Spring Boot Starter aus dem Version Catalog
         implementation libs.spring.boot.starter
+        implementation libs.spring.boot.starter.validation
 
         developmentOnly libs.spring.boot.devtools
 

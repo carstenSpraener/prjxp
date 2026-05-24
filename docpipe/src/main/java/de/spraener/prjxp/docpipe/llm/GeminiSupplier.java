@@ -1,7 +1,6 @@
 package de.spraener.prjxp.docpipe.llm;
 
-import de.spraener.prjxp.docpipe.config.EnvResolver;
-import de.spraener.prjxp.docpipe.model.DPModelConfig;
+import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import lombok.ToString;
@@ -16,17 +15,17 @@ public class GeminiSupplier implements ChatModelSupplier {
     @ToString.Exclude
     private String apiKey;
     @Override
-    public boolean canProvide(DPModelConfig cfg) {
-        return cfg.getServerType().equals(ServerTypes.GEMINI.serverType());
+    public boolean canProvide(PrjXPChatModelReference cmRef) {
+        return cmRef.getServerType().equals(ServerTypes.GEMINI.serverType());
     }
 
     @Override
-    public ChatModel provide(DPModelConfig cfg) {
+    public ChatModel provide(PrjXPChatModelReference cmRef) {
         return GoogleAiGeminiChatModel.builder()
                 .apiKey(apiKey)
-                .modelName(cfg.getModelName())
-                .temperature(cfg.getTemperature())
-                .timeout(Duration.ofSeconds(cfg.getTimeOutSeconds()))
+                .modelName(cmRef.getModelName())
+                .temperature(cmRef.getTemperature())
+                .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
                 .build();
     }
 }

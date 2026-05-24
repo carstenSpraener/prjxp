@@ -7,6 +7,7 @@ import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
+import lombok.NoArgsConstructor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.context.ApplicationEventPublisher;
@@ -27,7 +28,7 @@ public class ChunkProcess {
     private final ChunkerFactory factory;
     private final ApplicationEventPublisher eventPublisher;
     private final VetoRegistry vetoRegistry;
-    private Set<String> processedFiles = new HashSet<>();
+    private final Set<String> processedFiles = new HashSet<>();
     private final JsonMapper jsonMapper = new JsonMapper();
     private final PrjXPConfig cfg;
 

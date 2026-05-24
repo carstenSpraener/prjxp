@@ -1,9 +1,8 @@
 package de.spraener.prjxp.docpipe.llm;
 
-import de.spraener.prjxp.docpipe.model.DPModelConfig;
+import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.ollama.OllamaChatModel;
-import org.springframework.boot.autoconfigure.rsocket.RSocketProperties;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
@@ -11,17 +10,17 @@ import java.time.Duration;
 @Component
 public class OllamaSupplier implements ChatModelSupplier {
     @Override
-    public boolean canProvide(DPModelConfig cfg) {
-        return cfg.getServerType().equals(ServerTypes.OLLAMA.serverType());
+    public boolean canProvide(PrjXPChatModelReference cmRef) {
+        return cmRef.getServerType().equals(ServerTypes.OLLAMA.serverType());
     }
 
     @Override
-    public ChatModel provide(DPModelConfig cfg) {
+    public ChatModel provide(PrjXPChatModelReference cmRef) {
         return OllamaChatModel.builder()
-                .modelName(cfg.getModelName())
-                .baseUrl(cfg.getModelProviderURL())
-                .temperature(cfg.getTemperature())
-                .timeout(Duration.ofSeconds(cfg.getTimeOutSeconds()))
+                .modelName(cmRef.getModelName())
+                .baseUrl(cmRef.getProviderUrl())
+                .temperature(cmRef.getTemperature())
+                .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
                 .build();
     }
 }
