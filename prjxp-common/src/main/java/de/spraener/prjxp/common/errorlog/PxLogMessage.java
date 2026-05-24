@@ -1,4 +1,4 @@
-package de.spraener.prjxp.docpipe;
+package de.spraener.prjxp.common.errorlog;
 
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
@@ -14,7 +14,7 @@ import java.util.logging.Level;
  * allowing for structured error reporting across different components.
  * </p>
  */
-public class DPLogMessage {
+public class PxLogMessage {
     private final Level level;
     private final String message;
 }

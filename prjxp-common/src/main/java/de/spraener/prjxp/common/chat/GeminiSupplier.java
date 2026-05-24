@@ -1,4 +1,4 @@
-package de.spraener.prjxp.docpipe.llm;
+package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.model.chat.ChatModel;
@@ -13,11 +13,11 @@ import java.time.Duration;
 /**
  * Supplier for Google Gemini-based chat models.
  * <p>
- * This class implements {@link ChatModelSupplier} to provide {@link dev.langchain4j.model.googleai.GoogleAiGeminiChatModel} 
+ * This class implements {@link de.spraener.prjxp.common.chat.ChatModelSupplier} to provide {@link dev.langchain4j.model.googleai.GoogleAiGeminiChatModel}
  * instances using an API key provided via environment variables or Spring properties.
  * </p>
  */
-public class GeminiSupplier implements ChatModelSupplier {
+public class GeminiSupplier implements de.spraener.prjxp.common.chat.ChatModelSupplier {
     @Value("${GOOGLE_AI_API_KEY:NONE-SPECIFIED}")
     @ToString.Exclude
     private String apiKey;
@@ -29,7 +29,7 @@ public class GeminiSupplier implements ChatModelSupplier {
      */
     @Override
     public boolean canProvide(PrjXPChatModelReference cmRef) {
-        return cmRef.getServerType().equals(ServerTypes.GEMINI.serverType());
+        return cmRef.getServerType().equals(de.spraener.prjxp.common.chat.ServerTypes.GEMINI.serverType());
     }
 
     /**

@@ -1,7 +1,6 @@
-package de.spraener.prjxp.docpipe.llm;
+package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
-import de.spraener.prjxp.docpipe.DPLogService;
 import dev.langchain4j.model.chat.ChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
@@ -15,13 +14,13 @@ import java.util.List;
 /**
  * Supplier for custom chat model implementations.
  * <p>
- * This class implements {@link ChatModelSupplier} and delegates the provision of chat models 
+ * This class implements {@link ChatModelSupplier} and delegates the provision of chat models
  * to a list of registered {@link CustomChatModel} instances that can handle the given model reference.
  * </p>
  */
 public class CustomChatModelSupplier implements ChatModelSupplier {
     private final List<CustomChatModel> customChatModelList;
-    private final DPLogService logService;
+    private final de.spraener.prjxp.common.errorlog.PxLogService logService;
 
     /**
      * Checks if this supplier can provide a chat model for the given reference.

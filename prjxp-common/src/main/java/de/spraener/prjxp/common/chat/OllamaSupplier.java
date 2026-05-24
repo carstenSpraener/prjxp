@@ -1,4 +1,4 @@
-package de.spraener.prjxp.docpipe.llm;
+package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.model.chat.ChatModel;
@@ -11,11 +11,11 @@ import java.time.Duration;
 /**
  * Supplier for Ollama-based chat models.
  * <p>
- * This class implements {@link ChatModelSupplier} to provide {@link dev.langchain4j.model.ollama.OllamaChatModel} 
+ * This class implements {@link de.spraener.prjxp.common.chat.ChatModelSupplier} to provide {@link dev.langchain4j.model.ollama.OllamaChatModel}
  * instances configured with the model name, base URL, temperature, and timeout specified in the model reference.
  * </p>
  */
-public class OllamaSupplier implements ChatModelSupplier {
+public class OllamaSupplier implements de.spraener.prjxp.common.chat.ChatModelSupplier {
     /**
      * Checks if this supplier can provide a chat model for the given reference.
      *
@@ -24,7 +24,7 @@ public class OllamaSupplier implements ChatModelSupplier {
      */
     @Override
     public boolean canProvide(PrjXPChatModelReference cmRef) {
-        return cmRef.getServerType().equals(ServerTypes.OLLAMA.serverType());
+        return cmRef.getServerType().equals(de.spraener.prjxp.common.chat.ServerTypes.OLLAMA.serverType());
     }
 
     /**

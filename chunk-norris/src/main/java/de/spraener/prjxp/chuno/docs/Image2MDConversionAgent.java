@@ -20,7 +20,6 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Base64;
-import java.util.List;
 
 @Component
 @RequiredArgsConstructor

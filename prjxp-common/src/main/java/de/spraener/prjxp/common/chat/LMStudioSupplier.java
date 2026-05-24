@@ -1,4 +1,4 @@
-package de.spraener.prjxp.docpipe.llm;
+package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.http.client.jdk.JdkHttpClient;
@@ -14,12 +14,12 @@ import java.time.Duration;
 /**
  * Supplier for LM Studio-based chat models.
  * <p>
- * This class implements {@link ChatModelSupplier} to provide chat models that are compatible 
+ * This class implements {@link de.spraener.prjxp.common.chat.ChatModelSupplier} to provide chat models that are compatible
  * with the OpenAI API provided by LM Studio. It configures a custom HTTP client to ensure 
  * compatibility with the LM Studio server.
  * </p>
  */
-public class LMStudioSupplier implements ChatModelSupplier{
+public class LMStudioSupplier implements de.spraener.prjxp.common.chat.ChatModelSupplier {
     /**
      * Checks if this supplier can provide a chat model for the given reference.
      *
@@ -28,7 +28,7 @@ public class LMStudioSupplier implements ChatModelSupplier{
      */
     @Override
     public boolean canProvide(PrjXPChatModelReference cmRef) {
-        return cmRef.getServerType().equals(ServerTypes.LM_STUDIO.serverType());
+        return cmRef.getServerType().equals(de.spraener.prjxp.common.chat.ServerTypes.LM_STUDIO.serverType());
     }
 
     /**

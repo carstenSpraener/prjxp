@@ -1,26 +1,43 @@
+
+
 /**
- * <p>The {@code de.spraener.prjxp.docpipe.prompt} package contains classes and interfaces related to template resolution for generating project documentation prompts.</p>
- * 
- * <p>The core responsibility of this package is to provide a flexible and extensible mechanism for resolving templates used in the generation of project documentation prompts. This involves interacting with various template resolvers to dynamically generate content based on specific templates and context.</p>
- * 
- * <h3>Main Classes/Interfaces</h3>
+ * Provides a dynamic prompt templating and resolution system for the document pipeline.
+ * <p>
+ * This package leverages the Handlebars templating engine to transform static prompt templates into fully resolved,
+ * context-aware prompts suitable for Large Language Model (LLM) consumption. It introduces a pluggable architecture
+ * where custom logic, data injection, and file operations are encapsulated within {@link TemplateResolver} implementations.
+ * </p>
+ * <p>
+ * The core design follows a strategy pattern where each resolver handles a specific type of dynamic content. 
+ * Spring's dependency injection automatically discovers all resolver implementations, and the central service 
+ * registers them as Handlebars helpers at runtime. This allows template authors to use declarative helper tags 
+ * without needing to understand the underlying resolution mechanics.
+ * </p>
  * <ul>
- *   <li>{@code TemplateResolver}: An interface that defines the contract for template resolvers. Implementations of this interface are responsible for resolving templates based on specific context and options.</li>
- *   <li>{@code GRResolver}: A concrete implementation of {@code TemplateResolver} for resolving templates related to project prompts using the GRPromptEnrichment service.</li>
- *   <li>{@code URLResolver}: A resolver for templates that are defined by URLs, allowing dynamic content loading from external sources.</li>
- *   <li>{@code GroovyResolver}: A resolver that uses the {@code ScriptCompileService} to compile and evaluate script content written in Groovy.</li>
- *   <li>{@code SourceDumpResolver}: A resolver capable of fetching source code from a specified directory and formatting it according to the provided options.</li>
+ *   <li><b>{@link TemplateResolver}</b>: The foundational interface defining the contract for dynamic content resolution. 
+ *       Implementations must provide a unique identifier (helper name) and a {@code resolve()} method.</li>
+ *   <li><b>{@link PromptResolvingService}</b>: The primary orchestrator and entry point. It initializes Handlebars, 
+ *       auto-registers all discovered {@code TemplateResolver} beans as helpers via an internal adapter, and executes 
+ *       template compilation and application.</li>
+ *   <li><b>Built-in Resolvers</b>: {@link GRResolver} injects project-specific enrichment data, 
+ *       {@link URLResolver} embeds external file content, {@link GroovyResolver} executes runtime scripts with Spring context bindings, 
+ *       and {@link SourceDumpResolver} scans directories to inject source code into Markdown blocks.</li>
+ *   <li><b>{@link TemplateException}</b>: A dedicated runtime exception thrown to signal failures during the resolution lifecycle.</li>
  * </ul>
- * 
- * <h3>Primary Use Cases</h3>
- * <p>The primary use cases for this package include:</p>
+ * <p>
+ * <b>Key Entry Points &amp; Usage:</b><br/>
+ * The main entry point is {@link PromptResolvingService}. To extend the system, implement {@link TemplateResolver}, 
+ * annotate it with Spring's {@code @Component}, and the service will automatically make it available in templates. 
+ * Common template helper patterns include:
+ * </p>
  * <ul>
- *   <li>Generating documentation prompts that dynamically fetch content from external sources or compile scripts to generate detailed responses.</li>
- *   <li>Extending the system with new template resolvers to support diverse content needs and formats.</li>
+ *   <li><code>{{gr prj="project-id"}}</code> - Injects enriched project metadata.</li>
+ *   <li><code>{{URL "path/to/config.txt"}}</code> - Reads and embeds external file content.</li>
+ *   <li><code>{{groovy}} ... {{/groovy}}</code> - Executes embedded Groovy scripts with access to directory and Spring context.</li>
+ *   <li><code>{{java-src-dump "src/main/java" scanSubs=true}}</code> - Dumps matching source files into formatted code blocks.</li>
  * </ul>
  */
 package de.spraener.prjxp.docpipe.prompt;
-
 
 //_This document was generated with Doc|Pipe and qwen3.6-27b-ud-mlx_
 

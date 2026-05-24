@@ -1,7 +1,6 @@
 package de.spraener.prjxp.common.config;
 
 import lombok.Data;
-import lombok.experimental.Accessors;
 
 @Data
 public class ProjectDefinition {

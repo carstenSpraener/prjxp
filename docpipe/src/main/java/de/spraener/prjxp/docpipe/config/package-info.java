@@ -1,29 +1,38 @@
 
 
 /**
- * <p>Configuration management and job discovery module for the DocPipe processing pipeline.</p>
- * <p>This package provides the core infrastructure for locating, parsing, and initializing document processing jobs
- * within a project directory structure. It handles the discovery of specialized configuration directories (marked as {@code .dp}),
- * deserializes job definitions and model configurations from JSON files, and resolves environment variable placeholders.</p>
- * <p><b>Architectural Overview:</b></p>
+ * <p>Configuration management and job discovery module for the DocPipe documentation pipeline.</p>
+ * <p>This package provides the foundational services and utilities required to locate, parse, and validate
+ * pipeline configuration files within a project structure. It abstracts filesystem operations for the 
+ * {@code .dp} configuration directories, handles JSON-based configuration loading (e.g., models and document definitions),
+ * and orchestrates the discovery of documentation jobs.</p>
+ * 
+ * <p><b>Architecture & Class Interactions:</b></p>
  * <ul>
- *   <li>{@link JobCreationService} serves as the primary orchestrator. It scans a given project root, identifies valid
- *       {@code .dp} directories using {@link DotDPFilesService}, and constructs {@code DPJob} instances by parsing
- *       {@code documents.json} files.</li>
- *   <li>{@link DotDPFilesService} acts as a path and file utility service, centralizing logic for locating configuration
- *       assets such as {@code models.json}, {@code documents.json}, and content hash files within the {@code .dp} directory.</li>
- *   <li>{@link ModelConfigLoader} handles the deserialization of AI/chat model reference configurations from JSON files,
- *       leveraging Jackson's {@code ObjectMapper}.</li>
- *   <li>{@link EnvResolver} provides static utility methods to resolve environment variable placeholders (e.g., {@code ${VAR_NAME}})
- *       within configuration strings.</li>
- *   <li>{@link ConfigException} is a custom checked exception thrown when configuration files cannot be read or parsed correctly.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.config.DotDPFilesService} acts as the central filesystem utility, 
+ *       resolving paths for configuration directories and specific files like {@code models.json}, 
+ *       {@code documents.json}, and content hash properties.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.config.JobCreationService} serves as the primary orchestrator for job discovery. 
+ *       It scans project directories, leverages {@code DotDPFilesService} to locate configuration files, and uses 
+ *       Jackson's {@code ObjectMapper} to parse JSON definitions into executable {@link de.spraener.prjxp.docpipe.model.DPJob} instances.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.config.ModelConfigLoader} specializes in loading Large Language Model (LLM) 
+ *       configurations from JSON files, mapping them to {@link de.spraener.prjxp.common.config.PrjXPChatModelReference} objects.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.config.EnvResolver} provides a cross-cutting utility for resolving 
+ *       environment variable placeholders (e.g., {@code ${VAR_NAME}}) within configuration strings.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.config.ConfigException} is the domain-specific exception thrown during 
+ *       configuration loading or parsing failures.</li>
  * </ul>
- * <p><b>Key Use Cases:</b></p>
+ * 
+ * <p><b>Key Entry Points & Use Cases:</b></p>
  * <ul>
- *   <li><b>Job Discovery:</b> Inject {@link JobCreationService} to scan a project directory and retrieve a stream of initialized
- *       {@code DPJob} objects ready for processing.</li>
- *   <li><b>Configuration Loading:</b> Use {@link ModelConfigLoader} to load model definitions from external JSON configuration files.</li>
- *   <li><b>Environment Resolution:</b> Utilize {@link EnvResolver} to dynamically substitute environment variables in configuration values.</li>
+ *   <li><b>Job Discovery:</b> Use {@link de.spraener.prjxp.docpipe.config.JobCreationService#readJobs(java.util.Optional)} 
+ *       to scan a project root and retrieve a stream of configured documentation jobs.</li>
+ *   <li><b>Model Configuration Loading:</b> Inject {@link de.spraener.prjxp.docpipe.config.ModelConfigLoader} and call 
+ *       {@link de.spraener.prjxp.docpipe.config.ModelConfigLoader#listFrom(String)} to load LLM provider settings.</li>
+ *   <li><b>Path Resolution:</b> Utilize {@link de.spraener.prjxp.docpipe.config.DotDPFilesService} methods to dynamically 
+ *       resolve configuration file paths relative to project directories or content creation tasks.</li>
+ *   <li><b>Environment Variable Substitution:</b> Apply {@link de.spraener.prjxp.docpipe.config.EnvResolver#resolve(String)} 
+ *       to safely substitute system environment variables in configuration values.</li>
  * </ul>
  */
 package de.spraener.prjxp.docpipe.config;

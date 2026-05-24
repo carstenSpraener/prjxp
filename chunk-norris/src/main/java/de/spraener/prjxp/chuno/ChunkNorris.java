@@ -1,12 +1,8 @@
 package de.spraener.prjxp.chuno;
 
-import de.spraener.prjxp.common.PrjXPCli;
 import de.spraener.prjxp.common.config.PrjXPConfig;
-import io.github.cdimascio.dotenv.Dotenv;
-import org.apache.commons.cli.Options;
 import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
-import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.annotation.Bean;

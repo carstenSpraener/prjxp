@@ -1,34 +1,22 @@
 
 
 /**
- * <p>This package provides the core orchestration and processing logic for generating, filtering, 
- * and persisting AI-driven content within the DocPipe framework. It ensures efficient, idempotent 
- * content creation by tracking prompt changes and applying configurable post-processing transformations 
- * before writing output files.</p>
- *
- * <p><b>Architecture &amp; Class Interactions:</b></p>
+ * <p>Core package responsible for orchestrating the generation, caching, filtering, and output of documentation content within the DocPipe framework.</p>
+ * <p>This package implements an idempotent content generation pipeline that leverages Large Language Models (LLMs) to produce documentation files. It ensures efficient resource usage by tracking prompt changes via cryptographic hashing, avoiding redundant LLM calls when prompts remain unchanged.</p>
+ * <p><b>Architectural Overview:</b></p>
  * <ul>
- *   <li>{@link ContentCreationService}: Acts as the central coordinator. It receives a 
- *       {@link ContentCreationTask}, resolves the associated prompt, and orchestrates the entire generation 
- *       pipeline including LLM invocation, filtering, and file persistence.</li>
- *   <li>{@link ContentUpdateRequiredController}: Manages conditional regeneration by computing 
- *       a SHA-256 hash of the resolved prompt and comparing it against a stored flat-file database. This 
- *       prevents unnecessary LLM calls when prompts remain unchanged.</li>
- *   <li>{@link ContentFilter}: Defines a pluggable interface for post-processing generated text. 
- *       Implementations like {@link NoSurroundingCodeBlock} are applied sequentially to transform the raw 
- *       LLM output before it is written to disk.</li>
- *   <li>{@link ContentCreationTask}: Serves as a data carrier encapsulating the job context 
- *       and configuration parameters required for a single content generation operation.</li>
+ *   <li>{@code ContentCreationService} acts as the central orchestrator and primary entry point. It coordinates the end-to-end workflow: prompt resolution, update verification, LLM invocation, content filtering, and file output.</li>
+ *   <li>{@code ContentUpdateRequiredController} manages idempotency by maintaining a flat hash database (properties file). It compares the SHA-256 hash of the current prompt against stored hashes to determine if regeneration is necessary.</li>
+ *   <li>{@code ContentFilter} defines a strategy interface for post-processing LLM responses. Implementations (e.g., {@code NoSurroundingCodeBlock}) clean, format, or transform raw output before persistence.</li>
+ *   <li>{@code ContentCreationTask} serves as a context carrier that bundles a job definition with its specific content creation configuration, providing the necessary scope for execution.</li>
  * </ul>
- *
- * <p><b>Key Entry Points &amp; Use Cases:</b></p>
+ * <p><b>Key Workflow:</b></p>
+ * <p>When {@code ContentCreationService.createContent()} is invoked, the system resolves the prompt template and delegates to the update controller for hash comparison. If an update is required, it triggers LLM generation, applies configured filters sequentially, appends post-scripts if specified, and writes the final content to the designated output sink. The prompt hash is then persisted for future change detection.</p>
+ * <p><b>Primary Use Cases:</b></p>
  * <ul>
- *   <li>{@link ContentCreationService#createContent(ContentCreationTask)}: The primary entry 
- *       point for initiating the content generation workflow.</li>
- *   <li>{@link ContentUpdateRequiredController#onUpdateRequired(String, ContentCreationTask, Runnable)}: 
- *       Used to wrap generation logic with automatic hash-based change detection.</li>
- *   <li>{@link ContentFilter}: Extension point for developers to implement custom text 
- *       transformations that are applied after LLM generation but before file output.</li>
+ *   <li>Triggering documentation generation for a specific task via {@code ContentCreationService}.</li>
+ *   <li>Registering custom post-processing logic by implementing the {@code ContentFilter} interface and exposing it as a Spring bean.</li>
+ *   <li>Configuring idempotent generation pipelines that automatically skip unchanged prompts to optimize LLM usage.</li>
  * </ul>
  */
 package de.spraener.prjxp.docpipe.content;

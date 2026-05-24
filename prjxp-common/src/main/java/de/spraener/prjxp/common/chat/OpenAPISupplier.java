@@ -1,4 +1,4 @@
-package de.spraener.prjxp.docpipe.llm;
+package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.model.chat.ChatModel;
@@ -12,11 +12,11 @@ import java.time.Duration;
 /**
  * Supplier for OpenAI-compatible chat models.
  * <p>
- * This class implements {@link ChatModelSupplier} to provide {@link dev.langchain4j.model.openai.OpenAiChatModel} 
+ * This class implements {@link de.spraener.prjxp.common.chat.ChatModelSupplier} to provide {@link dev.langchain4j.model.openai.OpenAiChatModel}
  * instances. It supports custom base URLs and ensures they are correctly formatted with the {@code /v1} suffix.
  * </p>
  */
-public class OpenAPISupplier implements ChatModelSupplier {
+public class OpenAPISupplier implements de.spraener.prjxp.common.chat.ChatModelSupplier {
     @Value("${chat.openapi.api-key:UNKNOWN}")
     private String apiKey;
 
@@ -29,7 +29,7 @@ public class OpenAPISupplier implements ChatModelSupplier {
     @Override
     public boolean canProvide(PrjXPChatModelReference cmRef) {
         return cmRef.getServerType().equals(
-                ServerTypes.OPEN_API.serverType()
+                de.spraener.prjxp.common.chat.ServerTypes.OPEN_API.serverType()
         );
     }
 

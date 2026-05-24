@@ -2,14 +2,11 @@ package de.spraener.prjxp.docpipe;
 
 import de.spraener.prjxp.common.PxDefaultArgsParser;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.errorlog.PxLogMessage;
 import lombok.extern.java.Log;
-import org.apache.commons.cli.*;
-import org.apache.commons.cli.help.HelpFormatter;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
-import java.io.IOException;
-import java.nio.file.Path;
 import java.util.logging.Level;
 
 @Component
@@ -18,12 +15,12 @@ import java.util.logging.Level;
  * Command-line argument parser for the DocPipe application.
  * <p>
  * This class extends {@link PxDefaultArgsParser} to handle application-specific 
- * arguments and integrates with the {@link DPLogService} to report parsing errors.
+ * arguments and integrates with the {@link de.spraener.prjxp.common.errorlog.PxLogService} to report parsing errors.
  * </p>
  */
 public class DocPipeArgsParser extends PxDefaultArgsParser {
 
-    private final DPLogService dPLogService;
+    private final de.spraener.prjxp.common.errorlog.PxLogService dPLogService;
 
     /**
      * Constructs a new DocPipeArgsParser.
@@ -31,7 +28,7 @@ public class DocPipeArgsParser extends PxDefaultArgsParser {
      * @param env the Spring environment for accessing properties
      * @param dPLogService the logging service for reporting parsing errors
      */
-    public DocPipeArgsParser(Environment env, DPLogService dPLogService) {
+    public DocPipeArgsParser(Environment env, de.spraener.prjxp.common.errorlog.PxLogService dPLogService) {
         super(env);
         this.dPLogService = dPLogService;
     }
@@ -40,7 +37,7 @@ public class DocPipeArgsParser extends PxDefaultArgsParser {
      * Parses the command-line arguments and updates the project configuration.
      * <p>
      * This method calls the superclass parser and catches any runtime exceptions to 
-     * log them via the {@link DPLogService} before re-throwing.
+     * log them via the {@link de.spraener.prjxp.common.errorlog.PxLogService} before re-throwing.
      * </p>
      *
      * @param cfg the current project configuration to be updated
@@ -52,7 +49,7 @@ public class DocPipeArgsParser extends PxDefaultArgsParser {
             super.parseArgs(cfg, args);
         } catch (RuntimeException re) {
             dPLogService.logMessage(
-                    new DPLogMessage(Level.SEVERE, "Error while parsing args: " + re.getMessage() + "\n    Application may not work correctly!")
+                    new PxLogMessage(Level.SEVERE, "Error while parsing args: " + re.getMessage() + "\n    Application may not work correctly!")
             );
             throw re;
         }

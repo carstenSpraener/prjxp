@@ -1,7 +1,6 @@
 package de.spraener.prjxp.docpipe.content;
 
-import de.spraener.prjxp.docpipe.DPLogMessage;
-import de.spraener.prjxp.docpipe.DPLogService;
+import de.spraener.prjxp.common.errorlog.PxLogMessage;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.io.OutputSink;
 import de.spraener.prjxp.docpipe.io.OutputSinkFactory;
@@ -36,7 +35,7 @@ public class ContentCreationService {
     private final ContentUpdateRequiredController updater;
     private final OutputSinkFactory outputSinkFactory;
     private final DotDPFilesService dpFilesService;
-    private final DPLogService logService;
+    private final de.spraener.prjxp.common.errorlog.PxLogService logService;
     private final List<ContentFilter> contentFilterList;
 
     /**
@@ -68,13 +67,13 @@ public class ContentCreationService {
                     sink.println(content);
                 } catch (IOException e) {
                     logService.logMessage(
-                        new DPLogMessage(Level.SEVERE, "Error while trying to create content for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage())
+                        new PxLogMessage(Level.SEVERE, "Error while trying to create content for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage())
                     );
                 }
             });
         } catch (TemplateException | IOException e) {
             logService.logMessage(
-                    new DPLogMessage(Level.SEVERE, "Error while trying to create prompt for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage())
+                    new PxLogMessage(Level.SEVERE, "Error while trying to create prompt for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage())
             );
         }
     }

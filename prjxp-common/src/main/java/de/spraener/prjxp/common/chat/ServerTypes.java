@@ -1,4 +1,4 @@
-package de.spraener.prjxp.docpipe.llm;
+package de.spraener.prjxp.common.chat;
 
 /**
  * Enumeration of supported LLM server types.

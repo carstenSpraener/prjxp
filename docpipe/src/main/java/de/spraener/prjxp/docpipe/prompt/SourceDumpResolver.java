@@ -56,7 +56,7 @@ public class SourceDumpResolver implements TemplateResolver {
         try (Stream<Path> walk = scanSubs ? Files.walk(srcPath) : Files.walk(srcPath, 1)) {
             walk.filter(Files::isRegularFile)
                 .filter(path -> path.toString().endsWith(ending))
-                .filter(path -> !path.toString().endsWith("package-info.java"))
+                .filter(path -> !path.toString().contains("package-info.java"))
                 .forEach(path -> {
                     try(FileInputStream fis = new FileInputStream(path.toFile())) {
                         String content = IOUtils.toString(fis, StandardCharsets.UTF_8);

@@ -4,8 +4,11 @@ repositories {
 
 dependencies {
     implementation libs.spring.boot.starter
+    implementation libs.bundles.langchain.stack
+
     implementation libs.dotenv.java
     implementation libs.commons.cli
+    implementation 'dev.langchain4j:langchain4j-http-client-jdk:1.13.1'
 }
 
 test {

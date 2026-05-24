@@ -21,14 +21,14 @@ import org.springframework.stereotype.Service;
  * </p>
  */
 public class LLMService {
-    private final ChatModelFactory chatModelFactory;
+    private final de.spraener.prjxp.common.chat.ChatModelFactory chatModelFactory;
     private final PrjXPConfig cfg;
     /**
      * Sends a chat request to the LLM for a content creation task.
      * <p>
      * Resolves the model configuration based on the stereotype of the
      * {@link DPContentCreation}, creates a {@link ChatModel} via the
-     * {@link ChatModelFactory}, and sends the given prompt to the model.
+     * {@link de.spraener.prjxp.common.chat.ChatModelFactory}, and sends the given prompt to the model.
      *
      * @param ccTask the content creation task containing job and stereotype information
      * @param prompt the prompt text to send to the LLM

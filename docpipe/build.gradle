@@ -17,7 +17,7 @@ dependencies {
     implementation libs.spring.boot.starter.json
     implementation libs.spring.boot.starter.validation
     implementation libs.bundles.langchain.stack
-    developmentOnly libs.spring.boot.devtools
+    // developmentOnly libs.spring.boot.devtools
     implementation libs.commons.cli
     implementation libs.dotenv.java
     implementation libs.commons.io

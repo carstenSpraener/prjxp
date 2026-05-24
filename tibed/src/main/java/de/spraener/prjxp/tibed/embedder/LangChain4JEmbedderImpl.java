@@ -1,6 +1,5 @@
 package de.spraener.prjxp.tibed.embedder;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.PxChunk2TextSegmentConverter;
