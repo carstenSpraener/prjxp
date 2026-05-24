@@ -15,13 +15,39 @@ import java.util.stream.Stream;
 
 @Component
 @Log
+/**
+ * A template resolver that dumps the source code of files from a directory into the prompt.
+ * <p>
+ * This resolver is used to provide the LLM with actual source code context. It can scan a 
+ * single directory or recursively include subdirectories, filtering files by their extension.
+ * </p>
+ */
 public class SourceDumpResolver implements TemplateResolver {
     @Override
+    /**
+     * Returns the identifier for this resolver.
+     * 
+     * @return "java-src-dump"
+     */
     public String getID() {
         return "java-src-dump";
     }
 
     @Override
+    /**
+     * Resolves the source code dump for a given path.
+     * <p>
+     * This method reads files from the specified directory (and optionally subdirectories) 
+     * that match the given extension, wrapping each file's content in Markdown code blocks.
+     * </p>
+     *
+     * @param baseDir the configuration directory used as a base for resolution
+     * @param context the current context of the template execution
+     * @param options Handlebars options, expecting a path as the first parameter and optional 
+     *                hashes {@code scanSubs} (boolean) and {@code ending} (string, default "java")
+     * @return a string containing the dumped source code of all matching files
+     * @throws Exception if an error occurs during file system traversal
+     */
     public String resolve(File baseDir, Object context, Options options) throws Exception {
         final Path srcPath = baseDir.toPath().resolve(options.param(0).toString());
         final boolean scanSubs = options.hash("scanSubs", false);

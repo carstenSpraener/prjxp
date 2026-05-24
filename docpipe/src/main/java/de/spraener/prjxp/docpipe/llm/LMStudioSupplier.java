@@ -11,12 +11,32 @@ import java.net.http.HttpClient;
 import java.time.Duration;
 
 @Component
+/**
+ * Supplier for LM Studio-based chat models.
+ * <p>
+ * This class implements {@link ChatModelSupplier} to provide chat models that are compatible 
+ * with the OpenAI API provided by LM Studio. It configures a custom HTTP client to ensure 
+ * compatibility with the LM Studio server.
+ * </p>
+ */
 public class LMStudioSupplier implements ChatModelSupplier{
+    /**
+     * Checks if this supplier can provide a chat model for the given reference.
+     *
+     * @param cmRef the chat model reference to check
+     * @return true if this supplier can provide a matching chat model, false otherwise
+     */
     @Override
     public boolean canProvide(PrjXPChatModelReference cmRef) {
         return cmRef.getServerType().equals(ServerTypes.LM_STUDIO.serverType());
     }
 
+    /**
+     * Provides an LM Studio-compatible chat model based on the given reference.
+     *
+     * @param cmRef the chat model reference to provide a model for
+     * @return the configured {@link ChatModel} instance
+     */
     @Override
     public ChatModel provide(PrjXPChatModelReference cmRef) {
         HttpClient.Builder javaHttpClientBuilder = HttpClient.newBuilder()

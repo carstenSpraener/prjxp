@@ -24,6 +24,7 @@ gradle-app.setting
 # App-Specific (LangChain4j / Vector DBs)
 chroma_data/
 **/chroma_data/
+**/content-hashes.properties
 
 # OS spezifisch
 .DS_Store

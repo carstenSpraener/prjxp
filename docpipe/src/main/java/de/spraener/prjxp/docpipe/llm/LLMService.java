@@ -13,6 +13,13 @@ import org.springframework.stereotype.Service;
 @Service
 @RequiredArgsConstructor
 @Log
+/**
+ * Service for interacting with Large Language Models (LLMs).
+ * <p>
+ * This service abstracts the complexity of mapping documentation "stereotypes" to specific
+ * LLM model configurations and handles the communication with the underlying chat models.
+ * </p>
+ */
 public class LLMService {
     private final ChatModelFactory chatModelFactory;
     private final PrjXPConfig cfg;

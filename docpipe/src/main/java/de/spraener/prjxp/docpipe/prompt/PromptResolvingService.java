@@ -20,10 +20,29 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Log
+/**
+ * Service for resolving prompt templates into final prompts.
+ * <p>
+ * This service uses the Handlebars templating engine to process prompt templates. It integrates
+ * various {@link TemplateResolver} implementations as Handlebars helpers, allowing dynamic data
+ * to be injected into the prompts based on the project context.
+ * </p>
+ */
 public class PromptResolvingService {
     private final List<TemplateResolver> templateResolvers;
     private final DotDPFilesService dpFilesService;
 
+    /**
+     * Resolves the prompt for a given content creation task.
+     * <p>
+     * This method reads the prompt template file specified in the task configuration and
+     * resolves it using the project's configuration directory.
+     * </p>
+     *
+     * @param ccTask the task containing the prompt template reference
+     * @return the fully resolved prompt string
+     * @throws IOException if an error occurs while reading the template file
+     */
     public String resolve(ContentCreationTask ccTask) throws IOException {
         File cfgDir = dpFilesService.dotPipeDir(ccTask);
         DPContentCreation dpcc = ccTask.getDpContentCreation();
@@ -34,6 +53,18 @@ public class PromptResolvingService {
         return prompt;
     }
 
+    /**
+     * Resolves a prompt template string using Handlebars and registered resolvers.
+     * <p>
+     * This method initializes a Handlebars instance, registers all available {@link TemplateResolver}s
+     * as helpers, and applies the template to generate the final prompt.
+     * </p>
+     *
+     * @param promptTemplate the raw template string to resolve
+     * @param cfgDir the configuration directory used as a base for resolvers
+     * @return the resolved prompt string
+     * @throws IOException if an error occurs during template resolution
+     */
     public String resolve(String promptTemplate, File cfgDir) throws IOException {
         Handlebars handlebars = new Handlebars();
         handlebars.setStringParams(true);
@@ -47,6 +78,14 @@ public class PromptResolvingService {
         return prompt;
     }
 
+    /**
+     * Reads the prompt template from a file in the configuration directory.
+     *
+     * @param cfgDir the configuration directory where the template is located
+     * @param prompt the name of the prompt template file
+     * @return the content of the template file as a string
+     * @throws IOException if an error occurs while reading the file
+     */
     private String readTemplate(File cfgDir, String prompt) throws IOException {
         return IOUtils.toString(new FileReader(cfgDir.getAbsolutePath()+"/"+prompt));
     }

@@ -24,6 +24,14 @@ import java.util.stream.Stream;
 @Component
 @RequiredArgsConstructor
 @Log
+/**
+ * Orchestrates the documentation pipeline process.
+ * <p>
+ * This class is responsible for discovering documentation jobs, creating individual content creation tasks,
+ * and executing them in parallel using a fixed thread pool. It also handles the final error reporting
+ * based on the log service's state.
+ * </p>
+ */
 public class DocPipeRunner {
     @Value("${prjxp.docpipe.maxthreads:5}")
     private int maxThreads;
@@ -33,6 +41,17 @@ public class DocPipeRunner {
     private final DotDPFilesService dpFilesService;
     private final DPLogService logService;
 
+    /**
+     * Executes the documentation pipeline for the active project.
+     * <p>
+     * This method reads all available jobs, flattens them into a list of content creation tasks,
+     * and submits these tasks to an executor service for parallel processing. If any severe errors
+     * occurred during execution, it logs a summary and exits with status 1.
+     * </p>
+     *
+     * @param cfg the project configuration containing the active project path
+     * @throws Exception if an unexpected error occurs during job reading or execution
+     */
     public void run(PrjXPConfig cfg) throws Exception {
         List<ContentCreationTask> allTasks = jobCreationService
                 .readJobs(cfg.getActiveProject())

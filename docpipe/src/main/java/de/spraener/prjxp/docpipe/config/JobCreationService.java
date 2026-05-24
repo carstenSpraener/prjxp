@@ -25,6 +25,13 @@ import java.util.stream.Stream;
 @Service
 @RequiredArgsConstructor
 @Log
+/**
+ * Service responsible for discovering and creating documentation jobs.
+ * <p>
+ * This service scans the project directory for {@code .docpipe} directories and parses
+ * their {@code documents.json} files to create {@link DPJob} instances.
+ * </p>
+ */
 public class JobCreationService {
     private final PrjXPConfig pxCfg;
     private final ObjectMapper objectMapper;
@@ -32,6 +39,17 @@ public class JobCreationService {
     private final Validator validator;
     private final DPLogService logService;
 
+    /**
+     * Reads all documentation jobs from the given project definition.
+     * <p>
+     * This method walks the project root directory, identifies directories containing a {@code .docpipe}
+     * folder, and converts each into a {@link DPJob}.
+     * </p>
+     *
+     * @param pd the project definition containing the root directory
+     * @return a stream of discovered documentation jobs
+     * @throws IOException if an error occurs while walking the file system
+     */
     public Stream<DPJob> readJobs(Optional<ProjectDefinition> pd) throws IOException {
         if( pd.isPresent() ) {
             Path rootPath = Path.of(pd.get().getRootDir());
@@ -48,6 +66,16 @@ public class JobCreationService {
         }
     }
 
+    /**
+     * Creates a {@link DPJob} instance for the given directory.
+     * <p>
+     * This method reads the {@code documents.json} file within the directory to configure 
+     * the content creation tasks for the job.
+     * </p>
+     *
+     * @param directory the directory containing the {@code .docpipe} configuration
+     * @return a configured {@link DPJob}, or {@link DPJob#EMPTY_JOB} if an error occurs during parsing
+     */
     private DPJob createDPJob(Path directory) {
         DPJob dpJob = new DPJob();
         dpJob.setRootDir(directory.toFile());
