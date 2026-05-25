@@ -50,7 +50,7 @@ public class SourceDumpResolver implements TemplateResolver {
      */
     public String resolve(File baseDir, Object context, Options options) throws Exception {
         final Path srcPath = baseDir.toPath().resolve(options.param(0).toString());
-        final boolean scanSubs = options.hash("scanSubs", false);
+        final boolean scanSubs = options.hash("scanSubs", true);
         final String ending = options.hash("ending", "java");
         StringBuilder sb = new StringBuilder("\n");
         try (Stream<Path> walk = scanSubs ? Files.walk(srcPath) : Files.walk(srcPath, 1)) {

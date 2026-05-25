@@ -1,81 +1,112 @@
-# Doc|Pipe
-
 ![Doc|Pipe](doc/images/docpipe.png)
 
-Doc|Pipe is a powerful command-line tool designed to streamline the generation of documentation and structured content using Large Language Models (LLMs). It acts as a sophisticated pipeline that bridges the gap between raw data, logic-heavy templates, and AI-driven content creation.
+# Doc|Pipe
 
-Whether you are generating technical manuals, architectural assessments, or complex reports, Doc|Pipe ensures that your generation process is efficient, cost-effective, and highly customizable.
-
-## Key Features
-
-*   **🚀 Smart Hashing:** Doc|Pipe hashes your prompts and inputs. If nothing has changed, it skips the generation process for that specific section, saving you time and preventing unnecessary API calls.
-*   **💰 Multi-LLM Mapping:** Optimize your budget by routing different tasks to different models. Use lightweight, cheaper models for simple summaries and high-end models for complex reasoning—all within the same document pipeline.
-*   **🎭 Handlebars Root Structure:** Use the familiar Handlebars syntax to define the layout and flow of your documents. It makes template management intuitive and clean.
-*   **🛠️ Groovy Integration:** Need complex logic? Doc|Pipe allows you to embed Groovy scripts directly inside your templates. You get full access to the Spring context, allowing you to fetch data from databases, APIs, or local files seamlessly.
-*   **🔌 Easy Extensibility:** Designed with a modular architecture, you can easily plug in new LLM providers, data sources, or custom processing logic to fit your specific workflow.
+Doc|Pipe is a powerful, CLI-driven documentation pipeline designed to automate the generation of project documentation using Large Language Models (LLMs). It intelligently scans your project, resolves complex templates, and interacts with various LLMs to keep your documentation in sync with your code.
 
 ## How it Works
 
-Doc|Pipe follows a structured flow from your local templates to the final rendered document:
+Doc|Pipe operates on a simple "Discovery and Execution" model. It traverses your project directory looking for configuration folders named `.dp`. Each folder tells Doc|Pipe what documents to generate, which templates to use, and which AI models to consult.
 
 ```text
-+----------------+       +---------------------------------------+       +-----------------+
-|  HBS Template  | ----> |               Doc|Pipe                | ----> | Final Document  |
-+----------------+       |                                       |       +-----------------+
-                         |  1. Hash Check (Skip if unchanged)    |
-                         |  2. Execute Groovy Logic              |
-                         |  3. Map to specific LLM (GPT-4, etc.) |
-                         |  4. Render Handlebars                 |
-                         +---------------------------------------+
+[ Project Root ]
+├── src/ ... (Your Code)
+├── .dp/
+│   ├── documents.json      <-- Task Definitions
+│   ├── models.json         <-- Model Mappings
+│   └── readme-template.hb  <-- Handlebars Prompt Template
+└── README.md               <-- Generated Output
 ```
 
-## Usage
+### The Workflow
 
-Using Doc|Pipe is straightforward. You provide a template, and Doc|Pipe handles the rest.
+1.  **Scan**: Doc|Pipe finds all `.dp` directories in your project.
+2.  **Resolve**: It processes prompt templates using **Handlebars**, injecting code context or running **Groovy** scripts.
+3.  **Hash Check**: It calculates a SHA-256 hash of the final prompt. If the prompt hasn't changed since the last run, the LLM call is skipped to save time and money.
+4.  **Generate**: If changes are detected, it sends the prompt to the LLM mapped to that specific task's "stereotype".
+5.  **Filter & Write**: The AI response is cleaned (e.g., removing markdown code blocks) and written to the specified output file.
 
-### Basic Command
+## Top Features
 
-```bash
-docpipe --input ./templates/architecture.hbs --output ./docs/ArchitectureAssessment.md
+### 🚀 Smart Hashing
+Doc|Pipe remembers. By hashing the generated prompts, the system knows exactly when a document actually needs an update. If your code and templates haven't changed, Doc|Pipe won't waste tokens.
+
+### 🤖 Multi-LLM Mapping (Stereotypes)
+Not every task requires the most expensive model. You can define "stereotypes" (e.g., `fast`, `creative`, `architect`) and map them to different LLMs (e.g., GPT-3.5 for simple summaries, GPT-4 for complex architecture analysis).
+
+### 📝 Handlebars Root Structure
+Templates are written in Handlebars, making them easy to read and maintain. You can use helpers like `{{java-src-dump "path"}}` to automatically pull source code into your prompts.
+
+### 💡 Groovy Integration
+For ultimate power, you can embed Groovy scripts directly inside your templates. These scripts have full access to the **Spring Application Context**, allowing you to query project metadata or perform complex logic during prompt generation.
+
+### 🧩 Easy Extensibility
+Doc|Pipe is built to grow. You can easily add new `ContentFilters` to post-process AI output or new `TemplateResolvers` to introduce custom logic into your prompt templates.
+
+## Usage Example
+
+### 1. Define your tasks (`.dp/documents.json`)
+```json
+[
+  {
+    "outputFile": "docs/Architecture.md",
+    "stereotype": "architect",
+    "prompt": "arch-template.hb",
+    "filterList": "noSurroundingCodeBlock"
+  }
+]
 ```
 
-### Example Template (`report.hbs`)
-
-You can mix standard Markdown, Handlebars placeholders, and Groovy logic:
-
+### 2. Create a template (`.dp/arch-template.hb`)
 ```handlebars
-# Project Report: \{{projectName}}
+Analyze the following Java architecture:
 
-<groovy>
-    // Access the Spring context or perform complex logic
-    def stats = context.getBean(StatisticsService.class).getProjectStats()
-    return "Current issues: ${stats.issueCount}"
-</groovy>
+{{java-src-dump "../src/main/java" scanSubs=true}}
 
-## AI Summary
-\{{#llm model="gpt-4o"}}
-Summarize the following project data for a technical lead:
-\{{projectData}}
-\{{/llm}}
+{{#groovy}}
+   return "Please focus specifically on the " + applicationContext.getBean('projectInfo').getName() + " module."
+{{/groovy}}
 ```
 
-## Why use Doc|Pipe?
+### 3. Run the CLI
+```bash
+java -jar docpipe.jar --projectDir .
+```
 
-1.  **Efficiency:** Don't regenerate what hasn't changed. The hashing mechanism ensures you only spend tokens on new or modified content.
-2.  **Power:** Unlike static template engines, the Groovy integration means your documentation is "alive" and can pull real-time data from your application environment.
-3.  **Cost Control:** By mapping specific sections of a document to different LLMs, you can significantly reduce the total cost of ownership for AI-generated content.
+## Architecture Overview
+
+The following diagram illustrates how Doc|Pipe processes a single documentation task:
+
+```text
++----------------+      +-----------------------+      +----------------+
+|  .dp Config    | ---> | PromptResolvingService| ---> | Hashing Check  |
+| (JSON + Temp)  |      | (Handlebars + Groovy) |      | (SHA-256)      |
++----------------+      +-----------------------+      +-------|--------+
+                                                               |
+                                                       Prompt Changed?
+                                                               |
+        +------------------------------------------------------+--- Yes ----+
+        |                                                                   |
++-------v--------+      +-----------------------+      +--------------------+
+|   LLM Service  | <--- | Stereotype Mapping    |      | Content Generation |
+| (Chat Request) |      | (models.json)         |      | (LLM Interaction)  |
++-------|--------+      +-----------------------+      +---------|----------+
+        |                                                        |
+        +--------------> +-----------------------+      +--------v----------+
+                         |    Content Filters    | ---> |   Output File     |
+                         | (Clean up Markdown)   |      | (README.md, etc.) |
+                         +-----------------------+      +-------------------+
+```
 
 ## Further Reading
 
-To dive deeper into the technical details and customization options, please refer to the following documents:
+*   [HowTo](doc/HowTo.md): Detailed explanations for developers on how to use and extend Doc|Pipe.
+*   [FAQs](doc/FAQ.md): Answers to the most important questions about Doc|Pipe.
+*   [ArchitectureAssessment](doc/ArchitectureAssessment.md): An in-depth assessment of the Doc|Pipe architecture based on its source code.
 
-*   [HowTo](doc/HowTo.md): A comprehensive guide for developers on how to use, configure, and extend the Doc|Pipe engine.
-*   [FAQs](doc/FAQ.md): Answers to the most frequently asked questions regarding configuration, caching, and troubleshooting.
-*   [ArchitectureAssessment](doc/ArchitectureAssessment.md): A deep-dive assessment of the Doc|Pipe architecture, generated by the tool itself.
+***
 
----
-
-**Fun Fact:** Doc|Pipe is "self-aware"—it actually generates its own [Architecture Assessment](doc/ArchitectureAssessment.md) by analyzing its own source code!
+**Fun Fact:** Doc|Pipe is self-documenting! It uses its own logic to generate its [Architecture Assessment](doc/ArchitectureAssessment.md).
 
 _This document was generated with Doc|Pipe and gemini-3-flash-preview_
 

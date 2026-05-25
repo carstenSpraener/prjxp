@@ -1,104 +1,108 @@
 # Doc|Pipe Developer FAQ
 
-This FAQ provides technical insights into the architecture, extension points, and core mechanics of **Doc|Pipe**. It is intended for software engineers and architects integrating Doc|Pipe into their CI/CD pipelines or extending its core functionality.
-
----
+This FAQ provides technical insights into the architecture, extensibility, and integration patterns of **Doc|Pipe**. It is intended for software engineers and architects implementing or extending the documentation pipeline.
 
 ## What is Doc|Pipe and what problem does it solve?
 
-**Doc|Pipe** is a pipeline-driven documentation engine designed to automate the generation of technical documentation directly from source code and system metadata. It specifically addresses the "Documentation Decay" problem in long-running projects and legacy systems where documentation is often non-existent, outdated, or disconnected from the actual implementation.
+Doc|Pipe is a pipeline-driven documentation engine designed to automate the generation of technical documentation directly from project artifacts. It is specifically optimized for **legacy systems** where architectural knowledge is often trapped in source code rather than documented in maintainable formats.
 
-By treating documentation as a structured pipeline process, Doc|Pipe allows teams to:
-*   **Extract context:** Automatically scan project structures and legacy artifacts.
-*   **Standardize output:** Apply consistent templates across different modules.
-*   **Eliminate manual toil:** Generate READMEs, Architecture Decision Records (ADRs), and system overviews as part of the build process.
+By treating documentation as a build artifact, Doc|Pipe solves the "stale documentation" problem. It uses Large Language Models (LLMs) to analyze project structures, source code, and configurations to generate data-driven Markdown files, architecture assessments, and READMEs.
+
+### Core Architectural Components
+*   **Job Discovery:** Scans the project for `.dp` configuration directories.
+*   **Prompt Resolution:** Compiles dynamic templates using Handlebars and custom resolvers.
+*   **LLM Orchestration:** Maps documentation "stereotypes" to specific model configurations (e.g., GPT-4 for analysis, faster models for summaries).
+*   **Change Detection:** Uses SHA-256 hashing to ensure LLM calls are only made when the underlying prompt or context changes.
 
 ---
 
 ## How does the template resolution mechanism work?
 
-Template resolution in Doc|Pipe is a multi-stage process that transforms a high-level template identifier into a sharp, context-aware prompt. This mechanism ensures that the final output is grounded in the specific data of the project's working directory.
+Doc|Pipe utilizes a context-sensitive template resolution strategy. The `PromptResolvingService` takes a raw prompt template (usually a Handlebars file) and processes it within the context of a specific working directory.
 
-### The Resolution Lifecycle
-1.  **Identifier Mapping:** The system receives a template identifier (e.g., a file path or a custom key).
-2.  **Context Binding:** The `TemplateResolver` locates the raw template and binds it to the current execution context (the working directory of the project).
-3.  **Variable Interpolation:** Using a template engine (like Handlebars), placeholders are replaced with actual system data, file contents, or environment variables.
-4.  **Final Prompt Generation:** The result is a fully expanded string ready to be processed by a downstream documentation provider or LLM.
+### Resolution Lifecycle
+1.  **Template Loading:** The service locates the template file defined in `documents.json` within the `.dp` folder.
+2.  **Context Injection:** It identifies the `baseDir` (the root of the specific documentation job).
+3.  **Helper Execution:** Handlebars helpers (implemented as `TemplateResolver` beans) are invoked to inject real-world data, such as source code dumps or external file contents.
+4.  **Final Prompt Generation:** A "sharp" prompt is generated, containing the actual technical context required for the LLM to produce accurate results.
 
-### Example: Template Syntax
-A typical template might use Handlebars syntax to inject project-specific details:
-
+### Example Template Syntax
 ```handlebars
-# System Assessment: {{projectName}}
-## Directory Structure
-{{#each modules}}
-- {{this.name}}: {{this.description}}
-{{/each}}
+Analyze the following Java classes and create a data model description:
 
-## Analysis
-Analyze the following legacy classes for architectural bottlenecks:
-{{codebase_summary}}
+{{java-src-dump "src/main/java/com/example/model" ending="java" scanSubs=true}}
+
+Please output the result in Markdown format.
 ```
 
 ---
 
 ## How can developers extend Doc|Pipe?
 
-Doc|Pipe is designed with an open architecture. The primary way to extend the system is by implementing the `TemplateResolver` interface. This allows you to define how templates are fetched—whether from a local filesystem, a remote Git repository, a database, or an external API.
+Extensibility is achieved through the `TemplateResolver` interface. Developers can register custom components to introduce new template identifiers or specialized logic for prompt enrichment.
 
 ### Implementing a Custom TemplateResolver
-To register a custom template type, implement the `TemplateResolver` interface and register it within the Doc|Pipe registry.
+To create a new resolver, implement the `TemplateResolver` interface and register it as a Spring `@Component`.
 
 ```java
-public class S3TemplateResolver implements TemplateResolver {
+@Component
+public class MyCustomResolver implements TemplateResolver {
     @Override
-    public boolean canResolve(String templateIdentifier) {
-        return templateIdentifier.startsWith("s3://");
+    public String getID() {
+        return "my-custom-tag"; // Used as {{#my-custom-tag}}...{{/my-custom-tag}}
     }
 
     @Override
-    public String resolve(String templateIdentifier, Path workingDirectory) {
-        // 1. Fetch template content from S3 bucket
-        // 2. Perform initial validation
-        // 3. Return the raw template string for the engine to process
-        return s3Client.getObjectAsString(templateIdentifier);
+    public String resolve(File baseDir, Object context, Options options) throws Exception {
+        // Access parameters: options.param(0)
+        // Access block content: options.fn.text()
+        return "Processed context-sensitive data";
     }
 }
 ```
 
-### Key Extension Points
-*   **Custom Resolvers:** Handle unique storage backends for templates.
-*   **Context Providers:** Inject additional metadata (e.g., Jira tickets, SonarQube metrics) into the template context.
-*   **Output Formatters:** Define new ways to render the final documentation (Markdown, AsciiDoc, HTML).
+### Scripted Extensions
+Doc|Pipe includes a `GroovyResolver`, allowing developers to write complex logic directly within the prompt template without recompiling the application:
+
+```handlebars
+{{#groovy}}
+    def files = new File(dir, "src/main/resources").listFiles()
+    return "Found ${files.length} resource files."
+{{/groovy}}
+```
+
+---
+
+## How does Doc|Pipe handle incremental updates?
+
+To minimize LLM tokens and execution time, Doc|Pipe uses the `ContentUpdateRequiredController`. It maintains a persistent hash map of every generated document in `.dp/content-hashes.properties`.
+
+*   **Logic:** Before calling the LLM, Doc|Pipe generates the final prompt and calculates its **SHA-256 hash**.
+*   **Comparison:** If the hash matches the stored value for the target `outputFile`, the generation is skipped.
+*   **Invalidation:** If the template, the source code included via `src-dump`, or the configuration changes, the hash will differ, triggering a fresh LLM request.
 
 ---
 
 ## What are the key benefits for team onboarding and system assessments?
 
-Doc|Pipe significantly reduces the "Time-to-Productivity" for new developers and provides immediate visibility into legacy architectures.
+Doc|Pipe significantly reduces the "time-to-understanding" for complex or legacy projects:
 
-### Zero-Time System Assessments
-When performing a technical due diligence or a system assessment, Doc|Pipe can crawl a repository and generate:
-*   **Data Models:** Visual or textual representations of the underlying schema.
-*   **Dependency Graphs:** Maps of how internal modules interact.
-*   **Architectural Overviews:** High-level summaries generated by analyzing package structures and naming conventions.
+*   **Zero-Time Assessments:** Automatically generate SWOT analyses or architectural overviews by pointing Doc|Pipe at a legacy codebase.
+*   **Living Readmes:** Ensure every module has a README.md that actually reflects the current state of the code, not the state it was in three years ago.
+*   **Data Model Visualization:** Use the `java-src-dump` resolver to feed entity classes to an LLM to generate Mermaid.js diagrams or documentation of database schemas.
+*   **Standardized Stereotypes:** Define model configurations in `models.json` once, allowing the entire team to use consistent LLM settings (temperature, model version) across different documentation tasks.
 
-### Automated Onboarding
-Instead of reading stale Wiki pages, new engineers can trigger a Doc|Pipe run to generate a "Current State" README.
-
-*   **Accuracy:** Since the documentation is generated from the current HEAD of the repository, it never lies.
-*   **Contextual Depth:** New hires can see not just *what* the code does, but *why* it is structured that way based on the prompt templates used during generation.
-*   **Standardization:** Ensures every microservice or module in a polyglot environment follows the same documentation standards.
-
----
-
-## How is the working directory handled during processing?
-
-Doc|Pipe operates on a "Working Directory" principle. When a pipeline is executed, the `TemplateResolver` is provided with a `Path` reference to the project root. 
-
-This allows for:
-*   **Relative File Resolution:** Templates can reference specific source files or configuration files (e.g., `pom.xml`, `package.json`) to extract versioning or dependency data.
-*   **Isolating Execution:** Multiple Doc|Pipe instances can run in parallel on different project modules without state leakage, as each resolver is scoped to its specific directory context.
+### Example `documents.json` configuration:
+```json
+[
+  {
+    "outputFile": "ARCHITECTURE.md",
+    "stereotype": "architect-expert",
+    "prompt": "arch-assessment.hbs",
+    "filterList": "noSurroundingCodeBlock"
+  }
+]
+```
 
 _This document was generated with .dp and gemini-3-flash-preview_
 

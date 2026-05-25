@@ -1,66 +1,72 @@
-# Software Architecture Assessment: Java LLM Orchestration Service (J-LLM-Core)
+# Software Architecture Assessment: Chunk Norris - Semantic Document Chunking Engine
 
 ## 1. Executive Summary
-The J-LLM-Core project is a modern Java-based microservice built on Spring Boot 3.x, designed to provide a unified interface for multiple Large Language Model (LLM) providers. The architecture demonstrates a mature understanding of the Spring ecosystem and follows a primarily layered approach with emerging characteristics of a Hexagonal (Ports and Adapters) architecture. 
+The "Chunk Norris" project is a sophisticated Java-based framework designed to decompose diverse file formats (source code, documents, images) into semantically meaningful "chunks." The architecture is built on Spring Boot and leverages a plugin-like system for extensibility. It distinguishes itself through a weighted-graph-based routing system for document conversion and AST-aware (Abstract Syntax Tree) parsing for source code.
+
+**Current State:** The architecture is highly modular and flexible, demonstrating advanced patterns for document processing. However, there is a visible imbalance between the highly robust Java parsing (AST-based) and the more brittle TypeScript parsing (Regex-based). Error handling is inconsistent, and the reliance on reflection for component discovery introduces hidden runtime complexity.
 
 **Key Strengths:**
-- Strong adherence to Spring Boot idioms and configuration-as-code principles.
-- Effective use of modern Java features (Records, Sealed Classes) to ensure type safety and data integrity.
-- Centralized error handling and consistent API response structures.
+- Advanced conversion routing using Dijkstra's algorithm.
+- Semantic awareness of code structures (Java/TypeScript).
+- High extensibility via custom annotations and "Agents."
 
 **Critical Risks:**
-- **Tight Coupling to Provider SDKs:** The core domain logic is currently exposed to vendor-specific data structures, increasing the cost of switching providers.
-- **Synchronous Bottlenecks:** The reliance on blocking I/O for long-running LLM requests without a robust asynchronous or reactive strategy limits scalability.
-- **Implicit Reliability Gaps:** Lack of circuit breakers and sophisticated retry mechanisms in the integration layer makes the system vulnerable to cascading failures from external APIs.
+- Brittle Regex-based parsing for TypeScript.
+- Inconsistent error handling ("FIXME" comments and swallowed exceptions).
+- Potential resource exhaustion during large-scale parallel file walking.
 
 ## 2. Architectural Style & Patterns
-The project follows a **Layered Architecture** with a clear separation between the Web, Service, and Integration layers.
+The project follows a **Component-Based Architecture** with elements of **Pipes and Filters** and **Strategy** patterns.
 
-- **Controller Layer (Web):** Implements RESTful principles using Spring Web. It handles request validation and maps DTOs to internal domain models.
-- **Service Layer (Domain):** Contains the business logic for prompt orchestration, history management, and token counting. 
-- **Integration Layer (Infrastructure):** Utilizes the **Strategy Pattern** to handle different LLM providers (OpenAI, Anthropic, etc.). While the strategy pattern is present, the "Port" (Interface) is not sufficiently decoupled from the "Adapter" (Implementation), as some provider-specific exceptions leak into the service layer.
-- **Component Decoupling:** Use of Spring’s Dependency Injection (DI) is consistent. However, the lack of a distinct "Domain" layer independent of Spring dependencies suggests a "Spring-Idiomatic" style rather than a pure Hexagonal architecture.
+- **Strategy Pattern:** Used extensively for `PxChunker` and `DocConversionAgent` implementations. The system decides at runtime which strategy to use based on file type or conversion path.
+- **Broker Pattern:** The `ChunkerBroker` and `ChunkerFactory` act as intermediaries, decoupling the execution logic (`ChunkProcess`) from the specific chunking implementations.
+- **Shortest Path Routing:** A unique architectural feature where `DocConversionRouter` uses `JGraphT` to find the most "accurate" or "cheapest" path to transform a document (e.g., PDF -> Image -> LLM-Vision -> Markdown).
+- **Event-Driven Initialization:** Uses Spring's `ApplicationEventPublisher` (e.g., `SpringPreWalkEvent`) to trigger pre-processing tasks like mapping fully qualified names in Java files.
 
 ## 3. Quality Attribute Evaluation
 
 ### Maintainability & Readability
-- **Code Cleanliness:** High. The codebase follows standard Java naming conventions and utilizes Lombok to reduce boilerplate.
+- **Code Cleanliness:** Generally high. Use of Lombok reduces boilerplate.
+- **Naming Conventions:** Follows standard Java idioms. Class names like `DocConversionRouter` and `JavaCodeChunker` clearly communicate intent.
 - **SOLID Principles:** 
-    - **S (Single Responsibility):** Generally well-followed; controllers are thin.
-    - **O (Open/Closed):** Partially violated in the `ProviderFactory`, which requires manual updates when adding new LLM engines.
-- **Documentation:** Inline Javadoc is present for complex logic, though the internal architecture of the transformation pipelines is under-documented.
+    - *Single Responsibility:* Well-adhered to in the `DocConversionAgent` implementations.
+    - *Open/Closed:* Excellent. New file types or conversion steps can be added by implementing interfaces and adding `@Component` without modifying the core engine.
 
 ### Extensibility
-- **LLM Provider Integration:** The use of an interface-driven approach for providers makes adding new models straightforward. However, the shared `ModelConfig` object is becoming a "God Object," containing parameters that only apply to specific providers (e.g., `top_p` vs `top_k`), which complicates the addition of non-standard models.
+- **High:** The system is designed to be "plug-and-play." Adding a new LLM provider or a new document format requires only a new `DocConversionAgent`. The use of classpath scanning for `@ChunkNorrisComponent` simplifies integration.
 
 ### Robustness & Error Handling
-- **Exception Handling:** A `@ControllerAdvice` provides a global safety net, ensuring clients receive structured JSON error messages.
-- **Resilience:** The application lacks explicit timeout configurations on a per-provider basis and does not implement the Bulkhead pattern, meaning one slow provider could exhaust the application's connection pool.
+- **Weak:** This is a significant area of concern.
+    - `JavaFQNamesMapper` contains `// FIXME: handle exceptions!!!`.
+    - Several catch blocks log a warning but return empty streams, which might lead to silent failures in the processing pipeline.
+    - `ChunkProcess` swallows `JsonProcessingException` and returns an empty string, which could corrupt the JSONL output format.
 
 ### Performance & Resource Efficiency
-- **Resource Utilization:** The use of Java Records reduces memory overhead for DTOs.
-- **Blocking Operations:** The current implementation uses standard `RestTemplate` or blocking `WebClient` calls. For high-concurrency LLM workloads, this will lead to thread exhaustion. There is no evidence of Virtual Threads (Project Loom) utilization despite being on a modern JDK.
+- **Potentially Bottlenecked:** 
+    - The use of `.parallel()` in `ChunkProcess` on the `Files.walk` stream is efficient for CPU-bound tasks but may lead to I/O contention or thread starvation if not tuned.
+    - `JavaFQNamesMapper` performs a full project walk on a single event, which could be slow for massive repositories.
+    - `Pdf2ImageConversionAgent` correctly uses a `Supplier` for lazy rendering, which is an excellent memory-saving technique.
 
 ## 4. Strengths & Best Practices
-- **Immutable Data Structures:** Extensive use of `java.lang.Record` for DTOs and internal events ensures thread safety and prevents side-effect-driven bugs.
-- **Validation:** Robust use of `jakarta.validation` constraints at the API entry point prevents malformed data from reaching the core logic.
-- **Configuration Management:** Uses `@ConfigurationProperties` with validation, ensuring that missing API keys or incorrectly formatted URLs are caught at startup rather than at runtime.
-- **Testing:** High coverage of unit tests for transformation logic using JUnit 5 and Mockito.
+- **AST-Based Chunking:** Unlike naive "sliding window" chunkers, the `JavaCodeChunker` uses `JavaParser` to understand the code structure (methods, imports, class frames), leading to much higher quality context for LLMs.
+- **Dijkstra Routing:** The conversion router is mathematically sound. Assigning weights to accuracy (Analytic vs. AI-driven) allows the system to prioritize deterministic code-based extraction over expensive/hallucination-prone AI extraction.
+- **Sidecar Metadata:** The `MetaInfReader` allows for external metadata enrichment via `.meta` files, a clean way to handle out-of-band information.
+- **Veto System:** The `VetoRegistry` using `BeanPostProcessor` to find `@ChunkVeto` methods is a clever use of Spring's lifecycle to implement a flexible filtering system.
 
 ## 5. Identified Risks & Technical Debt
-- **Leaky Abstractions:** External provider SDK exceptions (e.g., `OpenAIException`) are occasionally caught in the service layer rather than being mapped to internal domain exceptions in the infrastructure layer.
-- **Hardcoded Logic:** Some prompt templating logic is hardcoded within Java strings instead of being managed via an external template engine or configuration files, making updates require a full re-compile.
-- **Missing Observability:** While logging is present, there is a lack of structured tracing (e.g., Micrometer/Zipkin) to track request latency across external provider boundaries.
-- **Security:** API keys are managed via environment variables, but there is no integration with a dedicated Secret Manager (like HashiCorp Vault or AWS Secrets Manager) for rotation or fine-grained access control.
+- **Regex for TypeScript:** `TypeScriptCodeChunker` relies on complex Regular Expressions. This is prone to failure with modern TS syntax (decorators, complex generics, multi-line signatures) and lacks the robustness of the AST approach used for Java.
+- **Reflection Overhead:** `AnnotationBasedChunkerBrokerImpl` performs significant reflection and classpath scanning at runtime. This increases startup time and makes the "wiring" of the application harder to trace through static analysis.
+- **State Management:** `DependencyRegistry` uses `synchronized` methods. While thread-safe, it may become a contention point during highly parallel processing of large codebases.
+- **Resource Leaks:** While `Pdf2ImageContext` implements `AutoCloseable`, the manual management of `postConversionAction` to close documents is a bit fragile and could be replaced with a more robust resource-tracking lifecycle.
 
 ## 6. Actionable Recommendations
 
-1.  **Refactor Provider Factory:** Implement a plugin-based discovery mechanism or use Spring's Map-based injection (`Map<String, ProviderService>`) to eliminate the switch-case logic in `ProviderFactory`, fully satisfying the Open/Closed Principle.
-2.  **Introduce Resilience4j:** Wrap external LLM calls with Circuit Breakers and Rate Limiters. This is critical for LLM integrations where rate limits are frequently hit and external latency is highly variable.
-3.  **Adopt Virtual Threads:** Given the I/O-bound nature of the application, enable Project Loom (Virtual Threads) in the Spring Boot configuration to significantly increase throughput without moving to a complex Reactive (WebFlux) model.
-4.  **Decouple Domain Models:** Create a "Neutral Model Representation" that sits between the external SDKs and the internal business logic. Map all provider-specific responses to this internal model immediately upon receipt.
-5.  **Externalize Prompt Templates:** Move prompt strings into a managed resource folder or a database, allowing non-developers to tune prompts without code changes.
-6.  **Enhance Observability:** Implement custom Micrometer metrics to track "Tokens Per Second" and "Provider Success Rate" to provide better operational visibility.
+1.  **Upgrade TypeScript Parsing:** Replace the Regex logic in `TypeScriptCodeChunker` with a proper parser (e.g., using a library like `typescript-parser` or a tree-sitter wrapper) to achieve parity with the Java implementation.
+2.  **Unify Error Handling:** Replace `log.warning` + return empty with a custom `ChunkingException` hierarchy. Use a dedicated `ErrorHandler` component to decide whether to skip a file or stop the process.
+3.  **Optimize Java Mapping:** The `JavaFQNamesMapper` should ideally use an incremental index or a persistent cache to avoid re-walking the entire root directory on every execution if the files haven't changed.
+4.  **Refine Parallelism:** Introduce a configurable `ExecutorService` for the `ChunkProcess` instead of relying on the common ForkJoinPool (`.parallel()`), allowing for better control over I/O vs. CPU-bound thread counts.
+5.  **Formalize Resource Lifecycle:** Move away from `Consumer<DocArtifakt> postConversionAction` for closing resources. Implement a `ResourceRegistry` that ensures all opened `PDDocument` or `InputStream` handles are closed even if an exception occurs mid-pipeline.
+6.  **Improve Observability:** Add metrics (using Micrometer) to track conversion costs, time per file type, and agent success rates to help tune the Dijkstra weights.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 
