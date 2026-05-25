@@ -1,30 +1,37 @@
 package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
-import java.util.List;
 import java.util.Optional;
-import java.util.function.Function;
 import java.util.function.Predicate;
 
 @Component
 @RequiredArgsConstructor
-public class KIChatProvider implements Function<Predicate<PrjXPChatModelReference>,Optional<KIChat>> {
-    private final List<KIChat> chatModels;
+public class KIChatProvider {
+    private final PrjXPConfig config;
+    private final KIChatModelProvider modelProvider;
 
-    @Override
-    public Optional<KIChat> apply(Predicate<PrjXPChatModelReference> p) {
-        for( var model : chatModels){
-            if( p.test(model.getChatModelReference())){
-                return Optional.of(model);
-            }
-        }
-        return Optional.empty();
+    public Optional<KIChat> getByName(String name) {
+        return config.getChatModels().stream()
+                .filter(m -> m.getModelName().equals(name))
+                .findFirst()
+                .map(modelProvider::createKIChat);
     }
 
-    public Optional<KIChat> get(String name){
-        return apply(m->m.getModelName().equals(name));
+    public Optional<KIChat> getByStereotype(String stereotype) {
+        return config.getChatModels().stream()
+                .filter(m -> m.getStereoType().equals(stereotype))
+                .findFirst()
+                .map(modelProvider::createKIChat);
+    }
+
+    public Optional<KIChat> apply(Predicate<PrjXPChatModelReference> p) {
+        return config.getChatModels().stream()
+                .filter(p)
+                .findFirst()
+                .map(modelProvider::createKIChat);
     }
 }

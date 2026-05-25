@@ -1,11 +1,8 @@
 package de.spraener.prjxp.docpipe.llm;
 
-import de.spraener.prjxp.common.config.PrjXPChatModelReference;
-import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.chat.KIChatProvider;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
-import de.spraener.prjxp.docpipe.model.DPJob;
-import dev.langchain4j.model.chat.ChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
@@ -21,14 +18,13 @@ import org.springframework.stereotype.Service;
  * </p>
  */
 public class LLMService {
-    private final de.spraener.prjxp.common.chat.ChatModelFactory chatModelFactory;
-    private final PrjXPConfig cfg;
+    private final KIChatProvider chatProvider;
+
     /**
      * Sends a chat request to the LLM for a content creation task.
      * <p>
      * Resolves the model configuration based on the stereotype of the
-     * {@link DPContentCreation}, creates a {@link ChatModel} via the
-     * {@link de.spraener.prjxp.common.chat.ChatModelFactory}, and sends the given prompt to the model.
+     * {@link DPContentCreation} and sends the given prompt to the model.
      *
      * @param ccTask the content creation task containing job and stereotype information
      * @param prompt the prompt text to send to the LLM
@@ -38,18 +34,12 @@ public class LLMService {
      */
     public String chat(ContentCreationTask ccTask, String prompt) {
         DPContentCreation dpCC =  ccTask.getDpContentCreation();
-        DPJob dpJob =  ccTask.getDpJob();
 
         final String stereotype = dpCC.getStereotype();
-        PrjXPChatModelReference cmRef = cfg.getChatModels().stream()
-                .filter( cm->
-                        cm.getStereoType().equals(stereotype)
-                )
-                .findFirst()
+        return chatProvider.getByStereotype(stereotype)
+                .map(chat -> chat.chat(prompt))
                 .orElseThrow(
                     () -> new IllegalArgumentException("No Model found for Stereotype " + stereotype)
                 );
-        ChatModel chatModel = chatModelFactory.create(cmRef);
-        return chatModel.chat(prompt);
     }
 }

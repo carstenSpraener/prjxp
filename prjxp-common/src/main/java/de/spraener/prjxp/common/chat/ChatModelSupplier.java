@@ -6,7 +6,7 @@ import dev.langchain4j.model.chat.ChatModel;
 /**
  * Interface for providing specific {@link ChatModel} implementations.
  * <p>
- * Implementations of this interface are used by the {@link ChatModelFactory} to instantiate
+ * Implementations of this interface are used by the {@link KIChatModelProvider} to instantiate
  * chat models from different providers (e.g., Ollama, OpenAI, Gemini) based on the
  * provided model reference configuration.
  * </p>

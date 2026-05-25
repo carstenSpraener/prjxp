@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr;
 
 import de.spraener.prjxp.common.chat.KIChatProvider;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.code.java.JavaRetriever;
@@ -19,13 +20,14 @@ public class GldRtrvrQuestioner {
     private final PxChunkDaoProvider chunkDao;
     private final KIChatProvider chatProvider;
     private final GRPromptEnrichment promptEnrichment;
+    private final PrjXPConfig cfg;
 
     public String ask(String question, Function<String, Boolean>... contextValidator) {
         return ask(question, List.of(), contextValidator);
     }
 
     public String ask(String question, List<PxChunk> prefetchedChunks, Function<String, Boolean>... contextValidator) {
-        return ask("default", prefetchedChunks, contextValidator);
+        return ask(cfg.getActiveProject().get().getName(), prefetchedChunks, contextValidator);
     }
 
     public String ask(String storeName, String question, List<PxChunk> prefetchedChunks, Function<String, Boolean>... contextValidator) {
@@ -36,7 +38,7 @@ public class GldRtrvrQuestioner {
                 promptEnrichment::reIterate,
                 this::formatContextForJavaDoc,
                 contextValidator);
-        return chatProvider.get("default").get().chat(prompt+"\nFRAGE: "+question);
+        return chatProvider.getByName("default").get().chat(prompt+"\nFRAGE: "+question);
     }
 
     public String askForJavaDoc(String template, String method, String className) {

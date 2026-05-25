@@ -9,6 +9,7 @@ import com.github.javaparser.javadoc.Javadoc;
 import com.github.javaparser.javadoc.description.JavadocDescription;
 import com.github.javaparser.printer.lexicalpreservation.LexicalPreservingPrinter;
 import com.github.javaparser.utils.SourceRoot;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.util.ValueContainer;
@@ -37,6 +38,7 @@ public class JavaDocEnricher {
     private final GldRtrvrQuestioner questioner;
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final PrjXPConfig cfg;
 
     public void enrichProject(Path[] paths) throws IOException {
         Arrays.asList(paths).stream()
@@ -182,7 +184,7 @@ public class JavaDocEnricher {
         }
         String methodName = asMethodSignature(method);
 
-        List<PxChunk> methodChunks = chunkDaoProvider.get("default").get().findById(className + "." + methodName);
+        List<PxChunk> methodChunks = chunkDaoProvider.get(cfg.getActiveProject().get().getName()).get().findById(className + "." + methodName);
         log.info("Asking for %s.%s".formatted(className, methodName));
         String question = (
                 "Du bist eine erfahrener Java-Entwickler und sollst mich bei der Dokumentation meines QuellCodes unterstützen." +

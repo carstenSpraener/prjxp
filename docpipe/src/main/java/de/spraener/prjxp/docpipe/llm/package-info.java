@@ -20,9 +20,9 @@
  *     <li><b>Stereotype Resolution:</b> The service resolves the target LLM model by matching the stereotype associated with a
  *     {@link de.spraener.prjxp.docpipe.content.ContentCreationTask} against configured model references in the
  *     {@link de.spraener.prjxp.common.config.PrjXPConfig}.</li>
- *     <li><b>Model Instantiation:</b> Once a model reference is resolved, the service delegates to a
- *     {@link de.spraener.prjxp.common.chat.ChatModelFactory} to instantiate the concrete
- *     {@link dev.langchain4j.model.chat.ChatModel} implementation.</li>
+ *     <li><b>Model Access:</b> Once a stereotype is resolved, the service delegates to
+ *     {@link de.spraener.prjxp.common.chat.KIChatProvider#getByStereotype(String)} to obtain a {@link de.spraener.prjxp.common.chat.KIChat}
+ *     instance, which wraps the underlying LangChain4j {@link dev.langchain4j.model.chat.ChatModel}.</li>
  *     <li><b>Request Execution:</b> The service handles the transmission of prompts to the resolved chat model and returns
  *     the generated response, shielding callers from provider-specific details.</li>
  * </ul>
@@ -37,10 +37,9 @@
  * <p>
  * Developers should inject {@link de.spraener.prjxp.docpipe.llm.LLMService} into their components to perform LLM-driven
  * content generation. Configuration of available models and their stereotype mappings should be managed via the application's
- * configuration properties.
+ * configuration properties ({@code prjxp.chatModels} in application.yaml).
  * </p>
  */
 package de.spraener.prjxp.docpipe.llm;
 
-//_This document was generated with Doc|Pipe and qwen3.6-27b-ud-mlx_
-
+ //_This document was generated with Doc|Pipe and qwen3.6-27b-ud-mlx_
