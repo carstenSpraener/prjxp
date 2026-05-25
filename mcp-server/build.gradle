@@ -16,6 +16,7 @@ dependencies {
     // Internes Modul
     implementation project(':golden-retriever')
     implementation project(':prjxp-common')
+    testFixturesImplementation project(':prjxp-common')
 
     // Spring Boot
     implementation libs.spring.boot.starter.json

@@ -1,8 +1,11 @@
 plugins {
     id 'org.springframework.boot' version '3.5.0' apply false
+    id 'java-test-fixtures'
 }
 
 subprojects {
+    apply plugin: 'java-test-fixtures'
+
     group = 'de.spraener.prjxp'
     version = '0.0.1-SNAPSHOT'
 

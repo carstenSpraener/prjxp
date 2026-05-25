@@ -16,6 +16,7 @@ repositories {
 
 dependencies {
     implementation project(':prjxp-common')
+    testFixturesImplementation project(':prjxp-common')
 
     // Spring & DevTools
     implementation libs.spring.boot.starter.json

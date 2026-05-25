@@ -11,6 +11,7 @@ dependencies {
     implementation 'dev.langchain4j:langchain4j-http-client-jdk:1.13.1'
 
     testImplementation libs.bundles.test.bundle
+    testFixturesImplementation libs.bundles.test.bundle
 }
 
 test {

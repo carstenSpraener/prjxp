@@ -41,9 +41,9 @@ public class JavaCodeChunker {
 
     private final JavaDependencyHandler javaDependencyHandler;
 
-    @Value("${java.chunksize:1300}")
+    @Value("${prjxp.java.chunksize:1300}")
     private int chunkSize;
-    @Value("${java.chunkoverlap:100}")
+    @Value("${prjxp.java.chunkoverlap:100}")
     private int overlap;
 
     @Chunker(fileTypes = PxFileType.JAVA_CODE)
