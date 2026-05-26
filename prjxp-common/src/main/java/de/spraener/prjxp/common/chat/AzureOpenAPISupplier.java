@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.errorlog.PxLogService;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.java.Log;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +21,7 @@ import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
+@Log
 /**
  * Supplier for OpenAI-compatible chat models.
  * <p>
@@ -57,8 +59,10 @@ public class AzureOpenAPISupplier implements ChatModelSupplier {
             enableInsecureSSL();
         }
         String apiKey = readArg(cmRef,"api-key");
+        String baseUrl = cmRef.getProviderUrl()+"/"+cmRef.getModelName()+"/";
+        log.info("Providing Azure Open API Chat Model with baseUrl: "+baseUrl);
         return OpenAiChatModel.builder()
-                .baseUrl(cmRef.getProviderUrl()+"/"+cmRef.getModelName()+"/")
+                .baseUrl(baseUrl)
                 .apiKey(apiKey)
                 .customHeaders(Map.of("api-key",apiKey))
                 .customQueryParams(Map.of("api-version", cmRef.getArgs().get("api-version")))

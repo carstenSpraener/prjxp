@@ -73,6 +73,9 @@ public class ContentCreationService {
         } catch (TemplateException | IOException e) {
             logService.error(e, "Error while trying to create prompt for %s: %s",
                     ccTask.getDpJob().getRootDir().getAbsolutePath(), e.getMessage());
+        } catch( Throwable t ) {
+            logService.error(t, "Unexpected throwable while creating content %s: %s",
+                    ccTask.getDpJob().getRootDir().getAbsolutePath()+"/"+ccTask.getDpContentCreation().getOutputFile(), t.getMessage());
         }
     }
 
