@@ -1,6 +1,7 @@
 package de.spraener.prjxp.chuno.docs;
 
 import de.spraener.prjxp.chuno.ChunkProcess;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ContentSplitter;
 import org.assertj.core.api.Assertions;
@@ -115,7 +116,8 @@ class MarkdownChunkerTest {
         when(metaInfReader.readMetaInf(any())).thenReturn(
                 Map.of("version", "0.3", "date", "20.04.1968", "promptFormat", "[[Version {version} vom {date}]]")
         );
-        MarkdownChunker chunker = new MarkdownChunker(emptyConverter, metaInfReader);
+        PxLogService logService = mock(PxLogService.class);
+        MarkdownChunker chunker = new MarkdownChunker(logService, emptyConverter, metaInfReader);
         List<PxChunk> chunks = chunker.processFile(new File("dummy.md")).toList();
 
         Assertions.assertThat(chunks)

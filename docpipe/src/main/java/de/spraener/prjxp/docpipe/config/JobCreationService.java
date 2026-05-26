@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogMessage;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import de.spraener.prjxp.docpipe.model.DPJob;
 import lombok.RequiredArgsConstructor;
@@ -36,7 +37,7 @@ public class JobCreationService {
     private final ObjectMapper objectMapper;
     private final DotDPFilesService dpFilesService;
     private final Validator validator;
-    private final de.spraener.prjxp.common.errorlog.PxLogService logService;
+    private final PxLogService logService;
 
     /**
      * Reads all documentation jobs from the given project definition.
@@ -87,9 +88,7 @@ public class JobCreationService {
                 dpJob.setContentCreationList(creations);
             }
         } catch( Exception e) {
-            logService.logMessage(
-                    new PxLogMessage(Level.SEVERE, "Error reading documents.json from " + documentsJson.getAbsolutePath()+": "+e.getMessage())
-            );
+            logService.error(e, "Error reading documents.json from %s: %s",documentsJson.getAbsolutePath(), e.getMessage());
             return DPJob.EMPTY_JOB;
         }
         return dpJob;

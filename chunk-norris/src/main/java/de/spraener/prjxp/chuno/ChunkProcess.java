@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import de.spraener.prjxp.chuno.spring.SpringPreWalkEvent;
 import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import lombok.RequiredArgsConstructor;
@@ -22,6 +23,7 @@ import java.util.Set;
 @Log
 @RequiredArgsConstructor
 public class ChunkProcess {
+    private final PxLogService logService;
     private final ChunkerFactory factory;
     private final ApplicationEventPublisher eventPublisher;
     private final VetoRegistry vetoRegistry;
@@ -93,7 +95,7 @@ public class ChunkProcess {
         try {
             return jsonMapper.writeValueAsString(chunk);
         } catch (JsonProcessingException jpXC) {
-            log.severe("Could not write jsonl for chunk " + chunk.getId() + ": " + jpXC);
+            logService.error(jpXC, "Could not write jsonl for chunk %s", chunk.getId());
             return "";
         }
     }

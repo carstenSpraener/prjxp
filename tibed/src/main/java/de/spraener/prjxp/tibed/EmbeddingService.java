@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.PxChunkFromJsonLReader;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
@@ -26,6 +27,7 @@ import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metad
 @RequiredArgsConstructor
 @Log
 public class EmbeddingService {
+    private final PxLogService logService;
     private final ObjectMapper objMapper;
     private final EmbeddingExecutor embedder;
     private final EmbeddingStoreSupplier embeddingStoreSupplier;
@@ -47,7 +49,7 @@ public class EmbeddingService {
                     });
             ;
         } catch (Exception e) {
-            e.printStackTrace();
+            logService.error(e, "Error during chunk processing");
         }
     }
 
@@ -60,7 +62,7 @@ public class EmbeddingService {
             );
             log.info("Embedded batch of " + chunks.length + " chunks");
         } catch (Exception e) {
-            log.severe("Embedding of chunk batch failed: " + e.getMessage());
+            logService.error(e, "Embedding of chunk batch failed: %s", e.getMessage());
         }
     }
 
@@ -73,7 +75,7 @@ public class EmbeddingService {
         try {
             return objMapper.readValue(line, PxChunk.class);
         } catch (JsonProcessingException e) {
-            log.severe("Error while parsing JSONL as a PxChunk: " + e.getMessage());
+            logService.error(e, "Error while parsing JSONL as a PxChunk: %s", e.getMessage());
             return null;
         }
     }

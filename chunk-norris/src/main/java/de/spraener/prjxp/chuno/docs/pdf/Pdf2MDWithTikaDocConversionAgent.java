@@ -2,7 +2,9 @@ package de.spraener.prjxp.chuno.docs.pdf;
 
 import de.spraener.prjxp.chuno.docs.DocConversionAgent;
 import de.spraener.prjxp.chuno.docs.model.CostEstimation;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.chuno.docs.model.DocArtifakt;
+import lombok.RequiredArgsConstructor;
 import de.spraener.prjxp.chuno.docs.model.DocArtifaktType;
 import lombok.extern.java.Log;
 import org.apache.tika.metadata.Metadata;
@@ -16,8 +18,10 @@ import java.io.FileInputStream;
 import java.io.InputStream;
 
 @Component
+@RequiredArgsConstructor
 @Log
 public class Pdf2MDWithTikaDocConversionAgent implements DocConversionAgent<File,String> {
+    private final PxLogService logService;
     @Override
     public DocArtifaktType getSourceFormat() {
         return DocArtifaktType.PDF;
@@ -66,7 +70,7 @@ public class Pdf2MDWithTikaDocConversionAgent implements DocConversionAgent<File
                     ;
             artifakt.addChild(result);
         } catch( Exception e ) {
-            log.severe("Error in conversion of PDF "+artifakt.getData().getName()+": "+e.getMessage());
+            logService.error(e, "Error in conversion of PDF %s: %s", artifakt.getData().getName(), e.getMessage());
         }
     }
 

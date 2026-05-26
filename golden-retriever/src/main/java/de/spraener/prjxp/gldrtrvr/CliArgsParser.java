@@ -3,6 +3,7 @@ package de.spraener.prjxp.gldrtrvr;
 import de.spraener.prjxp.common.PxDefaultArgsParser;
 import de.spraener.prjxp.common.config.CliArgsParsingEvent;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import lombok.NonNull;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
@@ -17,6 +18,7 @@ import java.util.List;
 @RequiredArgsConstructor
 @Log
 public class CliArgsParser {
+    private final PxLogService logService;
     private final PrjXPConfig cfg;
     private Options options;
     private final Environment env;
@@ -69,7 +71,7 @@ public class CliArgsParser {
             StringBuilder sb = new StringBuilder();
             otherArgs.stream().forEach(str -> sb.append(str).append(" "));
         } catch (Exception e) {
-            log.severe("Error while parsing args: " + e.getMessage() + "\n    Application may not work correctly!");
+            logService.error(e, "Error while parsing args: %s\n    Application may not work correctly!", e.getMessage());
             formatter.printHelp("golden-retriever", options);
             System.exit(0);
         }

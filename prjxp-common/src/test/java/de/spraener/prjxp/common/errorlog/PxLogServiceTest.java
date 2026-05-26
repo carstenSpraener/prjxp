@@ -50,6 +50,11 @@ class PxLogServiceTest {
         assertThatNoException().isThrownBy(() -> {});
     }
 
+    @Test
+    void logErrorTest() {
+        uut.error(new Exception("Test Exception"), "Formatted Error Message: %s", "Test Argument");
+        assertThatNoException().isThrownBy(() -> {});
+    }
     @Configuration
     static class TestConfig {
         @Bean

@@ -2,12 +2,10 @@ package de.spraener.prjxp.docpipe;
 
 import de.spraener.prjxp.common.PxDefaultArgsParser;
 import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.errorlog.PxLogMessage;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import lombok.extern.java.Log;
 import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
-
-import java.util.logging.Level;
 
 @Component
 @Log
@@ -20,17 +18,17 @@ import java.util.logging.Level;
  */
 public class DocPipeArgsParser extends PxDefaultArgsParser {
 
-    private final de.spraener.prjxp.common.errorlog.PxLogService dPLogService;
+    private final PxLogService pxLS;
 
     /**
      * Constructs a new DocPipeArgsParser.
      *
      * @param env the Spring environment for accessing properties
-     * @param dPLogService the logging service for reporting parsing errors
+     * @param pxLS the logging service for reporting parsing errors
      */
-    public DocPipeArgsParser(Environment env, de.spraener.prjxp.common.errorlog.PxLogService dPLogService) {
+    public DocPipeArgsParser(Environment env, de.spraener.prjxp.common.errorlog.PxLogService pxLS) {
         super(env);
-        this.dPLogService = dPLogService;
+        this.pxLS = pxLS;
     }
 
     /**
@@ -47,11 +45,8 @@ public class DocPipeArgsParser extends PxDefaultArgsParser {
     public PrjXPConfig parseArgs(PrjXPConfig cfg, String[] args) {
         try {
             super.parseArgs(cfg, args);
-        } catch (RuntimeException re) {
-            dPLogService.logMessage(
-                    new PxLogMessage(Level.SEVERE, "Error while parsing args: " + re.getMessage() + "\n    Application may not work correctly!")
-            );
-            throw re;
+       } catch (RuntimeException re) {
+            pxLS.error(re,"Error while parsing args: '%s'. Application may not work correctly!", re.getMessage());
         }
         return cfg;
     }

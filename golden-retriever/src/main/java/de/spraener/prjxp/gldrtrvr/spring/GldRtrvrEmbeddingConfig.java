@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.spring;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChromaDBPxChunkDao;
 import dev.langchain4j.data.segment.TextSegment;
@@ -9,6 +10,7 @@ import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,8 +20,10 @@ import java.util.ArrayList;
 import java.util.List;
 
 @Configuration
+@RequiredArgsConstructor
 @Log
 public class GldRtrvrEmbeddingConfig {
+    private final PxLogService logService;
 
     @Bean
     public EmbeddingModel embeddingModel(PrjXPConfig cfg) {
@@ -29,13 +33,8 @@ public class GldRtrvrEmbeddingConfig {
                     .modelName(cfg.getEmbeddingModelName())
                     .build();
         } catch (Exception e) {
-            log.severe(String.format(
-                    "Connection to EmbeddingModel failed! \n" +
-                            "   ollamaUrl: '%s'\n" +
-                            "   embeddingModelName: '%s'\n",
-                    cfg.getEmbeddingOllamaUrl(),
-                    cfg.getEmbeddingModelName()
-            ));
+            logService.error(e, "Connection to EmbeddingModel failed! \n   ollamaUrl: '%s'\n   embeddingModelName: '%s'",
+                    cfg.getEmbeddingOllamaUrl(), cfg.getEmbeddingModelName());
             throw new RuntimeException(e);
         }
     }
@@ -55,17 +54,8 @@ public class GldRtrvrEmbeddingConfig {
                         .build();
                 embeddingStores.add( new ChromaDBPxChunkDao(store, embeddingModel, r));
             } catch (Exception e) {
-                log.severe(String.format(
-                        "Connection to ChromaStore failed! \n" +
-                                "   chromaURL: '%s'\n" +
-                                "   Tenant: '%s'\n" +
-                                "   ChromaDatabase: '%s'\n" +
-                                "   Collection: '%s'",
-                        r.getProviderUrl(),
-                        r.getTenant(),
-                        r.getDbName(),
-                        r.getCollectionName()
-                ));
+                logService.error(e, "Connection to ChromaStore failed! \n   chromaURL: '%s'\n   Tenant: '%s'\n   ChromaDatabase: '%s'\n   Collection: '%s'",
+                        r.getProviderUrl(), r.getTenant(), r.getDbName(), r.getCollectionName());
                 throw new RuntimeException(e);
             }
         }

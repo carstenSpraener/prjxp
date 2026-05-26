@@ -3,6 +3,7 @@ package de.spraener.prjxp.chuno.docs;
 import de.spraener.prjxp.chuno.docs.model.ConversionAccuracy;
 import de.spraener.prjxp.chuno.docs.model.DocArtifaktType;
 import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.annotations.Chunker;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxFileType;
@@ -30,6 +31,7 @@ import java.util.stream.Stream;
 @Log
 @RequiredArgsConstructor
 public class MarkdownChunker {
+    private final PxLogService logService;
     private final DocConversionRouter converter;
     private final MetaInfReader metaInfReader;
 
@@ -67,7 +69,7 @@ public class MarkdownChunker {
             return chunkMarkdownText(input, mdText);
 
         } catch (Exception e) {
-            log.severe("Fehler beim Chunking von " + input.getAbsolutePath() + ": " + e.getMessage());
+            logService.error(e, "Fehler beim Chunking von %s: %s", input.getAbsolutePath(), e.getMessage());
             return Stream.empty();
         }
     }
@@ -121,7 +123,7 @@ public class MarkdownChunker {
             }
             return chunkList.stream();
         } catch (Exception e) {
-            log.severe("Fehler beim Chunking von " + originalFile.getAbsolutePath() + ": " + e.getMessage());
+            logService.error(e, "Fehler beim Chunking von %s: %s", originalFile.getAbsolutePath(), e.getMessage());
             return Stream.empty();
         }
     }

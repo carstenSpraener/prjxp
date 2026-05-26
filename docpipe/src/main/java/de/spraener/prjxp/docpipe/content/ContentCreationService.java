@@ -66,15 +66,13 @@ public class ContentCreationService {
                 try (OutputSink sink = outputSinkFactory.createSink(Path.of(outputFile))) {
                     sink.println(content);
                 } catch (IOException e) {
-                    logService.logMessage(
-                        new PxLogMessage(Level.SEVERE, "Error while trying to create content for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage())
-                    );
+                    logService.error(e, "Error while trying to create content for %s: %s",
+                            ccTask.getDpJob().getRootDir().getAbsolutePath(),  e.getMessage());
                 }
             });
         } catch (TemplateException | IOException e) {
-            logService.logMessage(
-                    new PxLogMessage(Level.SEVERE, "Error while trying to create prompt for " + ccTask.getDpJob().getRootDir().getAbsolutePath() + ": " + e.getMessage())
-            );
+            logService.error(e, "Error while trying to create prompt for %s: %s",
+                    ccTask.getDpJob().getRootDir().getAbsolutePath(), e.getMessage());
         }
     }
 
