@@ -39,6 +39,9 @@ public class JavaCodeChunkerTests {
         File code = toTmpFile("TestClass",
                 """
                         class TestClass {
+                            /**
+                              * A little java doc
+                              */
                             public void testMethod(String s) { 
                                 System.out.println("Hello, World!"); 
                             } 
@@ -58,6 +61,9 @@ public class JavaCodeChunkerTests {
                                         "    public void testMethod(String s) {\n" +
                                         "        System.out.println(\"Hello, World!\");\n" +
                                         "    }\n")
+                )
+                .anyMatch( c -> c.getId().equals("TestClass.void testMethod(String).javadoc") &&
+                                c.getContent().contains("A little java doc")
                 )
         ;
         // Chunk TestClass.dependencies siehe JavaDependenciesChunkerTests
