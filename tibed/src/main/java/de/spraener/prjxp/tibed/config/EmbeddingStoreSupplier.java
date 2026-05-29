@@ -14,6 +14,7 @@ import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
+import java.time.Duration;
 
 @Service
 @RequiredArgsConstructor
@@ -51,6 +52,7 @@ public class EmbeddingStoreSupplier {
                 .apiVersion(ChromaApiVersion.V2)
                 .tenantName(ref.getTenant())
                 .databaseName(ref.getDbName())
+                .timeout(Duration.ofSeconds(ref.getTimeoutSecs()))
                 .collectionName(ref.getCollectionName())
                 .build();
     }

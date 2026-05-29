@@ -10,4 +10,5 @@ public class PrjXPEmbeddingStoreReference {
     private String dbName;
     private String collectionName;
     private boolean isDefault;
+    private int timeoutSecs = 60;
 }
