@@ -48,22 +48,24 @@ public class McpRestController {
     public String readRelevantSource(
             @Parameter(description = "Die ursprüngliche Frage des Benutzers, zu der Information von den Projekten benötigt wird.")
             @RequestParam(name = "userQuestion", required = true) String userQuestion,
-            @RequestParam(name="project", required = false, defaultValue = "default") String projectName
+            @RequestParam(name = "project", required = false, defaultValue = "default") String projectName
     ) {
-        log.info("enriching question " + userQuestion);
         String prefix = """
-                Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
-                ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
+                Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers
+                ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt.
                 Wenn du die Antwort nicht im Kontext findest, sage das deutlich.
                 
-                Solltest Du noch weitere Informationen benötigen, frormuliere einen möglichst präzise und technisch
-                genaue Frage, die der Benutzer beantworten kann.                                
+                Solltest Du noch weitere Informationen benötigen, formuliere einen möglichst präzise und technisch
+                genaue Frage, die der Benutzer beantworten kann.
                 """;
-        if( projectName.equals("default") ) {
+        if (projectName.equals("default")) {
             projectName = cfg.getActiveProject().get().getName();
         }
+
+        log.info(String.format("Enriching question '%s' for project '%s'.", userQuestion, projectName));
         String context = enrichment.enrich(projectName, userQuestion);
-        String result = String.format("%s\n%s\nFRAGE: %s",prefix, context, userQuestion);
+        String result = String.format("%s\n%s\nFRAGE: %s", prefix, context, userQuestion);
+
         return result;
     }
 }

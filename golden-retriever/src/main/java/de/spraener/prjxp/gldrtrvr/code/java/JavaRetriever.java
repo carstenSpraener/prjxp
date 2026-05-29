@@ -74,7 +74,7 @@ public class JavaRetriever implements GoldenRetriever {
     private String insertBefore(String prompt, String methodName, String content) {
         int splittIdx = prompt.indexOf(methodName);
         if (splittIdx < 0) {
-            log.warning("Methodenname %s nicht gefunden in Prompt: %s".formatted(methodName, prompt));
+            log.fine("Methodenname %s nicht gefunden in Prompt: %s".formatted(methodName, prompt));
             return prompt;
         }
         String prefix = prompt.substring(0, splittIdx);
