@@ -1,28 +1,24 @@
 
 
 /**
- * The {@code de.spraener.prjxp.docpipe} package provides the core command-line interface and execution engine for the DocPipe documentation generation pipeline.
+ * Provides the core infrastructure and execution pipeline for automated documentation processing within the PrjXP ecosystem.
  * <p>
- * This module is designed to automate the discovery, processing, and generation of documentation content for software projects. It operates as a standalone Spring Boot CLI application that reads project configurations, parses command-line arguments, and orchestrates parallel content creation tasks.
+ * This package implements a command-line application that orchestrates the discovery, creation, and parallel execution of documentation jobs. It is designed to integrate seamlessly with Spring Boot, leveraging dependency injection for service orchestration and configuration management.
  * </p>
- * <p><b>Architecture and Class Interactions:</b></p>
- * <p>
- * The package follows a clear separation of concerns between application bootstrap, configuration management, argument parsing, and pipeline execution:
- * </p>
+ * <h3>Architecture & Component Interaction</h3>
+ * <p>The execution flow is driven by the following key components:</p>
  * <ul>
- *   <li>{@link DocPipeCliApp} serves as the primary bootstrap class. It initializes the Spring context, loads environment variables from a {@code .env} file, and configures the application lifecycle via a {@link org.springframework.boot.CommandLineRunner}.</li>
- *   <li>{@link DocPipeArgsParser} handles command-line argument parsing. It extends a default parser to integrate application-specific logic and routes parsing errors to the shared logging service.</li>
- *   <li>{@link DocPipeRunner} acts as the central orchestrator. Upon execution, it discovers documentation jobs, maps them to individual content creation tasks, and submits them to a fixed thread pool for parallel processing.</li>
- *   <li>{@link DocPipeConfig} provides lightweight configuration storage, primarily holding the root directory path of the target project.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.DocPipeCliApp}: The main entry point that bootstraps the Spring application, loads environment variables from a {@code .env} file, and registers the primary execution runner.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.DocPipeArgsParser}: Handles command-line argument parsing, extending default behavior while integrating with the logging service for error reporting.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.DocPipeRunner}: The central orchestrator that reads documentation jobs, instantiates content creation tasks, and executes them concurrently using a configurable fixed thread pool.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.DocPipeConfig}: Holds global application configuration, such as the active project directory.</li>
  * </ul>
- * <p>
- * These components interact sequentially during startup: the CLI app parses arguments, updates the project configuration, and delegates control to the runner. The runner coordinates with external services (such as job creation and content generation services) to execute the pipeline, while aggregating logs and handling severe errors by terminating the process with a non-zero exit code.
- * </p>
- * <p><b>Key Entry Points and Use Cases:</b></p>
+ * <h3>Primary Use Cases</h3>
+ * <p>The package is primarily intended for:</p>
  * <ul>
- *   <li><b>Application Startup:</b> Invoke {@link DocPipeCliApp#main(String[])} to launch the documentation pipeline. The application automatically reads environment variables and CLI arguments before execution.</li>
- *   <li><b>Pipeline Execution:</b> The {@link DocPipeRunner#run(de.spraener.prjxp.common.config.PrjXPConfig)} method is the core execution entry point, triggered automatically by the Spring {@code CommandLineRunner} bean.</li>
- *   <li><b>Configuration & Customization:</b> Developers can adjust thread pool limits via the {@code prjxp.docpipe.maxthreads} property or modify project paths through CLI arguments and environment variables.</li>
+ *   <li>Automating the generation of project documentation via CLI execution.</li>
+ *   <li>Configuring parallel processing limits and project paths through environment variables or system properties.</li>
+ *   <li>Integrating with the broader PrjXP framework for configuration management and centralized error logging.</li>
  * </ul>
  */
 package de.spraener.prjxp.docpipe;

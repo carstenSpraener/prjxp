@@ -5,8 +5,6 @@ import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
 
-@Component
-@Data
 /**
  * Configuration class for the DocPipe module.
  * <p>
@@ -14,6 +12,8 @@ import java.nio.file.Path;
  * of the project being processed.
  * </p>
  */
+@Component
+@Data
 public class DocPipeConfig {
     private Path projectDir;
 }

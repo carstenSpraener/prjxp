@@ -1,6 +1,10 @@
 package de.spraener.prjxp.docpipe.model;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Data;
+
+import java.util.HashMap;
+import java.util.Map;
 
 @Data
 /**
@@ -11,9 +15,16 @@ import lombok.Data;
  * </p>
  */
 public class DPContentCreation {
+    private String forEach;
     private String outputFile;
+    private String outputDir;
     private String stereotype;
     private String prompt;
     private String ps;
     private String filterList;
+    private Map<String,String> args = new HashMap<>();
+
+    public DPContentCreation clone(ObjectMapper objectMapper) {
+        return objectMapper.convertValue(this, DPContentCreation.class);
+    }
 }

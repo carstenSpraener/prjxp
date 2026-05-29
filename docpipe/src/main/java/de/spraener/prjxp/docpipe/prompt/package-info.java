@@ -1,29 +1,21 @@
 
 
 /**
- * <p>Provides dynamic prompt template resolution capabilities for the DocPipe content generation pipeline.
- * This package leverages the Handlebars templating engine to process prompt templates, enabling the injection
- * of project-specific data, external file contents, dynamic script execution, and source code context before
- * prompts are submitted to Large Language Models (LLMs).</p>
- *
- * <p>The architecture follows a strategy pattern centered around the {@link de.spraener.prjxp.docpipe.prompt.TemplateResolver} interface.
- * Each resolver acts as a custom Handlebars helper that resolves dynamic placeholders within templates. Spring-managed
- * implementations include:</p>
+ * <p>Provides a flexible templating and resolution framework for generating dynamic prompts destined for Large Language Models (LLMs). The package leverages the Handlebars templating engine to process prompt templates, allowing developers to inject project-specific data, source code, and execute custom logic directly within the template syntax.</p>
+ * <p><strong>Architecture & Component Interaction</strong></p>
+ * <p>The core abstraction is the {@link de.spraener.prjxp.docpipe.prompt.TemplateResolver} interface, which defines a contract for resolving dynamic content. Each implementation acts as a Handlebars helper, identified by a unique string returned via {@code getID()}.</p>
+ * <p>The {@link de.spraener.prjxp.docpipe.prompt.PromptResolvingService} serves as the central orchestrator. It scans for all Spring-managed {@code TemplateResolver} beans, registers them as Handlebars helpers, and processes prompt templates by reading them from the configuration directory. During template compilation, any helper invocation triggers the corresponding resolver to inject or compute content dynamically.</p>
+ * <p><strong>Available Resolvers</strong></p>
  * <ul>
- *   <li>{@link de.spraener.prjxp.docpipe.prompt.GRResolver}: Enriches prompts with project-specific data using a project identifier.</li>
- *   <li>{@link de.spraener.prjxp.docpipe.prompt.URLResolver}: Reads and injects the content of local or external files specified by a URL.</li>
- *   <li>{@link de.spraener.prjxp.docpipe.prompt.GroovyResolver}: Executes embedded Groovy scripts with access to the configuration directory and Spring context.</li>
- *   <li>{@link de.spraener.prjxp.docpipe.prompt.SourceDumpResolver}: Scans directories and dumps source code files into Markdown-formatted blocks for LLM context.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.prompt.GRResolver}: Enriches prompts with project-specific data using {@code GRPromptEnrichment}.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.prompt.URLResolver}: Includes file content by resolving a URL-like path relative to the configuration directory.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.prompt.GroovyResolver}: Executes inline Groovy scripts for complex dynamic content generation, exposing the base directory and Spring context to the script.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.prompt.CurrentFileResolver}: Injects the content of a specific file referenced in the template context.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.prompt.SourceDumpResolver}: Dumps source code files (e.g., Java) from a specified directory into the prompt, supporting recursive scanning and extension filtering.</li>
  * </ul>
- * <p>The central orchestrator, {@link de.spraener.prjxp.docpipe.prompt.PromptResolvingService}, autowires all available {@code TemplateResolver} beans.
- * During template processing, it instantiates a Handlebars engine, registers each resolver as a helper using its unique identifier,
- * and applies the compiled template to generate the final prompt string. Errors during resolution are wrapped in {@link de.spraener.prjxp.docpipe.prompt.TemplateException}.</p>
- *
- * <p>The primary entry point for consumers is the {@link de.spraener.prjxp.docpipe.prompt.PromptResolvingService} class.
- * Developers typically invoke {@code resolve(ContentCreationTask)} to process a task's configured prompt template,
- * or {@code resolve(String, File)} for direct string-based resolution against a configuration directory.
- * To extend functionality, implement the {@code TemplateResolver} interface, annotate it with Spring's {@code @Component},
- * and define a unique helper name via {@code getID()}.</p>
+ * <p><strong>Usage & Entry Points</strong></p>
+ * <p>The primary entry point for consumers is {@link de.spraener.prjxp.docpipe.prompt.PromptResolvingService#resolve(de.spraener.prjxp.docpipe.content.ContentCreationTask)}. This method automates the entire pipeline: locating the template file, initializing the Handlebars engine with registered resolvers, and returning the fully resolved prompt string. Errors during resolution are wrapped in {@link de.spraener.prjxp.docpipe.prompt.TemplateException}.</p>
+ * <p>To extend the system, developers can create new classes implementing {@code TemplateResolver}, annotate them with Spring's {@code @Component}, and utilize the corresponding helper name directly in Handlebars templates (e.g., {@code {{groovy}} ... {{/groovy}} or {{URL "path/to/file"}}).</p>
  */
 package de.spraener.prjxp.docpipe.prompt;
 

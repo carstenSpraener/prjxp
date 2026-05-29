@@ -40,6 +40,7 @@ public class DocPipeCliApp {
      * </p>
      */
     private static void readDotEnv() {
+        // @Accept: Logging-System is not initialized in this phase of execution. System.out is the only way in this phase
         System.out.println("Reading dotenv properties file from "+(new File(".env").getAbsolutePath()));
         Dotenv dotenv = Dotenv.configure()
                 .directory(".")
@@ -50,19 +51,10 @@ public class DocPipeCliApp {
         // Jede Variable aus der .env für Spring/System verfügbar machen
         dotenv.entries().forEach(entry -> {
             if (System.getProperty(entry.getKey()) == null) {
+                // @Accept: All values MUST be set as system properties to propagate them to non spring components
                 System.setProperty(entry.getKey(), entry.getValue());
             }
         });
-    }
-
-    /**
-     * Creates a bean for {@link ObjectMapper} to be used for JSON processing.
-     *
-     * @return a new {@link ObjectMapper} instance
-     */
-    @Bean
-    public ObjectMapper objectMapper() {
-        return new ObjectMapper();
     }
 
     /**
@@ -80,6 +72,7 @@ public class DocPipeCliApp {
             DocPipeArgsParser argsParser,
             DocPipeRunner runner
     ) {
+        // @Accept: The exception handling is done in the runner itself.
         return args -> {
             argsParser.parseArgs(pxCfg, args);
             runner.run(pxCfg);

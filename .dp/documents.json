@@ -1,0 +1,8 @@
+[
+  {
+    "stereotype": "javadoc",
+    "outputFile": "doc/Configuration.md",
+    "prompt": "Configuration.prompt.hbt",
+    "ps": "\n\n_This document was generated with Doc|Pipe and Qwen3.6-35B-A3B_\n"
+  }
+]

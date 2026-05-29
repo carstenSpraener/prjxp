@@ -11,12 +11,17 @@ import de.spraener.prjxp.docpipe.model.DPJob;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 import org.springframework.validation.Validator;
 
 import java.io.File;
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.PathMatcher;
+import java.util.ArrayList;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.logging.Level;
@@ -85,12 +90,53 @@ public class JobCreationService {
         try {
             if (documentsJson.exists()) {
                 List< DPContentCreation> creations = this.objectMapper.readValue(documentsJson, new TypeReference<List<DPContentCreation>>() {});
-                dpJob.setContentCreationList(creations);
+                List<DPContentCreation> expandedCreations = expandCreations(dpJob,creations);
+                dpJob.setContentCreationList(expandedCreations);
             }
         } catch( Exception e) {
             logService.error(e, "Error reading documents.json from %s: %s",documentsJson.getAbsolutePath(), e.getMessage());
             return DPJob.EMPTY_JOB;
         }
         return dpJob;
+    }
+
+    private List<DPContentCreation> expandCreations(DPJob dpJob, List<DPContentCreation> creations) {
+        ArrayList<DPContentCreation> expandedCreations = new ArrayList<>();
+        creations.forEach(c -> {
+           expandedCreations.addAll(expandCreation(dpJob, c));
+        });
+        return expandedCreations;
+    }
+
+    private Collection<? extends DPContentCreation> expandCreation(DPJob dpJob, DPContentCreation c) {
+        if( StringUtils.hasText(c.getForEach()) ) {
+            Path rootPath = dpJob.getRootDir().toPath();
+            PathMatcher matcher = FileSystems.getDefault().getPathMatcher("glob:" + c.getForEach());
+            List<DPContentCreation> result = new ArrayList<>();
+
+            try (Stream<Path> stream = Files.walk(rootPath)) {
+                stream.filter(Files::isRegularFile)
+                      .filter(path -> matcher.matches(rootPath.relativize(path)))
+                      .forEach(matchedFile -> {
+                          DPContentCreation copy = c.clone(objectMapper);
+                          String fileName = matchedFile.getFileName().toString();
+                          copy.getArgs().put("currentFile", fileName);
+
+                          String outputDir = ".";
+                          if( StringUtils.hasText(c.getOutputDir()) ) {
+                              outputDir = outputDir + "/" + c.getOutputDir();
+                          }
+                          String baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+                          copy.setOutputFile(outputDir + "/" + baseName + c.getOutputFile());
+                          result.add(copy);
+                      });
+            } catch (IOException e) {
+                logService.error(e, "Error expanding forEach pattern %s in %s: %s", c.getForEach(), rootPath, e.getMessage());
+            }
+
+            return result;
+        } else {
+            return List.of(c);
+        }
     }
 }

@@ -5,5 +5,14 @@
       "prompt": "PackageInfo.prompt.txt",
       "ps": "\n\n//_This document was generated with Doc|Pipe and qwen3.6-27b-ud-mlx_\n",
       "filterList": "noSurroundingCodeBlock"
+    },
+    {
+      "forEach": "*.java",
+      "stereotype": "javadoc",
+      "outputFile": "-hints.md",
+      "outputDir": ".hints",
+      "prompt": "Hints.prompt.txt",
+      "ps": "\n\n//_This document was generated with Doc|Pipe and qwen3.6-35b-a3b-mlx_\n",
+      "filterList": "noSurroundingCodeBlock"
     }
 ]

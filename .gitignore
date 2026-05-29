@@ -25,9 +25,12 @@ gradle-app.setting
 chroma_data/
 **/chroma_data/
 **/content-hashes.properties
+**/.hints
+**/.hints/*
 
 # OS spezifisch
 .DS_Store
 Thumbs.db
 /chunk-norris/src/test/resources/*.pdf
 /prjxp-src.jsonl
+/LinkedIn-Artikel.md
