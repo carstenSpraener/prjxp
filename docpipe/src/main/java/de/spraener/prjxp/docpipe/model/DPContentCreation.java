@@ -22,6 +22,7 @@ public class DPContentCreation {
     private String prompt;
     private String ps;
     private String filterList;
+    private String storePrompt;
     private Map<String,String> args = new HashMap<>();
 
     public DPContentCreation clone(ObjectMapper objectMapper) {

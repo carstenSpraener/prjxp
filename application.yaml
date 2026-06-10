@@ -58,3 +58,8 @@ spring:
   devtools:
     restart:
       additional-exclude: "**/package-info.java"
+  ai:
+    mcp:
+      server:
+        protocol: STATELESS
+        transport: sse

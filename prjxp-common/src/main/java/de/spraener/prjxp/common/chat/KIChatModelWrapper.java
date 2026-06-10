@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import dev.langchain4j.data.message.ImageContent;
 import dev.langchain4j.data.message.TextContent;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.exception.RateLimitException;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import lombok.Data;
@@ -28,8 +29,18 @@ public class KIChatModelWrapper implements KIChat {
     @Override
     public String chat(String question) {
         log.fine("sending prompt of " + question.length() + " chars to chat model");
-        return chatModel.chat(question);
+        try {
+            return chatModel.chat(question);
+        } catch (RateLimitException rlXC) {
+            log.warning("Rate limit exceeded, waiting 60 seconds and retrying");
+            try {
+                Thread.sleep(60000);
+            } catch (InterruptedException e) {
+            }
+            return chatModel.chat(question);
+        }
     }
+
 
     @Override
     public String analyzeImage(BufferedImage image) {

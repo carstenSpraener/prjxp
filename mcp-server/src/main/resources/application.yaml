@@ -36,4 +36,4 @@ spring:
   ai:
     mcp:
       server:
-        protocol: streamable
+        protocol: stateless

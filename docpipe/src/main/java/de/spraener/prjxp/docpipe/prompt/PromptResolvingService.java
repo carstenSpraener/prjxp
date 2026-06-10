@@ -11,8 +11,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.apache.commons.io.IOUtils;
 import org.springframework.stereotype.Service;
+import org.springframework.util.StringUtils;
 
 import java.io.File;
+import java.io.FileOutputStream;
 import java.io.FileReader;
 import java.io.IOException;
 import java.util.List;
@@ -50,6 +52,10 @@ public class PromptResolvingService {
         String promptTemplate = readTemplate(cfgDir, dpcc.getPrompt());
         String prompt = resolve(dpcc, promptTemplate, cfgDir);
         log.finer(()-> "Prompt for creation of File "+dpcc.getOutputFile()+" is: " + prompt);
+        if( StringUtils.hasText(ccTask.getDpContentCreation().getStorePrompt())) {
+            log.info("Storing prompt for "+ccTask.getDpContentCreation().getOutputFile()+" in "+ccTask.getDpContentCreation().getStorePrompt());
+            IOUtils.write(prompt, new FileOutputStream(new File(ccTask.getDpContentCreation().getStorePrompt())));
+        }
         return prompt;
     }
 

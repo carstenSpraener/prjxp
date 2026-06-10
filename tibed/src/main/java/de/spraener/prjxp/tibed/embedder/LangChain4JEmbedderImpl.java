@@ -10,6 +10,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
@@ -18,6 +19,7 @@ import java.util.List;
 @Service
 @RequiredArgsConstructor
 @Log
+@Primary
 public class LangChain4JEmbedderImpl implements EmbeddingExecutor {
     public final EmbeddingModel embeddingModel;
     public final EmbeddingStoreSupplier storeSupplier;

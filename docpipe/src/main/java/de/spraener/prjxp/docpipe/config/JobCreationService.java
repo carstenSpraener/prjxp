@@ -128,6 +128,9 @@ public class JobCreationService {
                           }
                           String baseName = fileName.substring(0, fileName.lastIndexOf('.'));
                           copy.setOutputFile(outputDir + "/" + baseName + c.getOutputFile());
+                          if( StringUtils.hasText(c.getStorePrompt())) {
+                              copy.setStorePrompt(outputDir + "/" + baseName + c.getStorePrompt());
+                          }
                           result.add(copy);
                       });
             } catch (IOException e) {
