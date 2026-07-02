@@ -120,7 +120,8 @@ public class JobCreationService {
                       .forEach(matchedFile -> {
                           DPContentCreation copy = c.clone(objectMapper);
                           String fileName = matchedFile.getFileName().toString();
-                          copy.getArgs().put("currentFile", fileName);
+                          String fqName = rootPath.relativize(matchedFile).toString();
+                          copy.getArgs().put("currentFile", fqName);
 
                           String outputDir = ".";
                           if( StringUtils.hasText(c.getOutputDir()) ) {

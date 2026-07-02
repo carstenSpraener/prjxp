@@ -57,6 +57,7 @@ public class GroovyResolver implements TemplateResolver {
                 Bindings b = e.getBindings(javax.script.ScriptContext.ENGINE_SCOPE);
                 b.put("dir", baseDir);
                 b.put("options", options);
+                b.put("currentFile", )
                 b.put("applicationContext", applicationContext);
             }
         ).eval();
