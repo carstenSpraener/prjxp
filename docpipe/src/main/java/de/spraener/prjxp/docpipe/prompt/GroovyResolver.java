@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import javax.script.Bindings;
 import java.io.File;
+import java.util.Map;
 
 @Component
 @Log
@@ -58,6 +59,8 @@ public class GroovyResolver implements TemplateResolver {
                 b.put("dir", baseDir);
                 b.put("options", options);
                 b.put("applicationContext", applicationContext);
+                b.put("dpContext", context);
+                b.put("currentFile", ((Map<String,String>)context).get("currentFile"));
             }
         ).eval();
         if( result==null ) {
