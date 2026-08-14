@@ -1,0 +1,16 @@
+#!/bin/bash
+
+cp chunk-norris/build/libs/*-all.jar ../osb-rag/libs/chunk-norris.jar
+cp tibed/build/libs/*-all.jar ../osb-rag/libs/tibed.jar
+cp mcp-server/build/libs/*-all.jar ../osb-rag/libs/mcp-server.jar
+cp docpipe/build/libs/*-all.jar ../osb-rag/libs/docpipe.jar
+
+cp chunk-norris/build/libs/*-all.jar ../isa.net-master/prjxp/chunk-norris.jar
+cp tibed/build/libs/*-all.jar../isa.net-master/prjxp/tibed.jar
+cp mcp-server/build/libs/*-all.jar ../isa.net-master/prjxp/mcp-server.jar
+cp docpipe/build/libs/*-all.jar ../isa.net-master/prjxp/docpipe.jar
+
+(
+  cd ../osb-rag/libs
+  scp *.jar carstenspraener2@10.105.214.24:./osb-rag
+)

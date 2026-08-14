@@ -78,6 +78,9 @@ public class PromptResolvingService {
         for( var tr :  templateResolvers ) {
             TRHelper trh = new TRHelper(cfgDir, tr);
             handlebars.registerHelper(tr.getID(),trh);
+            for (String alias : tr.getAliases()) {
+                handlebars.registerHelper(alias, trh);
+            }
         }
         var template = handlebars.compileInline(promptTemplate);
         String prompt = template.apply(dpcc.getArgs());
@@ -107,7 +110,7 @@ public class PromptResolvingService {
         @Override
         public Object apply(Object context, Options options) throws IOException {
             try {
-                return templateResolver.resolve(baseDir, context, options);
+                return new Handlebars.SafeString(templateResolver.resolve(baseDir, context, options));
             } catch( Exception e) {
                 throw new TemplateException(e);
             }

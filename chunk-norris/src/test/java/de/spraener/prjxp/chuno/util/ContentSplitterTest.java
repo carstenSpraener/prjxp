@@ -30,4 +30,17 @@ public class ContentSplitterTest {
         String unsplit = uut.unsplit(chunks);
         assertEquals(content, unsplit);
     }
+
+    @Test
+    public void testSplitAddsLineCountNumerically() {
+        String content = "line01\nline02\nline03\nline04\nline05\nline06\nline07\nline08\n";
+        ContentSplitter uut = new ContentSplitter(20, 0);
+
+        List<PxChunk> chunks = uut.splitContent(content, 100, 108, () -> PxChunk.create(c -> c.setId("lines")));
+
+        assertEquals("100", chunks.get(0).getFromLine());
+        assertEquals("102", chunks.get(0).getToLine());
+        assertEquals("102", chunks.get(1).getFromLine());
+        assertEquals("105", chunks.get(1).getToLine());
+    }
 }

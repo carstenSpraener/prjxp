@@ -10,49 +10,21 @@ prjxp:
       tibedBatchSize: 50
       tibedResetStore: true
 
-  # Use Ollama on SteamDeck for Embedding
-  embeddingOllamaUrl: http://192.168.188.114:11434
-  embeddingModelName: mxbai-embed-large
-  embeddingTimeoutSecs: 60
+  #Use Ollama on SteamDeck for Embedding
+  #embeddingOllamaUrl: http://192.168.188.114:11434
+  #embeddingModelName: mxbai-embed-large
+  #embeddingTimeoutSecs: 60
 
-  embeddingStores:
-    - projectName: prjxp
-      providerUrl: http://localhost:8000
-      tenant: prjxp
-      dbName: prjxp
-      collectionName: prjxp-src
-      isDefault: true
+  #embeddingStores:
+  #  - projectName: prjxp
+  #    providerUrl: http://localhost:8000
+  #    tenant: prjxp
+  #    dbName: prjxp
+  #    collectionName: prjxp-src
+  #    isDefault: true
 
 
   chatModels:
-    - stereoType: documentation
-      serverType: lm-studio
-      modelName: gemma-4-31b-it-mlx
-      providerUrl: http://localhost:1234/v1
-      timeoutSecs: 600
-
-    - stereoType: javadoc
-      modelName: qwen3.6-27b-ud-mlx
-      providerUrl: http://localhost:1234/v1
-      serverType: lm-studio
-      timeoutSecs: 600
-
-    - stereoType: faq
-      modelName: gemma-4-31b-it-mlx
-      providerUrl: http://localhost:1234/v1
-      serverType: lm-studio
-      timeoutSecs: 600
-
-    - stereotype: detailed
-      modelName: gemini-3-flash-preview
-      serverType: gemini
-      timeoutSecs: 240
-
-    - stereoType: embedding
-      serverType: lm-studio
-      providerUrl: http://localhost:1234/v1
-      modelName: mxbai-embed-large
-      timeoutSecs: 60
 
 spring:
   devtools:

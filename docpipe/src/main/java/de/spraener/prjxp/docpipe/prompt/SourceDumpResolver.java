@@ -10,6 +10,7 @@ import java.io.FileInputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.logging.Level;
 import java.util.stream.Stream;
 
@@ -30,7 +31,12 @@ public class SourceDumpResolver implements TemplateResolver {
      * @return "java-src-dump"
      */
     public String getID() {
-        return "java-src-dump";
+        return "src-dump";
+    }
+
+    @Override
+    public List<String> getAliases() {
+        return List.of("java-src-dump");
     }
 
     @Override
@@ -48,10 +54,10 @@ public class SourceDumpResolver implements TemplateResolver {
      * @return a string containing the dumped source code of all matching files
      * @throws Exception if an error occurs during file system traversal
      */
-    public String resolve(File baseDir, Object context, Options options) throws Exception {
-        final Path srcPath = baseDir.toPath().resolve(options.param(0).toString());
-        final boolean scanSubs = options.hash("scanSubs", true);
-        final String ending = options.hash("ending", "java");
+     public String resolve(File baseDir, Object context, Options options) throws Exception {
+         final Path srcPath = baseDir.toPath().resolve(firstParamOrContext(context, options));
+         final boolean scanSubs = options.hash("scanSubs", true);
+         final String ending = options.hash("ending", "java");
         StringBuilder sb = new StringBuilder("\n");
         try (Stream<Path> walk = scanSubs ? Files.walk(srcPath) : Files.walk(srcPath, 1)) {
             walk.filter(Files::isRegularFile)
@@ -66,6 +72,14 @@ public class SourceDumpResolver implements TemplateResolver {
                     }
                 });
             return sb.toString();
+        }
+    }
+
+    private String firstParamOrContext(Object context, Options options) {
+        try {
+            return options.param(0).toString();
+        } catch (ArrayIndexOutOfBoundsException aioobXC) {
+            return context.toString();
         }
     }
 }

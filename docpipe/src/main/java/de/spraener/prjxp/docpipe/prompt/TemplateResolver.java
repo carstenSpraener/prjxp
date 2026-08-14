@@ -3,6 +3,7 @@ package de.spraener.prjxp.docpipe.prompt;
 import com.github.jknack.handlebars.Options;
 
 import java.io.File;
+import java.util.List;
 
 /**
  * Interface for resolving dynamic content within prompt templates.
@@ -18,6 +19,10 @@ public interface TemplateResolver {
      * @return the resolver ID
      */
     String getID();
+
+    default List<String> getAliases() {
+        return List.of();
+    }
 
     /**
      * Resolves a value based on the provided context and options.
