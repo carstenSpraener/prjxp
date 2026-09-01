@@ -13,9 +13,11 @@ repositories {
 }
 
 dependencies {
-    // Internes Modul
+    // Interne Module (CLI-Tools für Self-Embedding + Runtime)
     implementation project(':golden-retriever')
     implementation project(':prjxp-common')
+    implementation project(':chunk-norris')
+    implementation project(':tibed')
     testFixturesImplementation project(':prjxp-common')
 
     // Spring Boot
@@ -48,6 +50,9 @@ application {
 }
 
 shadowJar {
+    zip64 = true
+    archiveBaseName.set('mcp-server')
+    archiveVersion.set('')
     archiveClassifier.set('all')
     exclude 'application.yaml'
 

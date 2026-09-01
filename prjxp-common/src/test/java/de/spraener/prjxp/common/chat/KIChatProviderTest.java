@@ -84,8 +84,14 @@ class KIChatProviderTest {
         }
 
         @Bean
-        KIChatProvider uut(PrjXPConfig config, KIChatModelProvider modelProvider) {
-            return new KIChatProvider(config, modelProvider);
+        de.spraener.prjxp.common.mcp.McpClientManager mcpClientManager(PrjXPConfig config) {
+            return new de.spraener.prjxp.common.mcp.McpClientManager(config);
+        }
+
+        @Bean
+        KIChatProvider uut(PrjXPConfig config, KIChatModelProvider modelProvider,
+                           de.spraener.prjxp.common.mcp.McpClientManager mcpClientManager) {
+            return new KIChatProvider(config, modelProvider, mcpClientManager);
         }
     }
 }

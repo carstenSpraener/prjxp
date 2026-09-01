@@ -12,7 +12,11 @@ import org.springframework.context.annotation.Profile;
 
 import static de.spraener.prjxp.common.PrjXPCli.readDotEnv;
 
-@SpringBootApplication(scanBasePackages = {"de.spraener.prjxp"})
+@SpringBootApplication(scanBasePackages = {
+        "de.spraener.prjxp.tibed",
+        "de.spraener.prjxp.common",
+        "de.spraener.prjxp.lucene"
+})
 public class TiBedCliApp {
 
     public static void main(String[] args) {

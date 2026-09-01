@@ -8,6 +8,7 @@ dependencies {
 
     implementation libs.dotenv.java
     implementation libs.commons.cli
+    implementation libs.langchain4j.mcp
     implementation 'dev.langchain4j:langchain4j-http-client-jdk:1.13.1'
 
     testImplementation libs.bundles.test.bundle

@@ -4,29 +4,78 @@ prjxp:
 
   projects:
     - name: prjxp
-      rootDir: "."
+      rootDir: ${PRJXP_ROOT_DIR:/app-source}
       jsonlFile: "px-chunks.jsonl"
       chunoWhiteList: "java,ts"
       tibedBatchSize: 50
       tibedResetStore: true
 
-  #Use Ollama on SteamDeck for Embedding
-  #embeddingOllamaUrl: http://192.168.188.114:11434
-  #embeddingModelName: mxbai-embed-large
-  #embeddingTimeoutSecs: 60
+  # Use Ollama on SteamDeck for Embedding
+  embeddingOllamaUrl: ${EMBEDDING_OLLAMA_URL:http://192.168.188.114:11434}
+  embeddingModelName: ${EMBEDDING_MODEL_NAME:mxbai-embed-large}
+  embeddingTimeoutSecs: ${EMBEDDING_TIMEOUT_SECS:60}
 
-  #embeddingStores:
-  #  - projectName: prjxp
-  #    providerUrl: http://localhost:8000
-  #    tenant: prjxp
-  #    dbName: prjxp
-  #    collectionName: prjxp-src
-  #    isDefault: true
+  # Embedding model type: ollama or onnx_local
+  embeddingModelType: ${EMBEDDING_MODEL_TYPE:onnx_local}
+
+  # Embedding store type: lucene or chroma
+  embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
+  embeddingStoreLucene:
+    indexPath: ${LUCENE_INDEX_PATH:/data/lucene-index}
+    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
+
+  mcp-servers:
+    - name: "filesystem-mcp"
+      type: "stdio"
+      command: "npx"
+      args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
+
+  embeddingStores:
+    - projectName: prjxp
+      providerUrl: http://localhost:8000
+      tenant: prjxp
+      dbName: prjxp
+      collectionName: prjxp-src
+      isDefault: true
 
 
   chatModels:
+    - stereoType: documentation
+      serverType: lm-studio
+      modelName: gemma-4-31b-it-mlx
+      providerUrl: http://localhost:1234/v1
+      timeoutSecs: 600
+
+    - stereoType: javadoc
+      modelName: qwen3.6-27b-ud-mlx
+      providerUrl: http://localhost:1234/v1
+      serverType: lm-studio
+      timeoutSecs: 600
+
+    - stereoType: faq
+      modelName: gemma-4-31b-it-mlx
+      providerUrl: http://localhost:1234/v1
+      serverType: lm-studio
+      timeoutSecs: 600
+
+    - stereotype: detailed
+      modelName: gemini-3-flash-preview
+      serverType: gemini
+      timeoutSecs: 240
+
+    - stereoType: embedding
+      serverType: lm-studio
+      providerUrl: http://localhost:1234/v1
+      modelName: mxbai-embed-large
+      timeoutSecs: 60
+
+mcp:
+  cors:
+    allowed-patterns: ${MCP_CORS_ALLOWED_PATTERNS:"*"}
 
 spring:
+  main:
+    allow-bean-definition-overriding: true
   devtools:
     restart:
       additional-exclude: "**/package-info.java"

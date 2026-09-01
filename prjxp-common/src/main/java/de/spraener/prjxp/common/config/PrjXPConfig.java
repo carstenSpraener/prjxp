@@ -14,7 +14,8 @@ import java.util.Optional;
 public class PrjXPConfig {
     private String activeProject = "cwd";
     private List<ProjectDefinition> projects = new ArrayList<>();
-
+    // In PrjXPConfig.java ergänzen:
+    private List<McpServerReference> mcpServers = new ArrayList<>();
     // --- Embedding Sektion ---
 
     // Standardwerte setzt du einfach direkt am Feld!
@@ -22,9 +23,30 @@ public class PrjXPConfig {
     private String embeddingModelName = "mxbai-embed-large";
     private int embeddingTimeoutSecs = 60;
 
+    // Embedding model type: "ollama" or "onnx_local"
+    private EmbeddingModelType embeddingModelType = EmbeddingModelType.OLLAMA;
+
+    public enum EmbeddingModelType {
+        OLLAMA, ONNX_LOCAL
+    }
+
     // Hierarchische Listen MÜSSEN vorinitialisiert sein
     private List<PrjXPEmbeddingStoreReference> embeddingStores = new ArrayList<>();
     private List<PrjXPChatModelReference> chatModels = new ArrayList<>();
+
+    // Embedding store type: "lucene" or "chroma"
+    private EmbeddingStoreType embeddingStoreType = EmbeddingStoreType.CHROMA;
+    private LuceneEmbeddingStoreConfig embeddingStoreLucene = new LuceneEmbeddingStoreConfig();
+
+    public enum EmbeddingStoreType {
+        LUCENE, CHROMA
+    }
+
+    @lombok.Data
+    public static class LuceneEmbeddingStoreConfig {
+        private String indexPath = "/data/lucene-index";
+        private int vectorDimension = 1024;
+    }
 
     private ProjectDefinition createCwdFallback() {
         ProjectDefinition cwd = new ProjectDefinition();

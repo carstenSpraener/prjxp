@@ -1,0 +1,31 @@
+# Docker build context exclusions
+
+# Version control
+.git/
+.gitignore
+
+# Build outputs
+build/
+*/build/
+**/build/
+*.jar
+*.war
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Docker artifacts (no longer needed)
+docker-dist/
+
+# Lucene dev data
+.lucenedb/
+lucene-index/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Docs (not needed in build)
+docs/

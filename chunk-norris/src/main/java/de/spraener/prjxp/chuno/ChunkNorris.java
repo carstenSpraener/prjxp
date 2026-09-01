@@ -12,7 +12,8 @@ import static de.spraener.prjxp.common.PrjXPCli.readDotEnv;
 
 @SpringBootApplication(
         scanBasePackages = {
-                "de.spraener.prjxp"
+                "de.spraener.prjxp.chuno",
+                "de.spraener.prjxp.common"
         }
 )
 public class ChunkNorris {

@@ -2,6 +2,7 @@ package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.mcp.McpClientManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -13,6 +14,7 @@ import java.util.function.Predicate;
 public class KIChatProvider {
     private final PrjXPConfig config;
     private final KIChatModelProvider modelProvider;
+    private final McpClientManager mcpClientManager;
 
     public Optional<KIChat> getByName(String name) {
         return config.getChatModels().stream()
@@ -22,10 +24,11 @@ public class KIChatProvider {
     }
 
     public Optional<KIChat> getByStereotype(String stereotype) {
-        return config.getChatModels().stream()
+        Optional<KIChat> result = config.getChatModels().stream()
                 .filter(m -> m.getStereoType().equals(stereotype))
                 .findFirst()
                 .map(modelProvider::createKIChat);
+        return mcpClientManager.decorate(result);
     }
 
     public Optional<KIChat> apply(Predicate<PrjXPChatModelReference> p) {

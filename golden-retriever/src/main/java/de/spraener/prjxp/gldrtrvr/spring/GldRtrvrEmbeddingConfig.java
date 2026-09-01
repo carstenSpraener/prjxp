@@ -6,12 +6,12 @@ import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChromaDBPxChunkDao;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -22,22 +22,9 @@ import java.util.List;
 @Configuration
 @RequiredArgsConstructor
 @Log
+@ConditionalOnProperty(name = "prjxp.embedding-store-type", havingValue = "chroma")
 public class GldRtrvrEmbeddingConfig {
     private final PxLogService logService;
-
-    @Bean
-    public EmbeddingModel embeddingModel(PrjXPConfig cfg) {
-        try {
-            return OllamaEmbeddingModel.builder()
-                    .baseUrl(cfg.getEmbeddingOllamaUrl())
-                    .modelName(cfg.getEmbeddingModelName())
-                    .build();
-        } catch (Exception e) {
-            logService.error(e, "Connection to EmbeddingModel failed! \n   ollamaUrl: '%s'\n   embeddingModelName: '%s'",
-                    cfg.getEmbeddingOllamaUrl(), cfg.getEmbeddingModelName());
-            throw new RuntimeException(e);
-        }
-    }
 
     @Bean
     @Profile("!test")

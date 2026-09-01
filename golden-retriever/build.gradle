@@ -8,6 +8,7 @@ repositories {
 dependencies {
     // Internes Modul
     implementation project(':prjxp-common')
+    implementation project(':lucene-store')
     testFixturesImplementation project(':prjxp-common')
 
     // Spring Boot
