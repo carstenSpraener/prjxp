@@ -21,8 +21,9 @@ import java.time.Duration;
 @Service
 @RequiredArgsConstructor
 @Log
-public class EmbeddingStoreSupplier {
+public class EmbeddingStoreSupplier implements org.springframework.beans.factory.DisposableBean {
     private final PrjXPConfig cfg;
+    private EmbeddingStore<TextSegment> createdStore;
 
     public EmbeddingStore<TextSegment> getStore(String name) {
         ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException("No active project!"));
@@ -38,7 +39,8 @@ public class EmbeddingStoreSupplier {
             PrjXPConfig.LuceneEmbeddingStoreConfig lc = cfg.getEmbeddingStoreLucene();
             log.info("Initialisiere Lucene Embedding Store für das Projekt: " + pd.getName()
                     + ", index path: " + lc.getIndexPath());
-            return new LuceneEmbeddingStore(Path.of(lc.getIndexPath()), lc.getVectorDimension());
+            createdStore = new LuceneEmbeddingStore(Path.of(lc.getIndexPath()), lc.getVectorDimension());
+            return createdStore;
         }
 
         // Überprüfen, ob als Provider-URL eine JDBC-MySQL-Verbindung hinterlegt ist
@@ -65,5 +67,13 @@ public class EmbeddingStoreSupplier {
                 .timeout(Duration.ofSeconds(ref.getTimeoutSecs()))
                 .collectionName(ref.getCollectionName())
                 .build();
+    }
+
+    @Override
+    public void destroy() {
+        if (createdStore instanceof LuceneEmbeddingStore) {
+            log.info("Closing Lucene embedding store...");
+            ((LuceneEmbeddingStore) createdStore).close();
+        }
     }
 }

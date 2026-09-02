@@ -35,9 +35,11 @@ import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
+import lombok.extern.java.Log;
 import java.util.stream.Collectors;
 
-public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment> {
+@Log
+public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.springframework.beans.factory.DisposableBean {
     private final Path indexPath;
     private final int vectorDimension;
     private IndexWriter writer;
@@ -55,7 +57,24 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment> {
             if (writer == null) {
                 NIOFSDirectory directory = new NIOFSDirectory(indexPath);
                 IndexWriterConfig config = new IndexWriterConfig();
-                writer = new IndexWriter(directory, config);
+                try {
+                    writer = new IndexWriter(directory, config);
+                } catch (org.apache.lucene.store.LockObtainFailedException e) {
+                    // Stale lock from previous run — remove and retry
+                    Path lockFile = indexPath.resolve("write.lock");
+                    if (java.nio.file.Files.exists(lockFile)) {
+                        long size = java.nio.file.Files.size(lockFile);
+                        if (size == 0) {
+                            java.nio.file.Files.delete(lockFile);
+                            log.info("Removed stale lock file, retrying...");
+                            writer = new IndexWriter(directory, config);
+                        } else {
+                            throw new RuntimeException("Failed to open Lucene index at " + indexPath, e);
+                        }
+                    } else {
+                        throw new RuntimeException("Failed to open Lucene index at " + indexPath, e);
+                    }
+                }
                 try {
                     searcherManager = new SearcherManager(writer, null);
                 } catch (IOException e) {
@@ -271,6 +290,11 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment> {
         } finally {
             lock.writeLock().unlock();
         }
+    }
+
+    @Override
+    public void destroy() {
+        close();
     }
 
     public int count() {

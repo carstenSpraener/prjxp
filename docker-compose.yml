@@ -5,13 +5,13 @@ services:
     ports:
       - "8080:8080"
     volumes:
-      - prjxp-data:/data/lucene-index
+      - prjxp-data:/app/.prjxp-data/lucene-index
       # Optional: mount source code für Self-Embedding
       # - .:/app-source
     environment:
       EMBEDDING_STORE_TYPE: lucene
       EMBEDDING_MODEL_TYPE: onnx_local
-      LUCENE_INDEX_PATH: /data/lucene-index
+      LUCENE_INDEX_PATH: .prjxp-data/lucene-index
       LUCENE_VECTOR_DIMENSION: "1024"
 
 volumes:

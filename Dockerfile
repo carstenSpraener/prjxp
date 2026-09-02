@@ -63,29 +63,29 @@ RUN pip3 install --no-cache-dir \
     transformers
 
 # 1. Das ONNX-Modell & Tokenizer aus Stage 1 kopieren
-COPY --from=model-builder /build/onnx_model/model.onnx /app/models/mxbai-embed-large.onnx
-COPY --from=model-builder /build/onnx_model/tokenizer.json /app/models/tokenizer.json
-COPY --from=model-builder /build/onnx_model/vocab.txt /app/models/vocab.txt
+COPY --from=model-builder /build/onnx_model/model.onnx /app/prjxp-common/embedding-server/models/model.onnx
+COPY --from=model-builder /build/onnx_model/tokenizer.json /app/prjxp-common/embedding-server/models/tokenizer.json
+COPY --from=model-builder /build/onnx_model/vocab.txt /app/prjxp-common/embedding-server/models/vocab.txt
 
 # 2. Das gebaute Java Fat-JAR aus Stage 2 kopieren
 COPY --from=app-builder /app/mcp-server/build/libs/mcp-server-all.jar /app/mcp-server.jar
 
 # 3. Embedding-Server-Skript kopieren
-COPY scripts/embedding-server.py /app/scripts/embedding-server.py
+COPY prjxp-common/embedding-server/scripts/embedding-server.py /app/prjxp-common/embedding-server/scripts/embedding-server.py
 
 # 4. application.yaml (im shadowJar excluded, muss separat kopiert werden)
 COPY application.yaml /app/application.yaml
 
 # Data-Volume für den Lucene-Index
-VOLUME /app/data/lucene-index
+VOLUME /app/.prjxp-data/lucene-index
 
 # Konfiguration via Environment Variables (wie in application.yaml referenziert)
 ENV EMBEDDING_STORE_TYPE=lucene
 ENV EMBEDDING_MODEL_TYPE=onnx_local
-ENV LUCENE_INDEX_PATH=/data/lucene-index
+ENV LUCENE_INDEX_PATH=.prjxp-data/lucene-index
 ENV LUCENE_VECTOR_DIMENSION=1024
 
 # JVM Tuning für Container-Umgebung
 ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
 
-ENTRYPOINT ["sh", "-c", "python3 /app/scripts/embedding-server.py --model-path /app/models/mxbai-embed-large.onnx --models-dir /app/models & sleep 5 && java $JAVA_OPTS -jar /app/mcp-server.jar"]
+ENTRYPOINT ["sh", "-c", "java $JAVA_OPTS -jar /app/mcp-server.jar"]

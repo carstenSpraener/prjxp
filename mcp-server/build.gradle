@@ -13,11 +13,9 @@ repositories {
 }
 
 dependencies {
-    // Interne Module (CLI-Tools für Self-Embedding + Runtime)
+    // Interne Module (Retrieval + Runtime)
     implementation project(':golden-retriever')
     implementation project(':prjxp-common')
-    implementation project(':chunk-norris')
-    implementation project(':tibed')
     testFixturesImplementation project(':prjxp-common')
 
     // Spring Boot

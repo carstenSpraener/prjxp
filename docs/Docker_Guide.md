@@ -323,9 +323,9 @@ For development without Docker:
 # 1. Start embedding server manually
 pip install fastapi uvicorn onnxruntime transformers
 
-python scripts/embedding-server.py \
-  --model-path /path/to/model.onnx \
-  --models-dir /path/to/tokenizer-files/ \
+python prjxp-common/embedding-server/scripts/embedding-server.py \
+  --model-path prjxp-common/embedding-server/models/model.onnx \
+  --models-dir prjxp-common/embedding-server/models/ \
   --port 11435
 
 # 2. In a second terminal: start Java app

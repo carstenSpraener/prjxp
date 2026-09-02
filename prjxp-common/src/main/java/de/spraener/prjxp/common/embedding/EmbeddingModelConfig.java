@@ -1,4 +1,4 @@
-package de.spraener.prjxp.tibed.config;
+package de.spraener.prjxp.common.embedding;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -12,14 +12,15 @@ import java.time.Duration;
 
 @Configuration
 @Log
-public class EmbeddingSpringConfig {
+public class EmbeddingModelConfig {
 
     @Bean
+    @org.springframework.context.annotation.DependsOn("embeddingServerManager")
     public EmbeddingModel embeddingModel(PrjXPConfig cfg) {
         if (cfg.getEmbeddingModelType() == PrjXPConfig.EmbeddingModelType.ONNX_LOCAL) {
-            log.info("Using local ONNX embedding model (localhost:11435)");
-            return OllamaEmbeddingModel.builder()
-                    .baseUrl("http://localhost:11435")
+            log.info("Using local ONNX embedding model (localhost:" + cfg.getEmbeddingServerPort() + ") via OpenAI-compatible endpoint");
+            return OpenAiEmbeddingModel.builder()
+                    .baseUrl("http://localhost:" + cfg.getEmbeddingServerPort())
                     .modelName(cfg.getEmbeddingModelName())
                     .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
                     .build();
@@ -32,5 +33,4 @@ public class EmbeddingSpringConfig {
                 .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
                 .build();
     }
-
 }

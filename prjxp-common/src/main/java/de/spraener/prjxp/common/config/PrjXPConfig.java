@@ -30,6 +30,12 @@ public class PrjXPConfig {
         OLLAMA, ONNX_LOCAL
     }
 
+    // Embedding server auto-start config (ONNX_LOCAL mode)
+    private String embeddingServerScriptPath = "prjxp-common/embedding-server/scripts/embedding-server.py";
+    private String embeddingServerModelPath = "prjxp-common/embedding-server/models/model.onnx";
+    private String embeddingServerModelsDir = "prjxp-common/embedding-server/models";
+    private int embeddingServerPort = 11435;
+
     // Hierarchische Listen MÜSSEN vorinitialisiert sein
     private List<PrjXPEmbeddingStoreReference> embeddingStores = new ArrayList<>();
     private List<PrjXPChatModelReference> chatModels = new ArrayList<>();
@@ -44,7 +50,7 @@ public class PrjXPConfig {
 
     @lombok.Data
     public static class LuceneEmbeddingStoreConfig {
-        private String indexPath = "/data/lucene-index";
+        private String indexPath = ".prjxp-data/lucene-index";
         private int vectorDimension = 1024;
     }
 

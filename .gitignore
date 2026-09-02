@@ -35,4 +35,5 @@ Thumbs.db
 /prjxp-src.jsonl
 /LinkedIn-Artikel.md
 /docs/Tasks/
-/lucene-index/
+.prjxp-data/
+/docpipe/src/test/tmp/src-dmp.txt

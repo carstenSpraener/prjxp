@@ -30,6 +30,7 @@ public class TiBedCliApp {
 
     @Bean
     @Profile("!test")
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "tibed.run-embedding", havingValue = "true", matchIfMissing = true)
     public CommandLineRunner run(
             EmbeddingService embedProcess
     ) {
