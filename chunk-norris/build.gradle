@@ -50,6 +50,8 @@ application {
 }
 
 shadowJar {
+    archiveBaseName.set('chunk-norris')
+    archiveVersion.set('')
     zip64=true
     exclude 'application.yaml'
 

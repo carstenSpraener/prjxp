@@ -41,6 +41,8 @@ application {
 import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
 
 shadowJar {
+    archiveBaseName.set('tibed')
+    archiveVersion.set('')
     archiveClassifier.set('all')
     exclude 'application.yaml'
 
