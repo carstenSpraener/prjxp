@@ -30,10 +30,10 @@ public class PrjXPConfig {
         OLLAMA, ONNX_LOCAL
     }
 
-    // Embedding server auto-start config (ONNX_LOCAL mode)
-    private String embeddingServerScriptPath = "prjxp-common/embedding-server/scripts/embedding-server.py";
-    private String embeddingServerModelPath = "prjxp-common/embedding-server/models/model.onnx";
-    private String embeddingServerModelsDir = "prjxp-common/embedding-server/models";
+    // Embedding server auto-start config (ONNX_LOCAL mode) — absolute paths for Docker
+    private String embeddingServerScriptPath = "/app/prjxp-common/embedding-server/scripts/embedding-server.py";
+    private String embeddingServerModelPath = "/app/prjxp-common/embedding-server/models/model.onnx";
+    private String embeddingServerModelsDir = "/app/prjxp-common/embedding-server/models";
     private int embeddingServerPort = 11435;
 
     // Hierarchische Listen MÜSSEN vorinitialisiert sein

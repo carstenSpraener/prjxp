@@ -1,18 +1,20 @@
 services:
-  prjxp:
+  mcp-server:
     image: prjxp
     build: .
     ports:
       - "8080:8080"
     volumes:
-      - prjxp-data:/app/.prjxp-data/lucene-index
-      # Optional: mount source code für Self-Embedding
-      # - .:/app-source
+      # Mount project directory for application.yaml, .env, and source code
+      - ./my-project:/app-source
+      # Persistent Lucene index storage
+      - prjxp-data:.prjxp-data/lucene-index
     environment:
       EMBEDDING_STORE_TYPE: lucene
       EMBEDDING_MODEL_TYPE: onnx_local
       LUCENE_INDEX_PATH: .prjxp-data/lucene-index
       LUCENE_VECTOR_DIMENSION: "1024"
+      PRJXP_ROOT_DIR: /app-source
 
 volumes:
   prjxp-data:
