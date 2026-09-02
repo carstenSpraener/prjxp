@@ -81,7 +81,7 @@ public class EmbeddingService {
     }
 
     private boolean hasEntriesWithFilter(EmbeddingStore embeddingStore, Filter filter) {
-        Embedding dummyEmbedding = Embedding.from(new float[1024]);
+        Embedding dummyEmbedding = Embedding.from(new float[cfg.getEmbeddingStoreLucene().getVectorDimension()]);
         // Wir führen eine Suche aus, die nur auf Metadaten basiert (max 100 Treffer)
         // Hinweis: EmbeddingStore.search gibt oft Scored-Matches zurück
         EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()

@@ -25,7 +25,7 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TopDocs;
-import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.store.NIOFSDirectory;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -53,7 +53,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment> {
         lock.writeLock().lock();
         try {
             if (writer == null) {
-                FSDirectory directory = FSDirectory.open(indexPath);
+                NIOFSDirectory directory = new NIOFSDirectory(indexPath);
                 IndexWriterConfig config = new IndexWriterConfig();
                 writer = new IndexWriter(directory, config);
                 try {

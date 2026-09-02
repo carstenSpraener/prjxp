@@ -21,7 +21,7 @@ prjxp:
   # Embedding store type: lucene or chroma
   embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
   embeddingStoreLucene:
-    indexPath: ${LUCENE_INDEX_PATH:/data/lucene-index}
+    indexPath: ${LUCENE_INDEX_PATH:lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
 
   mcp-servers:
