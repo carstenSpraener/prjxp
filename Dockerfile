@@ -58,6 +58,7 @@ ENV LUCENE_VECTOR_DIMENSION=1024
 
 # JVM Tuning fuer Container-Umgebung
 ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
+ENV SERVER_PORT=7007
 
 # Working Directory ist /app-source (wo application.yaml und .env liegen)
 WORKDIR /app-source

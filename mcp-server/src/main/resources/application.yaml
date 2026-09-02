@@ -30,6 +30,7 @@ prjxp:
       provider-type: "openAI"
 
 server:
+  port: ${SERVER_PORT:7007}
   forward-headers-strategy: framework
 
 spring:

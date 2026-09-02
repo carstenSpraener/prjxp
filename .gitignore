@@ -15,11 +15,10 @@ gradle-app.setting
 .bin/
 .nb-gradle/
 
-# Secrets & Local Config
+# Secrets & Local Config (but NOT .env.example which is a template)
 .env
 **/.env
-.env.*
-! .env.example
+!.env.example
 
 # App-Specific (LangChain4j / Vector DBs)
 chroma_data/

@@ -3,10 +3,10 @@ services:
     image: prjxp
     build: .
     ports:
-      - "8080:8080"
+      - "7007:7007"
     volumes:
       # Mount project directory for application.yaml, .env, and source code
-      - ./my-project:/app-source
+      - ./:/app-source
       # Persistent Lucene index storage
       - prjxp-data:.prjxp-data/lucene-index
     environment:
@@ -15,6 +15,7 @@ services:
       LUCENE_INDEX_PATH: .prjxp-data/lucene-index
       LUCENE_VECTOR_DIMENSION: "1024"
       PRJXP_ROOT_DIR: /app-source
+      SERVER_PORT: "7007"
 
 volumes:
   prjxp-data:
