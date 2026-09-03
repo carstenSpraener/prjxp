@@ -1,19 +1,21 @@
 # prjxp Docker Setup Guide
 
-This guide explains how to set up **prjxp** as a project-expert MCP server using Docker. After setup, you can query your codebase through tools like **GitHub Copilot** or **opencode**.
+This guide explains how to set up **prjxp** as a project-expert MCP server using Docker. After setup, you can query your codebase through tools like **opencode**.
 
 ---
 
 ## Table of Contents
 
 1. [Prerequisites](#prerequisites)
-2. [Clone and Build the Docker Image](#clone-and-build-the-docker-image)
+2. [Clone the Repository](#clone-the-repository)
 3. [Prepare Your Project Directory](#prepare-your-project-directory)
-4. [Adapt application.yaml](#adapt-applicationyaml)
-5. [Run the Setup Pipeline](#run-the-setup-pipeline)
-6. [Configure Your MCP Client](#configure-your-mcp-client)
-7. [Start the MCP Server](#start-the-mcp-server)
-8. [Troubleshooting](#troubleshooting)
+4. [Configure application.yaml](#configure-applicationyaml)
+5. [Configure .env](#configure-env)
+6. [Run the Pipeline with the prjxp Control Script](#run-the-pipeline-with-the-prjxp-control-script)
+7. [Configure Your MCP Client](#configure-your-mcp-client)
+8. [Verify the Server is Running](#verify-the-server-is-running)
+9. [Re-embedding After Code Changes](#re-embedding-after-code-changes)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
@@ -25,17 +27,14 @@ This guide explains how to set up **prjxp** as a project-expert MCP server using
 
 ---
 
-## Clone and Build the Docker Image
+## Clone the Repository
 
 ```bash
 git clone https://github.com/spraener/prjxp.git
 cd prjxp
-
-# Build the Docker image (one-time)
-docker build -t prjxp .
 ```
 
-This creates the `prjxp` image containing all three tools: `chunk-norris`, `tibed`, and the MCP server.
+The `prjxp` repository contains a **control script** (`./prjxp`) that manages the entire Docker pipeline — building the image, chunking, embedding, and starting the MCP server.
 
 ---
 
@@ -47,18 +46,13 @@ Navigate to your project directory (the code you want to index):
 cd /path/to/your-project
 ```
 
-Copy the template files from prjxp:
-
-```bash
-cp /path/to/prjxp/application.yaml .
-cp /path/to/prjxp/.env.example .env
-```
+You don't need to manually copy config files — the `mcp` command below does it automatically.
 
 ---
 
-## Adapt application.yaml
+## Configure application.yaml
 
-Edit `application.yaml` in your project directory. The key settings:
+The control script copies `application.yaml` from the prjxp repo into your project directory on first run. Edit it to match your setup:
 
 ```yaml
 prjxp:
@@ -66,31 +60,36 @@ prjxp:
 
   projects:
     - name: my-project
-      rootDir: /app-source             # MUST be /app-source in Docker
-      jsonlFile: px-chunks.jsonl       # Output file from chunking
-      chunoWhiteList: java,ts          # File types to chunk (comma-separated)
-      tibedBatchSize: 50               # Chunks per embedding batch
-      tibedResetStore: true            # Reset index on re-embed
+      rootDir: ${PRJXP_ROOT_DIR:/app-source}   # Docker mount point (don't change)
+      jsonlFile: "px-chunks.jsonl"              # Output from chunking
+      chunoWhiteList: "java,ts"                 # File types to chunk (comma-separated)
+      tibedBatchSize: 50                        # Chunks per embedding batch
+      tibedResetStore: true                     # Reset index on re-embed
 
-  # Embedding configuration
-  embeddingModelType: onnx_local       # Use built-in ONNX model (no external server)
-  embeddingStoreType: lucene           # Use Lucene vector store
+  # Embedding: use built-in ONNX model (no external server needed)
+  embeddingModelType: ${EMBEDDING_MODEL_TYPE:onnx_local}
 
-  mcp-servers:
-    - name: "filesystem-mcp"           # Optional: add MCP tools you need
-      type: "stdio"
-      command: "npx"
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "/path/to/files"]
+  # Vector store: Lucene (local, no external DB)
+  embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
+  embeddingStoreLucene:
+    indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
+    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
+
+server:
+  port: ${SERVER_PORT:7007}
 ```
 
 **Important notes:**
 - `rootDir` **must** be `/app-source` — this is the Docker mount point
 - `chunoWhiteList` determines which file types are chunked: `java`, `ts`, `js`, `py`, etc.
 - `tibedResetStore: true` clears the old index before re-embedding (useful for updates)
+- `onnx_local` embedding means no external Ollama server is needed — the model runs inside the container
 
-### Adapt .env
+---
 
-Edit `.env` in your project directory:
+## Configure .env
+
+The control script also copies `.env.example` to `.env` on first run. Verify the values:
 
 ```bash
 PRJXP_ROOT_DIR=/app-source
@@ -98,42 +97,93 @@ EMBEDDING_STORE_TYPE=lucene
 EMBEDDING_MODEL_TYPE=onnx_local
 LUCENE_INDEX_PATH=.prjxp-data/lucene-index
 LUCENE_VECTOR_DIMENSION=1024
+SERVER_PORT=7007
 ```
 
 ---
 
-## Run the Setup Pipeline
+## Run the Pipeline with the prjxp Control Script
 
-From your **project directory**, run:
+All pipeline operations are handled by the `./prjxp` control script located in the prjxp repository root.
+
+### Full Setup: Chunk + Embed + Start MCP Server (Recommended)
+
+From the **prjxp directory**, run:
 
 ```bash
-/path/to/prjxp/setup.sh .
+cd /path/to/prjxp
+./prjxp /path/to/your-project mcp
 ```
 
 This does everything in one go:
-1. Checks if the Docker image exists (builds it automatically if not)
-2. Copies config files if missing
+1. Copies `application.yaml` and `.env` to your project if they don't exist
+2. Builds the Docker image automatically if it doesn't exist yet
 3. **Chunks** your source code → `px-chunks.jsonl`
 4. **Embeds** the chunks into a Lucene index
 5. Starts the MCP server on port 7007
 
-### Optional: Custom Port
+### Custom Port
 
 ```bash
-/path/to/prjxp/setup.sh . --port 8090
+./prjxp /path/to/your-project mcp --port 8090
+```
+
+### Individual Steps
+
+If you want to run steps separately:
+
+```bash
+# Only chunk (skips if px-chunks.jsonl already exists)
+./prjxp /path/to/your-project chunk
+
+# Only embed (skips if .prjxp-data already has content)
+./prjxp /path/to/your-project embed
 ```
 
 ### Stop the Server
 
 ```bash
-/path/to/prjxp/setup.sh stop .
+./prjxp /path/to/your-project stop
+```
+
+### Clean Everything
+
+Delete chunks, index data, Docker image, and stop the server:
+
+```bash
+./prjxp /path/to/your-project clean
+```
+
+### Rebuild the Docker Image
+
+```bash
+./prjxp rebuild
 ```
 
 ---
 
 ## Configure Your MCP Client
 
-After the setup pipeline runs, your MCP server is available at `http://localhost:7007`. Configure your IDE to connect.
+After the server is running, it's available at `http://localhost:7007/mcp`. Configure your IDE to connect.
+
+### opencode (Recommended)
+
+Add an entry to `~/.config/opencode/opencode.jsonc`:
+
+```jsonc
+{
+  "mcpServers": {
+    "prjxp": {
+      "type": "remote",
+      "url": "http://localhost:7007/mcp",
+      "enabled": true
+    }
+  }
+}
+```
+
+> **Note:** If you used a custom port (e.g., `--port 8090`), adjust the URL accordingly:
+> `http://localhost:8090/mcp`
 
 ### GitHub Copilot (VS Code)
 
@@ -158,48 +208,6 @@ In **Settings → Tools → MCP Servers**, add:
 - **Type:** `streamable-http`
 - **URL:** `http://localhost:7007/mcp`
 
-### opencode
-
-Add an entry to `~/.config/opencode/opencode.jsonc`:
-
-```jsonc
-{
-  // ... your existing config ...
-  "mcp": {
-    "prjxp-project-expert": {
-      "type": "streamable-http",
-      "url": "http://localhost:7007/mcp",
-      "enabled": true
-    }
-  }
-}
-```
-
-> **Note:** If you used a custom port (e.g., `--port 8090`), adjust the URL accordingly:
-> `http://localhost:8090/mcp`
-
----
-
-## Start the MCP Server (Standalone)
-
-If you only want to start the server without re-running chunk/embed:
-
-```bash
-docker run -d \
-  --name mcp-my-project \
-  -v /path/to/your-project:/app-source \
-  -v prjxp-data:.prjxp-data/lucene-index \
-  -p 7007:7007 \
-  prjxp serve
-```
-
-Or use `docker compose`:
-
-```bash
-cd /path/to/your-project
-docker compose -f /path/to/prjxp/docker-compose.yml up -d
-```
-
 ---
 
 ## Verify the Server is Running
@@ -207,7 +215,7 @@ docker compose -f /path/to/prjxp/docker-compose.yml up -d
 Test with curl:
 
 ```bash
-curl http://localhost:7007/prjxp/tools/ping
+curl "http://localhost:7007/prjxp/tools/ping"
 # Expected response: "pong!"
 
 curl "http://localhost:7007/prjxp/tools/context?userQuestion=How+does+the+embedding+server+work"
@@ -221,9 +229,15 @@ curl "http://localhost:7007/prjxp/tools/context?userQuestion=How+does+the+embedd
 When you update your source code, re-run the pipeline:
 
 ```bash
-/path/to/prjxp/setup.sh . --skip-chunk   # If chunks are still valid
-# Or full re-run:
-/path/to/prjxp/setup.sh .                  # Chunk + embed + serve
+cd /path/to/prjxp
+./prjxp /path/to/your-project mcp   # Full re-run: chunk + embed + serve
+```
+
+The control script skips chunking if `px-chunks.jsonl` exists and skips embedding if `.prjxp-data` has content. To force a full re-index, clean first:
+
+```bash
+./prjxp /path/to/your-project clean
+./prjxp /path/to/your-project mcp
 ```
 
 ---
@@ -234,9 +248,10 @@ When you update your source code, re-run the pipeline:
 |---|---|
 | `px-chunks.jsonl` is empty | Check `chunoWhiteList` — does it match your file types? |
 | Embedding fails with dimension error | Ensure `LUCENE_VECTOR_DIMENSION=1024` in `.env` |
-| MCP server won't start on port 7007 | Another process is using the port. Use `--port 8090` instead. |
+| MCP server won't start on port 7007 | Use `--port 8090` instead |
 | "No active project" error | Check `activeProject` in `application.yaml` matches your project name |
-| Docker image not found | Run `docker build -t prjxp .` in the prjxp directory first |
+| Docker image build fails | Check Docker is running: `docker info` |
+| Server started but ping failed | Check container logs: `docker logs mcp-<project-name>` |
 
 ---
 
@@ -244,8 +259,8 @@ When you update your source code, re-run the pipeline:
 
 ```
 Your Project (mounted at /app-source)
-├── application.yaml          ← Your project config
-├── .env                      ← Environment variables
+├── application.yaml          ← Copied by prjxp control script
+├── .env                      ← Copied from .env.example
 ├── px-chunks.jsonl          ← Generated by chunk-norris
 └── [your source code]       ← Java, TypeScript, etc.
 
@@ -255,10 +270,18 @@ Docker Container (prjxp image)
 ├── mcp-server-all.jar       ← Serves retrieval API on :7007
 └── prjxp-common/embedding-server/
     ├── embedding-server.py  ← Python ONNX server (auto-started)
-    └── models/model.onnx   ← mxbai-embed-large (1024-dim)
+    └── models/              ← mxbai-embed-large (1024-dim)
 
 Docker Volume: prjxp-data
 └── .prjxp-data/lucene-index/  ← Persistent Lucene index
+
+Control Script (./prjxp)
+├── chunk   → Run chunker, produce JSONL
+├── embed   → Embed chunks into Lucene
+├── mcp     → chunk + embed + start server (default)
+├── stop    → Stop the MCP container
+├── clean   → Remove all artifacts and Docker image
+└── rebuild → Rebuild the Docker image from scratch
 ```
 
 ---
@@ -267,9 +290,10 @@ Docker Volume: prjxp-data
 
 | Action | Command |
 |---|---|
-| Build image (once) | `cd prjxp && docker build -t prjxp .` |
-| Full setup (chunk+embed+serve) | `/path/to/prjxp/setup.sh /your/project` |
-| Setup with custom port | `/path/to/prjxp/setup.sh /your/project --port 8090` |
-| Stop server | `/path/to/prjxp/setup.sh stop /your/project` |
-| Test ping | `curl http://localhost:7007/prjxp/tools/ping` |
+| Full setup (chunk+embed+serve) | `./prjxp /your/project mcp` |
+| Setup with custom port | `./prjxp /your/project mcp --port 8090` |
+| Stop server | `./prjxp /your/project stop` |
+| Clean all artifacts | `./prjxp /your/project clean` |
+| Rebuild Docker image | `./prjxp rebuild` |
+| Test ping | `curl "http://localhost:7007/prjxp/tools/ping"` |
 | Query context | `curl "http://localhost:7007/prjxp/tools/context?userQuestion=..."` |
