@@ -26,6 +26,12 @@ public class EmbeddingServerManager implements SmartLifecycle {
 
     @Override
     public void start() {
+        // Skip if environment variable is set (useful for chunk-norris which doesn't need embeddings)
+        if ("true".equals(System.getenv("SKIP_EMBEDDING_SERVER"))) {
+            log.info("Embedding server auto-start skipped: SKIP_EMBEDDING_SERVER=true");
+            return;
+        }
+
         if (cfg.getEmbeddingModelType() != PrjXPConfig.EmbeddingModelType.ONNX_LOCAL) {
             log.info("Embedding server auto-start skipped: mode is " + cfg.getEmbeddingModelType());
             return;
@@ -77,14 +83,14 @@ public class EmbeddingServerManager implements SmartLifecycle {
             outputThread.setDaemon(true);
             outputThread.start();
 
-            // Wait for server to be ready (max 30 seconds)
+            // Wait for server to be ready (max 300 seconds — ONNX model loading is very slow in Docker)
             int waited = 0;
             while (!isHealthEndpointAvailable(port)) {
                 Thread.sleep(1000);
                 waited++;
-                if (waited > 30) {
+                if (waited > 300) {
                     stop();
-                    throw new IllegalStateException("Embedding server failed to start within 30 seconds on port " + port);
+                    throw new IllegalStateException("Embedding server failed to start within 300 seconds on port " + port);
                 }
             }
 

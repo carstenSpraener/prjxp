@@ -2,6 +2,14 @@ mcp:
   cors:
     allowed-patterns: "http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*"
 
+spring:
+  ai:
+    mcp:
+      server:
+        protocol: streamable
+        name: "prjxp-mcp"
+        version: "1.0.0"
+
 prjxp:
   # Embedding Stores
   embedding-stores:
@@ -32,9 +40,3 @@ prjxp:
 server:
   port: ${SERVER_PORT:7007}
   forward-headers-strategy: framework
-
-spring:
-  ai:
-    mcp:
-      server:
-        protocol: stateless

@@ -8,7 +8,7 @@ services:
       # Mount project directory for application.yaml, .env, and source code
       - ./:/app-source
       # Persistent Lucene index storage
-      - prjxp-data:.prjxp-data/lucene-index
+      - prjxp-data:/app-source/.prjxp-data/lucene-index
     environment:
       EMBEDDING_STORE_TYPE: lucene
       EMBEDDING_MODEL_TYPE: onnx_local

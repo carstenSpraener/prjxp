@@ -22,6 +22,12 @@ Gradle multi-project with version catalog (`gradle/libs.versions.toml`). Modules
 
 All modules use Spring Boot 3.5.x, Lombok, LangChain4j, JUnit 5 + Mockito + AssertJ.
 
+## Search Strategy
+
+- **Always use `prjxp_vectorSearch` first** for any source code search: finding classes, understanding behavior, locating implementations, or exploring the codebase.
+- **Never use `grep`, `rg`, or file reads for code discovery** unless `prjxp_vectorSearch` returns no valid context ("Es konnte kein valider Kontext erstellt werden").
+- `grep` and `Glob` are strictly fallback tools — only when the vector search fails to find relevant information.
+
 ## Conventions
 
 - Dependencies managed exclusively via `gradle/libs.versions.toml` bundles (`langchain-stack`, `test-bundle`, `conversion`, etc.). Never add ad-hoc version strings in subproject `build.gradle`.

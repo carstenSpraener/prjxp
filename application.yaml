@@ -71,7 +71,11 @@ prjxp:
 
 mcp:
   cors:
-    allowed-patterns: ${MCP_CORS_ALLOWED_PATTERNS:"*"}
+    allowed-patterns: "http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*"
+
+server:
+  port: ${SERVER_PORT:7007}
+  forward-headers-strategy: framework
 
 spring:
   main:

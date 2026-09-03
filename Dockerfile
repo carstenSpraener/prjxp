@@ -26,6 +26,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 RUN pip3 install --no-cache-dir \
     fastapi \
     uvicorn[standard] \
+    hypercorn \
     onnxruntime \
     transformers
 
@@ -48,7 +49,7 @@ COPY prjxp-common/embedding-server/models/ort_config.json /app/prjxp-common/embe
 
 # Data-Volumes (werden zur Laufzeit gemountet)
 VOLUME /app-source
-VOLUME .prjxp-data/lucene-index
+VOLUME /app-source/.prjxp-data/lucene-index
 
 # Konfiguration via Environment Variables (wie in application.yaml referenziert)
 ENV EMBEDDING_STORE_TYPE=lucene
@@ -63,7 +64,7 @@ ENV SERVER_PORT=7007
 # Working Directory ist /app-source (wo application.yaml und .env liegen)
 WORKDIR /app-source
 
-ENTRYPOINT ["sh", "-c", "case \"$1\" in \
+ENTRYPOINT ["sh", "-c", "case \"$0\" in \
   chunk) java $JAVA_OPTS -jar /app/chunk-norris-all.jar ;; \
   embed) java $JAVA_OPTS -jar /app/tibed-all.jar ;; \
   serve|*) java $JAVA_OPTS -jar /app/mcp-server-all.jar ;; \

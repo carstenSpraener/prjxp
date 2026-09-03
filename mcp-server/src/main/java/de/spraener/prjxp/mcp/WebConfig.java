@@ -21,6 +21,12 @@ public class WebConfig implements WebMvcConfigurer {
                 .allowedHeaders("*")
                 .allowCredentials(true);
 
+        registry.addMapping("/mcp")
+                .allowedOriginPatterns(allowedPatterns.toArray(new String[0]))
+                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
+
         registry.addMapping("/v3/api-docs/**")
                 .allowedOriginPatterns(allowedPatterns.toArray(new String[0]));
     }

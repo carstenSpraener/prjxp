@@ -6,7 +6,6 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
-import org.springaicommunity.mcp.annotation.McpTool;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -28,29 +27,22 @@ public class McpRestController {
 
     @GetMapping("/context")
     @Operation(
-            // summary =  "Liefert Relevanten Kontext aus den Projekten passend zur Frage des Benutzers.",
             description = """
-                    SUCHE-TOOL: Liefert relevanten Kontext aus dem Projekt. 
-                    STRATEGIE: Wenn die erste Antwort nicht ausreicht, rufe dieses Tool bis zu 3-mal iterativ auf. 
-                    PARAMETER-REGEL: Nutze beim ersten Aufruf die User-Frage. Bei Folge-Aufrufen (Nachfragen) 
-                    formuliere bitte eine eigene, technisch präzisere Suchanfrage als 'userQuestion', 
-                    basierend auf den fehlenden Informationen aus dem vorherigen Schritt.
+                    SUCHE-TOOL: Delivers relevant information from the project. 
+                    STRATEGIE: You should call this tool whenever possible to gather information before searching the file system.
+                    You can do multiple follow up questions for more detailed information 
+                    PARAMETER-REGEL: Build a precise question for a vector search based on the information
+                    you are looking for.
                     """,
             operationId = "readRelevantSource"
     )
-    @McpTool(description = """
-            SUCHE-TOOL: Liefert relevanten Kontext aus dem Projekt. 
-            STRATEGIE: Formuliere eine konkrete Frage für eine Vektorsuche und übergebe diese Frage
-            als Parameter "userQuestion". Wenn die erste Antwort nicht ausreicht, rufe dieses Tool bis zu 3-mal iterativ auf. 
-            PARAMETER-REGEL: Nutze beim ersten Aufruf die User-Frage. Bei Folge-Aufrufen (Nachfragen) 
-            formuliere bitte eine eigene, technisch präzisere Suchanfrage als 'userQuestion', 
-            basierend auf den fehlenden Informationen aus dem vorherigen Schritt.
-            """)
     public String readRelevantSource(
-            @Parameter(description = "Die ursprüngliche Frage des Benutzers, zu der Information von den Projekten benötigt wird.")
-            @RequestParam(name = "userQuestion", required = true) String userQuestion,
-            @RequestParam(name = "project", required = false, defaultValue = "default") String projectName
-    ) {
+            @Parameter(description = "A targeted, standalone search prompt optimized for vector retrieval based on what you need to find.")
+            @RequestParam(name = "userQuestion", required = true)
+            String userQuestion,
+
+            @RequestParam(name = "project", required = false, defaultValue = "default")
+            String projectName) {
         String prefix = """
                 """;
         if (projectName.equals("default")) {
@@ -60,7 +52,7 @@ public class McpRestController {
         log.info(String.format("searching context for '%s' for project '%s'.", userQuestion, projectName));
         String context = enrichment.enrich(projectName, userQuestion);
         String result = String.format("%s\n%s", prefix, context);
-        System.out.println("returning context: "+result);
+        log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length()/4));
         return result;
     }
 }
