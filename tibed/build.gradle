@@ -8,6 +8,8 @@ dependencies {
     implementation project(':prjxp-common')
     implementation project(':lucene-store')
     testFixturesImplementation project(':prjxp-common')
+    // End-to-End-Tests: echter chunk-norris-Abschnitt der Transfer-Pipeline
+    testImplementation project(':chunk-norris')
 
     // Spring Boot & JSON (Versionen kommen aus dem Katalog via Root-Projekt)
     implementation libs.spring.boot.starter.json

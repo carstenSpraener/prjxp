@@ -3,6 +3,7 @@ package de.spraener.prjxp.tibed;
 import de.spraener.prjxp.common.PxDefaultArgsParser;
 import de.spraener.prjxp.common.config.CliArgsParsingEvent;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.TransferConfigValidator;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferMode;
@@ -83,6 +84,7 @@ public class CliArgsParser {
         if (cmd.hasOption("no-encrypt")) {
             cfg.getTransfer().setEncrypt(TransferEncryptMode.FALSE);
         }
+        TransferConfigValidator.validate(cfg.getTransfer());
     }
 
     private Options buildOptions() {

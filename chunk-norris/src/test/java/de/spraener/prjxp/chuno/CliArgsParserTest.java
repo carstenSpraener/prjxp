@@ -78,4 +78,28 @@ class CliArgsParserTest {
 
         assertThat(cfg.getActiveProject().map(ProjectDefinition::getName).orElse(null)).isEqualTo("myproject");
     }
+
+    @Test
+    void parseArgs_cliFlagWinsOverBoundConfig() {
+        PrjXPConfig cfg = new PrjXPConfig();
+        cfg.getTransfer().setEncrypt(TransferEncryptMode.FALSE);
+        cfg.getTransfer().setPasswordEnv("BOUND_PASSWORD");
+
+        uut(cfg).parseArgs(event(cfg, "--encrypt", "--password-env", "CLI_PASSWORD"));
+
+        assertThat(cfg.getTransfer().getEncrypt()).isEqualTo(TransferEncryptMode.TRUE);
+        assertThat(cfg.getTransfer().getPasswordEnv()).isEqualTo("CLI_PASSWORD");
+    }
+
+    @Test
+    void parseArgs_withoutFlags_keepsBoundConfig() {
+        PrjXPConfig cfg = new PrjXPConfig();
+        cfg.getTransfer().setEncrypt(TransferEncryptMode.FALSE);
+        cfg.getTransfer().setPasswordEnv("BOUND_PASSWORD");
+
+        uut(cfg).parseArgs(event(cfg));
+
+        assertThat(cfg.getTransfer().getEncrypt()).isEqualTo(TransferEncryptMode.FALSE);
+        assertThat(cfg.getTransfer().getPasswordEnv()).isEqualTo("BOUND_PASSWORD");
+    }
 }

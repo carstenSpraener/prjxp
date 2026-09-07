@@ -10,10 +10,6 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.model.output.Response;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.core.env.AbstractEnvironment;
@@ -24,7 +20,6 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -37,31 +32,6 @@ class EmbeddingExportServiceTest {
     Path tempDir;
 
     private static final int DIMENSION = 8;
-
-    private static class FakeEmbeddingModel implements EmbeddingModel {
-        final int dimension;
-        final List<List<TextSegment>> calls = new ArrayList<>();
-
-        FakeEmbeddingModel(int dimension) {
-            this.dimension = dimension;
-        }
-
-        @Override
-        public Response<List<Embedding>> embedAll(List<TextSegment> segments) {
-            calls.add(segments);
-            List<Embedding> embeddings = segments.stream()
-                    .map(s -> {
-                        float[] vector = new float[dimension];
-                        int value = s.text().length();
-                        for (int i = 0; i < dimension; i++) {
-                            vector[i] = value / 10f + i * 0.1f;
-                        }
-                        return Embedding.from(vector);
-                    })
-                    .toList();
-            return new Response<>(embeddings);
-        }
-    }
 
     private PrjXPConfig configWith(String input, String output) throws Exception {
         ProjectDefinition pd = new ProjectDefinition();
