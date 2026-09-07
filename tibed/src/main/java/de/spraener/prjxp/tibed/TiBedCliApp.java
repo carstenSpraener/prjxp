@@ -1,6 +1,7 @@
 package de.spraener.prjxp.tibed;
 
 import de.spraener.prjxp.common.PrjXPCli;
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import io.github.cdimascio.dotenv.Dotenv;
 import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
@@ -32,10 +33,17 @@ public class TiBedCliApp {
     @Profile("!test")
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "tibed.run-embedding", havingValue = "true", matchIfMissing = true)
     public CommandLineRunner run(
-            EmbeddingService embedProcess
+            EmbeddingService storeProcess,
+            EmbeddingExportService exportProcess,
+            EmbeddingImportService importProcess,
+            PrjXPConfig cfg
     ) {
         return args -> {
-            embedProcess.execute();
+            switch (cfg.getTransfer().getMode()) {
+                case EXPORT -> exportProcess.execute();
+                case IMPORT -> importProcess.execute();
+                default -> storeProcess.execute();
+            }
         };
     }
 

@@ -1,5 +1,7 @@
 package de.spraener.prjxp.common.config;
 
+import de.spraener.prjxp.common.transfer.TransferEncryptMode;
+import de.spraener.prjxp.common.transfer.TransferMode;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
@@ -52,6 +54,18 @@ public class PrjXPConfig {
     public static class LuceneEmbeddingStoreConfig {
         private String indexPath = ".prjxp-data/lucene-index";
         private int vectorDimension = 1024;
+    }
+
+    // --- Transfer Sektion (externes Embedding) ---
+    private TransferConfig transfer = new TransferConfig();
+
+    @lombok.Data
+    public static class TransferConfig {
+        private String passwordEnv = "PRJXP_TRANSFER_PASSWORD";
+        private TransferEncryptMode encrypt = TransferEncryptMode.AUTO;
+        private String input;
+        private String output;
+        private TransferMode mode = TransferMode.STORE;
     }
 
     private ProjectDefinition createCwdFallback() {

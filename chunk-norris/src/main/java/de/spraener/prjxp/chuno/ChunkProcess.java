@@ -8,6 +8,9 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.transfer.TransferCrypto;
+import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
+import de.spraener.prjxp.common.transfer.TransferSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.context.ApplicationEventPublisher;
@@ -30,10 +33,13 @@ public class ChunkProcess {
     private final Set<String> processedFiles = new HashSet<>();
     private final JsonMapper jsonMapper = new JsonMapper();
     private final PrjXPConfig cfg;
+    private final TransferPasswordResolver transferPasswordResolver;
 
     public void execute() throws Exception {
         final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException("No active project!"));
-        final PrintStream out = createWriter(pd);
+        final TransferSession session = transferPasswordResolver.prepare(
+                cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
+        final PrintStream out = createWriter(pd, session);
         eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg));
 
         Files.walk(Path.of(pd.getRootDir()))
@@ -43,16 +49,29 @@ public class ChunkProcess {
                 .forEach(path -> handlePath(out, pd, path));
         ;
         doPostWalk(out);
+        if (out != System.out) {
+            out.close();
+        }
+        if (session.generatedPassword()) {
+            transferPasswordResolver.printRepeatBanner(session.password());
+        }
     }
 
-    private PrintStream createWriter(ProjectDefinition pd) {
+    private PrintStream createWriter(ProjectDefinition pd, TransferSession session) {
         if( pd.getJsonlFile()==null ) {
             return System.out;
         }
         try {
-            return new PrintStream(pd.getJsonlFile());
+            OutputStream out = new FileOutputStream(pd.getJsonlFile());
+            if (session.encrypt()) {
+                out = TransferCrypto.openEncryptedOutputStream(out, session.password());
+            }
+            return new PrintStream(out);
         } catch( FileNotFoundException fnfXC) {
             log.warning("Coulde not find output file "+pd.getJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
+            return System.out;
+        } catch( IOException ioXC) {
+            log.warning("Could not open output file "+pd.getJsonlFile()+". Using stdout. Error is: "+ioXC.getMessage());
             return System.out;
         }
     }

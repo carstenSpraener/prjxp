@@ -1,5 +1,6 @@
 package de.spraener.prjxp.common.config;
 
+import de.spraener.prjxp.common.transfer.TransferCrypto;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -19,17 +20,24 @@ public class PrjXPJsonStreamProvider {
     private final PrjXPConfig config;
 
     public Stream<String> getJsonlStream(String inputSource) throws IOException {
-        InputStream inputStream;
+        return linesFrom(openRaw(inputSource));
+    }
 
-        if (inputSource == null || "-".equals(inputSource) || inputSource == null || inputSource.isEmpty()) {
+    public Stream<String> getTransferJsonlStream(String inputSource, char[] password) throws IOException {
+        return linesFrom(TransferCrypto.openAuto(openRaw(inputSource), password));
+    }
+
+    private InputStream openRaw(String inputSource) throws IOException {
+        if (inputSource == null || "-".equals(inputSource) || inputSource.isEmpty()) {
             // Nutze stdin (Standard Input)
-            inputStream = System.in;
-        } else {
-            // Nutze die Datei
-            Path path = Paths.get(inputSource);
-            inputStream = Files.newInputStream(path);
+            return System.in;
         }
+        // Nutze die Datei
+        Path path = Paths.get(inputSource);
+        return Files.newInputStream(path);
+    }
 
+    private Stream<String> linesFrom(InputStream inputStream) {
         // Erstelle einen BufferedReader und wandle ihn in einen Stream um
         BufferedReader reader = new BufferedReader(new InputStreamReader(inputStream, StandardCharsets.UTF_8));
 
