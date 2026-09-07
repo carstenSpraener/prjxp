@@ -1,13 +1,13 @@
 prjxp:
   # which project to work on if none is on command line.
-  activeProject: "prjxp"
+  activeProject: "cwd"
 
   projects:
-    - name: prjxp
-      rootDir: ${PRJXP_ROOT_DIR:/app-source}
+    - name: cwd
+      rootDir: /app-source
       jsonlFile: "px-chunks.jsonl"
       chunoWhiteList: "java,ts"
-      tibedBatchSize: 50
+      tibedBatchSize: 10
       tibedResetStore: true
 
   # Use Ollama on SteamDeck for Embedding
@@ -31,7 +31,7 @@ prjxp:
       args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
 
   embeddingStores:
-    - projectName: prjxp
+    - projectName: cwd
       providerUrl: http://localhost:8000
       tenant: prjxp
       dbName: prjxp

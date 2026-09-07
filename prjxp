@@ -7,6 +7,8 @@
 #     Chunk the project (skips if px-chunks.jsonl exists)
 #   ./prjxp <project-path> embed [--port 8090]
 #     Embed chunks (skips if .prjxp-data has content)
+#   ./prjxp <project-path> shell [--port 8090]
+#     Start interactive shell in prjxp container (with project mounts)
 #   ./prjxp <project-path> mcp [--port 8090]
 #     Chunk + embed + start MCP server (default command)
 #   ./prjxp <project-path> stop
@@ -20,6 +22,7 @@
 set -euo pipefail
 
 IMAGE_NAME="prjxp"
+IMAGE_REF="${IMAGE_NAME}:latest"
 DEFAULT_PORT=7007
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
@@ -35,7 +38,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # =============================================================================
 # Parse arguments
 # =============================================================================
-PROJECT_PATH=""
+PROJECT_PATH="."
 PORT=$DEFAULT_PORT
 COMMAND="mcp"
 
@@ -53,7 +56,7 @@ while [[ $# -gt 0 ]]; do
             COMMAND="rebuild"
             shift
             ;;
-        chunk|embed|mcp|clean)
+        chunk|embed|shell|mcp|clean)
             COMMAND="$1"
             shift
             if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
@@ -83,7 +86,7 @@ done
 # =============================================================================
 if [[ "$COMMAND" != "rebuild" ]]; then
     if [[ -z "$PROJECT_PATH" ]]; then
-        echo "Usage: $0 <project-path> [chunk|embed|mcp|clean] [--port 8090]"
+        echo "Usage: $0 <project-path> [chunk|embed|shell|mcp|clean] [--port 8090]"
         echo "       $0 stop <project-path>"
         echo "       $0 rebuild"
         exit 1
@@ -101,15 +104,35 @@ fi
 # =============================================================================
 # Helper: ensure Docker image exists (auto-build if needed)
 # =============================================================================
+find_existing_image_ref() {
+    docker image ls --format '{{.Repository}}:{{.Tag}}' \
+        | awk -F: -v repo="$IMAGE_NAME" '$1 == repo && $2 != "<none>" { print $1 ":" $2; exit }'
+}
+
 ensure_image() {
     log_info "Checking for Docker image '${IMAGE_NAME}'..."
-    if ! docker image inspect "$IMAGE_NAME" >/dev/null 2>&1; then
-        log_warn "Image not found. Building from ${SCRIPT_DIR}..."
-        (cd "$SCRIPT_DIR" && docker build -t "$IMAGE_NAME" .)
-        log_info "Image built successfully."
-    else
-        log_info "Image '${IMAGE_NAME}' already exists."
+
+    if ! docker info >/dev/null 2>&1; then
+        log_error "Docker daemon is not reachable."
+        exit 1
     fi
+
+    IMAGE_REF="${IMAGE_NAME}:latest"
+    if docker image inspect "$IMAGE_REF" >/dev/null 2>&1; then
+        log_info "Image '${IMAGE_REF}' already exists."
+        return 0
+    fi
+
+    EXISTING_IMAGE_REF="$(find_existing_image_ref)"
+    if [[ -n "$EXISTING_IMAGE_REF" ]]; then
+        IMAGE_REF="$EXISTING_IMAGE_REF"
+        log_info "Image '${IMAGE_REF}' already exists."
+        return 0
+    fi
+
+    log_warn "Image not found. Building from ${SCRIPT_DIR}..."
+    (cd "$SCRIPT_DIR" && docker build -t "$IMAGE_REF" .)
+    log_info "Image built successfully."
 }
 
 # =============================================================================
@@ -128,7 +151,7 @@ cmd_chunk() {
         -v "$PROJECT_PATH:/app-source" \
         -e PRJXP_ROOT_DIR=/app-source \
         -e SKIP_EMBEDDING_SERVER=true \
-        "$IMAGE_NAME" chunk
+        "$IMAGE_REF" chunk
 
     if [[ ! -f "$PROJECT_PATH/px-chunks.jsonl" ]]; then
         log_error "Chunking failed — px-chunks.jsonl not created."
@@ -155,9 +178,25 @@ cmd_embed() {
         -v "$PROJECT_PATH:/app-source" \
         -v "$PROJECT_PATH/.prjxp-data:/app-source/.prjxp-data/lucene-index" \
         -e PRJXP_ROOT_DIR=/app-source \
-        "$IMAGE_NAME" embed
+        "$IMAGE_REF" embed
 
     log_info "Embedding complete."
+}
+
+# =============================================================================
+# Command: shell
+# =============================================================================
+cmd_shell() {
+    ensure_image
+
+    log_info "=== Starting interactive shell in '${IMAGE_REF}' ==="
+    docker run --rm -it \
+        -v "$PROJECT_PATH:/app-source" \
+        -v "$PROJECT_PATH/.prjxp-data:/app-source/.prjxp-data/lucene-index" \
+        -e PRJXP_ROOT_DIR=/app-source \
+        -e SERVER_PORT=7007 \
+        --entrypoint sh \
+        "$IMAGE_REF"
 }
 
 # =============================================================================
@@ -247,7 +286,7 @@ cmd_mcp() {
         -p "${PORT}:7007" \
         -e PRJXP_ROOT_DIR=/app-source \
         -e SERVER_PORT=7007 \
-        "$IMAGE_NAME" serve
+        "$IMAGE_REF" serve
 
     # Wait for server to be ready
     log_info "Waiting for MCP server to start..."
@@ -278,6 +317,7 @@ cmd_mcp() {
 case "$COMMAND" in
     chunk)   cmd_chunk ;;
     embed)   cmd_embed ;;
+    shell)   cmd_shell ;;
     mcp)     cmd_mcp ;;
     stop)    cmd_stop ;;
     clean)   cmd_clean ;;

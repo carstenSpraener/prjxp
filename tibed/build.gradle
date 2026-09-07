@@ -3,10 +3,6 @@ plugins {
     alias(libs.plugins.shadow)
 }
 
-repositories {
-    mavenCentral()
-}
-
 dependencies {
     // Internes Modul
     implementation project(':prjxp-common')
