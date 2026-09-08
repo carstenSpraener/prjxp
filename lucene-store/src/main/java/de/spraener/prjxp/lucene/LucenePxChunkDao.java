@@ -13,7 +13,11 @@ import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.logical.And;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.store.PxChunkDao;
+import org.apache.lucene.analysis.TokenStream;
+import org.apache.lucene.analysis.standard.StandardAnalyzer;
+import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
@@ -91,6 +95,64 @@ public class LucenePxChunkDao implements PxChunkDao {
             return searchAllLucene().stream();
         }
         return searchWithFilter(null).stream();
+    }
+
+    @Override
+    public List<ScoredChunk> searchFullText(String query, Map<String, String> filters, int limit) {
+        if (luceneStore == null) {
+            throw new UnsupportedOperationException("Full-text search requires a Lucene store");
+        }
+
+        List<String> tokens = tokenize(query);
+        if (tokens.isEmpty()) {
+            return new ArrayList<>();
+        }
+
+        BooleanQuery.Builder builder = new BooleanQuery.Builder();
+        for (String token : tokens) {
+            builder.add(new TermQuery(new Term("content", token)), BooleanClause.Occur.MUST);
+        }
+        if (filters != null) {
+            for (Map.Entry<String, String> entry : filters.entrySet()) {
+                builder.add(new TermQuery(new Term(entry.getKey(), entry.getValue())), BooleanClause.Occur.FILTER);
+            }
+        }
+
+        try {
+            IndexSearcher searcher = luceneStore.getSearcher();
+            try {
+                TopDocs topDocs = searcher.search(builder.build(), limit);
+                List<ScoredChunk> result = new ArrayList<>();
+                for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                    org.apache.lucene.document.Document doc = searcher.storedFields().document(scoreDoc.doc);
+                    result.add(new ScoredChunk(extractPxChunk(doc), scoreDoc.score));
+                }
+                return result;
+            } finally {
+                luceneStore.releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to full-text search", e);
+        }
+    }
+
+    private List<String> tokenize(String query) {
+        StandardAnalyzer analyzer = new StandardAnalyzer();
+        try (TokenStream stream = analyzer.tokenStream("content", query)) {
+            CharTermAttribute termAttribute = stream.addAttribute(CharTermAttribute.class);
+            List<String> tokens = new ArrayList<>();
+            stream.reset();
+            while (stream.incrementToken()) {
+                String token = termAttribute.toString();
+                if (!tokens.contains(token)) {
+                    tokens.add(token);
+                }
+            }
+            stream.end();
+            return tokens;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to tokenize query", e);
+        }
     }
 
     private List<PxChunk> searchAllLucene() {

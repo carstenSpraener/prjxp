@@ -8,6 +8,7 @@ import dev.langchain4j.model.output.Response;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -177,9 +178,70 @@ class LucenePxChunkDaoTest {
         assertThat(retrieved.getTotal()).isEqualTo(5);
     }
 
+    @Test
+    void searchFullTextFindsContentMatch() {
+        addChunk("chunk-1", "Hello world");
+        addChunk("chunk-2", "Goodbye moon");
+
+        List<ScoredChunk> result = dao.searchFullText("hello", Map.of(), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-1");
+        assertThat(result.get(0).score()).isGreaterThan(0);
+    }
+
+    @Test
+    void searchFullTextIsCaseInsensitive() {
+        addChunk("chunk-1", "Hello world");
+
+        List<ScoredChunk> result = dao.searchFullText("HELLO", Map.of(), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-1");
+    }
+
+    @Test
+    void searchFullTextRespectsMetadataFilter() {
+        addChunkWithMime("chunk-java", "text/x-java-code", "Process the data");
+        addChunkWithMime("chunk-ts", "text/x-typescript-code", "Process the data");
+
+        List<ScoredChunk> result = dao.searchFullText(
+                "process", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-java");
+    }
+
+    @Test
+    void searchFullTextRespectsLimit() {
+        addChunk("chunk-1", "needle one");
+        addChunk("chunk-2", "needle two");
+        addChunk("chunk-3", "needle three");
+
+        List<ScoredChunk> result = dao.searchFullText("needle", Map.of(), 2);
+
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    void searchFullTextNoMatchReturnsEmpty() {
+        addChunk("chunk-1", "Hello world");
+
+        List<ScoredChunk> result = dao.searchFullText("zebra", Map.of(), 10);
+
+        assertThat(result).isEmpty();
+    }
+
     private void addChunk(String id, String content) {
         Metadata meta = new Metadata();
         meta.put("pxchunk_id", id);
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
+    }
+
+    private void addChunkWithMime(String id, String mimeType, String content) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_MIME_TYPE, mimeType);
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
     }
 }

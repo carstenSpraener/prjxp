@@ -13,6 +13,7 @@ import org.apache.lucene.document.Field;
 import org.apache.lucene.document.KnnFloatVectorField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
+import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -166,7 +167,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
         doc.add(new StringField("_id", id, Field.Store.YES));
 
         if (textSegment != null) {
-            doc.add(new StoredField("content", textSegment.text()));
+            doc.add(new TextField("content", textSegment.text(), Field.Store.YES));
             Map<String, Object> metadata = textSegment.metadata().toMap();
             for (Map.Entry<String, Object> entry : metadata.entrySet()) {
                 String key = entry.getKey();
