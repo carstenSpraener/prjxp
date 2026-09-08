@@ -50,6 +50,10 @@ shadowJar {
     archiveVersion.set('')
     zip64=true
     exclude 'application.yaml'
+    // DevTools nur fuer die lokale Entwicklung — darf nicht ins Fat-JAR (sonst Exit-Code 0 bei Fehlern)
+    dependencies {
+        exclude(dependency('org.springframework.boot:spring-boot-devtools'))
+    }
 
     // WICHTIG: Diese Transformer mergen die Spring-Konfigurationen
     mergeServiceFiles()

@@ -6,6 +6,7 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -22,14 +23,17 @@ public class PrjXPConfig {
 
     // Standardwerte setzt du einfach direkt am Feld!
     private String embeddingOllamaUrl = "http://192.168.1.228:11434";
+    private String embeddingApiBaseURL = "http://host.docker.internal:1234";
+    private String embeddingApiKey = "lm-studio";
     private String embeddingModelName = "mxbai-embed-large";
+    private String embeddingProviderType = "openai";
     private int embeddingTimeoutSecs = 60;
 
     // Embedding model type: "ollama" or "onnx_local"
     private EmbeddingModelType embeddingModelType = EmbeddingModelType.OLLAMA;
 
     public enum EmbeddingModelType {
-        OLLAMA, ONNX_LOCAL
+        OLLAMA, ONNX_LOCAL, OPEN_AI
     }
 
     // Embedding server auto-start config (ONNX_LOCAL mode) — absolute paths for Docker
@@ -45,6 +49,7 @@ public class PrjXPConfig {
     // Embedding store type: "lucene" or "chroma"
     private EmbeddingStoreType embeddingStoreType = EmbeddingStoreType.CHROMA;
     private LuceneEmbeddingStoreConfig embeddingStoreLucene = new LuceneEmbeddingStoreConfig();
+    private EmbeddingConfig embedding = new EmbeddingConfig();
 
     public enum EmbeddingStoreType {
         LUCENE, CHROMA
@@ -54,6 +59,15 @@ public class PrjXPConfig {
     public static class LuceneEmbeddingStoreConfig {
         private String indexPath = ".prjxp-data/lucene-index";
         private int vectorDimension = 1024;
+    }
+
+    @lombok.Data
+    public static class EmbeddingConfig {
+        private EmbeddingModelType type = EmbeddingModelType.OPEN_AI;
+        private String apiBaseURL = "http://host.docker.internal:1234";
+        private String apiKey = "lm-studio";
+        private String modelName = "mxbai-embed-large-v1";
+        private int timeout = 20;
     }
 
     // --- Transfer Sektion (externes Embedding) ---
@@ -91,4 +105,5 @@ public class PrjXPConfig {
     public Optional<ProjectDefinition> getActiveProject() {
         return getProjectDefinition(activeProject);
     }
+
 }

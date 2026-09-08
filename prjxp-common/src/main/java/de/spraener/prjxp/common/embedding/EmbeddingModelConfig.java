@@ -17,15 +17,26 @@ public class EmbeddingModelConfig {
     @Bean
     @org.springframework.context.annotation.DependsOn("embeddingServerManager")
     public EmbeddingModel embeddingModel(PrjXPConfig cfg) {
-        if (cfg.getEmbeddingModelType() == PrjXPConfig.EmbeddingModelType.ONNX_LOCAL) {
+        if (cfg.getEmbedding().getType() == PrjXPConfig.EmbeddingModelType.ONNX_LOCAL) {
             log.info("Using local ONNX embedding model (localhost:" + cfg.getEmbeddingServerPort() + ") via OpenAI-compatible endpoint");
             return OpenAiEmbeddingModel.builder()
-                    .baseUrl("http://localhost:" + cfg.getEmbeddingServerPort())
+                    .baseUrl("http://localhost:11453")
                     .modelName(cfg.getEmbeddingModelName())
                     .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
                     .build();
         }
 
+        if( cfg.getEmbedding().getType() == PrjXPConfig.EmbeddingModelType.OPEN_AI) {
+            log.info("Using Open-AI compatible embedding provider " + cfg.getEmbeddingApiBaseURL());
+            PrjXPConfig.EmbeddingConfig ebCfg = cfg.getEmbedding();
+            return OpenAiEmbeddingModel.builder()
+                    .apiKey(ebCfg.getApiKey())
+                    .baseUrl(ebCfg.getApiBaseURL())
+                    .modelName(ebCfg.getModelName())
+                    .timeout(Duration.ofSeconds(ebCfg.getTimeout()))
+                    .build()
+                    ;
+        }
         log.info("Using Ollama embedding model at " + cfg.getEmbeddingOllamaUrl());
         return OllamaEmbeddingModel.builder()
                 .baseUrl(cfg.getEmbeddingOllamaUrl())

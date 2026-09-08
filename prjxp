@@ -38,7 +38,7 @@ log_error() { echo -e "${RED}[ERROR]${NC} $1"; }
 # =============================================================================
 # Parse arguments
 # =============================================================================
-PROJECT_PATH="."
+PROJECT_PATH=""
 PORT=$DEFAULT_PORT
 COMMAND="mcp"
 
@@ -47,7 +47,7 @@ while [[ $# -gt 0 ]]; do
         stop)
             COMMAND="stop"
             shift
-            if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+            if [[ $# -gt 0 && ! "$1" =~ ^-- && -z "$PROJECT_PATH" ]]; then
                 PROJECT_PATH="$1"
                 shift
             fi
@@ -59,7 +59,7 @@ while [[ $# -gt 0 ]]; do
         chunk|embed|shell|mcp|clean)
             COMMAND="$1"
             shift
-            if [[ $# -gt 0 && ! "$1" =~ ^-- ]]; then
+            if [[ $# -gt 0 && ! "$1" =~ ^-- && -z "$PROJECT_PATH" ]]; then
                 PROJECT_PATH="$1"
                 shift
             fi
@@ -80,6 +80,11 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Ohne expliziten Pfad: aktuelles Verzeichnis verwenden
+if [[ -z "$PROJECT_PATH" ]]; then
+    PROJECT_PATH="."
+fi
 
 # =============================================================================
 # Validation (rebuild doesn't need a project path)
@@ -136,6 +141,22 @@ ensure_image() {
 }
 
 # =============================================================================
+# Helper: copy config files into the project directory if not present
+# (notwendig, damit die ENV-Variablen aus application.yaml greifen)
+# =============================================================================
+ensure_config_files() {
+    if [[ ! -f "$PROJECT_PATH/application.yaml" ]]; then
+        log_info "Copying application.yaml to project directory..."
+        cp "$SCRIPT_DIR/application.yaml" "$PROJECT_PATH/application.yaml"
+    fi
+
+    if [[ ! -f "$PROJECT_PATH/.env" ]]; then
+        log_info "Copying .env.example to project directory as .env..."
+        cp "$SCRIPT_DIR/.env.example" "$PROJECT_PATH/.env"
+    fi
+}
+
+# =============================================================================
 # Command: chunk
 # =============================================================================
 cmd_chunk() {
@@ -145,6 +166,7 @@ cmd_chunk() {
     fi
 
     ensure_image
+    ensure_config_files
 
     log_info "=== Chunking source code ==="
     docker run --rm \
@@ -172,6 +194,7 @@ cmd_embed() {
     fi
 
     ensure_image
+    ensure_config_files
 
     log_info "=== Embedding chunks into Lucene index ==="
     docker run --rm \
@@ -257,16 +280,7 @@ cmd_rebuild() {
 # Command: mcp (chunk + embed + serve)
 # =============================================================================
 cmd_mcp() {
-    # Copy config files if not present
-    if [[ ! -f "$PROJECT_PATH/application.yaml" ]]; then
-        log_info "Copying application.yaml to project directory..."
-        cp "$SCRIPT_DIR/application.yaml" "$PROJECT_PATH/application.yaml"
-    fi
-
-    if [[ ! -f "$PROJECT_PATH/.env" ]]; then
-        log_info "Copying .env.example to project directory as .env..."
-        cp "$SCRIPT_DIR/.env.example" "$PROJECT_PATH/.env"
-    fi
+    ensure_config_files
 
     cmd_chunk
     cmd_embed

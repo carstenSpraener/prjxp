@@ -7,19 +7,15 @@ prjxp:
       rootDir: /app-source
       jsonlFile: "px-chunks.jsonl"
       chunoWhiteList: "java,ts"
-      tibedBatchSize: 10
+      tibedBatchSize: 500
       tibedResetStore: true
 
-  # Use Ollama on SteamDeck for Embedding
-  embeddingOllamaUrl: ${EMBEDDING_OLLAMA_URL:http://192.168.188.114:11434}
-  embeddingModelName: ${EMBEDDING_MODEL_NAME:mxbai-embed-large}
-  embeddingTimeoutSecs: ${EMBEDDING_TIMEOUT_SECS:60}
-
   # Embedding model type: ollama or onnx_local
-  embeddingModelType: ${EMBEDDING_MODEL_TYPE:onnx_local}
-
   # Embedding store type: lucene or chroma
   embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
+  embeddingServerScriptPath: "prjxp-common/embedding-server/scripts"
+  embeddingServerModelPath: "prjxp-common/embedding-server/models/model.onnx"
+  embeddingServerModelsDir: "prjxp-common/embedding-server/models"
   embeddingStoreLucene:
     indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
@@ -29,6 +25,12 @@ prjxp:
       type: "stdio"
       command: "npx"
       args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
+
+  embedding:
+    type: "ONNX_LOCAL"
+    apiBaseURL: "http://host.docker.internal:1234/v1"
+    modelName: "model.onnx"
+    timeout: 20
 
   embeddingStores:
     - projectName: cwd

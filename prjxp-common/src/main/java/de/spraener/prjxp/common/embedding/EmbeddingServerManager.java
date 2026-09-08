@@ -32,8 +32,8 @@ public class EmbeddingServerManager implements SmartLifecycle {
             return;
         }
 
-        if (cfg.getEmbeddingModelType() != PrjXPConfig.EmbeddingModelType.ONNX_LOCAL) {
-            log.info("Embedding server auto-start skipped: mode is " + cfg.getEmbeddingModelType());
+        if (cfg.getEmbedding().getType() != PrjXPConfig.EmbeddingModelType.ONNX_LOCAL) {
+            log.info("Embedding server auto-start skipped: mode is " + cfg.getEmbedding().getType());
             return;
         }
 

@@ -28,13 +28,7 @@ public class EmbeddingStoreSupplier implements org.springframework.beans.factory
     public EmbeddingStore<TextSegment> getStore(String name) {
         ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException("No active project!"));
 
-        PrjXPEmbeddingStoreReference ref = cfg.getEmbeddingStores()
-                .stream()
-                .filter(r -> r.getProjectName().equals(pd.getName()))
-                .findFirst()
-                .orElseThrow(() -> new IllegalStateException("No store found for project " + pd.getName()));
-
-        // Lucene embedded store
+        // Lucene embedded store (braucht keine externe Store-Referenz)
         if (cfg.getEmbeddingStoreType() == PrjXPConfig.EmbeddingStoreType.LUCENE) {
             PrjXPConfig.LuceneEmbeddingStoreConfig lc = cfg.getEmbeddingStoreLucene();
             log.info("Initialisiere Lucene Embedding Store für das Projekt: " + pd.getName()
@@ -42,6 +36,12 @@ public class EmbeddingStoreSupplier implements org.springframework.beans.factory
             createdStore = new LuceneEmbeddingStore(Path.of(lc.getIndexPath()), lc.getVectorDimension());
             return createdStore;
         }
+
+        PrjXPEmbeddingStoreReference ref = cfg.getEmbeddingStores()
+                .stream()
+                .filter(r -> r.getProjectName().equals(pd.getName()))
+                .findFirst()
+                .orElseThrow(() -> new IllegalStateException("No store found for project " + pd.getName()));
 
         // Überprüfen, ob als Provider-URL eine JDBC-MySQL-Verbindung hinterlegt ist
         if (ref.getProviderUrl() != null && ref.getProviderUrl().startsWith("jdbc:mysql:")) {
