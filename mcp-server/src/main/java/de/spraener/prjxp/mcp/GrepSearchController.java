@@ -26,7 +26,7 @@ public class GrepSearchController {
                     STRATEGIE: Use this to narrow down results after vectorSearch, e.g. for exact identifiers or strings.
                     PARAMETER-REGEL: Pass the exact string you are looking for as query.
                     """)
-    public ResponseEntity<List<SearchHit>> grep(
+    public ResponseEntity<?> grep(
             @Parameter(description = "Exact search string (required).")
             @RequestParam(name = "query", required = false)
             String query,
@@ -44,7 +44,7 @@ public class GrepSearchController {
             int limit
     ) {
         if (query == null || query.isBlank()) {
-            return ResponseEntity.badRequest().build();
+            return ResponseEntity.badRequest().body(new SearchError("missingQuery", "Parameter 'query' is required."));
         }
 
         int safeLimit = SearchLimits.clamp(limit);

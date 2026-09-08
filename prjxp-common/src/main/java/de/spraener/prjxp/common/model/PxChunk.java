@@ -43,6 +43,10 @@ public class PxChunk {
     private PxChunk() {
     }
 
+    public static String metadataFieldKey(String key) {
+        return key.startsWith("pxchunk_") ? key : PXCHUNK_METADATA + "." + key;
+    }
+
     public static Map<String, String> metadataAsMap(PxChunk chunk) {
         Map<String, String> map = new HashMap<>();
         ifNotNull(chunk.id, () -> map.put(PXCHUNK_ID, chunk.id));

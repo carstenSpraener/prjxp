@@ -8,7 +8,9 @@ import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
 import de.spraener.prjxp.common.annotations.Chunker;
+import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.SymbolMetadata;
 import de.spraener.prjxp.common.model.PxFileType;
 import de.spraener.prjxp.common.util.ChunkRange;
 import de.spraener.prjxp.common.util.ContentSplitter;
@@ -97,7 +99,10 @@ public class JavaCodeChunker {
                         c -> c.setParent(cu.getPrimaryType().get().getFullyQualifiedName().get()),
                         c -> c.setId(c.getParent() + ".imports"),
                         c -> c.setFile(src.getAbsolutePath()),
-                        c -> c.getMetadata().put(MDKEY_CODESECTION, de.spraener.prjxp.common.code.java.JavaCodeSection.IMPORTS.getName())
+                        c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.IMPORTS.getName()),
+                        c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.IMPORTS.getName(),
+                                cu.getPrimaryType().get().getFullyQualifiedName().get(),
+                                cu.getPrimaryType().get().getNameAsString())
                 )
         );
     }
@@ -139,9 +144,11 @@ public class JavaCodeChunker {
                                         c -> c.setParent(id),
                                         c -> c.setId(id + ".javadoc"),
                                         c -> c.setFile(f.getAbsolutePath()),
-                                        c -> c.getMetadata().put(MDKEY_CODESECTION, de.spraener.prjxp.common.code.java.JavaCodeSection.METHOD_DOC.getName())
-                                )
-                        ));
+                                        c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.METHOD_DOC.getName()),
+                                        c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.METHOD_DOC.getName(),
+                                                clazzName, m.getNameAsString(), methodSig)
+                            )
+                ));
             });
             StringBuilder methodImpl = new StringBuilder();
             addAnnotationsIfExist(methodImpl, m, "");
@@ -158,9 +165,11 @@ public class JavaCodeChunker {
                                     c -> c.setParent(type.getFullyQualifiedName().get().toString()),
                                     c -> c.setId(id),
                                     c -> c.setFile(f.getAbsolutePath()),
-                                    c -> c.getMetadata().put(MDKEY_CODESECTION, de.spraener.prjxp.common.code.java.JavaCodeSection.METHOD.getName())
-                            )
-                    ));
+                                    c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.METHOD.getName()),
+                                    c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.METHOD.getName(),
+                                            clazzName, m.getNameAsString(), methodSig)
+                        )
+                ));
         }
     }
 
@@ -192,8 +201,11 @@ public class JavaCodeChunker {
                                         c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
                                         c -> c.setId(clazz.getFullyQualifiedName().get().toString()),
                                         c -> c.setFile(f.getAbsolutePath()),
-                                        c -> c.getMetadata().put(MDKEY_CODESECTION, de.spraener.prjxp.common.code.java.JavaCodeSection.CLAZZ_FRAME.getName())
-                                );
+                                c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.CLAZZ_FRAME.getName()),
+                                c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.CLAZZ_FRAME.getName(),
+                                        clazz.getFullyQualifiedName().get().toString(),
+                                        clazz.getNameAsString())
+                    );
                             }
 
                     )

@@ -1,6 +1,7 @@
 package de.spraener.prjxp.chuno.code.java;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.SymbolMetadata;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -107,6 +108,47 @@ public class JavaCodeChunkerTests {
                 )
         ;
         // Chunk TestClass.dependencies siehe JavaDependenciesChunkerTests
+    }
+
+    @Test
+    public void testSymbolMetadata() throws Exception {
+        File code = toTmpFile("TestClass",
+                """
+                        package de.spraener.test;
+
+                        import de.spraener.util.SprString;
+
+                        class TestClass {
+                            /**
+                              * A little java doc
+                              */
+                            public void testMethod(SprString s) {
+                                System.out.println("Hello, World!");
+                            }
+                        }
+                        """
+        );
+        List<PxChunk> chunkList = uut.chunk(code).toList();
+
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.TestClass") &&
+                        "classFrame".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_TYPE)) &&
+                        "de.spraener.test.TestClass".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_FQN)) &&
+                        "TestClass".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_NAME)))
+                .anyMatch(c -> c.getId().equals("de.spraener.test.TestClass.void testMethod(SprString)") &&
+                        "method".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_TYPE)) &&
+                        "de.spraener.test.TestClass#testMethod".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_FQN)) &&
+                        "testMethod".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_NAME)) &&
+                        "de.spraener.test.TestClass".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_CONTAINER_FQN)) &&
+                        SymbolMetadata.signatureHash("void testMethod(SprString)")
+                                .equals(c.getMetadata().get(SymbolMetadata.SYMBOL_SIGNATURE_HASH)))
+                .anyMatch(c -> c.getId().equals("de.spraener.test.TestClass.void testMethod(SprString).javadoc") &&
+                        "methodDoc".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_TYPE)) &&
+                        "de.spraener.test.TestClass#testMethod".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_FQN)))
+                .anyMatch(c -> c.getId().equals("de.spraener.test.TestClass.imports") &&
+                        "imports".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_TYPE)) &&
+                        "de.spraener.test.TestClass".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_FQN)))
+        ;
     }
 
     //Ignored @Test()

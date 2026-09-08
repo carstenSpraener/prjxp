@@ -232,10 +232,80 @@ class LucenePxChunkDaoTest {
         assertThat(result).isEmpty();
     }
 
+    @Test
+    void searchByIndexExactFilterOnSymbolFqn() {
+        addSymbolChunk("chunk-1", "de.spraener.test.Foo#bar");
+        addSymbolChunk("chunk-2", "de.spraener.test.Foo#baz");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of("symbol_fqn", "de.spraener.test.Foo#bar"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-1");
+    }
+
+    @Test
+    void searchByIndexCombinesFiltersWithAnd() {
+        addSymbolChunk("chunk-java", "de.spraener.test.Foo#bar");
+        Metadata tsMeta = new Metadata();
+        tsMeta.put("pxchunk_id", "chunk-ts");
+        tsMeta.put(PxChunk.PXCHUNK_MIME_TYPE, "text/x-typescript-code");
+        tsMeta.put("pxchunk_metadata.symbol_fqn", "de.spraener.test.Foo#bar");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("TS content", tsMeta));
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code",
+                        "symbol_fqn", "de.spraener.test.Foo#bar"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-java");
+    }
+
+    @Test
+    void searchByIndexRespectsLimit() {
+        addSymbolChunk("chunk-1", "de.spraener.test.Foo#bar");
+        addSymbolChunk("chunk-2", "de.spraener.test.Foo#bar");
+        addSymbolChunk("chunk-3", "de.spraener.test.Foo#bar");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of("symbol_fqn", "de.spraener.test.Foo#bar"), 2);
+
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    void searchByIndexNoMatchReturnsEmpty() {
+        addSymbolChunk("chunk-1", "de.spraener.test.Foo#bar");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of("symbol_fqn", "de.spraener.test.Unknown#nope"), 10);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void searchByIndexScoreIsConstantOne() {
+        addSymbolChunk("chunk-1", "de.spraener.test.Foo#bar");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of("symbol_fqn", "de.spraener.test.Foo#bar"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).score()).isEqualTo(1.0);
+    }
+
     private void addChunk(String id, String content) {
         Metadata meta = new Metadata();
         meta.put("pxchunk_id", id);
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
+    }
+
+    private void addSymbolChunk(String id, String symbolFqn) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code");
+        meta.put("pxchunk_metadata.symbol_fqn", symbolFqn);
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content of " + id, meta));
     }
 
     private void addChunkWithMime(String id, String mimeType, String content) {

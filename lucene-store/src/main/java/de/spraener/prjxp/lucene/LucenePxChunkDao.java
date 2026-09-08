@@ -136,6 +136,46 @@ public class LucenePxChunkDao implements PxChunkDao {
         }
     }
 
+    private static final double INDEX_SCORE = 1.0;
+
+    @Override
+    public List<ScoredChunk> searchByIndex(Map<String, String> filters, int limit) {
+        if (luceneStore == null) {
+            throw new UnsupportedOperationException("Index search requires a Lucene store");
+        }
+
+        Query query = buildFilterQuery(filters);
+        try {
+            IndexSearcher searcher = luceneStore.getSearcher();
+            try {
+                TopDocs topDocs = searcher.search(query, limit);
+                List<ScoredChunk> result = new ArrayList<>();
+                for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                    org.apache.lucene.document.Document doc = searcher.storedFields().document(scoreDoc.doc);
+                    result.add(new ScoredChunk(extractPxChunk(doc), INDEX_SCORE));
+                }
+                return result;
+            } finally {
+                luceneStore.releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to search by index", e);
+        }
+    }
+
+    private Query buildFilterQuery(Map<String, String> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return new org.apache.lucene.search.MatchAllDocsQuery();
+        }
+        BooleanQuery.Builder builder = new BooleanQuery.Builder();
+        for (Map.Entry<String, String> entry : filters.entrySet()) {
+            builder.add(new TermQuery(
+                    new Term(PxChunk.metadataFieldKey(entry.getKey()), entry.getValue())),
+                    BooleanClause.Occur.FILTER);
+        }
+        return builder.build();
+    }
+
     private List<String> tokenize(String query) {
         StandardAnalyzer analyzer = new StandardAnalyzer();
         try (TokenStream stream = analyzer.tokenStream("content", query)) {

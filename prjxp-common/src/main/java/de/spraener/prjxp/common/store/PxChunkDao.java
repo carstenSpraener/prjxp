@@ -17,4 +17,12 @@ public interface PxChunkDao {
     default List<ScoredChunk> searchFullText(String query, Map<String, String> filters, int limit) {
         throw new UnsupportedOperationException("Full-text search is not supported by this store");
     }
+
+    /**
+     * Deterministic lookup on exact index fields (e.g. symbol metadata).
+     * Filters use logical metadata keys, see {@link PxChunk#metadataFieldKey(String)}.
+     */
+    default List<ScoredChunk> searchByIndex(Map<String, String> filters, int limit) {
+        throw new UnsupportedOperationException("Index search is not supported by this store");
+    }
 }
