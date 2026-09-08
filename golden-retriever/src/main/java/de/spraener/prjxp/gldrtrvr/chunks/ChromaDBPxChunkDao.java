@@ -2,6 +2,7 @@ package de.spraener.prjxp.gldrtrvr.chunks;
 
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -81,6 +82,41 @@ public class ChromaDBPxChunkDao implements PxChunkDao {
         return relevantMatches.stream()
                 .map(TextSegment2PxChunkConverter::convert)
                 .toList();
+    }
+
+    @Override
+    public List<ScoredChunk> searchVector(String query, Map<String, String> filters, int limit) {
+        if (!StringUtils.hasText(query)) {
+            return List.of();
+        }
+
+        Embedding questionEmbedding = embeddingModel.embed(query).content();
+        Filter filter = buildFilter(filters);
+
+        EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
+                .queryEmbedding(questionEmbedding)
+                .filter(filter)
+                .maxResults(limit)
+                .build();
+
+        return embeddingStore.search(searchRequest).matches().stream()
+                .map(match -> new ScoredChunk(TextSegment2PxChunkConverter.convert(match), match.score()))
+                .toList();
+    }
+
+    private Filter buildFilter(Map<String, String> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return null;
+        }
+        Filter combinedFilter = null;
+        for (var entry : filters.entrySet()) {
+            String key = PxChunk.metadataFieldKey(entry.getKey());
+            Filter currentFilter = new IsEqualTo(key, entry.getValue());
+            combinedFilter = (combinedFilter == null)
+                    ? currentFilter
+                    : new And(combinedFilter, currentFilter);
+        }
+        return combinedFilter;
     }
 
     private List<PxChunk> searchWithFilter(Filter filter) {

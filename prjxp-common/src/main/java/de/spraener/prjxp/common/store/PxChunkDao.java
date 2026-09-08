@@ -25,4 +25,12 @@ public interface PxChunkDao {
     default List<ScoredChunk> searchByIndex(Map<String, String> filters, int limit) {
         throw new UnsupportedOperationException("Index search is not supported by this store");
     }
+
+    /**
+     * Semantic vector search, ranked by similarity.
+     * Filters use logical metadata keys, see {@link PxChunk#metadataFieldKey(String)}.
+     */
+    default List<ScoredChunk> searchVector(String query, Map<String, String> filters, int limit) {
+        throw new UnsupportedOperationException("Vector search is not supported by this store");
+    }
 }

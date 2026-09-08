@@ -22,7 +22,7 @@ import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class LucenePxChunkDaoTest {
@@ -292,6 +292,64 @@ class LucenePxChunkDaoTest {
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0).score()).isEqualTo(1.0);
+    }
+
+    @Test
+    void searchVectorReturnsMostSimilarChunkFirst() {
+        Metadata nearMeta = new Metadata();
+        nearMeta.put("pxchunk_id", "near");
+        store.add(Embedding.from(new float[]{0.5f, 0.3f, 0.2f}), TextSegment.from("Near content", nearMeta));
+
+        Metadata farMeta = new Metadata();
+        farMeta.put("pxchunk_id", "far");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Far content", farMeta));
+
+        List<ScoredChunk> result = dao.searchVector("any question", Map.of(), 10);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("near");
+        assertThat(result.get(0).score()).isGreaterThan(0);
+    }
+
+    @Test
+    void searchVectorRespectsMimeFilter() {
+        addChunkWithMime("chunk-java", "text/x-java-code", "Java content");
+        addChunkWithMime("chunk-ts", "text/x-typescript-code", "TS content");
+
+        List<ScoredChunk> result = dao.searchVector(
+                "content", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-java");
+    }
+
+    @Test
+    void searchVectorRespectsLimit() {
+        addChunk("chunk-1", "one");
+        addChunk("chunk-2", "two");
+        addChunk("chunk-3", "three");
+
+        List<ScoredChunk> result = dao.searchVector("q", Map.of(), 2);
+
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    void searchVectorBlankQueryReturnsEmpty() {
+        addChunk("chunk-1", "content");
+
+        List<ScoredChunk> result = dao.searchVector("   ", Map.of(), 10);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void searchVectorEmbedsQuery() {
+        addChunk("chunk-1", "content");
+
+        dao.searchVector("my question", Map.of(), 5);
+
+        verify(embeddingModel).embed("my question");
     }
 
     private void addChunk(String id, String content) {

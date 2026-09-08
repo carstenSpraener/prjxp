@@ -14,6 +14,15 @@ public record SearchHit(
         String source,
         Map<String, String> metadata) {
 
+    public static final int SNIPPET_MAX = 240;
+
+    public static String preview(String content) {
+        if (content == null || content.isBlank()) {
+            return "";
+        }
+        return content.length() <= SNIPPET_MAX ? content : content.substring(0, SNIPPET_MAX);
+    }
+
     public static SearchHit from(PxChunk chunk, double score, String snippet, String source) {
         return new SearchHit(
                 chunk.getId(),

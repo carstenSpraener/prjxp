@@ -163,6 +163,38 @@ public class LucenePxChunkDao implements PxChunkDao {
         }
     }
 
+    @Override
+    public List<ScoredChunk> searchVector(String query, Map<String, String> filters, int limit) {
+        if (query == null || query.isBlank()) {
+            return new ArrayList<>();
+        }
+
+        Embedding questionEmbedding = embeddingModel.embed(query).content();
+        Filter filter = buildFilter(filters);
+
+        EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
+                .queryEmbedding(questionEmbedding)
+                .filter(filter)
+                .maxResults(limit)
+                .build();
+
+        return store.search(searchRequest).matches().stream()
+                .map(match -> new ScoredChunk(toPxChunk(match), match.score()))
+                .collect(Collectors.toList());
+    }
+
+    private Filter buildFilter(Map<String, String> filters) {
+        if (filters == null || filters.isEmpty()) {
+            return null;
+        }
+        Filter combinedFilter = null;
+        for (Map.Entry<String, String> entry : filters.entrySet()) {
+            Filter currentFilter = new IsEqualTo(PxChunk.metadataFieldKey(entry.getKey()), entry.getValue());
+            combinedFilter = (combinedFilter == null) ? currentFilter : new And(combinedFilter, currentFilter);
+        }
+        return combinedFilter;
+    }
+
     private Query buildFilterQuery(Map<String, String> filters) {
         if (filters == null || filters.isEmpty()) {
             return new org.apache.lucene.search.MatchAllDocsQuery();
