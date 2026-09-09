@@ -2,19 +2,18 @@ package de.spraener.prjxp.gldrtrvr.code.visualbasic;
 
 import de.spraener.prjxp.common.code.visualbasic.VisualBasicCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
+import de.spraener.prjxp.gldrtrvr.code.java.JavaPromptSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 
@@ -43,6 +42,21 @@ public class VisualBasicRetriever implements GoldenRetriever {
         session.setChunks(visualBasicChunks);
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
+    }
+
+    @Override
+    @SafeVarargs
+    // TODO: Implement this method
+    public final List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> scoredChunks, Function<String, Boolean>... contextValidators) {
+        PxChunkDao chunkDao = chunkDaoProvider.get(projectName).get();
+        List<PxChunk> chunks = scoredChunks.stream().map(sc -> sc.chunk()).toList();
+        List<PxChunk> javaChunks = combineChunksByID(chunkDao, chunks);
+        if( javaChunks.isEmpty() ) {
+            return Collections.EMPTY_LIST;
+        }
+        VisualBasicPromptSession session = new VisualBasicPromptSession(chunkDao, rankingService);
+        session.setChunks(javaChunks);
+        return session.buildSearchHits(this::modifyPromptByChunk, contextValidators);
     }
 
     private String modifyPromptByChunk(PxChunkDao chunkDao, PxChunk pxChunk, String prompt) {

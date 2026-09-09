@@ -47,9 +47,18 @@ COPY prjxp-common/embedding-server/models/special_tokens_map.json /app/prjxp-com
 COPY prjxp-common/embedding-server/models/config.json /app/prjxp-common/embedding-server/models/config.json
 COPY prjxp-common/embedding-server/models/ort_config.json /app/prjxp-common/embedding-server/models/ort_config.json
 
+# 4. Docker-Konfiguration ins Image backen (application.yaml.docker -> application.yaml).
+# WICHTIG: unter /app und NICHT unter /app-source, da der Volume-Mount (./:/app-source)
+# eine Datei in /app-source zur Laufzeit ueberschreiben wuerde.
+COPY application.yaml.docker /app/application.yaml
+
 # Data-Volumes (werden zur Laufzeit gemountet)
 VOLUME /app-source
 VOLUME /app-source/.prjxp-data/lucene-index
+
+# Spring liest die Konfiguration aus /app/application.yaml (gebacken, s.o.) und
+# ignoriert damit die Datei im gemounteten /app-source.
+ENV SPRING_CONFIG_LOCATION=file:/app/
 
 # Konfiguration via Environment Variables (wie in application.yaml referenziert)
 ENV EMBEDDING_STORE_TYPE=lucene
@@ -61,7 +70,7 @@ ENV LUCENE_VECTOR_DIMENSION=1024
 ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
 ENV SERVER_PORT=7007
 
-# Working Directory ist /app-source (wo application.yaml und .env liegen)
+# Working Directory ist /app-source (wo .env und der Quellcode liegen; application.yaml wird aus /app geladen)
 WORKDIR /app-source
 
 ENTRYPOINT ["sh", "-c", "case \"$0\" in \

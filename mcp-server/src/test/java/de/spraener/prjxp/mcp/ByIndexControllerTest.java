@@ -2,6 +2,8 @@ package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.capability.IdentifierRules;
 import de.spraener.prjxp.common.capability.LanguageCapability;
+import de.spraener.prjxp.common.model.SearchHit;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;

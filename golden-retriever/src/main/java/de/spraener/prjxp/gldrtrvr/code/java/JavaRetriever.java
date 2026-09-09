@@ -2,6 +2,8 @@ package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDao;
@@ -10,10 +12,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 
 @Service
@@ -35,6 +34,19 @@ public class JavaRetriever implements GoldenRetriever {
         session.setChunks(javaChunks);
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
+    }
+
+    @SafeVarargs
+    public final List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> scoredChunks, Function<String, Boolean>... contextValidators) {
+        PxChunkDao chunkDao = chunkDaoProvider.get(projectName).get();
+        List<PxChunk> chunks = scoredChunks.stream().map(sc -> sc.chunk()).toList();
+        List<PxChunk> javaChunks = combineChunksByID(chunkDao, chunks);
+        if( javaChunks.isEmpty() ) {
+            return Collections.EMPTY_LIST;
+        }
+        JavaPromptSession session = new JavaPromptSession(chunkDao, rankingService);
+        session.setChunks(javaChunks);
+        return session.buildSearchHits(this::modifyPromptByChunk, contextValidators);
     }
 
     private String modifyPromptByChunk(PxChunkDao chunkDao, PxChunk pxChunk, String prompt) {

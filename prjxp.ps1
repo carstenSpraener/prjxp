@@ -262,11 +262,11 @@ function Cmd-Mcp() {
     $paths = Get-ProjectDataPaths
     $applicationYaml = Join-Path $ProjectPath "application.yaml"
     $envFile = Join-Path $ProjectPath ".env"
-    $sourceApplicationYaml = Join-Path $ScriptDir "application.yaml"
+    $sourceApplicationYaml = Join-Path $ScriptDir "application.yaml.docker"
     $sourceEnvExample = Join-Path $ScriptDir ".env.example"
 
     if (-not (Test-Path -LiteralPath $applicationYaml)) {
-        Log-Info "Copying application.yaml to project directory..."
+        Log-Info "Copying application.yaml.docker (Docker config) to project directory as application.yaml..."
         Copy-IfMissing -Source $sourceApplicationYaml -Target $applicationYaml
     }
 

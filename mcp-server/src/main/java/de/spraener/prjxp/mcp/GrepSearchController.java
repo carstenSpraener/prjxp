@@ -28,7 +28,7 @@ public class GrepSearchController {
                     """)
     public ResponseEntity<?> grep(
             @Parameter(description = "Exact search string (required).")
-            @RequestParam(name = "query", required = false)
+            @RequestParam(name = "query", required = true)
             String query,
 
             @Parameter(description = "Optional project name. Defaults to the active project.")

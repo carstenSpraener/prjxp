@@ -4,7 +4,7 @@ prjxp:
 
   projects:
     - name: cwd
-      rootDir: /app-source
+      rootDir: .
       jsonlFile: "px-chunks.jsonl"
       chunoWhiteList: "java,ts"
       tibedBatchSize: 500
@@ -27,10 +27,11 @@ prjxp:
       args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
 
   embedding:
-    type: "ONNX_LOCAL"
-    apiBaseURL: "http://host.docker.internal:1234/v1"
-    modelName: "model.onnx"
+    type: "OPEN_AI"
+    apiBaseURL: "http://localhost:1234/v1"
+    modelName: "mxbai-embed-large-v1"
     timeout: 20
+    apiKey: ${EMBEDDING_API_KEY}
 
   embeddingStores:
     - projectName: cwd

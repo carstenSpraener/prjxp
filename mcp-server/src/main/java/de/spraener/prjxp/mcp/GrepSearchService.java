@@ -4,15 +4,14 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
-import java.util.List;
-import java.util.Locale;
-import java.util.Map;
+import java.util.*;
 
 @Service
 @RequiredArgsConstructor
@@ -30,6 +29,7 @@ public class GrepSearchService {
 
     private final PxChunkDaoProvider chunkDaoProvider;
     private final PrjXPConfig cfg;
+    private final List<GoldenRetriever> retrieverList;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
         PxChunkDao dao = chunkDaoProvider.get(resolveProject(project)).orElse(null);
@@ -38,16 +38,17 @@ public class GrepSearchService {
         }
 
         Map<String, String> filters = buildFilters(language);
-        List<ScoredChunk> results;
+        List<ScoredChunk> chunks;
         try {
-            results = dao.searchFullText(query, filters, limit);
+            chunks = dao.searchFullText(query, filters, limit);
         } catch (UnsupportedOperationException e) {
             return List.of();
         }
-
-        return results.stream()
-                .map(sc -> SearchHit.from(sc.chunk(), sc.score(), extractSnippet(sc.chunk().getContent(), query), SOURCE))
-                .toList();
+        List<SearchHit> result = new ArrayList<>();
+        for( var gr : retrieverList ) {
+            result.addAll(gr.retrieveSearchHits(resolveProject(project), chunks));
+        }
+        return result;
     }
 
     private String resolveProject(String project) {

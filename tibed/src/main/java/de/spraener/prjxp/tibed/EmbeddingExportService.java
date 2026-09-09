@@ -71,7 +71,7 @@ public class EmbeddingExportService {
                 }
             }
         } catch (Exception e) {
-            logService.error(e, "Error during embedding export");
+            logService.error(e, "Error during embedding export: "+e.getMessage());
         }
     }
 

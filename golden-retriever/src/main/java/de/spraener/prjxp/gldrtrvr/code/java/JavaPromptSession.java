@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.util.ValueContainer;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
@@ -31,7 +32,7 @@ public class JavaPromptSession {
         this.rankingService = rankingService;
     }
 
-    record RankedPrompt(double rootRank, String treeContext) {
+    record RankedPrompt(double rootRank, String treeContext, PxChunk rootChunk) {
     }
 
     public void setChunks(List<PxChunk> chunks) {
@@ -66,7 +67,7 @@ public class JavaPromptSession {
                     continue;
                 }
             }
-            rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext));
+            rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext, r.getChunk()));
         }
         rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
         for (var rp : rankedPrompts) {
@@ -80,6 +81,38 @@ public class JavaPromptSession {
         }
         return context;
     }
+
+    public List<SearchHit> buildSearchHits(PromptModifier promptModifier, Function<String, Boolean>[] contextValidator) {
+        List<SearchHit> result = new ArrayList<>();
+        List<RankedPrompt> rankedPrompts = new ArrayList<>();
+        for (var r : this.rootForrest) {
+            final ValueContainer<String> vcPrompt = new ValueContainer<String>("");
+            r.visit(c -> {
+                vcPrompt.setValue(promptModifier.modifyPrompt(chunkDao,
+                        c.getChunk(), vcPrompt.getValue()));
+            });
+            String treeContext = vcPrompt.getValue();
+            if (contextValidator != null) {
+                boolean valid = true;
+                for (var v : contextValidator) {
+                    valid &= v.apply(treeContext);
+                }
+                if (!valid) {
+                    continue;
+                }
+            }
+            rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext, r.getChunk()));
+        }
+        rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
+        for (var rp : rankedPrompts) {
+            if (rp.rootRank() == 0) {
+                break;
+            }
+            result.add(SearchHit.from(rp.rootChunk, rp.rootRank(), "", rp.treeContext));
+        }
+        return result;
+    }
+
 
     private ChunkNode findRootForChunk(PxChunk chunk) {
         for (var r : rootForrest) {

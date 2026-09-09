@@ -1,6 +1,8 @@
 package de.spraener.prjxp.gldrtrvr.md;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDao;
@@ -9,10 +11,7 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 
 @Service
@@ -32,6 +31,13 @@ public class MarkdownRetriever implements GoldenRetriever {
 
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
+    }
+
+    @Override
+    @SafeVarargs
+    // TODO: Implement this method
+    public final List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks, Function<String, Boolean>... contextValidators) {
+        return Collections.EMPTY_LIST;
     }
 
     private String modifyPromptByChunk(PxChunk pxChunk, String currentPrompt) {
