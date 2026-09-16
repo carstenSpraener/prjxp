@@ -6,25 +6,19 @@ prjxp:
     - name: cwd
       rootDir: /app-source
       jsonlFile: "px-chunks.jsonl"
-      chunoWhiteList: "java,ts"
+      chunoWhiteList: "cs,vb,java,ts"
       tibedBatchSize: 500
       tibedResetStore: true
 
   # Embedding model type: ollama or onnx_local
   # Embedding store type: lucene or chroma
   embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
-  embeddingServerScriptPath: "prjxp-common/embedding-server/scripts"
-  embeddingServerModelPath: "prjxp-common/embedding-server/models/model.onnx"
-  embeddingServerModelsDir: "prjxp-common/embedding-server/models"
+  embeddingServerScriptPath: "/app/prjxp-common/embedding-server/scripts/embedding-server.py"
+  embeddingServerModelPath: "/app/prjxp-common/embedding-server/models/model.onnx"
+  embeddingServerModelsDir: "/app/prjxp-common/embedding-server/models"
   embeddingStoreLucene:
-    indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
+    indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
-
-  mcp-servers:
-    - name: "filesystem-mcp"
-      type: "stdio"
-      command: "npx"
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
 
   embedding:
     type: "ONNX_LOCAL"
@@ -39,7 +33,6 @@ prjxp:
       dbName: prjxp
       collectionName: prjxp-src
       isDefault: true
-
 
   chatModels:
     - stereoType: documentation

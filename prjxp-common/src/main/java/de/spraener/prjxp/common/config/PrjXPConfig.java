@@ -41,6 +41,8 @@ public class PrjXPConfig {
     private String embeddingServerModelPath = "/app/prjxp-common/embedding-server/models/model.onnx";
     private String embeddingServerModelsDir = "/app/prjxp-common/embedding-server/models";
     private int embeddingServerPort = 11435;
+    private int embeddingServerStartupTimeoutSecs = 300;
+    private boolean embeddingServerFailOnStartupError = true;
 
     // Hierarchische Listen MÜSSEN vorinitialisiert sein
     private List<PrjXPEmbeddingStoreReference> embeddingStores = new ArrayList<>();

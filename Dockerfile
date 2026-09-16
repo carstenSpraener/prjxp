@@ -48,16 +48,16 @@ COPY prjxp-common/embedding-server/models/config.json /app/prjxp-common/embeddin
 COPY prjxp-common/embedding-server/models/ort_config.json /app/prjxp-common/embedding-server/models/ort_config.json
 
 # 4. Docker-Konfiguration ins Image backen (application.yaml.docker -> application.yaml).
-# WICHTIG: unter /app und NICHT unter /app-source, da der Volume-Mount (./:/app-source)
-# eine Datei in /app-source zur Laufzeit ueberschreiben wuerde.
+# Fallback-Konfiguration: Wird genutzt, wenn unter /app-source keine eigene
+# application.yml/.yaml vorhanden ist.
 COPY application.yaml.docker /app/application.yaml
 
 # Data-Volumes (werden zur Laufzeit gemountet)
 VOLUME /app-source
 VOLUME /app-source/.prjxp-data/lucene-index
 
-# Spring liest die Konfiguration aus /app/application.yaml (gebacken, s.o.) und
-# ignoriert damit die Datei im gemounteten /app-source.
+# Default-Fallback, wird zur Laufzeit im ENTRYPOINT ueberschrieben wenn
+# /app-source/application.yml oder /app-source/application.yaml existiert.
 ENV SPRING_CONFIG_LOCATION=file:/app/
 
 # Konfiguration via Environment Variables (wie in application.yaml referenziert)
@@ -70,11 +70,17 @@ ENV LUCENE_VECTOR_DIMENSION=1024
 ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
 ENV SERVER_PORT=7007
 
-# Working Directory ist /app-source (wo .env und der Quellcode liegen; application.yaml wird aus /app geladen)
+# Working Directory ist /app-source (wo .env und projektspezifische Config liegt)
 WORKDIR /app-source
 
 ENTRYPOINT ["sh", "-c", "case \"$0\" in \
-  chunk) java $JAVA_OPTS -jar /app/chunk-norris-all.jar ;; \
-  embed) java $JAVA_OPTS -jar /app/tibed-all.jar ;; \
-  serve|*) java $JAVA_OPTS -jar /app/mcp-server-all.jar ;; \
+  chunk) \
+    if [ -f /app-source/application.yml ] || [ -f /app-source/application.yaml ]; then CFG='optional:file:/app-source/,optional:file:/app/'; else CFG='file:/app/'; fi; \
+    java $JAVA_OPTS -Dspring.config.location=\"$CFG\" -jar /app/chunk-norris-all.jar ;; \
+  embed) \
+    if [ -f /app-source/application.yml ] || [ -f /app-source/application.yaml ]; then CFG='optional:file:/app-source/,optional:file:/app/'; else CFG='file:/app/'; fi; \
+    java $JAVA_OPTS -Dspring.config.location=\"$CFG\" -jar /app/tibed-all.jar ;; \
+  serve|*) \
+    if [ -f /app-source/application.yml ] || [ -f /app-source/application.yaml ]; then CFG='optional:file:/app-source/,optional:file:/app/'; else CFG='file:/app/'; fi; \
+    java $JAVA_OPTS -Dspring.config.location=\"$CFG\" -jar /app/mcp-server-all.jar ;; \
 esac"]

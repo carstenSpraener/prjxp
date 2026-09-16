@@ -7,7 +7,6 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
-import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -29,7 +28,6 @@ public class GrepSearchService {
 
     private final PxChunkDaoProvider chunkDaoProvider;
     private final PrjXPConfig cfg;
-    private final List<GoldenRetriever> retrieverList;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
         PxChunkDao dao = chunkDaoProvider.get(resolveProject(project)).orElse(null);
@@ -44,11 +42,14 @@ public class GrepSearchService {
         } catch (UnsupportedOperationException e) {
             return List.of();
         }
-        List<SearchHit> result = new ArrayList<>();
-        for( var gr : retrieverList ) {
-            result.addAll(gr.retrieveSearchHits(resolveProject(project), chunks));
-        }
-        return result;
+
+        return chunks.stream()
+                .map(sc -> SearchHit.from(
+                        sc.chunk(),
+                        sc.score(),
+                        extractSnippet(sc.chunk().getContent(), query),
+                        SOURCE))
+                .toList();
     }
 
     private String resolveProject(String project) {
@@ -70,6 +71,9 @@ public class GrepSearchService {
     private String extractSnippet(String content, String query) {
         if (content == null || content.isBlank()) {
             return "";
+        }
+        if (query == null || query.isBlank()) {
+            return content.length() <= SNIPPET_MAX ? content : content.substring(0, SNIPPET_MAX);
         }
 
         int idx = indexOfIgnoreCase(content, query.trim());

@@ -20,7 +20,7 @@ public class EmbeddingModelConfig {
         if (cfg.getEmbedding().getType() == PrjXPConfig.EmbeddingModelType.ONNX_LOCAL) {
             log.info("Using local ONNX embedding model (localhost:" + cfg.getEmbeddingServerPort() + ") via OpenAI-compatible endpoint");
             return OpenAiEmbeddingModel.builder()
-                    .baseUrl("http://localhost:11453")
+                    .baseUrl("http://localhost:" + cfg.getEmbeddingServerPort())
                     .modelName(cfg.getEmbeddingModelName())
                     .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
                     .build();

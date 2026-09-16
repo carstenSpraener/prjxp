@@ -29,6 +29,8 @@ prjxp:
   embedding-ollama-url: http://192.168.188.92:11434
   embedding-model-name: mxbai-embed-large
   embedding-timeout-secs: 60
+  embedding-server-startup-timeout-secs: 900
+  embedding-server-fail-on-startup-error: false
 
   # Chat-Schnittstelle
   chat-models:

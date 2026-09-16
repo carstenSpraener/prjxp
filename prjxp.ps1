@@ -157,6 +157,7 @@ function Cmd-Shell() {
         "run", "--rm", "-it",
         "-v", "${ProjectPath}:/app-source",
         "-v", "$($paths.DataDir):/app-source/.prjxp-data/lucene-index",
+        "-p", "7007:7007",
         "-e", "PRJXP_ROOT_DIR=/app-source",
         "-e", "SERVER_PORT=7007",
         "--entrypoint", "/bin/bash",

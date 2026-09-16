@@ -4,15 +4,12 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
-import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.apache.commons.lang3.StringUtils;
 import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
-import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Component;
-import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 

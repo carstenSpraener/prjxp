@@ -6,14 +6,14 @@ prjxp:
     - name: cwd
       rootDir: .
       jsonlFile: "px-chunks.jsonl"
-      chunoWhiteList: "java,ts"
+      chunoWhiteList: "java,ts,cs,vb"
       tibedBatchSize: 500
       tibedResetStore: true
 
   # Embedding model type: ollama or onnx_local
   # Embedding store type: lucene or chroma
   embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
-  embeddingServerScriptPath: "prjxp-common/embedding-server/scripts"
+  embeddingServerScriptPath: "prjxp-common/embedding-server/scripts/embedding-server.py"
   embeddingServerModelPath: "prjxp-common/embedding-server/models/model.onnx"
   embeddingServerModelsDir: "prjxp-common/embedding-server/models"
   embeddingStoreLucene:
@@ -28,7 +28,7 @@ prjxp:
 
   embedding:
     type: "OPEN_AI"
-    apiBaseURL: "http://localhost:1234/v1"
+    apiBaseURL: "http://localhost:11435/v1"
     modelName: "mxbai-embed-large-v1"
     timeout: 20
     apiKey: ${EMBEDDING_API_KEY}
