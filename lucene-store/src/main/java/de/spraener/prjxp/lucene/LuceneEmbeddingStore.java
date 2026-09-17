@@ -198,7 +198,12 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
                 TopDocs topDocs = searcher.search(builder.build(), request.maxResults());
 
                 List<EmbeddingMatch<TextSegment>> matches = new ArrayList<>();
+                int maxDoc = searcher.getIndexReader().maxDoc();
                 for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                    if (scoreDoc.doc < 0 || scoreDoc.doc >= maxDoc) {
+                        log.warning("Skipping invalid Lucene docID " + scoreDoc.doc + " (maxDoc=" + maxDoc + ")");
+                        continue;
+                    }
                     Document doc = searcher.storedFields().document(scoreDoc.doc);
                     String id = doc.get("_id");
                     TextSegment segment = reconstructSegment(doc);
@@ -216,6 +221,22 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to search index", e);
+        }
+    }
+
+    public boolean hasMatch(Filter filter) {
+        ensureOpen();
+        try {
+            IndexSearcher searcher = getSearcher();
+            try {
+                Query luceneQuery = LuceneFilterConverter.convert(filter);
+                TopDocs topDocs = searcher.search(luceneQuery, 1);
+                return topDocs.totalHits != null && topDocs.totalHits.value > 0;
+            } finally {
+                releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to check index for filter", e);
         }
     }
 

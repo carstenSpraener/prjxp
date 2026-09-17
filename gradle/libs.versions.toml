@@ -5,6 +5,7 @@ langchain4j = "1.13.0"
 langchain4j-beta = "1.13.0-beta23"
 shadow = "8.3.0"
 springAi = "1.1.8"
+javafx = "21.0.5"
 
 # Libraries
 commonsCli = "1.11.0"
@@ -22,6 +23,7 @@ assertj = "3.27.7"
 [plugins]
 shadow = { id = "com.gradleup.shadow", version.ref = "shadow" }
 springBoot = { id = "org.springframework.boot", version.ref = "springBoot" }
+javafx = { id = "org.openjfx.javafxplugin", version = "0.1.0" }
 
 [libraries]
 # Spring Boot

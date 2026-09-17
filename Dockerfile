@@ -67,7 +67,7 @@ ENV LUCENE_INDEX_PATH=.prjxp-data/lucene-index
 ENV LUCENE_VECTOR_DIMENSION=1024
 
 # JVM Tuning fuer Container-Umgebung
-ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0"
+ENV JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 --add-modules jdk.incubator.vector"
 ENV SERVER_PORT=7007
 
 # Working Directory ist /app-source (wo .env und projektspezifische Config liegt)

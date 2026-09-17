@@ -59,7 +59,7 @@ public class EmbeddingImportService {
                     .filter(list -> !list.isEmpty())
                     .forEach(batch -> importBatch(store, batch));
         } catch (Exception e) {
-            logService.error(e, "Error during embedding import");
+            logService.error(e, "Error during embedding import: "+e.getMessage());
         }
     }
 
