@@ -11,7 +11,7 @@ import dev.langchain4j.store.embedding.chroma.ChromaApiVersion;
 import dev.langchain4j.store.embedding.chroma.ChromaEmbeddingStore;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -22,7 +22,7 @@ import java.util.List;
 @Configuration
 @RequiredArgsConstructor
 @Log
-@ConditionalOnProperty(name = "prjxp.embedding-store-type", havingValue = "chroma")
+@ConditionalOnExpression("'${prjxp.embedding-store-type:${prjxp.embeddingStoreType:}}'.equalsIgnoreCase('chroma')")
 public class GldRtrvrEmbeddingConfig {
     private final PxLogService logService;
 

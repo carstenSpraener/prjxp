@@ -19,6 +19,7 @@ prjxp:
   embeddingStoreLucene:
     indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
+    name: isa
 
   mcp-servers:
     - name: "filesystem-mcp"

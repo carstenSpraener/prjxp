@@ -9,7 +9,7 @@ import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.lucene.LucenePxChunkDao;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -19,7 +19,7 @@ import java.util.List;
 
 @Configuration
 @RequiredArgsConstructor
-@ConditionalOnProperty(name = "prjxp.embedding-store-type", havingValue = "lucene")
+@ConditionalOnExpression("'${prjxp.embedding-store-type:${prjxp.embeddingStoreType:}}'.equalsIgnoreCase('lucene')")
 public class LuceneStoreAutoConfiguration {
     private final PrjXPConfig config;
 
@@ -28,7 +28,8 @@ public class LuceneStoreAutoConfiguration {
         PrjXPConfig.LuceneEmbeddingStoreConfig lc = config.getEmbeddingStoreLucene();
         return new LuceneEmbeddingStore(
                 Path.of(lc.getIndexPath()),
-                lc.getVectorDimension()
+                lc.getVectorDimension(),
+                lc.getName()
         );
     }
 

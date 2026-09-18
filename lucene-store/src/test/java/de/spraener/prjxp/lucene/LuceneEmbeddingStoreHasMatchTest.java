@@ -18,7 +18,7 @@ class LuceneEmbeddingStoreHasMatchTest {
 
     @Test
     void hasMatchUsesFilterWithoutVectorSearch() {
-        LuceneEmbeddingStore store = new LuceneEmbeddingStore(tempDir.resolve("index"), 3);
+        LuceneEmbeddingStore store = new LuceneEmbeddingStore(tempDir.resolve("index"), 3, "prjxp");
 
         Metadata metadata = new Metadata();
         metadata.put("pxchunk_id", "chunk-42");

@@ -193,14 +193,25 @@ class ByIndexSearchServiceTest {
     }
 
     @Test
-    void defaultProjectResolvesToActiveProject() {
+    void defaultProjectUsesDefaultStore() {
+        when(provider.get("default")).thenReturn(Optional.empty());
+
+        service.search(new ByIndexQuery("java", "com.example.Foo", null, null, null, null, "default", 10));
+
+        verify(provider).get("default");
+    }
+
+    @Test
+    void blankProjectResolvesToActiveProject() {
         ProjectDefinition active = new ProjectDefinition();
         active.setName("cwd");
         when(cfg.getActiveProject()).thenReturn(Optional.of(active));
         when(provider.get("cwd")).thenReturn(Optional.empty());
+        when(provider.get("default")).thenReturn(Optional.empty());
 
-        service.search(new ByIndexQuery("java", "com.example.Foo", null, null, null, null, "default", 10));
+        service.search(new ByIndexQuery("java", "com.example.Foo", null, null, null, null, "   ", 10));
 
         verify(provider).get("cwd");
+        verify(provider).get("default");
     }
 }

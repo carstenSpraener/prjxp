@@ -46,10 +46,15 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
     private IndexWriter writer;
     private SearcherManager searcherManager;
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
+    private final String name;
 
-    public LuceneEmbeddingStore(Path indexPath, int vectorDimension) {
+    public LuceneEmbeddingStore(Path indexPath, int vectorDimension, String name) {
         this.indexPath = indexPath;
         this.vectorDimension = vectorDimension;
+        this.name = name;
+    }
+    public LuceneEmbeddingStore(Path indexPath, int vectorDimension) {
+        this(indexPath, vectorDimension, "prjxp");
     }
 
     private void ensureOpen() {
@@ -260,7 +265,13 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
     }
 
     private double normalizeScore(float rawScore) {
-        return Math.pow(2, -rawScore);
+        if (rawScore < 0.0f) {
+            return 0.0;
+        }
+        if (rawScore > 1.0f) {
+            return 1.0;
+        }
+        return rawScore;
     }
 
     @Override

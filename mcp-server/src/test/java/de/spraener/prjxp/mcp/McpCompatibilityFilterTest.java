@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
 class McpCompatibilityFilterTest {
@@ -84,7 +85,7 @@ class McpCompatibilityFilterTest {
     }
 
     @Test
-    void initializedNotificationIsSwallowed() throws Exception {
+    void initializedNotificationIsForwarded() throws Exception {
         MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
         request.setContentType("application/json");
         request.setContent("""
@@ -95,8 +96,21 @@ class McpCompatibilityFilterTest {
 
         filter.doFilter(request, response, chain);
 
-        verify(chain, never()).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
-        assertThat(response.getStatus()).isEqualTo(202);
+        verify(chain, times(1)).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
+        assertThat(response.getStatus()).isEqualTo(200);
+    }
+
+    @Test
+    void invalidJsonIsForwardedWithoutFilterCrash() throws Exception {
+        MockHttpServletRequest request = new MockHttpServletRequest("POST", "/mcp");
+        request.setContentType("application/json");
+        request.setContent("{jsonrpc:2.0}".getBytes(StandardCharsets.UTF_8));
+        MockHttpServletResponse response = new MockHttpServletResponse();
+        FilterChain chain = mock(FilterChain.class);
+
+        filter.doFilter(request, response, chain);
+
+        verify(chain, times(1)).doFilter(org.mockito.ArgumentMatchers.any(), org.mockito.ArgumentMatchers.any());
     }
 
     static class ToolBean {

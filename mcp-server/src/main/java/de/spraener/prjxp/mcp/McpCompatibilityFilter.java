@@ -21,6 +21,9 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.util.Collections;
+import java.util.Enumeration;
+import java.util.List;
 
 @Component
 public class McpCompatibilityFilter extends OncePerRequestFilter {
@@ -58,11 +61,6 @@ public class McpCompatibilityFilter extends OncePerRequestFilter {
             return;
         }
 
-        if ("notifications/initialized".equals(method)) {
-            response.setStatus(HttpServletResponse.SC_ACCEPTED);
-            return;
-        }
-
         if ("initialize".equals(method)) {
             JsonNode capabilities = message.path("params").path("capabilities");
             if (capabilities.isObject()) {
@@ -74,11 +72,16 @@ public class McpCompatibilityFilter extends OncePerRequestFilter {
         filterChain.doFilter(new BufferedRequestWrapper(request, requestBody), response);
     }
 
-    private JsonNode parseJson(byte[] body) throws IOException {
+    private JsonNode parseJson(byte[] body) {
         if (body.length == 0) {
             return null;
         }
-        return objectMapper.readTree(body);
+        try {
+            return objectMapper.readTree(body);
+        } catch (IOException ex) {
+            // Keep invalid payload handling in the MCP endpoint layer.
+            return null;
+        }
     }
 
     private void writeDiscoverResult(HttpServletResponse response, JsonNode idNode) throws IOException {
@@ -178,6 +181,28 @@ public class McpCompatibilityFilter extends OncePerRequestFilter {
         @Override
         public long getContentLengthLong() {
             return body.length;
+        }
+
+        @Override
+        public String getHeader(String name) {
+            if ("Content-Length".equalsIgnoreCase(name)) {
+                return String.valueOf(body.length);
+            }
+            if ("Transfer-Encoding".equalsIgnoreCase(name)) {
+                return null;
+            }
+            return super.getHeader(name);
+        }
+
+        @Override
+        public Enumeration<String> getHeaders(String name) {
+            if ("Content-Length".equalsIgnoreCase(name)) {
+                return Collections.enumeration(List.of(String.valueOf(body.length)));
+            }
+            if ("Transfer-Encoding".equalsIgnoreCase(name)) {
+                return Collections.emptyEnumeration();
+            }
+            return super.getHeaders(name);
         }
     }
 }

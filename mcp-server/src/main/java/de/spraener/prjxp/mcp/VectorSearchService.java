@@ -13,6 +13,7 @@ import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -24,7 +25,12 @@ public class VectorSearchService {
     private final SearchCapabilitiesRegistry registry;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
-        PxChunkDao dao = chunkDaoProvider.get(resolveProject(project)).orElse(null);
+        String resolvedProject = resolveProject(project);
+        Optional<PxChunkDao> daoOpt = chunkDaoProvider.get(resolvedProject);
+        if (daoOpt.isEmpty() && !"default".equalsIgnoreCase(resolvedProject)) {
+            daoOpt = chunkDaoProvider.get("default");
+        }
+        PxChunkDao dao = daoOpt.orElse(null);
         if (dao == null) {
             return List.of();
         }
@@ -47,8 +53,11 @@ public class VectorSearchService {
     }
 
     private String resolveProject(String project) {
-        if (project == null || project.isBlank() || "default".equalsIgnoreCase(project)) {
+        if (project == null || project.isBlank()) {
             return cfg.getActiveProject().map(ProjectDefinition::getName).orElse("default");
+        }
+        if ("default".equalsIgnoreCase(project)) {
+            return "default";
         }
         return project;
     }

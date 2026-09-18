@@ -141,6 +141,7 @@ class LuceneEmbeddingStoreTest {
                 .build();
 
         EmbeddingSearchResult<TextSegment> result = store.search(request);
+        assertThat(result.matches()).isNotEmpty();
         for (EmbeddingMatch<TextSegment> match : result.matches()) {
             assertThat(match.score()).isGreaterThanOrEqualTo(0.9);
         }

@@ -61,6 +61,7 @@ public class PrjXPConfig {
     public static class LuceneEmbeddingStoreConfig {
         private String indexPath = ".prjxp-data/lucene-index";
         private int vectorDimension = 1024;
+        private String name = "prjxp";
     }
 
     @lombok.Data
