@@ -67,8 +67,11 @@ public class PrjxpMcpTool {
         String language,
 
         @McpToolParam(description = "Maximum number of results (default 10, max 100).", required = false)
-        int limit
+        Integer limit
     ) {
+        if( limit == null ) {
+            limit = 0;
+        }
         if( limit == 0 ) limit = SearchLimits.DEFAULT_LIMIT;
         if(StringUtils.isEmpty(project)) project = "default";
 

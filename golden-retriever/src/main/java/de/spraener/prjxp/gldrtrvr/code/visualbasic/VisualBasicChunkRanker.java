@@ -15,7 +15,7 @@ public class VisualBasicChunkRanker implements ChunkRankingStrategy {
 
     @Override
     public double rank(PxChunk chunk) {
-        VisualBasicCodeSection section = VisualBasicCodeSection.fromName(chunk.getMetadata().get("vb_code_section"));
+        VisualBasicCodeSection section = VisualBasicCodeSection.fromName(chunk.getMetadata().get("visualbasic_code_section"));
         switch (section) {
             case CLASS_FRAME:
                 return 2;
