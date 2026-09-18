@@ -19,6 +19,9 @@ public enum VisualBasicCodeSection {
     }
 
     public static VisualBasicCodeSection fromName(String name) {
+        if( name==null) {
+            return UNKNOWN;
+        }
         for (VisualBasicCodeSection section : values()) {
             if (section.getName().equals(name)) {
                 return section;

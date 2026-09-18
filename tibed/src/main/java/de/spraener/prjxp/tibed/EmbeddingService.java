@@ -46,7 +46,7 @@ public class EmbeddingService {
                     });
             ;
         } catch (Exception e) {
-            logService.error(e, "Error during chunk processing");
+            logService.error(e, "Error during chunk processing: "+e.getMessage());
         }
     }
 

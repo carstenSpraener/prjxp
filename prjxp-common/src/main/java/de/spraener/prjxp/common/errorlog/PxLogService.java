@@ -38,7 +38,7 @@ public class PxLogService {
         if( args!=null && args.length>0) {
             formatedMessage = message.formatted(args);
         }
-        log.log(Level.SEVERE, formatedMessage);
+        log.log(Level.SEVERE, formatedMessage, t);
         StringWriter sw = new StringWriter();
         try (PrintWriter pw = new PrintWriter(sw)) {
             t.printStackTrace(pw);
