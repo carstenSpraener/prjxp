@@ -7,6 +7,8 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
+import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -28,6 +30,7 @@ public class GrepSearchService {
 
     private final PxChunkDaoProvider chunkDaoProvider;
     private final PrjXPConfig cfg;
+    private final List<GoldenRetriever> retrieverList;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
         PxChunkDao dao = chunkDaoProvider.get(resolveProject(project)).orElse(null);
@@ -43,13 +46,43 @@ public class GrepSearchService {
             return List.of();
         }
 
-        return chunks.stream()
-                .map(sc -> SearchHit.from(
-                        sc.chunk(),
-                        sc.score(),
-                        extractSnippet(sc.chunk().getContent(), query),
-                        SOURCE))
-                .toList();
+        Map<String,List<ScoredChunk>> fileToHitsMap = new HashMap<>();
+        for( ScoredChunk sChunk : chunks) {
+            String fileName = sChunk.chunk().getFile();
+            if( fileName == null ) {
+                continue;
+            }
+            List<ScoredChunk> hits = fileToHitsMap.get(fileName);
+            if( hits == null ) {
+                hits = new ArrayList<>();
+                fileToHitsMap.put(fileName, hits);
+            }
+            hits.add(sChunk);
+        }
+
+        List<SearchHit> searchHits = new ArrayList<>();
+        SearchParams sp = new SearchParams(limit, 0.85);
+        for( String fileName : fileToHitsMap.keySet() ) {
+            List<ScoredChunk> scoredChunks = fileToHitsMap.get(fileName);
+            StringBuilder sb = new StringBuilder();
+            for( var gr : retrieverList ) {
+                sb.append(gr.buildPromptForFindings(project, scoredChunks.stream().map(sc->sc.chunk()).toList(), sp));
+            }
+            double totalScore = scoredChunks.stream().mapToDouble(ScoredChunk::score).sum();
+            searchHits.add(
+                    new SearchHit(
+                            fileName,
+                            totalScore,
+                            fileName,
+                            null,
+                            null,
+                            sb.toString(),
+                            SOURCE,
+                            Map.of()
+                    )
+            );
+        }
+        return searchHits;
     }
 
     private String resolveProject(String project) {

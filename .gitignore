@@ -27,6 +27,9 @@ chroma_data/
 **/.hints
 **/.hints/*
 
+# Local agent tooling state (conversation DBs, hooks) - never commit
+.agentbridge/
+
 # OS spezifisch
 .DS_Store
 Thumbs.db

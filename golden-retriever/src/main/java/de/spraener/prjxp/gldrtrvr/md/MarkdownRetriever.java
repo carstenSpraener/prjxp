@@ -7,6 +7,7 @@ import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
+import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
@@ -22,7 +23,7 @@ public class MarkdownRetriever implements GoldenRetriever {
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
         StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
         // Die Session verwaltet den Baum-Aufbau der Dokumente

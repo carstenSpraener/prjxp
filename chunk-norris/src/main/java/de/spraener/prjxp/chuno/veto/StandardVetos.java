@@ -24,7 +24,16 @@ public class StandardVetos {
 
     @ChunkVeto
     public boolean isBuildArtifact(Path p) {
-        return p.toString().contains("target") || p.toString().contains("build");
+        boolean inSourceTree = false;
+        for (int i = 0; i < p.getNameCount(); i++) {
+            String seg = p.getName(i).toString();
+            if ("src".equals(seg)) {
+                inSourceTree = true;
+            } else if (("target".equals(seg) || "build".equals(seg)) && !inSourceTree) {
+                return true;
+            }
+        }
+        return false;
     }
 
     @ChunkVeto

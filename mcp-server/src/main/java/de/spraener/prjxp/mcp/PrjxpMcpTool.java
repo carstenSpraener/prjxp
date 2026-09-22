@@ -30,22 +30,51 @@ public class PrjxpMcpTool {
             2. Do NOT use grep or file navigation UNLESS this tool returns no useful results (fallback only).
             3. You can execute multiple follow-up queries with refined search terms to dig deeper.
             4. REWRITE the query parameter: Convert the context of the conversation into a targeted, standalone search query optimized for semantic vector retrieval.
+            
+            RESULT:
+            The search returns method implementations only if the vector search hits a method chunk AND the sekeletonsOnly is set to false.
+            Otherwise it returns simple class skeletons with imports and project inside dependencies for a architectural overview.
             """)
     public String vectorSearch(
             @McpToolParam(description = "A targeted, standalone search prompt optimized for vector retrieval based on what you need to find.", required = true)
             String userQuestion,
 
             @McpToolParam(description = "Optional project name to narrow the scope. Leave empty/default if unknown.", required = false)
-            String projectName) {
+            String projectName,
+
+            @McpToolParam(description="""
+                Distance in vector space. Range: 0.0 - 1.0 Higher values yield more precise results; Default is 0.85.
+                Range: 1.0 to 0.9 = very precise, 0.9 to 0.8 = precise, 0.8 to 0.7 = balanced, 0.7 and lower = fantasy land.
+                Illegal values are clamped to 0.85.
+                """, required = false)
+            Double distance,
+            @McpToolParam(description="""
+                Maximum number of results to return. Default is 20.
+                """, required = false)
+            Integer maxResults,
+            @McpToolParam(description="""
+                Do you need full method context on hit methods or do you always want to see class skeletons only? Default is false (full context).
+                """, required = false)
+            Boolean skeletonsOnly
+    ) {
 
         String prefix = """
                 """;
         if (projectName == null || projectName.isEmpty() || "default".equals(projectName)) {
             projectName = cfg.getActiveProject().get().getName();
         }
-
+        if( distance == null || distance < 0.0 || distance > 1.0 ) {
+            distance = 0.85;
+        }
+        if( maxResults==null ||maxResults>20 || maxResults<1 ) {
+            maxResults = 20;
+        }
+        if( skeletonsOnly==null) {
+            skeletonsOnly = Boolean.FALSE;
+        }
         log.info(String.format("searching context for '%s' for project '%s'.", userQuestion, projectName));
-        String context = enrichment.enrich(projectName, userQuestion);
+        String context = enrichment.enrich(projectName, userQuestion, distance, maxResults, skeletonsOnly);
+
         String result = String.format("%s\n%s", prefix, context);
         log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));
         return result;
@@ -77,4 +106,5 @@ public class PrjxpMcpTool {
 
         return grepSearchService.search(query.trim(), project, language, limit);
     }
+
 }

@@ -31,6 +31,20 @@ public class GRPromptEnrichment {
                 c -> c.length() > 0);
     }
 
+    public String enrich(String projectName, String prompt, double distance, int maxResults, boolean skeletonsOnly) {
+        return enrich(projectName, prompt, List.of(),
+                new SearchParams(maxResults, distance, skeletonsOnly),
+                this::reIterate,
+                (context) ->
+                        String.format("""
+                                Relevante Information in '%s':
+                                %s
+                                
+                                """, projectName, context
+                        ),
+                c -> c.length() > 0);
+    }
+
     public String enrich(String projectName, String prompt, List<PxChunk> prefetchedChunks,
                          Function<String, String> promptFormatter,
                          Function<String, Boolean>... contextValidator) {
@@ -57,7 +71,7 @@ public class GRPromptEnrichment {
 
             StringBuilder sb = new StringBuilder();
             for( var gr : retrieverList ) {
-                sb.append(gr.buildPromptForFindings(projectName, relevantChunks, contextValidator));
+                sb.append(gr.buildPromptForFindings(projectName, relevantChunks, searchParams, contextValidator));
             }
             overallContext = sb.toString();
             if (contextValidator != null && contextValidator.length > 0) {

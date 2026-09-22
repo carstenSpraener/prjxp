@@ -43,7 +43,7 @@ public class JavaCodeChunker {
 
     private final JavaDependencyHandler javaDependencyHandler;
 
-    @Value("${prjxp.java.chunksize:1300}")
+    @Value("${prjxp.java.chunksize:1000}")
     private int chunkSize;
     @Value("${prjxp.java.chunkoverlap:100}")
     private int overlap;
