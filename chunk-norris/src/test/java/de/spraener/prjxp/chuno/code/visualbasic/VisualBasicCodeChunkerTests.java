@@ -58,9 +58,11 @@ public class VisualBasicCodeChunkerTests {
                         c.getContent().contains("Public Function LoadCustomer(id As Integer) As String") &&
                         c.getContent().contains("Return id.ToString()") &&
                         c.getContent().endsWith("End Function\n") &&
+                        "CustomerService CustomerService".equals(c.getEmbeddingPrefix()) &&
                         hasCodeSection(c, "method"))
                 .anyMatch(c -> c.getId().equals("CustomerService.CustomerService.LoadCustomer.doc") &&
                         c.getContent().contains("Loads a customer") &&
+                        "CustomerService CustomerService".equals(c.getEmbeddingPrefix()) &&
                         hasCodeSection(c, "methodDoc"))
                 .anyMatch(c -> c.getId().equals("CustomerService.CustomerService.ResetCounter") &&
                         c.getContent().contains("Private Sub ResetCounter()") &&
@@ -95,9 +97,11 @@ public class VisualBasicCodeChunkerTests {
                         c.getContent().contains("Public Sub Greet(ByVal name As String)") &&
                         c.getContent().contains("MsgBox \"Hello \" & name") &&
                         c.getContent().endsWith("End Sub\n") &&
+                        "LegacyModule".equals(c.getEmbeddingPrefix()) &&
                         hasCodeSection(c, "method"))
                 .anyMatch(c -> c.getId().equals("LegacyModule.Greet.doc") &&
                         c.getContent().contains("Greets the given user") &&
+                        "LegacyModule".equals(c.getEmbeddingPrefix()) &&
                         hasCodeSection(c, "methodDoc"))
                 .anyMatch(c -> c.getId().equals("LegacyModule.BuildMessage") &&
                         c.getContent().contains("Private Function BuildMessage(ByVal name As String) As String") &&

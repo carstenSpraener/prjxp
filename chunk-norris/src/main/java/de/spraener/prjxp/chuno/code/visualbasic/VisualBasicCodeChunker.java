@@ -208,17 +208,18 @@ public class VisualBasicCodeChunker {
 
     private Collection<PxChunk> createMethodChunks(File f, List<String> codeLines, VisualBasicFileInfo fileInfo) {
         List<PxChunk> chunks = new ArrayList<>();
+        String embeddingPrefix = fileInfo.embeddingPrefix();
         for (MemberInfo member : fileInfo.members) {
             String id = fileInfo.memberId(member);
             if (member.docStartLine >= 0) {
                 chunks.addAll(split(readLines(codeLines, member.docStartLine, member.startLine), member.docStartLine, member.startLine, () ->
-                        createChunk(f, id, id + ".doc", VisualBasicCodeSection.METHOD_DOC)));
+                        createChunk(f, id, id + ".doc", VisualBasicCodeSection.METHOD_DOC,
+                                c -> c.setEmbeddingPrefix(embeddingPrefix))));
             }
             chunks.addAll(
                     split(readLines(codeLines, member.startLine, member.endLine), member.startLine, member.endLine, () ->
-                    createChunk(f, fileInfo.parentId(), id, VisualBasicCodeSection.METHOD, c->{
-
-                    }))
+                    createChunk(f, fileInfo.parentId(), id, VisualBasicCodeSection.METHOD,
+                            c -> c.setEmbeddingPrefix(embeddingPrefix)))
             );
         }
         return chunks;
@@ -309,6 +310,10 @@ public class VisualBasicCodeChunker {
     private record VisualBasicFileInfo(String moduleName, ContainerInfo containerInfo, List<MemberInfo> members) {
         String parentId() {
             return containerInfo == null ? moduleName : moduleName + "." + containerInfo.name;
+        }
+
+        String embeddingPrefix() {
+            return containerInfo == null ? moduleName : moduleName + " " + containerInfo.name;
         }
 
         String memberId(MemberInfo member) {
