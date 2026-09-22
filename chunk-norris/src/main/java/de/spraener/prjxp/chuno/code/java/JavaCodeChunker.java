@@ -1,5 +1,6 @@
 package de.spraener.prjxp.chuno.code.java;
 
+import com.github.javaparser.ParseProblemException;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
@@ -63,6 +64,11 @@ public class JavaCodeChunker {
             chunks.addAll(createClassFrameChunk(f, cu, codeLines));
             chunks.addAll(createMetaChunk(cu, chunks, codeLines));
             return chunks.stream();
+        } catch( ParseProblemException ppXC ) {
+            for( var problem : ppXC.getProblems() ) {
+                log.warning("Parse-Problem while chunking file " + f.getAbsolutePath() + ": " + problem.getMessage());
+            }
+            return Stream.of();
         } catch (Exception e) {
             log.warning("Exception while chunking file " + f.getAbsolutePath() + ": " + e.getMessage());
             return Stream.of();
@@ -130,6 +136,7 @@ public class JavaCodeChunker {
     private void createContainedMethodChunks(File f, CompilationUnit cu, List<PxChunk> chunks, TypeDeclaration<?> type, List<String> codeLines) {
         for (var m : type.getMethods()) {
             String clazzName = type.getFullyQualifiedName().get().toString();
+            String pkgName = cu.getPackageDeclaration().get().getName().toString();
             String methodSig = m.getDeclarationAsString(false, false, false);
             String id = clazzName + "." + methodSig;
             m.getJavadocComment().ifPresent(jc -> {
@@ -145,6 +152,7 @@ public class JavaCodeChunker {
                                         c -> c.setId(id + ".javadoc"),
                                         c -> c.setFile(f.getAbsolutePath()),
                                         c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.METHOD_DOC.getName()),
+                                        c->c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
                                         c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.METHOD_DOC.getName(),
                                                 clazzName, m.getNameAsString(), methodSig)
                             )
@@ -165,6 +173,7 @@ public class JavaCodeChunker {
                                     c -> c.setParent(type.getFullyQualifiedName().get().toString()),
                                     c -> c.setId(id),
                                     c -> c.setFile(f.getAbsolutePath()),
+                                    c -> c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
                                     c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.METHOD.getName()),
                                     c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.METHOD.getName(),
                                             clazzName, m.getNameAsString(), methodSig)

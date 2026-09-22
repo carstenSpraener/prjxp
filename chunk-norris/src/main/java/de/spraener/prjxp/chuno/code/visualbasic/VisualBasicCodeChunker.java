@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Stream;
@@ -213,8 +214,12 @@ public class VisualBasicCodeChunker {
                 chunks.addAll(split(readLines(codeLines, member.docStartLine, member.startLine), member.docStartLine, member.startLine, () ->
                         createChunk(f, id, id + ".doc", VisualBasicCodeSection.METHOD_DOC)));
             }
-            chunks.addAll(split(readLines(codeLines, member.startLine, member.endLine), member.startLine, member.endLine, () ->
-                    createChunk(f, fileInfo.parentId(), id, VisualBasicCodeSection.METHOD)));
+            chunks.addAll(
+                    split(readLines(codeLines, member.startLine, member.endLine), member.startLine, member.endLine, () ->
+                    createChunk(f, fileInfo.parentId(), id, VisualBasicCodeSection.METHOD, c->{
+
+                    }))
+            );
         }
         return chunks;
     }
@@ -267,14 +272,20 @@ public class VisualBasicCodeChunker {
         return new ContentSplitter(this.chunkSize, this.overlap).splitContent(content, fromLine, toLine, chunkSupplier);
     }
 
-    private PxChunk createChunk(File f, String parent, String id, VisualBasicCodeSection section) {
-        return PxChunk.create(
+    private PxChunk createChunk(File f, String parent, String id, VisualBasicCodeSection section, Consumer<PxChunk>... refiner) {
+        PxChunk result = PxChunk.create(
                 c -> c.setMimeType(VISUAL_BASIC_CODE_MIME_TYPE),
                 c -> c.setParent(parent),
                 c -> c.setId(id),
                 c -> c.setFile(f.getAbsolutePath()),
                 c -> c.getMetadata().put(MDKEY_CODESECTION, section.getName())
         );
+        if( refiner != null ) {
+            for( Consumer<PxChunk> r : refiner ) {
+                r.accept(result);
+            }
+        }
+        return result;
     }
 
     private String readLines(List<String> codeLines, int from, int to) {

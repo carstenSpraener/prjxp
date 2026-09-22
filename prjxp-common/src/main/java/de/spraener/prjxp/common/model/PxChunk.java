@@ -25,6 +25,7 @@ public class PxChunk {
     public static final String PXCHUNK_SIZE = "pxchunk_size";
     public static final String PXCHUNK_OVERLAP = "pxchunk_overlap";
     public static final String PXCHUNK_METADATA = "pxchunk_metadata";
+    public static final String PXCHUNK_EMBEDDING_PREFIX = "pxchunk_embedding_prefix";
 
     private String id;
     private String mimeType;
@@ -36,6 +37,7 @@ public class PxChunk {
     private String toLine;
     private int size;
     private int overlap;
+    private String embeddingPrefix;
     private Map<String, String> metadata = new HashMap<>();
 
     private String content;
@@ -59,6 +61,7 @@ public class PxChunk {
         ifNotNull(chunk.toLine, () -> map.put(PXCHUNK_TO_LINE, chunk.toLine));
         ifNotNull(chunk.size, () -> map.put(PXCHUNK_SIZE, "" + chunk.size));
         ifNotNull(chunk.overlap, () -> map.put(PXCHUNK_OVERLAP, "" + chunk.overlap));
+        ifNotNull(chunk.embeddingPrefix, ()->map.put(PXCHUNK_EMBEDDING_PREFIX, chunk.embeddingPrefix));
         for (var e : chunk.getMetadata().entrySet()) {
             map.put(PXCHUNK_METADATA + "." + e.getKey(), e.getValue());
         }
@@ -93,6 +96,7 @@ public class PxChunk {
         if (metadata.containsKey(PXCHUNK_TOTAL)) chunk.setTotal(Integer.parseInt(metadata.get(PXCHUNK_TOTAL)));
         if (metadata.containsKey(PXCHUNK_SIZE)) chunk.setSize(Integer.parseInt(metadata.get(PXCHUNK_SIZE)));
         if (metadata.containsKey(PXCHUNK_OVERLAP)) chunk.setOverlap(Integer.parseInt(metadata.get(PXCHUNK_OVERLAP)));
+        if (metadata.containsKey(PXCHUNK_EMBEDDING_PREFIX)) chunk.setEmbeddingPrefix(metadata.get(PXCHUNK_EMBEDDING_PREFIX));
 
         chunk.setFromLine(metadata.get(PXCHUNK_FROM_LINE));
         chunk.setToLine(metadata.get(PXCHUNK_TO_LINE));

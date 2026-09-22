@@ -8,7 +8,17 @@ public class PxChunk2TextSegmentConverter {
     public static TextSegment convert(PxChunk chunk) {
         Metadata metadata = new Metadata();
         PxChunk.metadataAsMap(chunk).forEach(metadata::put);
+        String content = chunk.getContent();
+        return TextSegment.from(content, metadata);
+    }
 
-        return TextSegment.from(chunk.getContent(), metadata);
+    public static TextSegment convertWithEmbeddingPrefix(PxChunk chunk) {
+        Metadata metadata = new Metadata();
+        PxChunk.metadataAsMap(chunk).forEach(metadata::put);
+        String content = chunk.getContent();
+        if( chunk.getEmbeddingPrefix()!=null && !chunk.getEmbeddingPrefix().isBlank() ) {
+            content = chunk.getEmbeddingPrefix() + "\n" + content;
+        }
+        return TextSegment.from(content, metadata);
     }
 }
