@@ -66,8 +66,11 @@ prjxp:
       tibedBatchSize: 50                        # Chunks per embedding batch
       tibedResetStore: true                     # Reset index on re-embed
 
-  # Embedding: use built-in ONNX model (no external server needed)
-  embeddingModelType: ${EMBEDDING_MODEL_TYPE:onnx_local}
+  # Embedding: OpenAI-compatible endpoint (e.g. TEI)
+  embedding:
+    type: "OPEN_AI"
+    apiBaseURL: ${EMBEDDING_API_BASE_URL:http://localhost:80/v1}
+    modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
 
   # Vector store: Lucene (local, no external DB)
   embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
@@ -83,7 +86,7 @@ server:
 - `rootDir` **must** be `/app-source` — this is the Docker mount point
 - `chunoWhiteList` determines which file types are chunked: `java`, `ts`, `js`, `py`, etc.
 - `tibedResetStore: true` clears the old index before re-embedding (useful for updates)
-- `onnx_local` embedding means no external Ollama server is needed — the model runs inside the container
+- `OPEN_AI` embedding nutzt einen OpenAI-kompatiblen Endpoint (z. B. TEI auf Port 80)
 
 ---
 
@@ -94,7 +97,8 @@ The control script also copies `.env.example` to `.env` on first run. Verify the
 ```bash
 PRJXP_ROOT_DIR=/app-source
 EMBEDDING_STORE_TYPE=lucene
-EMBEDDING_MODEL_TYPE=onnx_local
+EMBEDDING_API_BASE_URL=http://localhost:80/v1
+EMBEDDING_MODEL_NAME=mixedbread-ai/mxbai-embed-large-v1
 LUCENE_INDEX_PATH=.prjxp-data/lucene-index
 LUCENE_VECTOR_DIMENSION=1024
 SERVER_PORT=7007
@@ -268,9 +272,7 @@ Docker Container (prjxp image)
 ├── chunk-norris-all.jar     ← Chunks source code → JSONL
 ├── tibed-all.jar            ← Embeds chunks → Lucene index
 ├── mcp-server-all.jar       ← Serves retrieval API on :7007
-└── prjxp-common/embedding-server/
-    ├── embedding-server.py  ← Python ONNX server (auto-started)
-    └── models/              ← mxbai-embed-large (1024-dim)
+└── text-embeddings-router    ← TEI CPU embedding server (HF model)
 
 Docker Volume: prjxp-data
 └── .prjxp-data/lucene-index/  ← Persistent Lucene index

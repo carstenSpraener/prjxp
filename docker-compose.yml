@@ -11,7 +11,6 @@ services:
       - prjxp-data:/app-source/.prjxp-data/lucene-index
     environment:
       EMBEDDING_STORE_TYPE: lucene
-      EMBEDDING_MODEL_TYPE: onnx_local
       LUCENE_INDEX_PATH: .prjxp-data/lucene-index
       LUCENE_VECTOR_DIMENSION: "1024"
       PRJXP_ROOT_DIR: /app-source

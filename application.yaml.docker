@@ -10,21 +10,19 @@ prjxp:
       tibedBatchSize: 50
       tibedResetStore: true
 
-  # Embedding model type: ollama or onnx_local
+  # Embedding model type: ollama or open_ai
   # Embedding store type: lucene or chroma
   embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
-  embeddingServerScriptPath: "/app/prjxp-common/embedding-server/scripts/embedding-server.py"
-  embeddingServerModelPath: "/app/prjxp-common/embedding-server/models/model.onnx"
-  embeddingServerModelsDir: "/app/prjxp-common/embedding-server/models"
   embeddingStoreLucene:
     indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
 
   embedding:
-    type: "ONNX_LOCAL"
-    apiBaseURL: "http://localhost:1234/v1"
-    modelName: "model.onnx"
-    timeout: 180
+    type: "OPEN_AI"
+    apiBaseURL: ${EMBEDDING_API_BASE_URL:http://localhost:80/v1}
+    modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
+    timeout: ${EMBEDDING_TIMEOUT:180}
+    apiKey: ${EMBEDDING_API_KEY:dummy}
 
   embeddingStores:
     - projectName: cwd

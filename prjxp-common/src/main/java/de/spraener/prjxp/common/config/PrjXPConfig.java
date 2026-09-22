@@ -6,7 +6,6 @@ import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -29,20 +28,12 @@ public class PrjXPConfig {
     private String embeddingProviderType = "openai";
     private int embeddingTimeoutSecs = 60;
 
-    // Embedding model type: "ollama" or "onnx_local"
+    // Embedding model type: "ollama" or "open_ai"
     private EmbeddingModelType embeddingModelType = EmbeddingModelType.OLLAMA;
 
     public enum EmbeddingModelType {
-        OLLAMA, ONNX_LOCAL, OPEN_AI
+        OLLAMA, OPEN_AI
     }
-
-    // Embedding server auto-start config (ONNX_LOCAL mode) — absolute paths for Docker
-    private String embeddingServerScriptPath = "/app/prjxp-common/embedding-server/scripts/embedding-server.py";
-    private String embeddingServerModelPath = "/app/prjxp-common/embedding-server/models/model.onnx";
-    private String embeddingServerModelsDir = "/app/prjxp-common/embedding-server/models";
-    private int embeddingServerPort = 11435;
-    private int embeddingServerStartupTimeoutSecs = 300;
-    private boolean embeddingServerFailOnStartupError = true;
 
     // Hierarchische Listen MÜSSEN vorinitialisiert sein
     private List<PrjXPEmbeddingStoreReference> embeddingStores = new ArrayList<>();

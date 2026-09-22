@@ -10,12 +10,9 @@ prjxp:
       tibedBatchSize: 500
       tibedResetStore: true
 
-  # Embedding model type: ollama or onnx_local
+  # Embedding model type: ollama or open_ai
   # Embedding store type: lucene or chroma
   embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
-  embeddingServerScriptPath: "prjxp-common/embedding-server/scripts/embedding-server.py"
-  embeddingServerModelPath: "prjxp-common/embedding-server/models/model.onnx"
-  embeddingServerModelsDir: "prjxp-common/embedding-server/models"
   embeddingStoreLucene:
     indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
