@@ -61,6 +61,7 @@ Relevante Dateien:
   - a) Effektiven Schwellwert im Response-Header melden: `Effektive Similarity-Schwelle: 0.83 (2 Fallbacks)`.
   - b) Treppe konfigurierbar: Schrittweite, maximale Tiefe, oder deaktivierbar (dann saubere „keine Treffer"-Antwort statt stillem Fallback).
   - c) Langfristig: harten Cutoff durch Top-N + weichen Boden ersetzen (z. B. immer Treffer ≥ 0.5, sortiert nach Score).
+- **Status (2026-09-22): a) + Grid-Snap umgesetzt.** 1. Versuch = Request-Wert; jeder Fallback snappt auf den höchsten Punkt des kanonischen 0,05-Rasters *darunter* (`Math.floor((minScore − ε) / 0.05) × 0.05`, Epsilon gegen Float-Drift/Endlosschleife). Gemessen: alle Requests ≥ 0,88 landen auf 0,85 → byte-identischer Output; der 27-Klassen-Mega-Dump ist aus diesem Bereich nicht mehr erreichbar. Verbleibender Rest-Sägezahn (akzeptiert): direkter Treffer im schmalen Band 0,86/0,87 → 1 Klasse vs. Fallback-Landung ≥ 0,88 → 2 Klassen.
 - **Effekt:** Monotones, erklärbares Verhalten; der `distance`-Parameter wird wieder vertrauenswürdig.
 - **Aufwand:** klein–mittel.
 
@@ -105,9 +106,23 @@ Relevante Dateien:
 - **Änderung:** Effektiven Schwellwert und Anzahl der Fallback-Runden in die Nachricht aufnehmen.
 - **Aufwand:** trivial.
 
+### P9 – Gesamt-Budget über alle Retriever (nach Umsetzung von P1–P6 neu entdeckt)
+
+- **Problem:** Jede Session (Java, TypeScript, VisualBasic, Markdown) hat ein eigenes Budget (`prjxp.gldrtrvr.maxcontentlength`, Default 50k); `GRPromptEnrichment` concatentiert die Retriever-Outputs **ohne Gesamtcap**. Gemessen (2026-09-22, cgv19): 76.023 Chars (≈19k Tokens) bei effektiver Schwelle 0,83 – keine einzelne Session sprengte ihr Limit, daher auch kein Kürzungshinweis.
+- **Änderung:** Gesamtbudget in `GRPromptEnrichment` (z. B. `prjxp.gldrtrvr.totalcontentlength: 60000`): bei Überschreitung weitere Retriever-Outputs nicht mehr anhängen und Kürzungshinweis ausgeben. Alternativ: Per-Session-Default senken (z. B. 25k).
+- **Effekt:** Vorhersehbare Prompt-Größe für das LLM; Kürzung ist immer sichtbar.
+- **Aufwand:** klein.
+
+### P10 – Annotation-Duplikation in `JavaCodeChunker` (chunk-norris)
+
+- **Problem:** In 43 % der Method-Chunks erscheint die erste Annotationszeile doppelt (AST-Rendering + Source-Range, die sie bereits enthält). **Im neu eingebetteten cgv19-Index weiterhin vorhanden** (Test 2026-09-22): 6 doppelte Zeilen im vectorSearch-Output (`@Input`, `@Inject`, `@TaskAction` in `CGV19GenerateTask`).
+- **Änderung:** AST-Annotationen weglassen und nur die Source-Zeilen nehmen (bzw. identische aufeinanderfolgende Zeilen deduplizieren).
+- **Effekt:** Sauberere Chunks, leicht bessere Embedding-Qualität; keine Auswirkung auf die Retrieval-Mechanik selbst.
+- **Aufwand:** klein (chunk-norris, danach Re-Embedding nötig).
+
 ## Verwandt, aber außerhalb von golden-retriever
 
-- **`JavaCodeChunker`: Annotation-Duplikation** – in 43 % der Method-Chunks erscheint die erste Annotationszeile doppelt (AST-Rendering + Source-Range, die sie bereits enthält). Fix: AST-Annotationen weglassen, nur Source-Zeilen nehmen. (`chunk-norris`)
+- **Annotation-Duplikation** – inzwischen als P10 in die Prioritätenliste aufgenommen.
 - **`embeddingPrefix`** – das A/B-Experiment (Präfix `package ClassName` vor dem Embedding) hat Redundanz beseitigt und das Output-Volumen bei 0.85 um ~68 % gesenkt; kein weiterer Handlungsbedarf, aber die in P1/P2 beschriebenen Mechanismen wirken *zusätzlich* darauf.
 
 ## Verifikationsplan
@@ -116,4 +131,4 @@ Nach jeder Änderung den Distanz-Sweep wiederholen (MCP `vectorSearch`, Projekt 
 
 - Query 1: „Fluent API für Transformationen in cgv19" bei distance 0.85–0.97 (Schritt 0.01)
 - Query 2: „createMClass Consumer getParent" (konkrete Methoden, Regressionsschutz)
-- Erwartet: monotone Klassenanzahl über der Distanz; bei P2 zusätzlich sichtbarer effektiver Schwellwert.
+- Erwartet (mit Grid-Snap): alle Requests in derselben Score-Lücke landen auf demselben Gitterpunkt → identischer Output; direkte Treffer in schmalen Bändern dürfen abweichen (akzeptierter Rest-Sägezahn, z. B. 0,86/0,87 → 1 Klasse vs. ≥ 0,88 → 2).

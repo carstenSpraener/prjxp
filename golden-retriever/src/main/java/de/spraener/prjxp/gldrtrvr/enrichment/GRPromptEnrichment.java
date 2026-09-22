@@ -131,7 +131,12 @@ public class GRPromptEnrichment {
         if (searchParams.getMaxResult() < 16) {
             searchParams.setMaxResult(searchParams.getMaxResult() + 2);
         } else {
-            searchParams.setMinScore(searchParams.getMinScore() - 0.05);
+            // Snap to the canonical 0.05 grid: next attempt is the highest grid point
+            // strictly below the current threshold (e.g. 0.93 -> 0.90, 0.85 -> 0.80).
+            // The epsilon keeps on-grid values strictly descending (avoids an infinite loop);
+            // recomputing from the current value avoids accumulated float drift.
+            searchParams.setMinScore(
+                    Math.floor((searchParams.getMinScore() - 1e-9) / 0.05) * 0.05);
         }
         if (searchParams.getMinScore() < minScoreBefore) {
             searchParams.setFallbackRounds(searchParams.getFallbackRounds() + 1);
