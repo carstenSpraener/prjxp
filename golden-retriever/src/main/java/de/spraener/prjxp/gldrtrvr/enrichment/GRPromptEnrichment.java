@@ -20,9 +20,11 @@ public class GRPromptEnrichment {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final List<GoldenRetriever> retrieverList;
     @Value("${prjxp.gldrtrvr.maxcontentlength:50000}")
-    private int maxContentLength;
+    private int maxContentLength = 50000;
     @Value("${prjxp.gldrtrvr.vector-window:50}")
-    private int vectorWindow;
+    private int vectorWindow = 50;
+    @Value("${prjxp.gldrtrvr.totalcontentlength:60000}")
+    private int totalContentLength = 60000;
 
     public String enrich(String projectName, String prompt) {
         SearchParams params = new SearchParams(20, 0.85);
@@ -88,8 +90,19 @@ public class GRPromptEnrichment {
             relevantChunks.addAll(similarChunks);
 
             StringBuilder sb = new StringBuilder();
+            int skippedRetrievers = 0;
             for( var gr : retrieverList ) {
-                sb.append(gr.buildPromptForFindings(projectName, relevantChunks, searchParams, contextValidator));
+                String part = gr.buildPromptForFindings(projectName, relevantChunks, searchParams, contextValidator).toString();
+                // Global budget across all retrievers: the first output always goes in,
+                // subsequent ones only if they still fit (prevents mega-dumps).
+                if (sb.length() > 0 && sb.length() + part.length() > totalContentLength) {
+                    skippedRetrievers++;
+                    continue;
+                }
+                sb.append(part);
+            }
+            if (skippedRetrievers > 0) {
+                sb.append("\n[weitere ").append(skippedRetrievers).append(" Retriever-Outputs wegen Groessenlimit nicht enthalten]\n");
             }
             overallContext = sb.toString();
             if (contextValidator != null && contextValidator.length > 0) {

@@ -110,6 +110,7 @@ Relevante Dateien:
 
 - **Problem:** Jede Session (Java, TypeScript, VisualBasic, Markdown) hat ein eigenes Budget (`prjxp.gldrtrvr.maxcontentlength`, Default 50k); `GRPromptEnrichment` concatentiert die Retriever-Outputs **ohne Gesamtcap**. Gemessen (2026-09-22, cgv19): 76.023 Chars (≈19k Tokens) bei effektiver Schwelle 0,83 – keine einzelne Session sprengte ihr Limit, daher auch kein Kürzungshinweis.
 - **Änderung:** Gesamtbudget in `GRPromptEnrichment` (z. B. `prjxp.gldrtrvr.totalcontentlength: 60000`): bei Überschreitung weitere Retriever-Outputs nicht mehr anhängen und Kürzungshinweis ausgeben. Alternativ: Per-Session-Default senken (z. B. 25k).
+- **Status (2026-09-22): umgesetzt.** `prjxp.gldrtrvr.totalcontentlength` (Default 60k): erster Retriever-Output geht immer rein, weitere nur bei Platz; sonst Kürzungshinweis `[weitere N Retriever-Outputs wegen Groessenlimit nicht enthalten]`. Unit-getestet (`GRPromptEnrichmentTest`).
 - **Effekt:** Vorhersehbare Prompt-Größe für das LLM; Kürzung ist immer sichtbar.
 - **Aufwand:** klein.
 
