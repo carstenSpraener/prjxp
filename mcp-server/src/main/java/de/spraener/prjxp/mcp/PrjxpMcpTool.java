@@ -43,11 +43,11 @@ public class PrjxpMcpTool {
             String projectName,
 
             @McpToolParam(description="""
-                Distance in vector space. Range: 0.0 - 1.0 Higher values yield more precise results; Default is 0.85.
+                Similarity in vector space. Range: 0.0 - 1.0 Higher values yield more precise results; Default is 0.85.
                 Range: 1.0 to 0.9 = very precise, 0.9 to 0.8 = precise, 0.8 to 0.7 = balanced, 0.7 and lower = fantasy land.
                 Illegal values are clamped to 0.85.
                 """, required = false)
-            Double distance,
+            Double similarity,
             @McpToolParam(description="""
                 Maximum number of results to return. Default is 20.
                 """, required = false)
@@ -63,8 +63,8 @@ public class PrjxpMcpTool {
         if (projectName == null || projectName.isEmpty() || "default".equals(projectName)) {
             projectName = cfg.getActiveProject().get().getName();
         }
-        if( distance == null || distance < 0.0 || distance > 1.0 ) {
-            distance = 0.85;
+        if( similarity == null || similarity < 0.0 || similarity > 1.0 ) {
+            similarity = 0.85;
         }
         if( maxResults==null ||maxResults>20 || maxResults<1 ) {
             maxResults = 20;
@@ -73,7 +73,7 @@ public class PrjxpMcpTool {
             skeletonsOnly = Boolean.FALSE;
         }
         log.info(String.format("searching context for '%s' for project '%s'.", userQuestion, projectName));
-        String context = enrichment.enrich(projectName, userQuestion, distance, maxResults, skeletonsOnly);
+        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, skeletonsOnly);
 
         String result = String.format("%s\n%s", prefix, context);
         log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));
