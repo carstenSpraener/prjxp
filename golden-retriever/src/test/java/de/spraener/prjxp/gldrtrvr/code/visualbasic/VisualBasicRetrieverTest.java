@@ -2,6 +2,7 @@ package de.spraener.prjxp.gldrtrvr.code.visualbasic;
 
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingStrategy;
@@ -58,7 +59,7 @@ class VisualBasicRetrieverTest {
                 """);
         chunkDao.add(frame, method, doc);
 
-        String prompt = retriever.buildPromptForFindings("default", List.of(method), sp).toString();
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(method, 1.0)), sp).toString();
 
         assertThat(prompt)
                 .contains("```vb")
@@ -86,7 +87,7 @@ class VisualBasicRetrieverTest {
                 """);
         chunkDao.add(frame, method);
 
-        String prompt = retriever.buildPromptForFindings("default", List.of(method), sp).toString();
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(method, 1.0)), sp).toString();
 
         assertThat(prompt)
                 .contains("Public Function Hello(name As String) As String")
@@ -119,7 +120,7 @@ class VisualBasicRetrieverTest {
         part1.setOverlap(0);
         chunkDao.add(frame, part0, part1);
 
-        String prompt = retriever.buildPromptForFindings("default", List.of(part0), sp).toString();
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(part0, 1.0)), sp).toString();
 
         assertThat(prompt)
                 .contains("Dim value As String = \"A\"")
@@ -135,7 +136,7 @@ class VisualBasicRetrieverTest {
                 """);
         chunkDao.add(method);
 
-        String prompt = retriever.buildPromptForFindings("default", List.of(method), sp).toString();
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(method, 1.0)), sp).toString();
 
         assertThat(prompt)
                 .contains("## VisualBasic-Methode Example.Example.Orphan")
@@ -155,7 +156,7 @@ class VisualBasicRetrieverTest {
                 """);
         chunkDao.add(imports, frame);
 
-        String prompt = retriever.buildPromptForFindings("default", List.of(frame, imports), sp).toString();
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(frame, 1.0), new ScoredChunk(imports, 1.0)), sp).toString();
 
         assertThat(prompt.indexOf("Imports System.Collections.Generic"))
                 .isLessThan(prompt.indexOf("Public Module Example"));

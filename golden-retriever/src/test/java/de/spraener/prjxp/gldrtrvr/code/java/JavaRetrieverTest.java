@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.chunks.PxChunkDaoInMemoryImpl;
@@ -57,7 +58,7 @@ class JavaRetrieverTest {
         PxChunkDao chunkDao = chunkDaoProvider.get("default").get();
         List<PxChunk> chunks = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)");
         chunks.addAll(chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>).javadoc"));
-        StringBuilder prompt = retriever.buildPromptForFindings("default", List.of(chunks.get(0)), sp);
+        StringBuilder prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunks.get(0), 1.0)), sp);
         System.out.println(prompt);
     }
 
@@ -67,7 +68,7 @@ class JavaRetrieverTest {
         PxChunkDao chunkDao = chunkDaoProvider.get("default").get();
         List<PxChunk> chunksA = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.Collection<? extends PxChunk> createClassFrameChunk(File, CompilationUnit, List<String>)");
         List<PxChunk> chunksB = chunkDao.findById("de.spraener.prjxp.chuno.code.java.JavaCodeChunker.void createContainedMethodChunks(File, CompilationUnit, List<PxChunk>, TypeDeclaration<?>, List<String>)");
-        StringBuilder prompt = retriever.buildPromptForFindings("default", List.of(chunksA.get(chunksA.size() - 1), chunksB.get(0)), sp);
+        StringBuilder prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunksA.get(chunksA.size() - 1), 1.0), new ScoredChunk(chunksB.get(0), 1.0)), sp);
         System.out.println(prompt);
     }
 
@@ -81,7 +82,7 @@ class JavaRetrieverTest {
                 }
         );
         pxChunkDaoInMemory.addChunk(tsChunk);
-        String prompt = retriever.buildPromptForFindings("default", List.of(tsChunk), sp).toString();
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(tsChunk, 1.0)), sp).toString();
         assertTrue("".equals(prompt));
     }
 
@@ -111,10 +112,10 @@ class JavaRetrieverTest {
                     c.setTotal(2);
                 }
         );
-        List<PxChunk> chunkList = new ArrayList<>();
-        chunkList.add(tsChunk);
-        chunkList.add(null);
-        chunkList.add(noneDBChunk);
+        List<ScoredChunk> chunkList = new ArrayList<>();
+        chunkList.add(new ScoredChunk(tsChunk, 1.0));
+        chunkList.add(new ScoredChunk(null, 1.0));
+        chunkList.add(new ScoredChunk(noneDBChunk, 1.0));
         String prompt = retriever.buildPromptForFindings("default", chunkList, sp).toString();
         assertTrue("".equals(prompt));
     }

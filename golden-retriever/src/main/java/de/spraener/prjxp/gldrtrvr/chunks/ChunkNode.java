@@ -1,7 +1,5 @@
 package de.spraener.prjxp.gldrtrvr.chunks;
 
-import de.spraener.prjxp.common.code.java.JavaCodeSection;
-import de.spraener.prjxp.common.code.typescript.TypeScriptCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import lombok.Data;
 import lombok.ToString;
@@ -55,10 +53,15 @@ public class ChunkNode {
         }
     }
 
-    public ChunkNode rank(PxChunk hitChunk, ChunkRankingService rankingService) {
+    public ChunkNode rank(PxChunk hitChunk, ChunkRankingService rankingService, double similarityScore) {
         if (this.parent == null) {
-            this.rootRank += rankingService.rank(hitChunk);
+            double weightedScore = Math.max(0.0, Math.min(1.0, similarityScore));
+            this.rootRank += rankingService.rank(hitChunk) * weightedScore;
         }
         return this;
+    }
+
+    public ChunkNode rank(PxChunk hitChunk, ChunkRankingService rankingService) {
+        return rank(hitChunk, rankingService, 1.0);
     }
 }

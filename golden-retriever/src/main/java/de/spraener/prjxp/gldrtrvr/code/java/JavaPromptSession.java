@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.util.ValueContainer;
 import de.spraener.prjxp.common.store.PxChunkDao;
@@ -24,7 +25,7 @@ public class JavaPromptSession {
     private PxChunkDao chunkDao;
     private List<PxChunk> chunks;
     private List<ChunkNode> rootForrest = new ArrayList<>();
-    private final int maxContentLength = 50000;
+    private int maxContentLength = 50000;
     private final ChunkRankingService rankingService;
 
     public JavaPromptSession(PxChunkDao chunkDao, ChunkRankingService rankingService) {
@@ -45,6 +46,20 @@ public class JavaPromptSession {
                 rootForrest.add(root);
             }
             root.rank(chunk, rankingService);
+        }
+    }
+
+    public void setChunksByScore(List<ScoredChunk> scoredChunks) {
+        this.chunks = scoredChunks.stream().map(ScoredChunk::chunk).toList();
+        this.rootForrest.clear();
+        for (var scoredChunk : scoredChunks) {
+            PxChunk chunk = scoredChunk.chunk();
+            ChunkNode root = findRootForChunk(chunk);
+            if (root == null) {
+                root = buildGraphToRoot(chunk).root();
+                rootForrest.add(root);
+            }
+            root.rank(chunk, rankingService, scoredChunk.score());
         }
     }
 
@@ -70,14 +85,19 @@ public class JavaPromptSession {
             rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext, r.getChunk()));
         }
         rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
+        int skippedByBudget = 0;
         for (var rp : rankedPrompts) {
             if (rp.rootRank() == 0) {
-                break;
+                continue;
+            }
+            if (context.length() + rp.treeContext().length() > maxContentLength) {
+                skippedByBudget++;
+                continue;
             }
             context += rp.treeContext();
-            if (context.length() > maxContentLength) {
-                break;
-            }
+        }
+        if (skippedByBudget > 0) {
+            context += "\n[weitere %d Klassen wegen Groessenlimit nicht enthalten]\n".formatted(skippedByBudget);
         }
         return context;
     }
@@ -106,7 +126,7 @@ public class JavaPromptSession {
         rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
         for (var rp : rankedPrompts) {
             if (rp.rootRank() == 0) {
-                break;
+                continue;
             }
             result.add(SearchHit.from(rp.rootChunk, rp.rootRank(), "", rp.treeContext));
         }

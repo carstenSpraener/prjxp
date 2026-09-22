@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.code.visualbasic;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.util.ValueContainer;
@@ -30,7 +31,7 @@ public class VisualBasicPromptSession {
     private PxChunkDao chunkDao;
     private List<PxChunk> chunks;
     private List<ChunkNode> rootForrest = new ArrayList<>();
-    private final int maxContentLength = 50000;
+    private int maxContentLength = 50000;
     private final ChunkRankingService rankingService;
 
     public VisualBasicPromptSession(PxChunkDao chunkDao, ChunkRankingService rankingService) {
@@ -54,6 +55,20 @@ public class VisualBasicPromptSession {
         }
     }
 
+    public void setChunksByScore(List<ScoredChunk> scoredChunks) {
+        this.chunks = scoredChunks.stream().map(ScoredChunk::chunk).toList();
+        this.rootForrest.clear();
+        for (var scoredChunk : scoredChunks) {
+            PxChunk chunk = scoredChunk.chunk();
+            ChunkNode root = findRootForChunk(chunk);
+            if (root == null) {
+                root = buildGraphToRoot(chunk).root();
+                rootForrest.add(root);
+            }
+            root.rank(chunk, rankingService, scoredChunk.score());
+        }
+    }
+
     public String buildPrompt(PromptModifier promptModifier, Function<String, Boolean>... contextValidator) {
         List<RankedPrompt> rankedPrompts = new ArrayList<>();
         for (var r : this.rootForrest) {
@@ -73,14 +88,19 @@ public class VisualBasicPromptSession {
         }
         rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
         StringBuilder contextBuilder = new StringBuilder();
+        int skippedByBudget = 0;
         for (var rp : rankedPrompts) {
             if (rp.rootRank() == 0) {
-                break;
+                continue;
+            }
+            if (contextBuilder.length() + rp.treeContext().length() > maxContentLength) {
+                skippedByBudget++;
+                continue;
             }
             contextBuilder.append(rp.treeContext());
-            if (contextBuilder.length() > maxContentLength) {
-                break;
-            }
+        }
+        if (skippedByBudget > 0) {
+            contextBuilder.append("\n[weitere %d Klassen wegen Groessenlimit nicht enthalten]\n".formatted(skippedByBudget));
         }
         return contextBuilder.toString();
     }
@@ -110,7 +130,7 @@ public class VisualBasicPromptSession {
         rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
         for (var rp : rankedPrompts) {
             if (rp.rootRank() == 0) {
-                break;
+                continue;
             }
             result.add(SearchHit.from(rp.rootChunk, rp.rootRank(), "", rp.treeContext));
         }

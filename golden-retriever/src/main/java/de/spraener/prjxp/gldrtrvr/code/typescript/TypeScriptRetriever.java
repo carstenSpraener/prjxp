@@ -24,17 +24,39 @@ public class TypeScriptRetriever implements GoldenRetriever {
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
         StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
-        List<PxChunk> tsChunks = combineChunksByID(chunkDao, chunks);
+        List<ScoredChunk> tsChunks = combineScoredChunksByID(chunkDao, chunks);
         if( tsChunks.isEmpty() ) {
             return prompt;
         }
         TypeScriptPromptSession session = new TypeScriptPromptSession(chunkDao, rankingService);
-        session.setChunks(tsChunks);
+        session.setMaxContentLength(params.getMaxContentLength());
+        session.setChunksByScore(tsChunks);
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
+    }
+
+    private List<ScoredChunk> combineScoredChunksByID(PxChunkDao chunkDao, List<ScoredChunk> chunks) {
+        Map<String, List<ScoredChunk>> chunkMap = new HashMap<>();
+        for (var c : chunks) {
+            if (isTypeScriptChunk(c.chunk())) {
+                List<ScoredChunk> idList = chunkMap.computeIfAbsent(c.chunk().getId(), k -> new ArrayList<>());
+                idList.add(c);
+            }
+        }
+        List<ScoredChunk> result = new ArrayList<>();
+        for (var chunkList : chunkMap.values()) {
+            ScoredChunk c = chunkList.getFirst();
+            double bestScore = chunkList.stream().mapToDouble(ScoredChunk::score).max().orElse(0.0);
+            if (c.chunk().getTotal() > chunkList.size()) {
+                result.add(new ScoredChunk(combineChunks(chunkDao.findById(c.chunk().getId())), bestScore));
+            } else {
+                result.add(new ScoredChunk(combineChunks(new ArrayList<>(chunkList.stream().map(ScoredChunk::chunk).toList())), bestScore));
+            }
+        }
+        return result;
     }
 
     @Override

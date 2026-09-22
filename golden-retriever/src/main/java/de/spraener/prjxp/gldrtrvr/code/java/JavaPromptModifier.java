@@ -31,6 +31,8 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                         nextPrompt = replaceInPrompt(prompt, toMethodName(pxChunk), pxChunk.getContent());
                         break;
                     }
+                    nextPrompt = replaceInPrompt(prompt, toMethodName(pxChunk), toMethodSignature(pxChunk.getContent()));
+                    break;
                 case DEPENDENCIE_INFO:
                     nextPrompt = prompt + pxChunk.getContent();
                     break;
@@ -76,6 +78,23 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
             return head.substring(head.lastIndexOf('.') + 1) + tail;
         }
         return c.getId().substring(c.getId().lastIndexOf('.') + 1);
+    }
+
+    private String toMethodSignature(String methodContent) {
+        if (methodContent == null || methodContent.isBlank()) {
+            return methodContent;
+        }
+        for (String line : methodContent.lines().toList()) {
+            String trimmed = line.strip();
+            if (trimmed.isEmpty()) {
+                continue;
+            }
+            if (trimmed.endsWith("{")) {
+                return line.replaceFirst("\\{\\s*$", ";");
+            }
+            return line;
+        }
+        return methodContent;
     }
 
 }

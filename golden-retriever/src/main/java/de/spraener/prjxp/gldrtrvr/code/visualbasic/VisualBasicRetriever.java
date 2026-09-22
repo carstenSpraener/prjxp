@@ -32,15 +32,16 @@ public class VisualBasicRetriever implements GoldenRetriever {
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
         StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
-        List<PxChunk> visualBasicChunks = combineChunksByID(chunkDao, chunks);
+        List<ScoredChunk> visualBasicChunks = combineScoredChunksByID(chunkDao, chunks);
         if (visualBasicChunks.isEmpty()) {
             return prompt;
         }
         VisualBasicPromptSession session = new VisualBasicPromptSession(chunkDao, rankingService);
-        session.setChunks(visualBasicChunks);
+        session.setMaxContentLength(params.getMaxContentLength());
+        session.setChunksByScore(visualBasicChunks);
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
     }
@@ -50,14 +51,42 @@ public class VisualBasicRetriever implements GoldenRetriever {
     // TODO: Implement this method
     public final List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> scoredChunks, Function<String, Boolean>... contextValidators) {
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).get();
-        List<PxChunk> chunks = scoredChunks.stream().map(sc -> sc.chunk()).toList();
-        List<PxChunk> javaChunks = combineChunksByID(chunkDao, chunks);
+        List<ScoredChunk> javaChunks = combineScoredChunksByID(chunkDao, scoredChunks);
         if( javaChunks.isEmpty() ) {
             return Collections.EMPTY_LIST;
         }
         VisualBasicPromptSession session = new VisualBasicPromptSession(chunkDao, rankingService);
-        session.setChunks(javaChunks);
+        session.setChunksByScore(javaChunks);
         return session.buildSearchHits(this::modifyPromptByChunk, contextValidators);
+    }
+
+    private List<ScoredChunk> combineScoredChunksByID(PxChunkDao chunkDao, List<ScoredChunk> chunks) {
+        Map<String, List<ScoredChunk>> chunkMap = new HashMap<>();
+        for (var c : chunks) {
+            if (isVisualBasicChunk(c.chunk())) {
+                List<ScoredChunk> idList = chunkMap.computeIfAbsent(c.chunk().getId(), k -> new ArrayList<>());
+                idList.add(c);
+            }
+        }
+        List<ScoredChunk> result = new ArrayList<>();
+        for (var chunkList : chunkMap.values()) {
+            ScoredChunk c = chunkList.getFirst();
+            double bestScore = chunkList.stream().mapToDouble(ScoredChunk::score).max().orElse(0.0);
+            if (c.chunk().getTotal() > chunkList.size()) {
+                PxChunk combinedChunk = combineChunks(chunkDao.findById(c.chunk().getId()));
+                if (combinedChunk != null) {
+                    result.add(new ScoredChunk(combinedChunk, bestScore));
+                } else {
+                    log.warning("The chunk [id='" + c.chunk().getId() + "'] to combine does not exist in the embedding store. Check your configuration.");
+                }
+            } else {
+                PxChunk combinedChunk = combineChunks(new ArrayList<>(chunkList.stream().map(ScoredChunk::chunk).toList()));
+                if (combinedChunk != null) {
+                    result.add(new ScoredChunk(combinedChunk, bestScore));
+                }
+            }
+        }
+        return result;
     }
 
     private String modifyPromptByChunk(PxChunkDao chunkDao, PxChunk pxChunk, String prompt) {

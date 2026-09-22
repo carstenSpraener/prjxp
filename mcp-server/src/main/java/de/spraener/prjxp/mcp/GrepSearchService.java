@@ -66,7 +66,7 @@ public class GrepSearchService {
             List<ScoredChunk> scoredChunks = fileToHitsMap.get(fileName);
             StringBuilder sb = new StringBuilder();
             for( var gr : retrieverList ) {
-                sb.append(gr.buildPromptForFindings(project, scoredChunks.stream().map(sc->sc.chunk()).toList(), sp));
+                sb.append(gr.buildPromptForFindings(project, scoredChunks, sp));
             }
             double totalScore = scoredChunks.stream().mapToDouble(ScoredChunk::score).sum();
             searchHits.add(

@@ -23,12 +23,13 @@ public class MarkdownRetriever implements GoldenRetriever {
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
         StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
         // Die Session verwaltet den Baum-Aufbau der Dokumente
         MarkdownPromptSession session = new MarkdownPromptSession(chunkDao, rankingService);
-        session.setChunks(combineChunksByID(chunkDao, chunks));
+        session.setMaxContentLength(params.getMaxContentLength());
+        session.setChunksByScore(combineScoredChunksByID(chunkDao, chunks));
 
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
@@ -69,6 +70,26 @@ public class MarkdownRetriever implements GoldenRetriever {
                 result.add(PxChunk.combine(chunkDao.findById(first.getId())));
             } else {
                 result.add(PxChunk.combine(list));
+            }
+        }
+        return result;
+    }
+
+    private List<ScoredChunk> combineScoredChunksByID(PxChunkDao chunkDao, List<ScoredChunk> chunks) {
+        Map<String, List<ScoredChunk>> chunkMap = new HashMap<>();
+        for (var c : chunks) {
+            chunkMap.computeIfAbsent(c.chunk().getId(), k -> new ArrayList<>()).add(c);
+        }
+
+        List<ScoredChunk> result = new ArrayList<>();
+        for (var list : chunkMap.values()) {
+            ScoredChunk first = list.getFirst();
+            double bestScore = list.stream().mapToDouble(ScoredChunk::score).max().orElse(0.0);
+            // Wenn nicht alle Teile in den Findings waren, laden wir alle nach
+            if (first.chunk().getTotal() > list.size()) {
+                result.add(new ScoredChunk(PxChunk.combine(chunkDao.findById(first.chunk().getId())), bestScore));
+            } else {
+                result.add(new ScoredChunk(PxChunk.combine(new ArrayList<>(list.stream().map(ScoredChunk::chunk).toList())), bestScore));
             }
         }
         return result;
