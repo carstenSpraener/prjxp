@@ -7,6 +7,8 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
+import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -18,7 +20,9 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -37,6 +41,12 @@ class GrepSearchServiceTest {
 
     @Mock
     PrjXPConfig cfg;
+
+    @Mock
+    List<GoldenRetriever> retrieverList;
+
+    @Mock
+    GoldenRetriever retriever;
 
     @InjectMocks
     GrepSearchService service;
@@ -90,18 +100,20 @@ class GrepSearchServiceTest {
 
         when(dao.searchFullText(anyString(), anyMap(), anyInt()))
                 .thenReturn(List.of(new ScoredChunk(chunk, 3.25)));
+        when(retrieverList.iterator()).thenReturn(List.<GoldenRetriever>of().iterator());
 
         List<SearchHit> hits = service.search("ChunkProcess", "myproj", null, 10);
 
         assertThat(hits).hasSize(1);
         SearchHit hit = hits.get(0);
-        assertThat(hit.chunkId()).isEqualTo("chunk-1");
+        assertThat(hit.chunkId()).isEqualTo("src/A.java");
         assertThat(hit.score()).isEqualTo(3.25);
         assertThat(hit.file()).isEqualTo("src/A.java");
-        assertThat(hit.lineFrom()).isEqualTo(10);
-        assertThat(hit.lineTo()).isEqualTo(25);
+        assertThat(hit.lineFrom()).isNull();
+        assertThat(hit.lineTo()).isNull();
+        assertThat(hit.snippet()).isEmpty();
         assertThat(hit.source()).isEqualTo("grep");
-        assertThat(hit.metadata()).containsEntry("java_code_section", "method");
+        assertThat(hit.metadata()).isEmpty();
     }
 
     @Test
@@ -134,11 +146,16 @@ class GrepSearchServiceTest {
         String content = "x".repeat(300) + "ChunkProcess" + "y".repeat(300);
         PxChunk chunk = PxChunk.create(c -> {
             c.setId("c1");
+            c.setFile("src/A.java");
             c.setContent(content);
         });
 
         when(dao.searchFullText(anyString(), anyMap(), anyInt()))
                 .thenReturn(List.of(new ScoredChunk(chunk, 1.0)));
+
+        when(retrieverList.iterator()).thenReturn(List.of(retriever).iterator());
+        when(retriever.buildPromptForFindings(anyString(), anyList(), any(SearchParams.class)))
+                .thenReturn(new StringBuilder("...ChunkProcess..."));
 
         SearchHit hit = service.search("ChunkProcess", "myproj", null, 10).get(0);
 

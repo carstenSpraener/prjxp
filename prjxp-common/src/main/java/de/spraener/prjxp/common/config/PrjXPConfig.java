@@ -42,6 +42,8 @@ public class PrjXPConfig {
     // Embedding store type: "lucene" or "chroma"
     private EmbeddingStoreType embeddingStoreType = EmbeddingStoreType.CHROMA;
     private LuceneEmbeddingStoreConfig embeddingStoreLucene = new LuceneEmbeddingStoreConfig();
+    /** Maximum characters returned by the readFile MCP tool (0 = uncapped). Property: prjxp.reader-max-output-chars */
+    private int readerMaxOutputChars = 100_000;
     private EmbeddingConfig embedding = new EmbeddingConfig();
 
     public enum EmbeddingStoreType {

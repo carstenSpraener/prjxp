@@ -99,16 +99,20 @@ public class JavaCodeChunker {
 
     private Collection<PxChunk> createImportChunk(File src, CompilationUnit cu, List<String> codeLines) throws IOException {
         ChunkRange importRange = getImportsRange(cu, codeLines);
+        String primaryTypeFqn = cu.getPrimaryType()
+                .flatMap(TypeDeclaration::getFullyQualifiedName)
+                .orElseGet(() -> cu.getPrimaryType().map(TypeDeclaration::getNameAsString).orElse(""));
+        String primaryTypeName = cu.getPrimaryType().map(TypeDeclaration::getNameAsString).orElse("");
         return new ContentSplitter(this.chunkSize, this.overlap).splitContent(importRange, () ->
                 PxChunk.create(
                         c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
-                        c -> c.setParent(cu.getPrimaryType().get().getFullyQualifiedName().get()),
-                        c -> c.setId(c.getParent() + ".imports"),
+                        c -> c.setParent(primaryTypeFqn),
+                        c -> c.setId(primaryTypeFqn + ".imports"),
                         c -> c.setFile(src.getAbsolutePath()),
                         c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.IMPORTS.getName()),
                         c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.IMPORTS.getName(),
-                                cu.getPrimaryType().get().getFullyQualifiedName().get(),
-                                cu.getPrimaryType().get().getNameAsString())
+                                primaryTypeFqn,
+                                primaryTypeName)
                 )
         );
     }
@@ -121,12 +125,10 @@ public class JavaCodeChunker {
 
     private Collection<? extends PxChunk> createMethodChunks(File f, CompilationUnit cu, List<String> codeLines) {
         List<PxChunk> chunks = new ArrayList<>();
-        if (cu.getPrimaryType().isPresent()) {
-            var primaryType = cu.getPrimaryType().get();
-            createContainedMethodChunks(f, cu, chunks, primaryType, codeLines);
-        }
+        var primaryType = cu.getPrimaryType();
+        primaryType.ifPresent(pt -> createContainedMethodChunks(f, cu, chunks, pt, codeLines));
         for (var subClazz : cu.getTypes()) {
-            if (!subClazz.equals(cu.getPrimaryType().get())) {
+            if (primaryType.isEmpty() || !subClazz.equals(primaryType.get())) {
                 createContainedMethodChunks(f, cu, chunks, subClazz, codeLines);
             }
         }
@@ -135,8 +137,8 @@ public class JavaCodeChunker {
 
     private void createContainedMethodChunks(File f, CompilationUnit cu, List<PxChunk> chunks, TypeDeclaration<?> type, List<String> codeLines) {
         for (var m : type.getMethods()) {
-            String clazzName = type.getFullyQualifiedName().get().toString();
-            String pkgName = cu.getPackageDeclaration().get().getName().toString();
+            String clazzName = type.getFullyQualifiedName().orElse(type.getNameAsString());
+            String pkgName = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
             String methodSig = m.getDeclarationAsString(false, false, false);
             String id = clazzName + "." + methodSig;
             m.getJavadocComment().ifPresent(jc -> {
@@ -170,7 +172,7 @@ public class JavaCodeChunker {
                             toLine,
                             () -> PxChunk.create(
                                     c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
-                                    c -> c.setParent(type.getFullyQualifiedName().get().toString()),
+                                    c -> c.setParent(type.getFullyQualifiedName().orElse(type.getNameAsString())),
                                     c -> c.setId(id),
                                     c -> c.setFile(f.getAbsolutePath()),
                                     c -> c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
@@ -208,11 +210,11 @@ public class JavaCodeChunker {
                             () -> {
                                 return PxChunk.create(
                                         c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
-                                        c -> c.setId(clazz.getFullyQualifiedName().get().toString()),
+                                        c -> c.setId(clazz.getFullyQualifiedName().orElse(clazz.getNameAsString())),
                                         c -> c.setFile(f.getAbsolutePath()),
                                 c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.CLAZZ_FRAME.getName()),
                                 c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.CLAZZ_FRAME.getName(),
-                                        clazz.getFullyQualifiedName().get().toString(),
+                                        clazz.getFullyQualifiedName().orElse(clazz.getNameAsString()),
                                         clazz.getNameAsString())
                     );
                             }
