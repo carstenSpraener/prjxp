@@ -31,6 +31,7 @@ import java.util.stream.Stream;
 @Log
 @RequiredArgsConstructor
 public class MarkdownChunker {
+    private final static String MIME_TYPE = "text/markdown";
     private final PxLogService logService;
     private final DocConversionRouter converter;
     private final MetaInfReader metaInfReader;
@@ -79,6 +80,7 @@ public class MarkdownChunker {
             Map<String,String> metaInf = metaInfReader.readMetaInf(originalFile);
             List<PxChunk> chunkList = new ArrayList<>();
             chunkList.add( PxChunk.create(
+                    c -> c.setMimeType(MIME_TYPE),
                     c -> c.setId(originalFile.getName()),
                     c -> c.setFile(originalFile.getAbsolutePath()),
                     c -> c.setContent(""),
@@ -131,6 +133,7 @@ public class MarkdownChunker {
     private PxChunk createSectionChunk(File file, int[] sectionCounters, List<String> headers) {
         String sectionNumber = formatSectionNumber(sectionCounters);
         return PxChunk.create(
+                c -> c.setMimeType(MIME_TYPE),
                 c->c.setId(file.getName()+":"+sectionNumber),
                 c->c.setParent(file.getName()),
                 c->c.setContent(""),
@@ -216,7 +219,7 @@ public class MarkdownChunker {
         // Nutzt deinen ContentSplitter für i of N Splitting
         List<PxChunk> chunks = new ContentSplitter(500, 100).splitContent(content, startLine, currentLine,
                 () -> PxChunk.create(
-                        c -> c.setMimeType("text/markdown"),
+                        c -> c.setMimeType(MIME_TYPE),
                         c -> c.setFile(file.getAbsolutePath()),
                         c -> {
                             c.setId(file.getName()+":"+sectionNum+":"+String.format("%02d",paragraphCount));

@@ -26,14 +26,16 @@ public class PrjxpMcpTool {
             CRITICAL PRIMARY SEARCH TOOL: Delivers relevant semantic information from the project context.
 
             USAGE RULES:
-            1. ALWAYS call this tool BEFORE attempting any file system searches, grep, or terminal commands.
-            2. Do NOT use grep or file navigation UNLESS this tool returns no useful results (fallback only).
+            1. ALWAYS call this tool FIRST for discovery: finding classes, understanding structure, locating implementations, exploring the codebase.
+            2. For FULL METHOD BODIES: follow up with grep using the exact method signature (e.g. "public MClass createMClass").
+               Vector search returns skeletons for non-hit methods by design — grep is the way to retrieve complete implementations.
             3. You can execute multiple follow-up queries with refined search terms to dig deeper.
             4. REWRITE the query parameter: Convert the context of the conversation into a targeted, standalone search query optimized for semantic vector retrieval.
-            
+
             RESULT:
-            The search returns method implementations only if the vector search hits a method chunk AND the sekeletonsOnly is set to false.
-            Otherwise it returns simple class skeletons with imports and project inside dependencies for a architectural overview.
+            The search returns method implementations only if the vector search hits a method chunk AND skeletonsOnly is set to false.
+            Otherwise it returns simple class skeletons with imports and project dependencies for an architectural overview.
+            Use grep on the exact signature to get full bodies of methods you need implementation details for.
             """)
     public String vectorSearch(
             @McpToolParam(description = "A targeted, standalone search prompt optimized for vector retrieval based on what you need to find.", required = true)
@@ -82,8 +84,11 @@ public class PrjxpMcpTool {
 
     @McpTool(name="grep", description = """
             SEARCH-TOOL: Exact full-text search over all chunks of a project.
-            STRATEGIE: Use this to narrow down results after vectorSearch, e.g. for exact identifiers or strings.
-            PARAMETER-RULE: Pass the exact string you are looking for as query.
+            STRATEGIE: Two-step workflow — vectorSearch for discovery, then grep
+            for the exact method signature to retrieve its FULL BODY. Chunks that
+            contain a hit include the complete method body, not just the skeleton.
+            PARAMETER-RULE: Pass the exact string (e.g., "public MClass createMClass")
+            as query. Use this when you need implementation details, not just structure.
             """)
     public List<SearchHit> grep(
         @McpToolParam(description = "Exact search string (required).", required = true)

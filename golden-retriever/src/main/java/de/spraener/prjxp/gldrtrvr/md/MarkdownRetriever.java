@@ -43,6 +43,10 @@ public class MarkdownRetriever implements GoldenRetriever {
     }
 
     private String modifyPromptByChunk(PxChunk pxChunk, String currentPrompt) {
+        String mimeType = pxChunk.getMimeType();
+        if( !mimeType.equals("text/markdown")  ) {
+            return "";
+        }
         String type = pxChunk.getMetadata().get("pxchunk_type");
         StringBuilder sb = new StringBuilder(currentPrompt);
 

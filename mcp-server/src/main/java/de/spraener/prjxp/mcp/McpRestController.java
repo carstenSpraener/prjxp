@@ -6,10 +6,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/prjxp/tools")
@@ -54,5 +53,11 @@ public class McpRestController {
         String result = String.format("%s\n%s", prefix, context);
         log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length()/4));
         return result;
+    }
+
+    @GetMapping("projects")
+    @Operation(description = "Returns a list of all available projects.")
+    public List<String> listProjects() {
+        return cfg.getProjects().stream().map(p -> p.getName()).toList();
     }
 }
