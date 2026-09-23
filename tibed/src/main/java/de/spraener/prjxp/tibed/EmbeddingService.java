@@ -23,6 +23,8 @@ import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metad
 @RequiredArgsConstructor
 @Log
 public class EmbeddingService {
+    private static final int MAX_EMBEDDING_BATCH_SIZE = 32;
+
     private final PxLogService logService;
     private final ObjectMapper objMapper;
     private final EmbeddingExecutor embedder;
@@ -33,6 +35,11 @@ public class EmbeddingService {
 
     public void execute() {
         ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException("No active project!"));
+        int configuredBatchSize = pd.getTibedBatchSize();
+        int effectiveBatchSize = Math.max(1, Math.min(configuredBatchSize, MAX_EMBEDDING_BATCH_SIZE));
+        if (configuredBatchSize != effectiveBatchSize) {
+            log.warning("Configured tibedBatchSize=" + configuredBatchSize + " adjusted to " + effectiveBatchSize + " due to embedding API limits");
+        }
         EmbeddingStore<TextSegment> store = embeddingStoreSupplier.getStore(pd.getName());
         if (pd.isTibedResetStore()) {
             log.warning("Resetting embedding store!");
@@ -40,7 +47,7 @@ public class EmbeddingService {
         }
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
-            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(pd.getJsonlFile()), pd.getTibedBatchSize(), this::fromJSONL)
+            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(pd.getJsonlFile()), effectiveBatchSize, this::fromJSONL)
                     .forEach(batch -> {
                         embedChunk(store, batch);
                     });

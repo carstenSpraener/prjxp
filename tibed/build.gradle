@@ -42,6 +42,9 @@ shadowJar {
     archiveBaseName.set('tibed')
     archiveVersion.set('')
     archiveClassifier.set('all')
+    manifest {
+        attributes('Multi-Release': 'true')
+    }
     exclude 'application.yaml'
     // DevTools nur fuer die lokale Entwicklung — darf nicht ins Fat-JAR (sonst Exit-Code 0 bei Fehlern)
     dependencies {

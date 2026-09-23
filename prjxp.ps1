@@ -5,6 +5,7 @@ $ErrorActionPreference = "Stop"
 $ImageName = "prjxp"
 $script:ImageRef = "$ImageName`:latest"
 $DefaultPort = 7007
+$MaxEmbeddingBatchSize = 32
 $ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ScriptName = Split-Path -Leaf $MyInvocation.MyCommand.Path
 
@@ -96,6 +97,31 @@ function Get-ProjectDataPaths() {
     }
 }
 
+function Get-ConfiguredTibedBatchSize() {
+    $configCandidates = @(
+        Join-Path $ProjectPath "application.yaml",
+        Join-Path $ProjectPath "application.yml"
+    )
+
+    foreach ($cfgPath in $configCandidates) {
+        if (-not (Test-Path -LiteralPath $cfgPath -PathType Leaf)) {
+            continue
+        }
+
+        $line = Get-Content -LiteralPath $cfgPath | Where-Object { $_ -match '^\s*tibedBatchSize\s*:\s*\d+\s*$' } | Select-Object -First 1
+        if ($null -eq $line) {
+            continue
+        }
+
+        $match = [regex]::Match($line, 'tibedBatchSize\s*:\s*(\d+)')
+        if ($match.Success) {
+            return [int]$match.Groups[1].Value
+        }
+    }
+
+    return $null
+}
+
 function Cmd-Chunk() {
     $paths = Get-ProjectDataPaths
     if (Test-Path -LiteralPath $paths.ChunkFile) {
@@ -124,6 +150,11 @@ function Cmd-Chunk() {
 
 function Cmd-Embed() {
     $paths = Get-ProjectDataPaths
+    $configuredBatchSize = Get-ConfiguredTibedBatchSize
+    if ($null -ne $configuredBatchSize -and $configuredBatchSize -gt $MaxEmbeddingBatchSize) {
+        Log-Warn "Configured tibedBatchSize=$configuredBatchSize exceeds provider limit $MaxEmbeddingBatchSize. Runtime will clamp to $MaxEmbeddingBatchSize."
+    }
+
     $hasData = $false
     if (Test-Path -LiteralPath $paths.DataDir) {
         $hasData = @(Get-ChildItem -LiteralPath $paths.DataDir -Force | Select-Object -First 1).Count -gt 0

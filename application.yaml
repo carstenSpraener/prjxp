@@ -7,7 +7,7 @@ prjxp:
       rootDir: .
       jsonlFile: "px-chunks.jsonl"
       chunoWhiteList: "java,ts,cs,vb"
-      tibedBatchSize: 500
+      tibedBatchSize: 32
       tibedResetStore: true
 
   # Embedding model type: ollama or open_ai

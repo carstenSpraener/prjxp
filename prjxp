@@ -218,7 +218,7 @@ cmd_shell() {
         -v "$PROJECT_PATH/.prjxp-data:/app-source/.prjxp-data/lucene-index" \
         -e PRJXP_ROOT_DIR=/app-source \
         -e SERVER_PORT=7007 \
-        --entrypoint sh \
+        --entrypoint /bin/bash \
         "$IMAGE_REF"
 }
 

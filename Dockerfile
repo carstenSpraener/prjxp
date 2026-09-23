@@ -35,6 +35,10 @@ COPY --from=tei /usr/local/bin/text-embeddings-router /usr/local/bin/text-embedd
 COPY --from=tei /usr/local/libfakeintel.so /usr/local/libfakeintel.so
 COPY --from=tei /lib/x86_64-linux-gnu/libiomp5.so /lib/x86_64-linux-gnu/libiomp5.so
 
+# 3. Entrypoint-Skript bereitstellen
+COPY prjxp-common/docker/entry.sh /app/entry.sh
+RUN chmod +x /app/entry.sh
+
 # 4. Docker-Konfiguration ins Image backen (application.yaml.docker -> application.yaml).
 # Fallback-Konfiguration: Wird genutzt, wenn unter /app-source keine eigene
 # application.yml/.yaml vorhanden ist.
@@ -71,13 +75,5 @@ ENV SERVER_PORT=7007
 # Working Directory ist /app-source (wo .env und projektspezifische Config liegt)
 WORKDIR /app-source
 
-ENTRYPOINT ["sh", "-c", "case \"$0\" in \
-  chunk) \
-    if [ -f /app-source/application.yml ] || [ -f /app-source/application.yaml ]; then CFG='optional:file:/app-source/,optional:file:/app/'; else CFG='file:/app/'; fi; \
-    java $JAVA_OPTS -Dspring.config.location=\"$CFG\" -jar /app/chunk-norris-all.jar ;; \
-  embed) \
-    exec text-embeddings-router --model-id \"$MODEL_ID\" --port \"$TEI_PORT\" ;; \
-  serve|*) \
-    if [ -f /app-source/application.yml ] || [ -f /app-source/application.yaml ]; then CFG='optional:file:/app-source/,optional:file:/app/'; else CFG='file:/app/'; fi; \
-    java $JAVA_OPTS -Dspring.config.location=\"$CFG\" -jar /app/mcp-server-all.jar ;; \
-esac"]
+ENTRYPOINT ["/app/entry.sh"]
+CMD ["serve"]
