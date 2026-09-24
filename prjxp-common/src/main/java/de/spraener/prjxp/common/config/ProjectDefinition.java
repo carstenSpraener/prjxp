@@ -11,7 +11,7 @@ public class ProjectDefinition {
     private String rootDir;
     private String jsonlFile;
     private String chunoWhiteList = "java,ts";
-    private int tibedBatchSize = 50;
+    private int tibedBatchSize = 32;
     private boolean tibedResetStore = false;
 
     /** jsonlFile resolved against rootDir (absolute paths pass through; null/blank -> null). */

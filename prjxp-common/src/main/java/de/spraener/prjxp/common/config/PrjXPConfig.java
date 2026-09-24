@@ -84,7 +84,7 @@ public class PrjXPConfig {
         cwd.setRootDir(".");
         cwd.setJsonlFile("px-chunks.jsonl");
         cwd.setChunoWhiteList("java,ts");
-        cwd.setTibedBatchSize(50);
+        cwd.setTibedBatchSize(32);
         cwd.setTibedResetStore(true);
         return cwd;
     }
