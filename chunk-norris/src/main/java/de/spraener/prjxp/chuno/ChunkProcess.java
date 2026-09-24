@@ -44,6 +44,7 @@ public class ChunkProcess {
 
     /** Runs the chunking pipeline for an explicitly given project definition (hub in-process use). */
     public void executeForProject(ProjectDefinition pd) throws Exception {
+        processedFiles.clear();   // per-run state: a reindex must re-chunk everything, not filter out files of a previous run
         final TransferSession session = transferPasswordResolver.prepare(
                 cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
         final PrintStream out = createWriter(pd, session);

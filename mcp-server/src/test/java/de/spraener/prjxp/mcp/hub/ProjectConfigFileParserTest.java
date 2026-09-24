@@ -116,4 +116,44 @@ class ProjectConfigFileParserTest {
         assertThat(def.getName()).isEqualTo("alpha");
         assertThat(def.getTibedBatchSize()).isEqualTo(32);
     }
+
+    // ------------------------------------------------------------------ Phase 06: .yml fallback + markerFile
+
+    @Test
+    void ymlExtensionIsAcceptedWhenYamlMissing() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yml"), "tibedBatchSize: 16\n");
+
+        ProjectDefinition def = parser.parse(projectDir, "alpha");
+
+        assertThat(def.getName()).isEqualTo("alpha");
+        assertThat(def.getTibedBatchSize()).isEqualTo(16);
+    }
+
+    @Test
+    void yamlTakesPrecedenceOverYml() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "tibedBatchSize: 16\n");
+        Files.writeString(projectDir.resolve("prjxp.yml"), "tibedBatchSize: 64\n");
+
+        assertThat(parser.parse(projectDir, "alpha").getTibedBatchSize()).isEqualTo(16);
+    }
+
+    @Test
+    void markerFileReturnsExistingMarkerYamlFirst() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "tibedBatchSize: 16\n");
+        Files.writeString(projectDir.resolve("prjxp.yml"), "tibedBatchSize: 64\n");
+
+        assertThat(parser.markerFile(projectDir)).contains(projectDir.resolve("prjxp.yaml"));
+    }
+
+    @Test
+    void markerFileFallsBackToYml() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yml"), "tibedBatchSize: 16\n");
+
+        assertThat(parser.markerFile(projectDir)).contains(projectDir.resolve("prjxp.yml"));
+    }
+
+    @Test
+    void markerFileEmptyWhenNoMarkerPresent() {
+        assertThat(parser.markerFile(projectDir)).isEmpty();
+    }
 }

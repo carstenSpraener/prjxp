@@ -12,6 +12,7 @@ import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -28,6 +29,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
@@ -268,5 +270,79 @@ class PipelineOrchestratorTest {
         orchestrator.onFailed("ghost", "tar extraction exploded");   // must not throw
 
         assertThat(registry.entry("ghost")).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ Phase 06: race guard + idempotent enqueue
+
+    @Test
+    void midRunDeregistrationTriggersScopedWipeOfJustWrittenChunks() throws Exception {
+        registry.registerProject("foo", projectDir("foo"));
+
+        // the pipeline "writes" a chunk for 'foo' (real index), then the marker is removed mid-run
+        CountDownLatch embedded = new CountDownLatch(1);
+        doAnswer(inv -> {
+            luceneStore.addAll(
+                    List.of(Embedding.from(new float[8])),
+                    List.of(TextSegment.from("chunk written by the pipeline",
+                            Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, "foo")))));
+            registry.unregisterProject("foo");   // e.g. live marker removed by the poller mid-run
+            embedded.countDown();
+            return null;
+        }).when(embeddingService).executeForProject(any(), any());
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator.enqueue("foo");
+
+        assertThat(embedded.await(10, TimeUnit.SECONDS)).isTrue();   // chunk is in the index now
+
+        awaitWipe("foo");   // the race guard must wipe what was just written (entry is gone)
+
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "foo"))).isFalse();
+    }
+
+    @Test
+    void enqueueForDeregisteredProjectIsSafeNoOp() throws Exception {
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+
+        assertThatCode(() -> orchestrator.enqueue("ghost")).doesNotThrowAnyException();   // entry gone before the run
+
+        verifyNoInteractions(chunkProcess, embeddingService);
+    }
+
+    @Test
+    void enqueueIsIdempotentWhilePipelineInFlight() throws Exception {
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        registry.registerProject("a", projectDir("a"));
+
+        CountDownLatch started = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(inv -> {
+            started.countDown();
+            release.await(10, TimeUnit.SECONDS);   // hold the single worker busy
+            return null;
+        }).when(chunkProcess).executeForProject(any());
+
+        orchestrator.enqueue("a");
+        assertThat(started.await(10, TimeUnit.SECONDS)).isTrue();
+
+        orchestrator.enqueue("a");   // same name while in flight — must be deduplicated, not queued twice
+
+        release.countDown();
+        awaitStatus(registry, "a", ProjectStatus.READY);
+
+        verify(chunkProcess, times(1)).executeForProject(any());
+    }
+
+    private void awaitWipe(String name) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline) {
+            if (!luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name))) {
+                return;
+            }
+            Thread.sleep(10);
+        }
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name)))
+                .as("scoped wipe of '%s' did not happen within the deadline", name)
+                .isFalse();
     }
 }

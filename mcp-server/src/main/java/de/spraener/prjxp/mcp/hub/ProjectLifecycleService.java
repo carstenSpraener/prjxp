@@ -19,8 +19,9 @@ import java.nio.file.SimpleFileVisitor;
 import java.nio.file.attribute.BasicFileAttributes;
 
 /**
- * Full project deletion in hub mode: scoped index wipe (the Lucene index is shared!),
- * recursive removal of the project directory and unregistration from the registry.
+ * Full project deletion in hub mode: scoped index wipe (the Lucene index is shared!) and unregistration
+ * from the registry, plus recursive removal of the project directory for SNAPSHOT projects only —
+ * LIVE source trees belong to the user and are never touched.
  */
 @Component
 @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
@@ -33,16 +34,24 @@ public class ProjectLifecycleService {
     private final LuceneEmbeddingStore luceneStore;
     private final HubProperties hub;
 
-    /** Full deletion: scoped index wipe + directory removal + unregistration. */
+    /**
+     * Full deletion: scoped index wipe + unregistration, plus recursive directory removal for SNAPSHOT projects.
+     * LIVE source trees belong to the user and are never touched by the hub.
+     */
     public void delete(String name) {
         if (registry.entry(name).isEmpty()) {
             throw new UnknownProjectException(name, registry.availableProjects());
         }
+        ProjectEntry entry = registry.entry(name).orElseThrow();
         luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));   // scoped (shared index!)
-        try {
-            deleteRecursively(registry.entry(name).orElseThrow().getRootDir());
-        } catch (IOException e) {
-            throw new UncheckedIOException("Could not delete project directory of '" + name + "'", e);
+        if (entry.getKind() == ProjectEntry.Kind.SNAPSHOT) {
+            try {
+                deleteRecursively(entry.getRootDir());
+            } catch (IOException e) {
+                throw new UncheckedIOException("Could not delete project directory of '" + name + "'", e);
+            }
+        } else {
+            log.info("Skipping removal of live source tree for '{}'", name);   // the user owns it
         }
         registry.unregisterProject(name);
         log.info("Deleted hub project '{}'", name);

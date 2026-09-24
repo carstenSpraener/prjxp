@@ -13,10 +13,16 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
+import java.util.Set;
 
-/** Watches the import directory for tar uploads and extracts them into the projects root. */
+/**
+ * Watches the import directory: extracts tar uploads into the projects root (snapshot flow) and syncs
+ * live projects (directories with a prjxp.yaml/yml marker), enqueuing freshly discovered ones for the pipeline.
+ */
 @Component
 @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequiredArgsConstructor
@@ -27,6 +33,8 @@ public class ImportPoller {
     private final HubProperties props;
     private final TarExtractor extractor;
     private final ObjectProvider<ImportHandler> handlerProvider;
+    private final HubProjectRegistry registry;
+    private final PipelineOrchestrator orchestrator;
 
     @Scheduled(fixedDelayString = "${prjxp.hub.poll-interval-ms:5000}")
     public void poll() {
@@ -44,12 +52,32 @@ public class ImportPoller {
                     .toList();
         } catch (IOException e) {
             log.warn("Cannot list import directory {}: {}", importDir, e.getMessage());
-            return;
+            return;   // unlistable -> skip live sync as well (volume-glitch protection)
         }
 
         for (Path tarFile : tarFiles) {
             process(tarFile); // per-file isolation: one bad tar must not break the others
         }
+
+        syncLiveProjects();
+    }
+
+    /**
+     * Discovers live projects (marker files) and enqueues the freshly discovered ones.
+     * Entries known before this poll are never re-enqueued (no double pipeline runs);
+     * FAILED projects stay failed until an explicit reindex.
+     */
+    private void syncLiveProjects() {
+        Set<String> before = new HashSet<>(registry.availableProjects());
+        registry.discoverProjects();
+        registry.availableProjects().stream()
+                .map(registry::entry)
+                .filter(Optional::isPresent)
+                .map(Optional::get)
+                .filter(e -> e.getKind() == ProjectEntry.Kind.LIVE)
+                .filter(e -> e.getStatus() == ProjectStatus.IMPORTING)   // freshly discovered — never re-enqueue FAILED
+                .filter(e -> !before.contains(e.getName()))               // not known before this poll — never re-enqueue
+                .forEach(e -> orchestrator.enqueue(e.getName()));
     }
 
     private void process(Path tarFile) {

@@ -9,9 +9,10 @@ import org.yaml.snakeyaml.Yaml;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Map;
+import java.util.Optional;
 
 /**
- * Parses {@code <projectDir>/prjxp.yaml} into a {@link ProjectDefinition}.
+ * Parses {@code <projectDir>/prjxp.yaml} (or {@code prjxp.yml}) into a {@link ProjectDefinition}.
  * A missing or empty file yields all defaults; unparseable content is logged and falls back to defaults.
  * Pure utility — NOT hub-conditional, so it can be reused by any importer.
  */
@@ -19,16 +20,17 @@ import java.util.Map;
 public class ProjectConfigFileParser {
 
     private static final Logger log = LoggerFactory.getLogger(ProjectConfigFileParser.class);
-    private static final String CONFIG_FILE_NAME = "prjxp.yaml";
+    /** Marker file names in precedence order — yaml first. */
+    private static final String[] CONFIG_FILE_NAMES = {"prjxp.yaml", "prjxp.yml"};
 
-    /** Parses <projectDir>/prjxp.yaml; missing/empty file -> all defaults. Never throws on bad content (log + defaults). */
+    /** Parses the project's marker file (yaml preferred over yml); missing/empty -> all defaults. Never throws on bad content (log + defaults). */
     public ProjectDefinition parse(Path projectDir, String defaultName) {
-        Path configFile = projectDir.resolve(CONFIG_FILE_NAME);
-        if (!Files.exists(configFile)) {
+        Optional<Path> configFile = markerFile(projectDir);
+        if (configFile.isEmpty()) {
             return defaults(defaultName);
         }
         try {
-            String content = Files.readString(configFile);
+            String content = Files.readString(configFile.get());
             if (content.isBlank()) {
                 return defaults(defaultName);
             }
@@ -44,9 +46,20 @@ public class ProjectConfigFileParser {
             def.setTibedBatchSize(intOf(map.get("tibedBatchSize"), 32));
             return def;
         } catch (Exception e) {
-            log.warn("Could not parse {} — falling back to defaults: {}", configFile, e.toString());
+            log.warn("Could not parse {} — falling back to defaults: {}", configFile.get(), e.toString());
             return defaults(defaultName);
         }
+    }
+
+    /** The existing marker file of a directory (prjxp.yaml preferred over prjxp.yml), if any. */
+    public Optional<Path> markerFile(Path dir) {
+        for (String fileName : CONFIG_FILE_NAMES) {
+            Path candidate = dir.resolve(fileName);
+            if (Files.exists(candidate)) {
+                return Optional.of(candidate);
+            }
+        }
+        return Optional.empty();
     }
 
     private static ProjectDefinition defaults(String name) {

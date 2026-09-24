@@ -118,4 +118,42 @@ class ProjectLifecycleServiceTest {
 
         assertThat(registry.entry("gone")).isEmpty();
     }
+
+    // ------------------------------------------------------------------ Phase 06: live projects
+
+    @Test
+    void deleteOfLiveProjectWipesIndexButLeavesSourceTreeIntact() throws Exception {
+        Path importDir = Files.createDirectories(tempRoot.resolve("import"));
+
+        Path live = Files.createDirectories(importDir.resolve("foo"));
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\n");
+        Path sourceFile = live.resolve("src-foo.java");
+        Files.writeString(sourceFile, "class Foo {}");
+
+        registry.registerProject("foo", live, ProjectEntry.Kind.LIVE);
+        luceneStore.addAll(
+                List.of(Embedding.from(new float[8]), Embedding.from(new float[8])),
+                List.of(segmentFor("foo"), segmentFor("beta")));
+
+        lifecycle.delete("foo");
+
+        // scoped index wipe: 'foo' gone from the shared index, other projects untouched
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "foo"))).isFalse();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "beta"))).isTrue();
+        // the live source tree belongs to the user — never deleted by the hub
+        assertThat(live).exists();
+        assertThat(sourceFile).hasContent("class Foo {}");
+        assertThat(registry.entry("foo")).isEmpty();
+    }
+
+    @Test
+    void deleteOfSnapshotStillRemovesDirectory() throws Exception {
+        Path dir = Files.createDirectories(tempRoot.resolve("projects").resolve("snap"));
+        registry.registerProject("snap", dir);   // 2-arg = SNAPSHOT
+
+        lifecycle.delete("snap");
+
+        assertThat(dir).doesNotExist();
+        assertThat(registry.entry("snap")).isEmpty();
+    }
 }

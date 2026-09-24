@@ -49,4 +49,31 @@ class ChunkProcessForProjectTest {
         assertThat(content).contains("src/Hello.java");
         assertThat(content).doesNotContain(tempDir.toString());
     }
+
+    /**
+     * Phase 06 bug fix: {@code processedFiles} is a singleton-bean field — without clearing it at the
+     * start of each run, a second {@code executeForProject} for the same files filters everything out
+     * (zero chunks). Critical for hub reindex.
+     */
+    @Test
+    void secondRunReChunksTheSameFiles() throws Exception {
+        Path src = tempDir.resolve("src");
+        Files.createDirectories(src);
+        Files.writeString(src.resolve("Hello.java"),
+                "public class Hello {\n    void hi() {\n        System.out.println(\"hi\");\n    }\n}\n");
+
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("demo");
+        pd.setRootDir(tempDir.toString());
+        Path jsonl = tempDir.resolve("out.jsonl");
+        pd.setJsonlFile(jsonl.toString());
+
+        chunkProcess.executeForProject(pd);   // first run
+        assertThat(Files.readString(jsonl)).contains("src/Hello.java");
+
+        chunkProcess.executeForProject(pd);   // second run (reindex) — must re-chunk, not filter out
+
+        String content = Files.readString(jsonl);
+        assertThat(content).contains("src/Hello.java");   // the file was chunked again, not skipped
+    }
 }

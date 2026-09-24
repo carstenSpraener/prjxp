@@ -112,4 +112,46 @@ class EmbeddingServiceForProjectTest {
 
         verify(embedder).execute(eq(store), anyList());
     }
+
+    /**
+     * Phase 06 bug fix: the reader must open the stream from {@code resolvedJsonlFile()}
+     * (rootDir-relative), mirroring the writer — not from the raw CWD-relative jsonlFile.
+     */
+    @Test
+    void streamIsOpenedFromResolvedJsonlFile() throws Exception {
+        Path jsonl = tempDir.resolve("px-chunks.jsonl");
+        Files.writeString(jsonl, "{\"id\":\"chunk-1\",\"content\":\"int x = 42;\"}");
+
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("projB");
+        pd.setRootDir(tempDir.toString());
+        pd.setJsonlFile("px-chunks.jsonl");   // relative — must be resolved against rootDir
+
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        when(streamProvider.getJsonlStream(tempDir.resolve("px-chunks.jsonl").toString()))
+                .thenReturn(java.util.stream.Stream.of("{\"id\":\"chunk-1\",\"content\":\"int x = 42;\"}"));
+        when(storeIdChecker.needsImport(eq(store), eq("chunk-1"), eq("projB"))).thenReturn(true);
+
+        service.executeForProject(pd, store);
+
+        verify(streamProvider).getJsonlStream(tempDir.resolve("px-chunks.jsonl").toString());
+        verify(embedder).execute(eq(store), anyList());   // the resolved stream was actually consumed
+    }
+
+    @Test
+    void nullJsonlFileKeepsStdinBehavior() throws Exception {
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("projC");
+        pd.setRootDir(tempDir.toString());
+        pd.setJsonlFile(null);   // null/blank -> resolvedJsonlFile() is null -> stdin, as before
+
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        when(streamProvider.getJsonlStream(null))
+                .thenReturn(java.util.stream.Stream.of("{\"id\":\"chunk-1\",\"content\":\"int x = 42;\"}"));
+        when(storeIdChecker.needsImport(eq(store), eq("chunk-1"), eq("projC"))).thenReturn(true);
+
+        service.executeForProject(pd, store);
+
+        verify(streamProvider).getJsonlStream(null);   // behavior preserved for null/blank
+    }
 }

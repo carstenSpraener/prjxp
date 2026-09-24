@@ -3,6 +3,7 @@ package de.spraener.prjxp.mcp.hub;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.config.ProjectDefinition;
+import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.lucene.LucenePxChunkDao;
@@ -10,6 +11,7 @@ import de.spraener.prjxp.mcp.ProjectInfo;
 import de.spraener.prjxp.mcp.ProjectRegistry;
 import de.spraener.prjxp.mcp.UnknownProjectException;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,9 +29,10 @@ import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Directory-driven {@link ProjectRegistry} for hub mode: discovers project directories under the
- * configured projects root, registers a Lucene DAO per project at runtime and tracks lifecycle status.
- * Active only when {@code prjxp.hub.enabled=true} (requires the shared Lucene store).
+ * Directory-driven {@link ProjectRegistry} for hub mode: discovers snapshot project directories under the
+ * configured projects root and live projects (marker file) in the import dir, registers a Lucene DAO per
+ * project at runtime and tracks lifecycle status. Active only when {@code prjxp.hub.enabled=true}
+ * (requires the shared Lucene store).
  */
 @Component
 @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
@@ -47,13 +50,42 @@ public class HubProjectRegistry implements ProjectRegistry {
 
     private final Map<String, ProjectEntry> projects = new ConcurrentHashMap<>();
 
-    /** Registers a project directory at runtime: parses its config, registers a Lucene DAO and tracks it as IMPORTING. */
+    /** Registers a snapshot project directory (tar import flow). */
     public void registerProject(String name, Path dir) {
+        registerProject(name, dir, ProjectEntry.Kind.SNAPSHOT);
+    }
+
+    /**
+     * Registers a project directory at runtime: parses its config, registers a Lucene DAO and tracks it as IMPORTING.
+     * A relative rootDir (including the default ".") is stamped absolute against {@code dir};
+     * LIVE projects get their JSONL output redirected to the hub-managed area (never into the live tree).
+     */
+    public void registerProject(String name, Path dir, ProjectEntry.Kind kind) {
         ProjectDefinition definition = configParser.parse(dir, name);
+        stampRootDir(definition, dir);
+        if (kind == ProjectEntry.Kind.LIVE) {
+            definition.setJsonlFile(hub.getLiveJsonlDir() + "/" + name + ".jsonl");   // absolute: passes resolvedJsonlFile() through
+            ensureLiveJsonlDir();
+        }
         PrjXPEmbeddingStoreReference storeRef = new PrjXPEmbeddingStoreReference();
         storeRef.setProjectName(name);
         daoProvider.register(new LucenePxChunkDao(luceneStore, embeddingModel, storeRef));
-        projects.put(name, new ProjectEntry(name, dir, definition, storeRef));
+        projects.put(name, new ProjectEntry(name, dir, kind, definition, storeRef));
+    }
+
+    private void stampRootDir(ProjectDefinition def, Path dir) {
+        String rootDir = def.getRootDir();
+        if (rootDir == null || !Path.of(rootDir).isAbsolute()) {
+            def.setRootDir(dir.resolve(rootDir == null ? "." : rootDir).toAbsolutePath().normalize().toString());
+        }
+    }
+
+    private void ensureLiveJsonlDir() {
+        try {
+            Files.createDirectories(Path.of(hub.getLiveJsonlDir()));
+        } catch (IOException e) {
+            log.warn("Could not create live JSONL dir {}: {}", hub.getLiveJsonlDir(), e.toString());
+        }
     }
 
     /** Unregisters a project: removes its DAO(s) from the provider and drops the entry. */
@@ -81,21 +113,59 @@ public class HubProjectRegistry implements ProjectRegistry {
     }
 
     /**
-     * Syncs the registry with the projects root: registers new directories, unregisters vanished ones.
-     * A missing (or unreadable) root yields an empty discovery, i.e. all entries are unregistered.
+     * Syncs the registry with both roots: registers new snapshot directories (projects root) and new live
+     * projects (import dir with a marker file), unregisters vanished ones. A disappeared LIVE project is
+     * additionally wiped from the shared index; a missing/unlistable import dir skips live sync entirely
+     * (volume-glitch protection). Synchronized: startup self-heal and the import poller may call it concurrently.
      */
-    public List<String> discoverProjects() {
-        Map<String, Path> found = listProjectDirs();
+    public synchronized List<String> discoverProjects() {
+        syncSnapshots();
+        syncLive();
+        return availableProjects();
+    }
+
+    private void syncSnapshots() {
+        Map<String, Path> found = listProjectDirs();   // empty when the root is missing
         found.forEach((name, dir) -> {
             if (!projects.containsKey(name)) {
-                registerProject(name, dir);
+                registerProject(name, dir);   // SNAPSHOT
             }
         });
-        projects.keySet().stream()
-                .filter(name -> !found.containsKey(name))
+        projects.values().stream()
+                .filter(e -> e.getKind() == ProjectEntry.Kind.SNAPSHOT)
+                .filter(e -> !found.containsKey(e.getName()))
+                .map(ProjectEntry::getName)
                 .toList()
-                .forEach(this::unregisterProject);
-        return availableProjects();
+                .forEach(this::unregisterProject);   // unchanged: unregister only, no index wipe
+    }
+
+    private void syncLive() {
+        Map<String, Path> found = listLiveDirs();
+        if (found == null) {
+            return;   // import dir missing/unlistable — skip live sync entirely (volume-glitch protection)
+        }
+        found.forEach((name, dir) -> {
+            ProjectEntry existing = projects.get(name);
+            if (existing == null) {
+                registerProject(name, dir, ProjectEntry.Kind.LIVE);   // status IMPORTING — the poller enqueues it
+            } else if (!sameDir(existing.getRootDir(), dir)) {
+                log.warn("Live project name '{}' collides with an existing entry at {} — skipping {}",
+                        name, existing.getRootDir(), dir);   // never overwrite a registered project
+            }
+        });
+        projects.values().stream()
+                .filter(e -> e.getKind() == ProjectEntry.Kind.LIVE)
+                .filter(e -> !found.containsKey(e.getName()))   // marker or directory gone
+                .map(ProjectEntry::getName)
+                .toList()
+                .forEach(name -> {
+                    unregisterProject(name);
+                    luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));   // scoped wipe (shared index!)
+                });
+    }
+
+    private static boolean sameDir(Path a, Path b) {
+        return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
     }
 
     private Map<String, Path> listProjectDirs() {
@@ -109,6 +179,40 @@ public class HubProjectRegistry implements ProjectRegistry {
                     .forEach(dir -> found.put(dir.getFileName().toString(), dir));
         } catch (IOException e) {
             log.warn("Could not list hub projects root {}: {}", root, e.toString());
+        }
+        return found;
+    }
+
+    /**
+     * Import-dir subdirectories that contain a prjxp.yaml/yml marker, keyed by project name
+     * (yaml {@code name} or directory name). Returns null when the import dir is missing or unlistable
+     * (volume-glitch protection — callers must skip live sync, not wipe everything).
+     */
+    private Map<String, Path> listLiveDirs() {
+        Path root = Path.of(hub.getImportDir());
+        if (!Files.isDirectory(root)) {
+            return null;   // missing -> skip live sync entirely
+        }
+        Map<String, Path> found = new HashMap<>();
+        try (var dirs = Files.list(root)) {
+            List<Path> liveDirs = dirs.filter(Files::isDirectory)
+                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))   // deterministic on name collisions
+                    .toList();
+            for (Path dir : liveDirs) {
+                if (configParser.markerFile(dir).isEmpty()) {
+                    continue;   // no marker file -> not a live project
+                }
+                String dirName = dir.getFileName().toString();
+                String name = configParser.parse(dir, dirName).getName();   // yaml name or directory name
+                if (found.containsKey(name)) {
+                    log.warn("Duplicate live project name '{}' in import dir — keeping {}", name, found.get(name));
+                } else {
+                    found.put(name, dir);
+                }
+            }
+        } catch (IOException e) {
+            log.warn("Could not list hub import dir {}: {}", root, e.toString());
+            return null;   // unlistable -> skip live sync entirely (volume-glitch protection)
         }
         return found;
     }

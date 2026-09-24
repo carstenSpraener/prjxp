@@ -18,9 +18,13 @@ import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
@@ -37,6 +41,7 @@ class HubProjectsControllerTest {
     private LuceneEmbeddingStore luceneStore;
     private HubProjectRegistry registry;
     private ProjectLifecycleService lifecycle;
+    private PipelineOrchestrator orchestrator;   // mocked — enqueues are captured, no real pipeline
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -50,8 +55,9 @@ class HubProjectsControllerTest {
         registry = new HubProjectRegistry(new PrjXPConfig(), hub, new PxChunkDaoProvider(List.of()),
                 luceneStore, mock(EmbeddingModel.class), new ProjectConfigFileParser());
         lifecycle = new ProjectLifecycleService(registry, luceneStore, hub);
+        orchestrator = mock(PipelineOrchestrator.class);
 
-        HubProjectsController controller = new HubProjectsController(registry, lifecycle);
+        HubProjectsController controller = new HubProjectsController(registry, lifecycle, orchestrator);
         mockMvc = standaloneSetup(controller).build();
     }
 
@@ -106,5 +112,39 @@ class HubProjectsControllerTest {
                 .isInstanceOf(ServletException.class)
                 .hasRootCauseInstanceOf(UnknownProjectException.class)
                 .hasMessageContaining("ghost");
+    }
+
+    // ------------------------------------------------------------------ Phase 06: reindex
+
+    @Test
+    void reindexOfKnownProjectEnqueuesPipelineAndReturns202() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        mockMvc.perform(post("/prjxp/projects/alpha/reindex"))
+                .andExpect(status().isAccepted());
+
+        verify(orchestrator).enqueue("alpha");
+    }
+
+    @Test
+    void reindexOfWorksForFailedProject() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.setStatus("alpha", ProjectStatus.FAILED, "embed blew up");
+
+        mockMvc.perform(post("/prjxp/projects/alpha/reindex"))
+                .andExpect(status().isAccepted());
+
+        verify(orchestrator).enqueue("alpha");   // FAILED is re-runnable via explicit reindex
+    }
+
+    @Test
+    void reindexOfUnknownProjectSurfacesAs500() throws Exception {
+        // same error behavior as DELETE: UnknownProjectException propagates unhandled
+        assertThatThrownBy(() -> mockMvc.perform(post("/prjxp/projects/ghost/reindex")))
+                .isInstanceOf(ServletException.class)
+                .hasRootCauseInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("ghost");
+
+        verify(orchestrator, never()).enqueue(anyString());
     }
 }

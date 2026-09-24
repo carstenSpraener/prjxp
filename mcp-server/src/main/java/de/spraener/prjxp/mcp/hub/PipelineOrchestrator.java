@@ -16,6 +16,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
@@ -43,6 +45,12 @@ public class PipelineOrchestrator implements ImportHandler {
         return t;
     });
 
+    /**
+     * Names with a pipeline task queued or running, mapped to a per-task token — enqueue is idempotent
+     * per name (no double runs); a re-import supersedes any in-flight run of the same name.
+     */
+    private final Map<String, Object> inFlight = new ConcurrentHashMap<>();
+
     @PreDestroy
     public void shutdown() {
         worker.shutdownNow();
@@ -54,7 +62,7 @@ public class PipelineOrchestrator implements ImportHandler {
             registry.unregisterProject(name);   // re-import: drop stale DAO/entry first
         }
         registry.registerProject(name, projectDir);   // status IMPORTING
-        enqueue(name);
+        enqueueForced(name);   // a re-import must run even if the previous pipeline for this name is still in flight
     }
 
     @Override
@@ -66,13 +74,38 @@ public class PipelineOrchestrator implements ImportHandler {
         }
     }
 
-    /** Queues the full pipeline (chunk → scoped reset + embed) for a registered project. */
+    /** Queues the full pipeline (chunk → scoped reset + embed) for a registered project; idempotent per name. */
     public void enqueue(String name) {
-        worker.submit(() -> runPipeline(name));
+        Object token = new Object();
+        if (inFlight.putIfAbsent(name, token) != null) {
+            return;   // already queued/running — never double-run a project's pipeline
+        }
+        submit(name, token);
+    }
+
+    /** Like {@link #enqueue} but supersedes a queued/running pipeline of the same name (tar re-import). */
+    private void enqueueForced(String name) {
+        Object token = new Object();
+        inFlight.put(name, token);
+        submit(name, token);
+    }
+
+    private void submit(String name, Object token) {
+        worker.submit(() -> {
+            try {
+                runPipeline(name);
+            } finally {
+                inFlight.remove(name, token);   // only if this task is still the current one for the name
+            }
+        });
     }
 
     private void runPipeline(String name) {
         ProjectDefinition def = registry.definitionOf(name);
+        if (def == null) {
+            wipeIfDeregistered(name);   // deregistered between enqueue and start — nothing was written, but be safe
+            return;
+        }
         try {
             registry.setStatus(name, ProjectStatus.CHUNKING, null);
             chunkProcess.executeForProject(def);
@@ -83,10 +116,19 @@ public class PipelineOrchestrator implements ImportHandler {
         } catch (Exception e) {
             log.error("Pipeline failed for project '{}': {}", name, e.toString());
             registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
+        } finally {
+            wipeIfDeregistered(name);   // race guard: marker removed mid-run -> the entry is gone, wipe what we wrote
         }
     }
 
-    /** On startup: sync the registry with the projects root, then mark indexed projects READY or re-run them. */
+    private void wipeIfDeregistered(String name) {
+        if (registry.entry(name).isEmpty()) {
+            log.warn("Project '{}' was deregistered mid-pipeline — wiping its chunks from the shared index", name);
+            luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));   // scoped (shared index!)
+        }
+    }
+
+    /** On startup: sync the registry with both roots (snapshots + live), then mark indexed projects READY or re-run them. */
     @EventListener(ApplicationReadyEvent.class)
     public void selfHeal() {
         for (String name : registry.discoverProjects()) {

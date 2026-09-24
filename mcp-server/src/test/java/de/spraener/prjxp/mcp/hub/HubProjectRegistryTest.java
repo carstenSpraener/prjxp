@@ -2,11 +2,17 @@ package de.spraener.prjxp.mcp.hub;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
+import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.mcp.ProjectInfo;
 import de.spraener.prjxp.mcp.UnknownProjectException;
+import dev.langchain4j.data.document.Metadata;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -14,6 +20,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -31,23 +38,28 @@ class HubProjectRegistryTest {
     Path tempDir;
 
     private Path projectsRoot;
+    private Path importDir;
     private PxChunkDaoProvider daoProvider;
+    private LuceneEmbeddingStore luceneStore;
     private HubProjectRegistry registry;
 
     @BeforeEach
     void setUp() throws Exception {
         projectsRoot = tempDir.resolve("projects");
         Files.createDirectories(projectsRoot);
+        importDir = tempDir.resolve("import");
+        Files.createDirectories(importDir);
 
         Path storeDir = tempDir.resolve("store");
         Files.createDirectories(storeDir);
-        LuceneEmbeddingStore luceneStore = new LuceneEmbeddingStore(storeDir, 8);
+        luceneStore = new LuceneEmbeddingStore(storeDir, 8);
         EmbeddingModel embeddingModel = mock(EmbeddingModel.class);
 
         daoProvider = new PxChunkDaoProvider(List.of());
 
         HubProperties hub = new HubProperties();
         hub.setProjectsRoot(projectsRoot.toString());
+        hub.setImportDir(importDir.toString());
 
         PrjXPConfig cfg = new PrjXPConfig();
         ProjectDefinition alpha = new ProjectDefinition();
@@ -59,10 +71,28 @@ class HubProjectRegistryTest {
                 new ProjectConfigFileParser());
     }
 
+    @AfterEach
+    void tearDown() {
+        luceneStore.close();   // release the Lucene write lock so the temp dir can be cleaned up
+    }
+
     private Path projectDir(String name) throws Exception {
         Path dir = projectsRoot.resolve(name);
         Files.createDirectories(dir);
         return dir;
+    }
+
+    private Path liveDir(String name) throws Exception {
+        Path dir = importDir.resolve(name);
+        Files.createDirectories(dir);
+        return dir;
+    }
+
+    private void indexChunkFor(String project) {
+        luceneStore.addAll(
+                List.of(Embedding.from(new float[8])),
+                List.of(TextSegment.from("content of " + project,
+                        Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, project)))));
     }
 
     // ------------------------------------------------------------------ registerProject
@@ -76,8 +106,11 @@ class HubProjectRegistryTest {
         ProjectEntry entry = registry.entry("alpha").orElseThrow();
         assertThat(entry.getName()).isEqualTo("alpha");
         assertThat(entry.getRootDir()).isEqualTo(dir);
+        assertThat(entry.getKind()).isEqualTo(ProjectEntry.Kind.SNAPSHOT);   // 2-arg registration = snapshot
         assertThat(entry.getDefinition().getName()).isEqualTo("alpha");
-        assertThat(entry.getDefinition().getRootDir()).isEqualTo(".");
+        // Phase 06 bug fix: the default relative rootDir "." is stamped absolute against the project dir
+        assertThat(entry.getDefinition().getRootDir())
+                .isEqualTo(dir.toAbsolutePath().normalize().toString());
         assertThat(entry.getDefinition().getJsonlFile()).isEqualTo("px-chunks.jsonl");
         assertThat(entry.getStoreRef().getProjectName()).isEqualTo("alpha");
         assertThat(entry.getStatus()).isEqualTo(ProjectStatus.IMPORTING);
@@ -97,9 +130,144 @@ class HubProjectRegistryTest {
 
         ProjectEntry entry = registry.entry("beta").orElseThrow();
         assertThat(entry.getDefinition().getName()).isEqualTo("beta");   // no name key in yaml -> defaultName
-        assertThat(entry.getDefinition().getRootDir()).isEqualTo("/custom/root");
+        assertThat(entry.getDefinition().getRootDir()).isEqualTo("/custom/root");   // absolute passes through
         assertThat(entry.getDefinition().getJsonlFile()).isEqualTo("custom-chunks.jsonl");
         assertThat(entry.getDefinition().getTibedBatchSize()).isEqualTo(64);
+    }
+
+    @Test
+    void registerProjectStampsRelativeRootDirAbsoluteAgainstProjectDir() throws Exception {
+        Path dir = projectDir("gamma");
+        Files.writeString(dir.resolve("prjxp.yaml"), "rootDir: src\n");
+
+        registry.registerProject("gamma", dir);
+
+        assertThat(registry.entry("gamma").orElseThrow().getDefinition().getRootDir())
+                .isEqualTo(dir.toAbsolutePath().normalize().resolve("src").toString());
+    }
+
+    // ------------------------------------------------------------------ Phase 06: live registration + discovery
+
+    @Test
+    void registerLiveProjectRedirectsJsonlToHubManagedArea() throws Exception {
+        Path dir = liveDir("foo");
+
+        registry.registerProject("foo", dir, ProjectEntry.Kind.LIVE);
+
+        ProjectEntry entry = registry.entry("foo").orElseThrow();
+        assertThat(entry.getKind()).isEqualTo(ProjectEntry.Kind.LIVE);
+        // absolute path: resolvedJsonlFile() passes it through — the hub never writes into the live tree
+        assertThat(entry.getDefinition().getJsonlFile()).isEqualTo("/data/chunks/foo.jsonl");
+        assertThat(entry.getDefinition().resolvedJsonlFile()).isEqualTo("/data/chunks/foo.jsonl");
+        assertThat(entry.getDefinition().getRootDir())
+                .isEqualTo(dir.toAbsolutePath().normalize().toString());   // chunking walks the live tree
+    }
+
+    @Test
+    void discoverRegistersSnapshotAndLiveProjectsFromBothRoots() throws Exception {
+        projectDir("alpha");   // snapshot: plain directory under projectsRoot
+        Path live = liveDir("livedir");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: fancy\n");   // live: marker file, yaml name
+
+        List<String> discovered = registry.discoverProjects();
+
+        assertThat(discovered).containsExactly("alpha", "fancy");   // sorted
+        assertThat(registry.entry("alpha").orElseThrow().getKind()).isEqualTo(ProjectEntry.Kind.SNAPSHOT);
+        assertThat(registry.entry("fancy").orElseThrow().getKind()).isEqualTo(ProjectEntry.Kind.LIVE);
+        assertThat(registry.entry("fancy").orElseThrow().getRootDir()).isEqualTo(live);
+    }
+
+    @Test
+    void discoverUsesDirectoryNameWhenYamlHasNoName() throws Exception {
+        Path live = liveDir("plainname");
+        Files.writeString(live.resolve("prjxp.yaml"), "tibedBatchSize: 16\n");
+
+        registry.discoverProjects();
+
+        assertThat(registry.entry("plainname")).isPresent();
+    }
+
+    @Test
+    void discoverIgnoresImportDirEntriesWithoutMarker() throws Exception {
+        liveDir("notaproject");   // no prjxp.yaml/yml inside
+
+        assertThat(registry.discoverProjects()).isEmpty();
+    }
+
+    @Test
+    void liveNameCollidingWithExistingEntryIsSkipped() throws Exception {
+        projectDir("foo");   // snapshot 'foo' registered first
+        registry.discoverProjects();
+
+        Path live = liveDir("bar");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\n");   // live dir wants the same name
+
+        registry.discoverProjects();
+
+        ProjectEntry entry = registry.entry("foo").orElseThrow();
+        assertThat(entry.getKind()).isEqualTo(ProjectEntry.Kind.SNAPSHOT);   // untouched — no overwrite
+        assertThat(entry.getRootDir()).isEqualTo(projectsRoot.resolve("foo"));
+    }
+
+    @Test
+    void disappearedLiveProjectIsDeregisteredAndIndexWiped() throws Exception {
+        Path live = liveDir("foo");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\n");
+        registry.discoverProjects();
+        indexChunkFor("foo");
+
+        Files.delete(live.resolve("prjxp.yaml"));   // marker removed (directory stays)
+
+        List<String> rediscovered = registry.discoverProjects();
+
+        assertThat(rediscovered).doesNotContain("foo");
+        assertThat(registry.entry("foo")).isEmpty();
+        assertThat(daoProvider.get("foo")).isEmpty();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "foo"))).isFalse();   // scoped wipe
+    }
+
+    @Test
+    void vanishedLiveDirectoryIsDeregisteredAndIndexWiped() throws Exception {
+        Path live = liveDir("foo");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\n");
+        registry.discoverProjects();
+        indexChunkFor("foo");
+
+        Files.delete(live.resolve("prjxp.yaml"));
+        Files.delete(live);   // the whole directory vanishes
+
+        registry.discoverProjects();
+
+        assertThat(registry.entry("foo")).isEmpty();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "foo"))).isFalse();
+    }
+
+    @Test
+    void missingImportDirSkipsLiveSyncEntirely() throws Exception {
+        Path live = liveDir("foo");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\n");
+        registry.discoverProjects();
+
+        Files.delete(live.resolve("prjxp.yaml"));
+        Files.delete(live);
+        Files.delete(importDir);   // volume glitch: the import dir itself is gone
+
+        assertThatCode(() -> registry.discoverProjects()).doesNotThrowAnyException();
+        assertThat(registry.entry("foo")).isPresent();   // NOT deregistered — no wipe on a glitch
+    }
+
+    @Test
+    void disappearedSnapshotIsUnregisteredWithoutWipe() throws Exception {
+        Path dir = projectDir("alpha");
+        registry.registerProject("alpha", dir);
+        indexChunkFor("alpha");
+
+        Files.delete(dir);   // snapshot directory vanishes (unchanged behavior: unregister only)
+
+        registry.discoverProjects();
+
+        assertThat(registry.entry("alpha")).isEmpty();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "alpha"))).isTrue();   // no wipe for snapshots
     }
 
     // ------------------------------------------------------------------ setStatus / searchability

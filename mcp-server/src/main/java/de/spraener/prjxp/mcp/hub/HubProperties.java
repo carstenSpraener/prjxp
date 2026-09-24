@@ -12,6 +12,8 @@ public class HubProperties {
     private String importDir = "/import";
     /** Root directory extracted projects live in (default /projects). */
     private String projectsRoot = "/projects";
+    /** Hub-managed area for JSONL output of live projects (default /data/chunks) — the hub never writes into the live tree. */
+    private String liveJsonlDir = "/data/chunks";
     /** Poller interval in milliseconds (default 5000). */
     private long pollIntervalMs = 5_000;
     /** Max tar file size in bytes (default 2 GiB). */
