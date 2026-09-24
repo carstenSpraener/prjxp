@@ -12,11 +12,12 @@ import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Phase 02: {@link ProjectRegistry} is the single source of truth for project resolution
- * in the MCP server. Uses a REAL {@link PrjXPConfig} (no mocks) per spec §5.1:
+ * Phase 03: {@link StaticProjectRegistry} is the config-driven implementation of
+ * {@link ProjectRegistry}, active when {@code prjxp.hub.enabled} is false or unset.
+ * Uses a REAL {@link PrjXPConfig} (no mocks) per spec §5.1:
  * activeProject "alpha", projects [alpha, beta], stores {alpha (default), beta, gamma}.
  */
-class ProjectRegistryTest {
+class StaticProjectRegistryTest {
 
     private static PrjXPEmbeddingStoreReference storeRef(String projectName, boolean isDefault) {
         PrjXPEmbeddingStoreReference ref = new PrjXPEmbeddingStoreReference();
@@ -46,7 +47,7 @@ class ProjectRegistryTest {
 
     @Test
     void availableProjectsListsStoreReferencesInConfigOrder() {
-        ProjectRegistry registry = new ProjectRegistry(config());
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
 
         assertThat(registry.availableProjects()).containsExactly("alpha", "beta", "gamma");
     }
@@ -59,7 +60,7 @@ class ProjectRegistryTest {
                 storeRef("alpha", false),   // second reference to the same project
                 storeRef("beta", false)));
 
-        assertThat(new ProjectRegistry(cfg).availableProjects()).containsExactly("alpha", "beta");
+        assertThat(new StaticProjectRegistry(cfg).availableProjects()).containsExactly("alpha", "beta");
     }
 
     @Test
@@ -70,36 +71,36 @@ class ProjectRegistryTest {
                 storeRef("   ", false),
                 storeRef("alpha", true)));
 
-        assertThat(new ProjectRegistry(cfg).availableProjects()).containsExactly("alpha");
+        assertThat(new StaticProjectRegistry(cfg).availableProjects()).containsExactly("alpha");
     }
 
     // ------------------------------------------------------------------ resolve
 
     @Test
     void resolveNullReturnsActiveProjectName() {
-        assertThat(new ProjectRegistry(config()).resolve(null)).isEqualTo("alpha");
+        assertThat(new StaticProjectRegistry(config()).resolve(null)).isEqualTo("alpha");
     }
 
     @Test
     void resolveBlankReturnsActiveProjectName() {
-        assertThat(new ProjectRegistry(config()).resolve("   ")).isEqualTo("alpha");
+        assertThat(new StaticProjectRegistry(config()).resolve("   ")).isEqualTo("alpha");
     }
 
     @Test
     void resolveDefaultPassesThrough() {
-        assertThat(new ProjectRegistry(config()).resolve("default")).isEqualTo("default");
+        assertThat(new StaticProjectRegistry(config()).resolve("default")).isEqualTo("default");
     }
 
     @Test
     void resolveExplicitNamePassesThrough() {
-        assertThat(new ProjectRegistry(config()).resolve("beta")).isEqualTo("beta");
+        assertThat(new StaticProjectRegistry(config()).resolve("beta")).isEqualTo("beta");
     }
 
     // ------------------------------------------------------------------ isSearchable
 
     @Test
     void isSearchableTrueForEveryProjectWithStoreReference() {
-        ProjectRegistry registry = new ProjectRegistry(config());
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
 
         assertThat(registry.isSearchable("alpha")).isTrue();
         assertThat(registry.isSearchable("beta")).isTrue();
@@ -108,12 +109,12 @@ class ProjectRegistryTest {
 
     @Test
     void isSearchableFalseForUnknownProject() {
-        assertThat(new ProjectRegistry(config()).isSearchable("nope")).isFalse();
+        assertThat(new StaticProjectRegistry(config()).isSearchable("nope")).isFalse();
     }
 
     @Test
     void isSearchableFalseForNullAndBlank() {
-        ProjectRegistry registry = new ProjectRegistry(config());
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
 
         assertThat(registry.isSearchable(null)).isFalse();
         assertThat(registry.isSearchable("  ")).isFalse();
@@ -121,7 +122,7 @@ class ProjectRegistryTest {
 
     @Test
     void isSearchableDefaultTrueWhenADefaultStoreReferenceExists() {
-        assertThat(new ProjectRegistry(config()).isSearchable("default")).isTrue();   // alpha is the default store
+        assertThat(new StaticProjectRegistry(config()).isSearchable("default")).isTrue();   // alpha is the default store
     }
 
     @Test
@@ -131,19 +132,19 @@ class ProjectRegistryTest {
                 storeRef("alpha", false),
                 storeRef("beta", false)));
 
-        assertThat(new ProjectRegistry(cfg).isSearchable("default")).isFalse();
+        assertThat(new StaticProjectRegistry(cfg).isSearchable("default")).isFalse();
     }
 
     // ------------------------------------------------------------------ ensureSearchable
 
     @Test
     void ensureSearchablePassesForKnownProject() {
-        assertThatCode(() -> new ProjectRegistry(config()).ensureSearchable("beta")).doesNotThrowAnyException();
+        assertThatCode(() -> new StaticProjectRegistry(config()).ensureSearchable("beta")).doesNotThrowAnyException();
     }
 
     @Test
     void ensureSearchableThrowsForUnknownProjectListingAvailableProjects() {
-        ProjectRegistry registry = new ProjectRegistry(config());
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
 
         assertThatThrownBy(() -> registry.ensureSearchable("nope"))
                 .isInstanceOf(UnknownProjectException.class)
@@ -158,7 +159,7 @@ class ProjectRegistryTest {
         PrjXPConfig cfg = config();
         cfg.setEmbeddingStores(List.of(storeRef("alpha", false)));
 
-        assertThatThrownBy(() -> new ProjectRegistry(cfg).ensureSearchable("default"))
+        assertThatThrownBy(() -> new StaticProjectRegistry(cfg).ensureSearchable("default"))
                 .isInstanceOf(UnknownProjectException.class)
                 .hasMessageContaining("default");
     }
@@ -177,5 +178,48 @@ class ProjectRegistryTest {
     @Test
     void unknownProjectExceptionWithEmptyAvailableListsNone() {
         assertThat(new UnknownProjectException("nope", List.of()).getMessage()).contains("(none)");
+    }
+
+    // ------------------------------------------------------------------ statusOf / projectInfos (Phase 03)
+
+    @Test
+    void statusOfReadyForProjectWithStoreReference() {
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
+
+        assertThat(registry.statusOf("alpha")).isEqualTo("READY");
+        assertThat(registry.statusOf("beta")).isEqualTo("READY");
+    }
+
+    @Test
+    void statusOfUnknownForProjectWithoutStoreReference() {
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
+
+        assertThat(registry.statusOf("nope")).isEqualTo("UNKNOWN");
+    }
+
+    @Test
+    void statusOfUnknownForNullAndBlank() {
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
+
+        assertThat(registry.statusOf(null)).isEqualTo("UNKNOWN");
+        assertThat(registry.statusOf("  ")).isEqualTo("UNKNOWN");
+    }
+
+    @Test
+    void projectInfosMapsAvailableProjectsToReady() {
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
+
+        List<ProjectInfo> infos = registry.projectInfos();
+        assertThat(infos).hasSize(3);
+
+        ProjectInfo alpha = infos.get(0);
+        assertThat(alpha.name()).isEqualTo("alpha");
+        assertThat(alpha.status()).isEqualTo("READY");
+        assertThat(alpha.lastError()).isNull();
+
+        assertThat(infos).containsExactly(
+                new ProjectInfo("alpha", "READY", null),
+                new ProjectInfo("beta", "READY", null),
+                new ProjectInfo("gamma", "READY", null));
     }
 }

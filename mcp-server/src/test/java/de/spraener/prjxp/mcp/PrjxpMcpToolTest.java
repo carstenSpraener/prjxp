@@ -90,9 +90,11 @@ class PrjxpMcpToolTest {
     }
 
     @Test
-    void listProjectsDelegatesToRegistry() {
+    void listProjectsFiltersToSearchableOnly() {
         when(projectRegistry.availableProjects()).thenReturn(List.of("alpha", "beta"));
+        when(projectRegistry.isSearchable("alpha")).thenReturn(true);
+        when(projectRegistry.isSearchable("beta")).thenReturn(false);
 
-        assertThat(tool.listProjects()).containsExactly("alpha", "beta");
+        assertThat(tool.listProjects()).containsExactly("alpha");
     }
 }

@@ -80,9 +80,16 @@ case "${MODE}" in
     shift
     run_with_embedding_server run_java /app/mcp-server-all.jar "$@"
     ;;
+  hub)
+    shift
+    # Hub mode: in-process pipeline, import watcher; CLI runners stay off.
+    export PRJXP_HUB_ENABLED=true
+    export PRJXP_CLI_ENABLED=false
+    run_with_embedding_server run_java /app/mcp-server-all.jar "$@"
+    ;;
   *)
     echo "Unknown mode: ${MODE}" >&2
-    echo "Supported modes: chunk, embed, serve" >&2
+    echo "Supported modes: chunk, embed, serve, hub" >&2
     exit 1
     ;;
 esac

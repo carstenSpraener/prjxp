@@ -44,6 +44,9 @@ RUN chmod +x /app/entry.sh
 # application.yml/.yaml vorhanden ist.
 COPY application.yaml.docker /app/application.yaml
 
+# 5. Hub-Modus Verzeichnisse (DockerHub Phase 05) — existieren auch ohne Volume-Mounts
+RUN mkdir -p /import /projects
+
 # Data-Volumes (werden zur Laufzeit gemountet)
 VOLUME /app-source
 VOLUME /app-source/.prjxp-data/lucene-index

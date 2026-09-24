@@ -98,7 +98,9 @@ public class PrjxpMcpTool {
             USE BEFORE calling vectorSearch/grep/readFile/readBySignature when you don't know which 'project' values are valid.
             """)
     public List<String> listProjects() {
-        return projectRegistry.availableProjects();
+        return projectRegistry.availableProjects().stream()
+                .filter(projectRegistry::isSearchable)   // hub: READY only; static mode: all (unchanged result)
+                .toList();
     }
 
     @McpTool(name="grep", description = """

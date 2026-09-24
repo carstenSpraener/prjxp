@@ -16,5 +16,25 @@ services:
       PRJXP_ROOT_DIR: /app-source
       SERVER_PORT: "7007"
 
+  hub:
+    image: prjxp
+    build: .
+    command: ["hub"]
+    ports:
+      - "7008:7007"          # hub on 7008 so it can run alongside the single-project service
+    volumes:
+      - ./import:/import     # drop tar archives here (e.g. foo.tar)
+      - prjxp-projects:/projects
+      - prjxp-hub-data:/data
+    environment:
+      EMBEDDING_STORE_TYPE: lucene
+      LUCENE_INDEX_PATH: /data/lucene-index
+      LUCENE_VECTOR_DIMENSION: "1024"
+      PRJXP_HUB_IMPORT_DIR: /import
+      PRJXP_HUB_PROJECTS_ROOT: /projects
+      SERVER_PORT: "7007"
+
 volumes:
   prjxp-data:
+  prjxp-projects:
+  prjxp-hub-data:

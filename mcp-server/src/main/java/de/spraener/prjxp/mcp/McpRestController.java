@@ -82,8 +82,8 @@ public class McpRestController {
     }
 
     @GetMapping("projects")
-    @Operation(description = "Returns a list of all available projects.")
-    public List<String> listProjects() {
-        return projectRegistry.availableProjects();
+    @Operation(description = "Returns all projects with their lifecycle status.")
+    public List<ProjectInfo> listProjects() {
+        return projectRegistry.projectInfos();
     }
 }

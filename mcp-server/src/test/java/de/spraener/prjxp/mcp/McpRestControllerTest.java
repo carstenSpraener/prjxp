@@ -61,9 +61,13 @@ class McpRestControllerTest {
     }
 
     @Test
-    void projectsEndpointListsSearchableProjects() {
-        when(projectRegistry.availableProjects()).thenReturn(List.of("alpha", "beta"));
+    void projectsEndpointReturnsProjectInfosWithLifecycleStatus() {
+        when(projectRegistry.projectInfos()).thenReturn(List.of(
+                new ProjectInfo("alpha", "READY", null),
+                new ProjectInfo("beta", "CHUNKING", null)));
 
-        assertThat(controller.listProjects()).containsExactly("alpha", "beta");
+        assertThat(controller.listProjects()).containsExactly(
+                new ProjectInfo("alpha", "READY", null),
+                new ProjectInfo("beta", "CHUNKING", null));
     }
 }

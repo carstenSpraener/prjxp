@@ -75,6 +75,7 @@ class OragelSearch extends HTMLElement {
         });
 
         await this.populateProjects();
+        setInterval(() => this.refreshProjects(), 10_000);
     }
 
     async populateProjects() {
@@ -85,16 +86,50 @@ class OragelSearch extends HTMLElement {
             const basePath = scriptUrl.pathname.replace('/js/component.js', '');
             const res = await fetch(`${basePath}/prjxp/tools/projects`);
             if (!res.ok) throw new Error('HTTP ' + res.status);
-            const names = await res.json();
-            if (Array.isArray(names) && names.length > 0) {
-                select.innerHTML = names.map((p, i) =>
-                    `<option value="${p}" ${i === 0 ? 'selected' : ''}>${p}</option>`).join('');
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const projects = data.map(p => (typeof p === 'string')
+                    ? { name: p, status: 'READY', lastError: null } : p);
+                const firstReady = projects.findIndex(p => (p.status || 'READY') === 'READY');
+                const selIdx = firstReady >= 0 ? firstReady : 0;
+                select.innerHTML = projects.map((p, i) => {
+                    const ready = (p.status || 'READY') === 'READY';
+                    const label = p.name + (ready ? '' : ` (${(p.status || '').toLowerCase()})`);
+                    return `<option value="${p.name}" ${i === selIdx ? 'selected' : ''} ${ready ? '' : 'disabled'}>${label}</option>`;
+                }).join('');
             } else {
                 select.innerHTML = '<option value="default">default</option>';
             }
         } catch (err) {
             console.error('Project list fetch failed', err);
             select.innerHTML = '<option value="default">default</option>';
+        }
+    }
+
+    async refreshProjects() {
+        const select = this.shadowRoot.getElementById('projectSelect');
+        if (this.projects.length > 0) return;   // explicit 'projects' attribute wins
+        const current = select.value;
+        try {
+            const scriptUrl = new URL(import.meta.url);
+            const basePath = scriptUrl.pathname.replace('/js/component.js', '');
+            const res = await fetch(`${basePath}/prjxp/tools/projects`);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const projects = data.map(p => (typeof p === 'string')
+                    ? { name: p, status: 'READY', lastError: null } : p);
+                const presentIdx = projects.findIndex(p => p.name === current);
+                const firstReady = projects.findIndex(p => (p.status || 'READY') === 'READY');
+                const selIdx = presentIdx >= 0 ? presentIdx : (firstReady >= 0 ? firstReady : 0);
+                select.innerHTML = projects.map((p, i) => {
+                    const ready = (p.status || 'READY') === 'READY';
+                    const label = p.name + (ready ? '' : ` (${(p.status || '').toLowerCase()})`);
+                    return `<option value="${p.name}" ${i === selIdx ? 'selected' : ''} ${ready ? '' : 'disabled'}>${label}</option>`;
+                }).join('');
+            }
+        } catch (err) {
+            console.error('Project list refresh failed', err);   // keep current options on failure
         }
     }
 

@@ -9,6 +9,9 @@ dependencies {
     // Interne Module (Retrieval + Runtime)
     implementation project(':golden-retriever')
     implementation project(':prjxp-common')
+    // Hub-Registry kompiliert direkt gegen LuceneEmbeddingStore/LucenePxChunkDao
+    // (golden-retriever exposes lucene-store only as `implementation` — not visible to mcp-server)
+    implementation project(':lucene-store')
     // In-Prozess-Pipeline fuer den Hub-Modus (Phase 01 DockerHub)
     implementation project(':chunk-norris')
     implementation project(':tibed')

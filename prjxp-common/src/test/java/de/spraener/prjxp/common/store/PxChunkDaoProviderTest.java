@@ -1,64 +1,108 @@
 package de.spraener.prjxp.common.store;
 
-import de.spraener.prjxp.common.store.PxChunkDao;
-import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
-import de.spraener.prjxp.common.test.PrjXPTestComponentMother;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Configuration;
-import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
-import java.util.Optional;
-import java.util.function.Predicate;
 
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatNoException;
-import static org.mockito.Mockito.*;
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
-@SpringBootTest
-@ActiveProfiles("test")
+/**
+ * Phase 03: the provider keeps its startup-injected DAOs but also supports runtime
+ * registration/unregistration (hub: dynamically imported projects).
+ */
 class PxChunkDaoProviderTest {
 
-    @Autowired
-    private PxChunkDaoProvider uut;
+    private static PrjXPEmbeddingStoreReference ref(String projectName, boolean isDefault) {
+        PrjXPEmbeddingStoreReference r = new PrjXPEmbeddingStoreReference();
+        r.setProjectName(projectName);
+        r.setDefault(isDefault);
+        return r;
+    }
 
-    @Test
-    void apply_withPredicate_returnsOptional() {
-        Predicate<PrjXPEmbeddingStoreReference> predicate = r -> true;
-
-        Optional<PxChunkDao> result = uut.apply(predicate);
-
-        assertThatNoException().isThrownBy(() -> {});
+    private static PxChunkDao dao(PrjXPEmbeddingStoreReference ref) {
+        PxChunkDao d = mock(PxChunkDao.class);
+        when(d.getStoreReference()).thenReturn(ref);
+        return d;
     }
 
     @Test
-    void get_withDefaultName_returnsOptional() {
-        Optional<PxChunkDao> result = uut.get("default");
+    void constructorKeepsInitialDaos() {
+        PxChunkDao alpha = dao(ref("alpha", true));
 
-        assertThatNoException().isThrownBy(() -> {});
+        PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of(alpha));
+
+        assertThat(provider.get("alpha")).containsSame(alpha);
     }
 
     @Test
-    void getModelName_returnsString() {
-        String result = uut.getModelName("default");
+    void constructorAcceptsEmptyList() {
+        PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of());
 
-        assertThatNoException().isThrownBy(() -> {});
+        assertThat(provider.get("alpha")).isEmpty();
     }
 
-    @Configuration
-    static class TestConfig {
-        @Bean
-        List<PxChunkDao> chunkDaos() {
-            return List.of();
-        }
+    @Test
+    void registerAddsDaoFoundByGet() {
+        PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of());
 
-        @Bean
-        PxChunkDaoProvider uut(List<PxChunkDao> chunkDaos) {
-            return new PxChunkDaoProvider(chunkDaos);
-        }
+        PxChunkDao beta = dao(ref("beta", false));
+        provider.register(beta);
+
+        assertThat(provider.get("beta")).containsSame(beta);
+    }
+
+    @Test
+    void unregisterByProjectRemovesOnlyThatProjectsDaos() {
+        PxChunkDao alpha = dao(ref("alpha", true));
+        PxChunkDao beta1 = dao(ref("beta", false));
+        PxChunkDao beta2 = dao(ref("beta", false));   // a project may have several DAOs
+        PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of(alpha, beta1, beta2));
+
+        provider.unregisterByProject("beta");
+
+        assertThat(provider.get("alpha")).containsSame(alpha);
+        assertThat(provider.apply(r -> "beta".equals(r.getProjectName()))).isEmpty();
+    }
+
+    @Test
+    void defaultLookupStillWorksAfterRuntimeChanges() {
+        PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of(dao(ref("alpha", false))));
+
+        assertThat(provider.get("default")).isEmpty();   // no default store yet
+
+        PxChunkDao beta = dao(ref("beta", true));
+        provider.register(beta);
+
+        assertThat(provider.get("default")).containsSame(beta);
+    }
+
+    @Test
+    void applyReturnsFirstMatchingDaoOrEmpty() {
+        PxChunkDao alpha = dao(ref("alpha", true));
+        PxChunkDao beta = dao(ref("beta", false));
+        PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of(alpha, beta));
+
+        assertThat(provider.apply(r -> "beta".equals(r.getProjectName()))).containsSame(beta);
+        assertThat(provider.apply(r -> false)).isEmpty();
+    }
+
+    @Test
+    void getModelNameReturnsDbNameOfMatchingDao() {
+        PrjXPEmbeddingStoreReference ref = ref("alpha", false);
+        ref.setDbName("alpha-db");
+
+        PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of(dao(ref)));
+
+        assertThat(provider.getModelName("alpha")).isEqualTo("alpha-db");
+    }
+
+    @Test
+    void getModelNameFallsBackToDefault() {
+        PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of(dao(ref("alpha", false))));
+
+        assertThat(provider.getModelName("nope")).isEqualTo("default");
     }
 }
