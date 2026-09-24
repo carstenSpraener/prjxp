@@ -12,6 +12,7 @@ commonsCli = "1.11.0"
 javaparser = "3.25.10"
 dotenv = "3.0.0"
 commonsIo = "2.21.0"
+commonsCompress = "1.27.1"
 lombok = "1.18.34"
 groovy = "5.0.5"
 
@@ -53,6 +54,7 @@ commons-cli = { group = "commons-cli", name = "commons-cli", version.ref = "comm
 javaparser-core = { group = "com.github.javaparser", name = "javaparser-core", version.ref = "javaparser" }
 dotenv-java = { group = "io.github.cdimascio", name = "dotenv-java", version.ref = "dotenv" }
 commons-io = { group = "commons-io", name = "commons-io", version.ref = "commonsIo" }
+commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 jgrapht = { group = "org.jgrapht", name="jgrapht-core", version="1.5.3"}
 lucene-core = { group = "org.apache.lucene", name = "lucene-core", version.ref = "lucene" }
 

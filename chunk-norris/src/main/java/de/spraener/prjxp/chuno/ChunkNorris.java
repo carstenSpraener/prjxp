@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Profile;
@@ -26,8 +27,9 @@ public class ChunkNorris {
                 .run(args);
     }
 
-    @Bean
+    @Bean("chunoRun")   // unique name: the hub app scans multiple modules that each define a 'run' bean
     @Profile("!test")
+    @ConditionalOnProperty(name = "prjxp.cli.enabled", havingValue = "true", matchIfMissing = true)
     public CommandLineRunner run(
             PrjXPConfig cfg,
             ChunkProcess chunkProcess

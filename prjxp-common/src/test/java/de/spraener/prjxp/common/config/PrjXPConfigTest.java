@@ -22,7 +22,7 @@ class PrjXPConfigTest {
         assertThat(result.get().getRootDir()).isEqualTo(".");
         assertThat(result.get().getJsonlFile()).isEqualTo("px-chunks.jsonl");
         assertThat(result.get().getChunoWhiteList()).isEqualTo("java,ts");
-        assertThat(result.get().getTibedBatchSize()).isEqualTo(50);
+        assertThat(result.get().getTibedBatchSize()).isEqualTo(32);
         assertThat(result.get().isTibedResetStore()).isTrue();
     }
 

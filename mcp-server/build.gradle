@@ -9,6 +9,9 @@ dependencies {
     // Interne Module (Retrieval + Runtime)
     implementation project(':golden-retriever')
     implementation project(':prjxp-common')
+    // In-Prozess-Pipeline fuer den Hub-Modus (Phase 01 DockerHub)
+    implementation project(':chunk-norris')
+    implementation project(':tibed')
     testFixturesImplementation project(':prjxp-common')
 
     // Spring Boot
@@ -24,10 +27,17 @@ dependencies {
     implementation libs.commons.cli
     implementation libs.javaparser.core
     implementation libs.dotenv.java
+    implementation libs.commons.compress
 
     // Testing
     testImplementation libs.bundles.test.bundle
 }
+test {
+    // Phase 01 (DockerHub): chunk-norris/tibed sind jetzt auf der Classpath — ihre CLI-Runner
+    // duerfen in Hub-Tests nicht feuern (matchIfMissing=true wuerde sie sonst starten lassen).
+    systemProperty 'prjxp.cli.enabled', 'false'
+}
+
 jar {
     manifest {
         attributes(
@@ -49,6 +59,7 @@ shadowJar {
         attributes('Multi-Release': 'true')
     }
     exclude 'application.yaml'
+    exclude 'application.yml'   // tibed's own config must not leak into the hub fat JAR
     // DevTools nur fuer die lokale Entwicklung — darf nicht ins Fat-JAR (sonst Exit-Code 0 bei Fehlern)
     dependencies {
         exclude(dependency('org.springframework.boot:spring-boot-devtools'))

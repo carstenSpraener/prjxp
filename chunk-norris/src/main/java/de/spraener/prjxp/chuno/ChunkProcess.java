@@ -39,6 +39,11 @@ public class ChunkProcess {
         final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException(
                 "No active project '" + cfg.getActiveProjectName() + "' defined. Available projects: "
                         + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
+        executeForProject(pd);
+    }
+
+    /** Runs the chunking pipeline for an explicitly given project definition (hub in-process use). */
+    public void executeForProject(ProjectDefinition pd) throws Exception {
         final TransferSession session = transferPasswordResolver.prepare(
                 cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
         final PrintStream out = createWriter(pd, session);

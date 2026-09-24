@@ -23,21 +23,24 @@ import java.time.Duration;
 @Log
 public class EmbeddingStoreSupplier implements org.springframework.beans.factory.DisposableBean {
     private final PrjXPConfig cfg;
+    private final org.springframework.beans.factory.ObjectProvider<LuceneEmbeddingStore> sharedLucene;
     private EmbeddingStore<TextSegment> createdStore;
 
     public EmbeddingStore<TextSegment> getStore(String name) {
-        ProjectDefinition pd = cfg.getProjectDefinition(name).orElseThrow(() -> new IllegalStateException(
-                "No project definition for '" + name + "'. Available projects: "
-                        + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
-
         // Lucene embedded store (braucht keine externe Store-Referenz)
         if (cfg.getEmbeddingStoreType() == PrjXPConfig.EmbeddingStoreType.LUCENE) {
+            LuceneEmbeddingStore shared = sharedLucene.getIfAvailable();
+            if (shared != null) { return shared; }   // hub / auto-config bean — never a second writer
             PrjXPConfig.LuceneEmbeddingStoreConfig lc = cfg.getEmbeddingStoreLucene();
-            log.info("Initialisiere Lucene Embedding Store für das Projekt: " + pd.getName()
+            log.info("Initialisiere Lucene Embedding Store für das Projekt: " + name
                     + ", index path: " + lc.getIndexPath());
             createdStore = new LuceneEmbeddingStore(Path.of(lc.getIndexPath()), lc.getVectorDimension());
             return createdStore;
         }
+
+        ProjectDefinition pd = cfg.getProjectDefinition(name).orElseThrow(() -> new IllegalStateException(
+                "No project definition for '" + name + "'. Available projects: "
+                        + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
 
         PrjXPEmbeddingStoreReference ref = cfg.getEmbeddingStores()
                 .stream()

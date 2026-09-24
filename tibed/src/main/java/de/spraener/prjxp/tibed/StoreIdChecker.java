@@ -20,13 +20,16 @@ public class StoreIdChecker {
     private final PrjXPConfig cfg;
 
     public boolean containsChunk(EmbeddingStore<TextSegment> store, String chunkId) {
+        return containsChunk(store, chunkId, cfg.getActiveProject().map(ProjectDefinition::getName).orElse(null));
+    }
+
+    public boolean containsChunk(EmbeddingStore<TextSegment> store, String chunkId, String projectName) {
         if (chunkId == null || chunkId.isBlank()) {
             return false;
         }
         Filter filter = new IsEqualTo(PxChunk.PXCHUNK_ID, chunkId);
-        String project = cfg.getActiveProject().map(ProjectDefinition::getName).orElse(null);
-        if (project != null) {
-            filter = new And(filter, new IsEqualTo(PxChunk.PXCHUNK_PROJECT, project));
+        if (projectName != null) {
+            filter = new And(filter, new IsEqualTo(PxChunk.PXCHUNK_PROJECT, projectName));
         }
         if (store instanceof LuceneEmbeddingStore luceneStore) {
             return luceneStore.hasMatch(filter);
@@ -42,5 +45,9 @@ public class StoreIdChecker {
 
     public boolean needsImport(EmbeddingStore<TextSegment> store, String chunkId) {
         return !containsChunk(store, chunkId);
+    }
+
+    public boolean needsImport(EmbeddingStore<TextSegment> store, String chunkId, String projectName) {
+        return !containsChunk(store, chunkId, projectName);
     }
 }

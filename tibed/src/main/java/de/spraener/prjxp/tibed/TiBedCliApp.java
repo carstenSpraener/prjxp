@@ -7,6 +7,7 @@ import org.springframework.boot.Banner;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Profile;
@@ -29,8 +30,9 @@ public class TiBedCliApp {
                 .run(args);
     }
 
-    @Bean
+    @Bean("tibedRun")   // unique name: the hub app scans multiple modules that each define a 'run' bean
     @Profile("!test")
+    @ConditionalOnProperty(name = "prjxp.cli.enabled", havingValue = "true", matchIfMissing = true)
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "tibed.run-embedding", havingValue = "true", matchIfMissing = true)
     public CommandLineRunner run(
             EmbeddingService storeProcess,

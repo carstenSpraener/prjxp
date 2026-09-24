@@ -40,12 +40,17 @@ public class EmbeddingService {
         ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException(
                 "No active project '" + cfg.getActiveProjectName() + "' defined. Available projects: "
                         + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
+        EmbeddingStore<TextSegment> store = embeddingStoreSupplier.getStore(pd.getName());
+        executeForProject(pd, store);
+    }
+
+    /** Runs the embedding pipeline for an explicitly given project + store (hub in-process use). */
+    public void executeForProject(ProjectDefinition pd, EmbeddingStore<TextSegment> store) {
         int configuredBatchSize = pd.getTibedBatchSize();
         int effectiveBatchSize = Math.max(1, Math.min(configuredBatchSize, MAX_EMBEDDING_BATCH_SIZE));
         if (configuredBatchSize != effectiveBatchSize) {
             log.warning("Configured tibedBatchSize=" + configuredBatchSize + " adjusted to " + effectiveBatchSize + " due to embedding API limits");
         }
-        EmbeddingStore<TextSegment> store = embeddingStoreSupplier.getStore(pd.getName());
         if (pd.isTibedResetStore()) {
             log.warning("Resetting embedding store for project '" + pd.getName() + "'!");
             Filter resetFilter = store instanceof LuceneEmbeddingStore
@@ -70,7 +75,7 @@ public class EmbeddingService {
             embedder.execute(store, Arrays.asList(chunks)
                     .stream()
                     .peek(c -> c.setProject(projectName))   // stamp BEFORE needsEmbedding (StoreIdChecker is project-scoped)
-                    .filter( c -> needsEmbedding(store, c))
+                    .filter( c -> needsEmbedding(store, projectName, c))
                     .toList()
             );
             log.info("Embedded batch of " + chunks.length + " chunks");
@@ -79,8 +84,8 @@ public class EmbeddingService {
         }
     }
 
-    private boolean needsEmbedding(EmbeddingStore<TextSegment> embeddingStore, PxChunk chunk) {
-        return storeIdChecker.needsImport(embeddingStore, chunk.getId());
+    private boolean needsEmbedding(EmbeddingStore<TextSegment> embeddingStore, String projectName, PxChunk chunk) {
+        return storeIdChecker.needsImport(embeddingStore, chunk.getId(), projectName);
     }
 
     private PxChunk fromJSONL(String line) {

@@ -19,7 +19,7 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 
-@Component
+@Component("tibedCliArgsParser")   // unique name: hub app scans multiple modules with same-named classes
 @RequiredArgsConstructor
 public class CliArgsParser {
     private final PxLogService logService;
