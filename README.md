@@ -133,6 +133,41 @@ The module includes essential utilities to handle the lifecycle of these chunks:
 
 ---
 
+## 🚀 Deployment
+
+prjxp ships as a single Docker image with an embedded TEI embedding server.
+Two deployment modes are available:
+
+### Single Project — one container per project
+
+The `./prjxp` control script manages the full pipeline (chunk → embed → serve)
+for one project:
+
+```bash
+./prjxp /path/to/your-project mcp    # serves the MCP server on :7007
+```
+
+👉 Full setup: [doc/Docker_Setup_Guide.md](doc/Docker_Setup_Guide.md)
+
+### Multi-Project Hub — one container, many projects
+
+A long-running hub serves **any number of projects added at runtime**.
+Drop a tar archive into the import directory — it is extracted, registered,
+chunked and embedded automatically (in-process):
+
+```bash
+docker compose up -d hub                        # starts the hub on :7008
+tar czf import/my-project.tar my-project/       # triggers the import
+```
+
+Projects appear in the web UI (`http://localhost:7008/`) with their lifecycle
+status — `importing → chunking → embedding → ready` — and are only searchable
+once ready. Remove a project with `DELETE /prjxp/projects/{name}`.
+
+👉 Details: [doc/Docker_Setup_Guide.md — Multi-Project Hub](doc/Docker_Setup_Guide.md#multi-project-hub-one-container-many-projects)
+
+---
+
 ## 🤠 Fun Fact: The Documentation Paradox
 
 You might notice that **prjxp** has absolutely zero manual Javadoc. This is a

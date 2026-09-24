@@ -16,6 +16,7 @@ This guide explains how to set up **prjxp** as a project-expert MCP server using
 8. [Verify the Server is Running](#verify-the-server-is-running)
 9. [Re-embedding After Code Changes](#re-embedding-after-code-changes)
 10. [Troubleshooting](#troubleshooting)
+11. [Multi-Project Hub (One Container, Many Projects)](#multi-project-hub-one-container-many-projects)
 
 ---
 
@@ -256,6 +257,84 @@ The control script skips chunking if `px-chunks.jsonl` exists and skips embeddin
 | "No active project" error | Check `activeProject` in `application.yaml` matches your project name |
 | Docker image build fails | Check Docker is running: `docker info` |
 | Server started but ping failed | Check container logs: `docker logs mcp-<project-name>` |
+
+---
+
+## Multi-Project Hub (One Container, Many Projects)
+
+Instead of one container per project, a single long-running **hub** serves any
+number of projects added at runtime. The hub runs the same Docker image in a
+fourth mode (`hub`) and executes chunking + embedding **in-process** — no
+separate pipeline containers.
+
+### Start the Hub
+
+```bash
+docker compose up -d hub
+```
+
+The hub listens on port **7008** (so it can run alongside a single-project
+server on 7007) and mounts:
+
+| Mount | Purpose |
+|---|---|
+| `./import` → `/import` | Drop tar archives here to import projects |
+| named volume `prjxp-projects` → `/projects` | Extracted project directories (persistent) |
+| named volume `prjxp-hub-data` → `/data` | Shared Lucene index (persistent) |
+
+The hub requires the Lucene store type — already set in `docker-compose.yml`
+(`EMBEDDING_STORE_TYPE=lucene`). All projects share one index; chunks are
+stamped with their project name.
+
+### Import a Project
+
+Package your project as a tar archive and drop it into `./import`:
+
+```bash
+cd /path/to/your-project
+tar czf /path/to/prjxp/import/my-project.tar .        # files at archive root
+# or from the parent directory (a single top-level dir is stripped automatically):
+tar czf /path/to/prjxp/import/my-project.tar my-project/
+```
+
+Accepted formats: `.tar`, `.tgz`, `.tar.gz`. The import poller picks up new
+archives within ~5 seconds and runs:
+
+1. **Extract** → `/projects/my-project` — zip-slip paths, symlinks and hardlinks are rejected; limits: 2 GB archive / 4 GB extracted / 100k entries
+2. **Register** → the project appears in the registry (status `importing`)
+3. **Chunk + Embed** → runs in-process; status walks `chunking` → `embedding`
+4. **Ready** → searchable via MCP and the web UI
+
+Notes:
+
+- **Re-import:** dropping an archive with an existing project name replaces it — old index data is wiped and the new archive is processed from scratch.
+- **Failed archives** are renamed to `*.tar.failed` (not retried); delete them once fixed.
+- **Restart:** on hub startup, projects whose chunks are already in the index come up `ready` immediately; others re-run the pipeline.
+- **Optional config:** a `prjxp.yaml` at the archive root can override defaults — `name`, `rootDir`, `jsonlFile`, `chunoWhiteList` (default `java,ts`), `tibedBatchSize` (default 32).
+
+### Check Status & Manage Projects
+
+```bash
+# All projects with lifecycle status (importing/chunking/embedding/ready/failed)
+curl http://localhost:7008/prjxp/projects
+
+# Delete a project (scoped index wipe + directory removal)
+curl -X DELETE http://localhost:7008/prjxp/projects/my-project
+```
+
+The web UI at `http://localhost:7008/` lists all projects in the dropdown with
+their status; non-ready projects are disabled. Point your MCP client at
+`http://localhost:7008/mcp` — only `ready` projects are listed.
+
+### Hub vs Single Project
+
+| | Single project (`./prjxp ... mcp`) | Hub (`docker compose up hub`) |
+|---|---|---|
+| Containers | one per project | one for all projects |
+| Adding a project | new container + full pipeline run | drop a tar into `./import` |
+| Port | 7007 (configurable) | 7008 |
+| Index | per-project volume | shared Lucene index, project-stamped |
+| Pipeline | separate chunk/embed containers | in-process (single FIFO worker) |
 
 ---
 
