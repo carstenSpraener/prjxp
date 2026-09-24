@@ -278,7 +278,7 @@ server on 7007) and mounts:
 
 | Mount | Purpose |
 |---|---|
-| `./import` → `/import` | Drop tar archives here to import projects |
+| `./import` → `/import` | Drop tar archives here to import projects — or mount a directory of live projects (see below) |
 | named volume `prjxp-projects` → `/projects` | Extracted project directories (persistent) |
 | named volume `prjxp-hub-data` → `/data` | Shared Lucene index (persistent) |
 
@@ -312,6 +312,30 @@ Notes:
 - **Restart:** on hub startup, projects whose chunks are already in the index come up `ready` immediately; others re-run the pipeline.
 - **Optional config:** a `prjxp.yaml` at the archive root can override defaults — `name`, `rootDir`, `jsonlFile`, `chunoWhiteList` (default `java,ts`), `tibedBatchSize` (default 32).
 
+### Live Projects (prjxp.yaml Marker)
+
+Instead of packaging a tar, the hub can embed **live project directories** in place.
+Point the `./import` mount at your projects directory (e.g. `~/Projekte:/import`)
+and drop a marker file into any project you want to serve:
+
+```bash
+cd ~/Projekte/my-project && touch prjxp.yaml    # or: prjxp.yml
+```
+
+Within ~5 seconds the hub registers the project and runs chunk + embed from the
+live tree. The hub never writes into your project — its JSONL output goes to
+`/data/chunks/<name>.jsonl`.
+
+- **Refresh:** after code changes, re-run the pipeline with
+  `curl -X POST http://localhost:7008/prjxp/projects/my-project/reindex`
+- **Remove:** delete the marker file (or the directory) — on the next poll the
+  project is deregistered and its index data wiped.
+- **Name:** taken from the `name` field of the marker file, falling back to the
+  directory name. A name already registered under a different path is skipped (warn log).
+
+The marker file doubles as the per-project config (`name`, `rootDir`,
+`chunoWhiteList`, `tibedBatchSize`) — the JSONL location is hub-managed for live projects.
+
 ### Check Status & Manage Projects
 
 ```bash
@@ -320,6 +344,9 @@ curl http://localhost:7008/prjxp/projects
 
 # Delete a project (scoped index wipe + directory removal)
 curl -X DELETE http://localhost:7008/prjxp/projects/my-project
+
+# Re-run the full pipeline (chunk + embed) — e.g. after code changes in a live project
+curl -X POST http://localhost:7008/prjxp/projects/my-project/reindex
 ```
 
 The web UI at `http://localhost:7008/` lists all projects in the dropdown with
@@ -331,7 +358,7 @@ their status; non-ready projects are disabled. Point your MCP client at
 | | Single project (`./prjxp ... mcp`) | Hub (`docker compose up hub`) |
 |---|---|---|
 | Containers | one per project | one for all projects |
-| Adding a project | new container + full pipeline run | drop a tar into `./import` |
+| Adding a project | new container + full pipeline run | drop a tar into `./import`, or add a `prjxp.yaml` marker to a live dir |
 | Port | 7007 (configurable) | 7008 |
 | Index | per-project volume | shared Lucene index, project-stamped |
 | Pipeline | separate chunk/embed containers | in-process (single FIFO worker) |

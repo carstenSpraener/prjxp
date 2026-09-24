@@ -160,6 +160,10 @@ docker compose up -d hub                        # starts the hub on :7008
 tar czf import/my-project.tar my-project/       # triggers the import
 ```
 
+Alternatively, mount a directory of live projects and drop a `prjxp.yaml` marker
+into any project — it is embedded in place (no tar needed) and refreshed with
+`POST /prjxp/projects/{name}/reindex`.
+
 Projects appear in the web UI (`http://localhost:7008/`) with their lifecycle
 status — `importing → chunking → embedding → ready` — and are only searchable
 once ready. Remove a project with `DELETE /prjxp/projects/{name}`.
