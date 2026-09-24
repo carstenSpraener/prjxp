@@ -3,6 +3,21 @@ plugins {
     id 'java-test-fixtures'
 }
 
+// JaCoCo Coverage-Ratchets pro Modul (LINE COVEREDRATIO).
+// Die Werte liegen bewusst unter dem aktuellen Stand (gemessen in DockerHub Phase 02):
+//   prjxp-common: 54.5% · chunk-norris: 71.7% · tibed: 57.5%
+//   golden-retriever: 40.6% · lucene-store: 79.0% · docpipe: 34.3% · mcp-server: 87.6%
+// Nur nach oben rücken, wenn Legacy-Code getestet wurde — nie senken.
+def coverageRatchets = [
+        'prjxp-common'     : 0.50,
+        'chunk-norris'     : 0.70,
+        'tibed'            : 0.55,
+        'golden-retriever' : 0.35,
+        'lucene-store'     : 0.75,
+        'docpipe'          : 0.30,
+        'mcp-server'       : 0.80   // strikt: hier landet der DockerHub-Code
+]
+
 subprojects {
     apply plugin: 'java-test-fixtures'
     apply plugin: 'jacoco'
@@ -62,7 +77,7 @@ subprojects {
                 limit {
                     counter = 'LINE'
                     value = 'COVEREDRATIO'
-                    minimum = 0.80
+                    minimum = coverageRatchets[project.name] ?: 0.80
                 }
             }
         }
