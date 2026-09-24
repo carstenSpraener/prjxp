@@ -5,6 +5,7 @@ plugins {
 
 subprojects {
     apply plugin: 'java-test-fixtures'
+    apply plugin: 'jacoco'
 
     group = 'de.spraener.prjxp'
     version = '0.0.1-SNAPSHOT'
@@ -42,5 +43,32 @@ subprojects {
     test {
         useJUnitPlatform()
         jvmArgs("-Djava.awt.headless=false")
+        finalizedBy jacocoTestReport
+    }
+
+    jacocoTestReport {
+        dependsOn test
+        reports {
+            xml.required = true
+            html.required = true
+            csv.required = false
+        }
+    }
+
+    jacocoTestCoverageVerification {
+        dependsOn test
+        violationRules {
+            rule {
+                limit {
+                    counter = 'LINE'
+                    value = 'COVEREDRATIO'
+                    minimum = 0.80
+                }
+            }
+        }
+    }
+
+    check {
+        dependsOn jacocoTestCoverageVerification
     }
 }
