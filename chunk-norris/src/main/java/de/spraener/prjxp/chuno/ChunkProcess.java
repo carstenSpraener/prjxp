@@ -36,7 +36,9 @@ public class ChunkProcess {
     private final TransferPasswordResolver transferPasswordResolver;
 
     public void execute() throws Exception {
-        final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException("No active project!"));
+        final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException(
+                "No active project '" + cfg.getActiveProjectName() + "' defined. Available projects: "
+                        + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
         final TransferSession session = transferPasswordResolver.prepare(
                 cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
         final PrintStream out = createWriter(pd, session);
@@ -58,20 +60,20 @@ public class ChunkProcess {
     }
 
     private PrintStream createWriter(ProjectDefinition pd, TransferSession session) {
-        if( pd.getJsonlFile()==null ) {
+        if( pd.resolvedJsonlFile()==null ) {
             return System.out;
         }
         try {
-            OutputStream out = new FileOutputStream(pd.getJsonlFile());
+            OutputStream out = new FileOutputStream(pd.resolvedJsonlFile());
             if (session.encrypt()) {
                 out = TransferCrypto.openEncryptedOutputStream(out, session.password());
             }
             return new PrintStream(out);
         } catch( FileNotFoundException fnfXC) {
-            log.warning("Coulde not find output file "+pd.getJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
+            log.warning("Coulde not find output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
             return System.out;
         } catch( IOException ioXC) {
-            log.warning("Could not open output file "+pd.getJsonlFile()+". Using stdout. Error is: "+ioXC.getMessage());
+            log.warning("Could not open output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+ioXC.getMessage());
             return System.out;
         }
     }

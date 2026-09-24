@@ -40,3 +40,5 @@ prjxp:
 server:
   port: ${SERVER_PORT:7007}
   forward-headers-strategy: framework
+  tomcat:
+    connection-linger: -1

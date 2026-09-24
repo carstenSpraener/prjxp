@@ -2,8 +2,6 @@ package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.capability.IdentifierRules;
 import de.spraener.prjxp.common.capability.LanguageCapability;
-import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -20,10 +18,13 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -38,7 +39,7 @@ class VectorSearchServiceTest {
     PxChunkDao dao;
 
     @Mock
-    PrjXPConfig cfg;
+    ProjectRegistry projectRegistry;
 
     @Mock
     SearchCapabilitiesRegistry registry;
@@ -57,6 +58,7 @@ class VectorSearchServiceTest {
 
     @Test
     void passesQueryProjectLanguageAndLimitToDao() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         service.search("How does chunking work?", "myproj", null, 10);
@@ -69,6 +71,7 @@ class VectorSearchServiceTest {
 
     @Test
     void languageFromRegistryBecomesMimeFilter() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
 
@@ -82,6 +85,7 @@ class VectorSearchServiceTest {
 
     @Test
     void unknownLanguageAddsNoFilter() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         service.search("q", "myproj", "cobol", 10);
@@ -94,6 +98,7 @@ class VectorSearchServiceTest {
 
     @Test
     void defaultProjectUsesDefaultStore() {
+        when(projectRegistry.resolve("default")).thenReturn("default");
         when(provider.get("default")).thenReturn(Optional.empty());
 
         service.search("q", "default", null, 10);
@@ -102,31 +107,30 @@ class VectorSearchServiceTest {
     }
 
     @Test
-    void blankProjectResolvesToActiveProject() {
-        ProjectDefinition active = new ProjectDefinition();
-        active.setName("cwd");
-        when(cfg.getActiveProject()).thenReturn(Optional.of(active));
+    void blankProjectResolvesToActiveProjectWithoutSilentFallback() {
+        when(projectRegistry.resolve("   ")).thenReturn("cwd");
         when(provider.get("cwd")).thenReturn(Optional.empty());
-        when(provider.get("default")).thenReturn(Optional.empty());
 
         service.search("q", "   ", null, 10);
 
         verify(provider).get("cwd");
-        verify(provider).get("default");
+        verify(provider, never()).get("default");   // the silent cross-project fallback is gone
     }
 
     @Test
-    void unknownProjectReturnsEmptyList() {
-        when(provider.get("nope")).thenReturn(Optional.empty());
+    void unknownProjectThrowsUnknownProjectException() {
+        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
 
-        List<SearchHit> hits = service.search("q", "nope", null, 10);
+        assertThatThrownBy(() -> service.search("q", "nope", null, 10))
+                .isInstanceOf(UnknownProjectException.class);
 
-        assertThat(hits).isEmpty();
+        verifyNoInteractions(provider);
         verifyNoInteractions(dao);
     }
 
     @Test
     void resultsMappedToSearchHitWithVectorSource() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         PxChunk chunk = PxChunk.create(c -> {
@@ -157,6 +161,7 @@ class VectorSearchServiceTest {
 
     @Test
     void unsupportedStoreReturnsEmptyList() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(dao.searchVector(anyString(), anyMap(), anyInt()))
                 .thenThrow(new UnsupportedOperationException("no vector store"));

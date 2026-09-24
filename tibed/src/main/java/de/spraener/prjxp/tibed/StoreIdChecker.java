@@ -1,6 +1,7 @@
 package de.spraener.prjxp.tibed;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import dev.langchain4j.data.embedding.Embedding;
@@ -9,6 +10,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
+import dev.langchain4j.store.embedding.filter.logical.And;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -22,6 +24,10 @@ public class StoreIdChecker {
             return false;
         }
         Filter filter = new IsEqualTo(PxChunk.PXCHUNK_ID, chunkId);
+        String project = cfg.getActiveProject().map(ProjectDefinition::getName).orElse(null);
+        if (project != null) {
+            filter = new And(filter, new IsEqualTo(PxChunk.PXCHUNK_PROJECT, project));
+        }
         if (store instanceof LuceneEmbeddingStore luceneStore) {
             return luceneStore.hasMatch(filter);
         }

@@ -10,6 +10,7 @@ import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.comparison.IsNotEqualTo;
+import dev.langchain4j.store.embedding.filter.logical.And;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -103,6 +104,9 @@ class FakeEmbeddingStore implements EmbeddingStore<TextSegment> {
         }
         if (filter instanceof IsNotEqualTo ne) {
             return !Objects.equals(meta.get(ne.key()), ne.comparisonValue());
+        }
+        if (filter instanceof And and) {
+            return matchesFilter(segment, and.left()) && matchesFilter(segment, and.right());
         }
         throw new UnsupportedOperationException("FakeEmbeddingStore supports only equality filters");
     }

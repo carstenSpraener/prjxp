@@ -54,7 +54,9 @@ public class CliArgsParser {
             System.exit(0);
         }
         if (cmd.hasOption("p")) {
-            cfg.setActiveProject(cmd.getOptionValue("p"));
+            String name = cmd.getOptionValue("p");
+            cfg.requireProject(name);   // fails fast with the list of available projects
+            cfg.setActiveProject(name);
         }
         if (cmd.hasOption("password-env")) {
             cfg.getTransfer().setPasswordEnv(cmd.getOptionValue("password-env"));

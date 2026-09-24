@@ -26,6 +26,7 @@ public class PxChunk {
     public static final String PXCHUNK_OVERLAP = "pxchunk_overlap";
     public static final String PXCHUNK_METADATA = "pxchunk_metadata";
     public static final String PXCHUNK_EMBEDDING_PREFIX = "pxchunk_embedding_prefix";
+    public static final String PXCHUNK_PROJECT = "pxchunk_project";
 
     private String id;
     private String mimeType;
@@ -38,6 +39,7 @@ public class PxChunk {
     private int size;
     private int overlap;
     private String embeddingPrefix;
+    private String project;   // owning project name, stamped at embed time (multi-project store separation)
     private Map<String, String> metadata = new HashMap<>();
 
     private String content;
@@ -62,6 +64,7 @@ public class PxChunk {
         ifNotNull(chunk.size, () -> map.put(PXCHUNK_SIZE, "" + chunk.size));
         ifNotNull(chunk.overlap, () -> map.put(PXCHUNK_OVERLAP, "" + chunk.overlap));
         ifNotNull(chunk.embeddingPrefix, ()->map.put(PXCHUNK_EMBEDDING_PREFIX, chunk.embeddingPrefix));
+        ifNotNull(chunk.project, () -> map.put(PXCHUNK_PROJECT, chunk.project));
         for (var e : chunk.getMetadata().entrySet()) {
             map.put(PXCHUNK_METADATA + "." + e.getKey(), e.getValue());
         }
@@ -97,6 +100,7 @@ public class PxChunk {
         if (metadata.containsKey(PXCHUNK_SIZE)) chunk.setSize(Integer.parseInt(metadata.get(PXCHUNK_SIZE)));
         if (metadata.containsKey(PXCHUNK_OVERLAP)) chunk.setOverlap(Integer.parseInt(metadata.get(PXCHUNK_OVERLAP)));
         if (metadata.containsKey(PXCHUNK_EMBEDDING_PREFIX)) chunk.setEmbeddingPrefix(metadata.get(PXCHUNK_EMBEDDING_PREFIX));
+        if (metadata.containsKey(PXCHUNK_PROJECT)) chunk.setProject(metadata.get(PXCHUNK_PROJECT));
 
         chunk.setFromLine(metadata.get(PXCHUNK_FROM_LINE));
         chunk.setToLine(metadata.get(PXCHUNK_TO_LINE));
@@ -166,6 +170,7 @@ public class PxChunk {
         combined.toLine = root.toLine;
         combined.size = root.size;
         combined.overlap = root.overlap;
+        combined.project = root.project;
         combined.metadata = new HashMap<>(root.metadata);
         String content = new ContentSplitter(root.size, root.overlap)
                 .unsplit(chunkList);

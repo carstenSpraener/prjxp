@@ -25,8 +25,8 @@ All modules use Spring Boot 3.5.x, Lombok, LangChain4j, JUnit 5 + Mockito + Asse
 ## Search Strategy
 
 - **Always use `prjxp_vectorSearch` first** for any source code search: finding classes, understanding behavior, locating implementations, or exploring the codebase.
-- **Never use `grep`, `rg`, or file reads for code discovery** unless `prjxp_vectorSearch` returns no valid context ("Es konnte kein valider Kontext erstellt werden").
-- `grep` and `Glob` are strictly fallback tools — only when the vector search fails to find relevant information.
+- **For full method bodies: follow up with `prjxp_grep` using the exact method signature** (e.g. `"public MClass createMClass"`). Vector search returns skeletons for non-hit methods by design; grep on a hit chunk includes the complete implementation.
+- `grep` and file reads are also fallback tools when `prjxp_vectorSearch` returns no valid context ("Es konnte kein valider Kontext erstellt werden").
 
 ## Conventions
 

@@ -1,7 +1,5 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -13,7 +11,6 @@ import org.springframework.stereotype.Service;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 @Service
 @RequiredArgsConstructor
@@ -21,16 +18,13 @@ public class VectorSearchService {
     public static final String SOURCE = "vector";
 
     private final PxChunkDaoProvider chunkDaoProvider;
-    private final PrjXPConfig cfg;
     private final SearchCapabilitiesRegistry registry;
+    private final ProjectRegistry projectRegistry;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
-        String resolvedProject = resolveProject(project);
-        Optional<PxChunkDao> daoOpt = chunkDaoProvider.get(resolvedProject);
-        if (daoOpt.isEmpty() && !"default".equalsIgnoreCase(resolvedProject)) {
-            daoOpt = chunkDaoProvider.get("default");
-        }
-        PxChunkDao dao = daoOpt.orElse(null);
+        projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
+        String resolvedProject = projectRegistry.resolve(project);
+        PxChunkDao dao = chunkDaoProvider.get(resolvedProject).orElse(null);
         if (dao == null) {
             return List.of();
         }
@@ -50,15 +44,5 @@ public class VectorSearchService {
         return results.stream()
                 .map(sc -> SearchHit.from(sc.chunk(), sc.score(), SearchHit.preview(sc.chunk().getContent()), SOURCE))
                 .toList();
-    }
-
-    private String resolveProject(String project) {
-        if (project == null || project.isBlank()) {
-            return cfg.getActiveProject().map(ProjectDefinition::getName).orElse("default");
-        }
-        if ("default".equalsIgnoreCase(project)) {
-            return "default";
-        }
-        return project;
     }
 }

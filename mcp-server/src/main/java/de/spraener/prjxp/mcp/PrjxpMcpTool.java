@@ -1,6 +1,5 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -20,13 +19,14 @@ import java.util.List;
 @Log
 public class PrjxpMcpTool {
     private final GRPromptEnrichment enrichment;
-    private final PrjXPConfig cfg;
 
     private final GrepSearchService grepSearchService;
 
     private final ReaderService readerService;
 
     private final SymbolReaderService symbolReaderService;
+
+    private final ProjectRegistry projectRegistry;
 
     @McpTool(name = "vectorSearch", description = """
             CRITICAL PRIMARY SEARCH TOOL (level 1 of 3): Delivers relevant semantic information from the project context.
@@ -70,9 +70,12 @@ public class PrjxpMcpTool {
 
         String prefix = """
                 """;
-        if (projectName == null || projectName.isEmpty() || "default".equals(projectName)) {
-            projectName = cfg.getActiveProject().get().getName();
+        try {
+            projectRegistry.ensureSearchable(projectName);   // explicit error instead of silent fallback
+        } catch (UnknownProjectException e) {
+            return "ERROR: " + e.getMessage();
         }
+        projectName = projectRegistry.resolve(projectName);
         if( similarity == null || similarity < 0.0 || similarity > 1.0 ) {
             similarity = 0.85;
         }
@@ -88,6 +91,14 @@ public class PrjxpMcpTool {
         String result = String.format("%s\n%s", prefix, context);
         log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));
         return result;
+    }
+
+    @McpTool(name = "listProjects", description = """
+            DISCOVERY TOOL: Lists all project names that have a searchable index in this server.
+            USE BEFORE calling vectorSearch/grep/readFile/readBySignature when you don't know which 'project' values are valid.
+            """)
+    public List<String> listProjects() {
+        return projectRegistry.availableProjects();
     }
 
     @McpTool(name="grep", description = """

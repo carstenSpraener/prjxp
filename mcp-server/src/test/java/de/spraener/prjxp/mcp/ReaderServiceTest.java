@@ -18,9 +18,13 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -32,6 +36,8 @@ class ReaderServiceTest {
     private PxChunkDao dao;
     @Mock
     private PxChunkDaoProvider daoProvider;
+    @Mock
+    private ProjectRegistry projectRegistry;
 
     // ------------------------------------------------------------------
     // fixtures
@@ -79,17 +85,18 @@ class ReaderServiceTest {
 
     private ReaderService service() {
         PrjXPConfig cfg = new PrjXPConfig();
-        return new ReaderService(daoProvider, cfg, new FileViewRegistry(List.of(javaProvider())));
+        return new ReaderService(daoProvider, cfg, new FileViewRegistry(List.of(javaProvider())), projectRegistry);
     }
 
     private ReaderService service(int maxOutputChars) {
         PrjXPConfig cfg = new PrjXPConfig();
         cfg.setReaderMaxOutputChars(maxOutputChars);
-        return new ReaderService(daoProvider, cfg, new FileViewRegistry(List.of(javaProvider())));
+        return new ReaderService(daoProvider, cfg, new FileViewRegistry(List.of(javaProvider())), projectRegistry);
     }
 
-    /** project=null -> active project "cwd" (PrjXPConfig default) -> resolveDao asks the provider for "cwd". */
+    /** project=null -> registry resolves to active project "cwd" (PrjXPConfig default) -> resolveDao asks the provider for "cwd". */
     private void routeToDao() {
+        when(projectRegistry.resolve(null)).thenReturn("cwd");
         when(daoProvider.get("cwd")).thenReturn(Optional.of(dao));
     }
 
@@ -195,12 +202,23 @@ class ReaderServiceTest {
 
     @Test
     void noDaoReturnsError() {
+        when(projectRegistry.resolve(null)).thenReturn("cwd");
         when(daoProvider.get(anyString())).thenReturn(Optional.empty());
 
         FileView view = service().read("src/Foo.java", null, null, null);
 
         assertThat(view.content()).isNull();
         assertThat(view.error()).contains("No embedding store");
+    }
+
+    @Test
+    void unknownProjectThrowsUnknownProjectException() {
+        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
+
+        assertThatThrownBy(() -> service().read("src/Foo.java", "nope", null, null))
+                .isInstanceOf(UnknownProjectException.class);
+
+        verify(daoProvider, never()).get(anyString());
     }
 
     @Test

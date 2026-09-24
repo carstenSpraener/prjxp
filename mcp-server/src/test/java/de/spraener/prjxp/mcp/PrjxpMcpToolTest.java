@@ -1,6 +1,5 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import org.junit.jupiter.api.BeforeEach;
@@ -9,8 +8,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.List;
+
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
@@ -20,19 +23,19 @@ class PrjxpMcpToolTest {
     @Mock
     private GRPromptEnrichment enrichment;
     @Mock
-    private PrjXPConfig cfg;
-    @Mock
     private GrepSearchService grepSearchService;
     @Mock
     private ReaderService readerService;
     @Mock
     private SymbolReaderService symbolReaderService;
+    @Mock
+    private ProjectRegistry projectRegistry;
 
     private PrjxpMcpTool tool;
 
     @BeforeEach
     void setUp() {
-        tool = new PrjxpMcpTool(enrichment, cfg, grepSearchService, readerService, symbolReaderService);
+        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService, projectRegistry);
     }
 
     @Test
@@ -51,5 +54,45 @@ class PrjxpMcpToolTest {
         assertThat(err.content()).isNull();
         assertThat(err.error()).contains("file");
         verifyNoMoreInteractions(readerService);
+    }
+
+    @Test
+    void vectorSearchUnknownProjectReturnsErrorString() {
+        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
+
+        String result = tool.vectorSearch("How does chunking work?", "nope", null, null, null);
+
+        assertThat(result).startsWith("ERROR:").contains("nope").contains("alpha");
+        verifyNoInteractions(enrichment);
+    }
+
+    @Test
+    void vectorSearchResolvesProjectViaRegistry() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(enrichment.enrich("myproj", "How does chunking work?", 0.85, 20, false))
+                .thenReturn("Relevante Information in 'myproj':\nchunk content");
+
+        String result = tool.vectorSearch("How does chunking work?", "myproj", null, null, null);
+
+        assertThat(result).contains("chunk content");
+        verify(enrichment).enrich("myproj", "How does chunking work?", 0.85, 20, false);
+    }
+
+    @Test
+    void vectorSearchDefaultProjectResolvesViaRegistry() {
+        when(projectRegistry.resolve("default")).thenReturn("myproj");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, false)).thenReturn("ctx");
+
+        String result = tool.vectorSearch("q", "default", null, null, null);
+
+        assertThat(result).contains("ctx");
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, false);
+    }
+
+    @Test
+    void listProjectsDelegatesToRegistry() {
+        when(projectRegistry.availableProjects()).thenReturn(List.of("alpha", "beta"));
+
+        assertThat(tool.listProjects()).containsExactly("alpha", "beta");
     }
 }

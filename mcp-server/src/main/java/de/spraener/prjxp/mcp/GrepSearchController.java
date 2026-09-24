@@ -48,6 +48,10 @@ public class GrepSearchController {
         }
 
         int safeLimit = SearchLimits.clamp(limit);
-        return ResponseEntity.ok(grepSearchService.search(query.trim(), project, language, safeLimit));
+        try {
+            return ResponseEntity.ok(grepSearchService.search(query.trim(), project, language, safeLimit));
+        } catch (UnknownProjectException e) {
+            return ResponseEntity.badRequest().body(new SearchError("unknownProject", e.getMessage()));
+        }
     }
 }

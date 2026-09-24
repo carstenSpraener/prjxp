@@ -1,7 +1,5 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -29,11 +27,13 @@ public class GrepSearchService {
     private static final int SNIPPET_MAX = 240;
 
     private final PxChunkDaoProvider chunkDaoProvider;
-    private final PrjXPConfig cfg;
     private final List<GoldenRetriever> retrieverList;
+    private final ProjectRegistry projectRegistry;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
-        PxChunkDao dao = chunkDaoProvider.get(resolveProject(project)).orElse(null);
+        projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
+        String resolved = projectRegistry.resolve(project);
+        PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
         if (dao == null) {
             return List.of();
         }
@@ -83,13 +83,6 @@ public class GrepSearchService {
             );
         }
         return searchHits;
-    }
-
-    private String resolveProject(String project) {
-        if (project == null || project.isBlank() || "default".equalsIgnoreCase(project)) {
-            return cfg.getActiveProject().map(ProjectDefinition::getName).orElse("default");
-        }
-        return project;
     }
 
     private Map<String, String> buildFilters(String language) {

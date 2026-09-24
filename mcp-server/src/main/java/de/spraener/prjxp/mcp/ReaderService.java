@@ -1,7 +1,6 @@
 package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
@@ -35,6 +34,7 @@ public class ReaderService {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final PrjXPConfig cfg;
     private final FileViewRegistry fileViewRegistry;
+    private final ProjectRegistry projectRegistry;
 
     private record Located(Optional<FileView> earlyExit, List<PxChunk> chunks) {
         static Located early(FileView view) {
@@ -47,6 +47,7 @@ public class ReaderService {
     }
 
     public FileView read(String file, String project, Integer offset, Integer limit) {
+        projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         String requested = ReaderSupport.normalizePath(file);
         PxChunkDao dao = resolveDao(project);
         if (dao == null)
@@ -81,11 +82,8 @@ public class ReaderService {
     }
 
     private PxChunkDao resolveDao(String project) {   // same pattern as ByIndexSearchService
-        String resolved = (project == null || project.isBlank() || "default".equalsIgnoreCase(project))
-                ? cfg.getActiveProject().map(ProjectDefinition::getName).orElse("default") : project;
-        Optional<PxChunkDao> opt = chunkDaoProvider.get(resolved);
-        if (opt.isEmpty() && !"default".equalsIgnoreCase(resolved)) opt = chunkDaoProvider.get("default");
-        return opt.orElse(null);
+        String resolved = projectRegistry.resolve(project);
+        return chunkDaoProvider.get(resolved).orElse(null);
     }
 
     private Located locateFile(PxChunkDao dao, String requested, String rawRequested) {

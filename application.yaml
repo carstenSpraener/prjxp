@@ -77,6 +77,8 @@ mcp:
 server:
   port: ${SERVER_PORT:7007}
   forward-headers-strategy: framework
+  tomcat:
+    connection-linger: -1
 
 spring:
   main:
@@ -84,8 +86,3 @@ spring:
   devtools:
     restart:
       additional-exclude: "**/package-info.java"
-  ai:
-    mcp:
-      server:
-        protocol: STATELESS
-        transport: sse

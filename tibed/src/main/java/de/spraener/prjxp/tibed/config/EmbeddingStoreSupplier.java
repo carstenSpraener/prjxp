@@ -26,7 +26,9 @@ public class EmbeddingStoreSupplier implements org.springframework.beans.factory
     private EmbeddingStore<TextSegment> createdStore;
 
     public EmbeddingStore<TextSegment> getStore(String name) {
-        ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException("No active project!"));
+        ProjectDefinition pd = cfg.getProjectDefinition(name).orElseThrow(() -> new IllegalStateException(
+                "No project definition for '" + name + "'. Available projects: "
+                        + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
 
         // Lucene embedded store (braucht keine externe Store-Referenz)
         if (cfg.getEmbeddingStoreType() == PrjXPConfig.EmbeddingStoreType.LUCENE) {

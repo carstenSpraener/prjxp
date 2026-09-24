@@ -1,7 +1,5 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -20,12 +18,14 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -40,7 +40,7 @@ class GrepSearchServiceTest {
     PxChunkDao dao;
 
     @Mock
-    PrjXPConfig cfg;
+    ProjectRegistry projectRegistry;
 
     @Mock
     List<GoldenRetriever> retrieverList;
@@ -53,6 +53,7 @@ class GrepSearchServiceTest {
 
     @Test
     void passesQueryProjectLanguageAndLimitToDao() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         service.search("ChunkProcess", "myproj", "java", 10);
@@ -64,30 +65,51 @@ class GrepSearchServiceTest {
     }
 
     @Test
-    void defaultProjectResolvesToActiveProject() {
-        ProjectDefinition active = new ProjectDefinition();
-        active.setName("cwd");
-        when(cfg.getActiveProject()).thenReturn(Optional.of(active));
-        when(provider.get("cwd")).thenReturn(Optional.of(dao));
+    void defaultProjectUsesDefaultStore() {
+        when(projectRegistry.resolve("default")).thenReturn("default");
+        when(provider.get("default")).thenReturn(Optional.of(dao));
         when(dao.searchFullText(anyString(), anyMap(), anyInt())).thenReturn(List.of());
 
         service.search("q", "default", null, 10);
+
+        verify(provider).get("default");
+    }
+
+    @Test
+    void blankProjectResolvesToActiveProject() {
+        when(projectRegistry.resolve("   ")).thenReturn("cwd");
+        when(provider.get("cwd")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt())).thenReturn(List.of());
+
+        service.search("q", "   ", null, 10);
 
         verify(provider).get("cwd");
     }
 
     @Test
-    void unknownProjectReturnsEmptyList() {
-        when(provider.get("nope")).thenReturn(Optional.empty());
+    void unknownProjectThrowsUnknownProjectException() {
+        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
 
-        List<SearchHit> hits = service.search("q", "nope", null, 10);
+        assertThatThrownBy(() -> service.search("q", "nope", null, 10))
+                .isInstanceOf(UnknownProjectException.class);
 
-        assertThat(hits).isEmpty();
+        verifyNoInteractions(provider);
         verifyNoInteractions(dao);
     }
 
     @Test
+    void knownProjectWithoutStoreReturnsEmptyList() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.empty());
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 10);
+
+        assertThat(hits).isEmpty();
+    }
+
+    @Test
     void resultsMappedToSearchHitWithGrepSource() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         PxChunk chunk = PxChunk.create(c -> {
@@ -118,6 +140,7 @@ class GrepSearchServiceTest {
 
     @Test
     void unsupportedStoreReturnsEmptyList() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(dao.searchFullText(anyString(), anyMap(), anyInt()))
                 .thenThrow(new UnsupportedOperationException("no lucene"));
@@ -129,6 +152,7 @@ class GrepSearchServiceTest {
 
     @Test
     void unmappedLanguageUsedAsMimeType() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         service.search("q", "myproj", "text/x-cobol", 10);
@@ -141,6 +165,7 @@ class GrepSearchServiceTest {
 
     @Test
     void snippetContainsMatchedQueryPart() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         String content = "x".repeat(300) + "ChunkProcess" + "y".repeat(300);

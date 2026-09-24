@@ -2,6 +2,7 @@ package de.spraener.prjxp.tibed;
 
 import de.spraener.prjxp.common.config.CliArgsParsingEvent;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferMode;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.core.env.StandardEnvironment;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 class CliArgsParserTest {
@@ -105,6 +107,15 @@ class CliArgsParserTest {
 
         assertThat(cfg.getActiveProject().map(de.spraener.prjxp.common.config.ProjectDefinition::getName).orElse(null))
                 .isEqualTo("myproject");
+    }
+
+    @Test
+    void parseArgs_unknownProject_failsWithAvailableList() {
+        PrjXPConfig cfg = new PrjXPConfig();
+        ProjectDefinition pd = new ProjectDefinition(); pd.setName("foo"); cfg.getProjects().add(pd);
+        assertThatThrownBy(() -> uut(cfg).parseArgs(event(cfg, "-p", "bar")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("bar").hasMessageContaining("foo");
     }
 
     @Test

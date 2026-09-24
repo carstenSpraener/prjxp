@@ -102,4 +102,14 @@ public class PrjXPConfig {
         return getProjectDefinition(activeProject);
     }
 
+    /** Raw configured active-project name (may not match any entry in projects[]). */
+    public String getActiveProjectName() { return activeProject; }
+
+    /** Like getProjectDefinition but fails fast with the list of available projects. */
+    public ProjectDefinition requireProject(String name) {
+        return getProjectDefinition(name).orElseThrow(() -> new IllegalStateException(
+                "Unknown project '" + name + "'. Available projects: "
+                        + projects.stream().map(ProjectDefinition::getName).toList()));
+    }
+
 }

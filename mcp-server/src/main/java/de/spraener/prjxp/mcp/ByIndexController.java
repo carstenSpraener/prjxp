@@ -72,7 +72,11 @@ public class ByIndexController {
         ByIndexQuery query = new ByIndexQuery(
                 language.trim(), fqn, symbolType, methodName, signatureHash, containerFqn, project,
                 SearchLimits.clamp(limit));
-        return ResponseEntity.ok(byIndexSearchService.search(query));
+        try {
+            return ResponseEntity.ok(byIndexSearchService.search(query));
+        } catch (UnknownProjectException e) {
+            return ResponseEntity.badRequest().body(new SearchError("unknownProject", e.getMessage()));
+        }
     }
 
     private static boolean isBlank(String value) {

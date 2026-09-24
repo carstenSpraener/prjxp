@@ -1,7 +1,5 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.MethodView;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
@@ -17,7 +15,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 
 /**
  * 3rd search level: deterministic symbol lookup in the index (symbol_* metadata),
@@ -32,9 +29,10 @@ public class SymbolReaderService {
     private static final String SECTION_KEY = "java_code_section";
 
     private final PxChunkDaoProvider chunkDaoProvider;
-    private final PrjXPConfig cfg;
+    private final ProjectRegistry projectRegistry;
 
     public SymbolReadResult readBySignature(String method, String container, String project) {
+        projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         if (method == null || method.isBlank())
             return SymbolReadResult.error("Parameter 'method' is required.");
 
@@ -104,10 +102,7 @@ public class SymbolReaderService {
     }
 
     private PxChunkDao resolveDao(String project) {   // same pattern as ReaderService (Phase 05)
-        String resolved = (project == null || project.isBlank() || "default".equalsIgnoreCase(project))
-                ? cfg.getActiveProject().map(ProjectDefinition::getName).orElse("default") : project;
-        Optional<PxChunkDao> opt = chunkDaoProvider.get(resolved);
-        if (opt.isEmpty() && !"default".equalsIgnoreCase(resolved)) opt = chunkDaoProvider.get("default");
-        return opt.orElse(null);
+        String resolved = projectRegistry.resolve(project);
+        return chunkDaoProvider.get(resolved).orElse(null);
     }
 }

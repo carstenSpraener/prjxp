@@ -2,8 +2,6 @@ package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.capability.IdentifierRules;
 import de.spraener.prjxp.common.capability.LanguageCapability;
-import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -21,9 +19,12 @@ import java.util.Map;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -38,7 +39,7 @@ class ByIndexSearchServiceTest {
     PxChunkDao dao;
 
     @Mock
-    PrjXPConfig cfg;
+    ProjectRegistry projectRegistry;
 
     @Mock
     SearchCapabilitiesRegistry registry;
@@ -62,6 +63,7 @@ class ByIndexSearchServiceTest {
 
     @Test
     void fqnGoesToSymbolFqnFilter() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
 
@@ -75,6 +77,7 @@ class ByIndexSearchServiceTest {
 
     @Test
     void methodNameAndContainerFqnNarrowFilters() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
 
@@ -89,6 +92,7 @@ class ByIndexSearchServiceTest {
 
     @Test
     void allOptionalParamsMapped() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
 
@@ -106,6 +110,7 @@ class ByIndexSearchServiceTest {
 
     @Test
     void blankOptionalParamsOmitted() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
 
@@ -118,6 +123,7 @@ class ByIndexSearchServiceTest {
 
     @Test
     void limitPassedThrough() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
 
@@ -128,6 +134,7 @@ class ByIndexSearchServiceTest {
 
     @Test
     void resultsMappedToIndexHits() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         PxChunk chunk = PxChunk.create(c -> {
@@ -156,6 +163,7 @@ class ByIndexSearchServiceTest {
 
     @Test
     void resultsStablySortedByChunkId() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
         PxChunk b = PxChunk.create(c -> c.setId("chunk-b"));
@@ -170,18 +178,20 @@ class ByIndexSearchServiceTest {
     }
 
     @Test
-    void unknownProjectReturnsEmptyList() {
-        when(provider.get("nope")).thenReturn(Optional.empty());
+    void unknownProjectThrowsUnknownProjectException() {
+        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
 
-        List<SearchHit> hits = service.search(
-                new ByIndexQuery("java", "com.example.Foo", null, null, null, null, "nope", 10));
+        assertThatThrownBy(() -> service.search(
+                new ByIndexQuery("java", "com.example.Foo", null, null, null, null, "nope", 10)))
+                .isInstanceOf(UnknownProjectException.class);
 
-        assertThat(hits).isEmpty();
+        verifyNoInteractions(provider);
         verifyNoInteractions(dao);
     }
 
     @Test
     void unsupportedStoreReturnsEmptyList() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
         when(dao.searchByIndex(anyMap(), anyInt()))
@@ -194,6 +204,7 @@ class ByIndexSearchServiceTest {
 
     @Test
     void defaultProjectUsesDefaultStore() {
+        when(projectRegistry.resolve("default")).thenReturn("default");
         when(provider.get("default")).thenReturn(Optional.empty());
 
         service.search(new ByIndexQuery("java", "com.example.Foo", null, null, null, null, "default", 10));
@@ -202,16 +213,13 @@ class ByIndexSearchServiceTest {
     }
 
     @Test
-    void blankProjectResolvesToActiveProject() {
-        ProjectDefinition active = new ProjectDefinition();
-        active.setName("cwd");
-        when(cfg.getActiveProject()).thenReturn(Optional.of(active));
+    void blankProjectResolvesToActiveProjectWithoutSilentFallback() {
+        when(projectRegistry.resolve("   ")).thenReturn("cwd");
         when(provider.get("cwd")).thenReturn(Optional.empty());
-        when(provider.get("default")).thenReturn(Optional.empty());
 
         service.search(new ByIndexQuery("java", "com.example.Foo", null, null, null, null, "   ", 10));
 
         verify(provider).get("cwd");
-        verify(provider).get("default");
+        verify(provider, never()).get("default");   // the silent cross-project fallback is gone
     }
 }

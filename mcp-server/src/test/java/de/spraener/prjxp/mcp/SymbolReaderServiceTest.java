@@ -1,6 +1,5 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.MethodView;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
@@ -23,10 +22,12 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,13 +46,13 @@ class SymbolReaderServiceTest {
     @Mock
     private PxChunkDao dao;
     @Mock
-    private PrjXPConfig cfg;
+    private ProjectRegistry projectRegistry;
 
     private SymbolReaderService service;
 
     @BeforeEach
     void setUp() {
-        service = new SymbolReaderService(chunkDaoProvider, cfg);
+        service = new SymbolReaderService(chunkDaoProvider, projectRegistry);
     }
 
     // ------------------------------------------------------------------ fixtures
@@ -108,8 +109,9 @@ class SymbolReaderServiceTest {
         return new ScoredChunk(chunk, 1.0);
     }
 
-    /** Provider resolves project "p" to the mocked dao; searchByIndex returns the given units. */
+    /** Registry resolves project "p" to itself; provider returns the mocked dao; searchByIndex returns the given units. */
     private void stubDaoReturns(PxChunk... chunks) {
+        when(projectRegistry.resolve("p")).thenReturn("p");
         when(chunkDaoProvider.get("p")).thenReturn(Optional.of(dao));
         List<ScoredChunk> hits = new ArrayList<>();
         for (PxChunk chunk : chunks) {
@@ -230,6 +232,7 @@ class SymbolReaderServiceTest {
 
     @Test
     void unsupportedStoreReturnsError() {
+        when(projectRegistry.resolve("p")).thenReturn("p");
         when(chunkDaoProvider.get("p")).thenReturn(Optional.of(dao));
         when(dao.searchByIndex(anyMap(), anyInt()))
                 .thenThrow(new UnsupportedOperationException("chroma store"));
@@ -242,8 +245,8 @@ class SymbolReaderServiceTest {
 
     @Test
     void noDaoReturnsError() {
+        when(projectRegistry.resolve("p")).thenReturn("p");
         when(chunkDaoProvider.get("p")).thenReturn(Optional.empty());
-        when(chunkDaoProvider.get("default")).thenReturn(Optional.empty());
 
         SymbolReadResult result = service.readBySignature("bar", null, "p");
 
@@ -258,5 +261,15 @@ class SymbolReaderServiceTest {
         assertThat(result.error()).contains("method");
         verify(chunkDaoProvider, never()).get(anyString());
         verify(dao, never()).searchByIndex(anyMap(), anyInt());
+    }
+
+    @Test
+    void unknownProjectThrowsUnknownProjectException() {
+        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
+
+        assertThatThrownBy(() -> service.readBySignature("bar", null, "nope"))
+                .isInstanceOf(UnknownProjectException.class);
+
+        verify(chunkDaoProvider, never()).get(anyString());
     }
 }

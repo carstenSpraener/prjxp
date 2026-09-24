@@ -83,11 +83,13 @@ class LucenePxChunkDaoTest {
         Metadata meta1 = new Metadata();
         meta1.put("pxchunk_id", "chunk-1");
         meta1.put("source", "file-a.txt");
+        meta1.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Content A", meta1));
 
         Metadata meta2 = new Metadata();
         meta2.put("pxchunk_id", "chunk-2");
         meta2.put("source", "file-b.txt");
+        meta2.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Content B", meta2));
 
         Map<String, String> searchMeta = Map.of("source", "file-a.txt");
@@ -102,12 +104,14 @@ class LucenePxChunkDaoTest {
         meta1.put("pxchunk_id", "chunk-1");
         meta1.put("source", "file-a.txt");
         meta1.put("type", "code");
+        meta1.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Java code", meta1));
 
         Metadata meta2 = new Metadata();
         meta2.put("pxchunk_id", "chunk-2");
         meta2.put("source", "file-a.txt");
         meta2.put("type", "doc");
+        meta2.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Documentation", meta2));
 
         Map<String, String> searchMeta = Map.of("source", "file-a.txt", "type", "code");
@@ -157,6 +161,7 @@ class LucenePxChunkDaoTest {
             c.setTotal(5);
             c.setSize(1000);
             c.setOverlap(100);
+            c.setProject("test-project");
         });
         original.getMetadata().put("custom", "value");
 
@@ -176,6 +181,7 @@ class LucenePxChunkDaoTest {
         assertThat(retrieved.getParent()).isEqualTo("parent-1");
         assertThat(retrieved.getPart()).isEqualTo(1);
         assertThat(retrieved.getTotal()).isEqualTo(5);
+        assertThat(retrieved.getProject()).isEqualTo("test-project");
     }
 
     @Test
@@ -251,6 +257,7 @@ class LucenePxChunkDaoTest {
         tsMeta.put("pxchunk_id", "chunk-ts");
         tsMeta.put(PxChunk.PXCHUNK_MIME_TYPE, "text/x-typescript-code");
         tsMeta.put("pxchunk_metadata.symbol_fqn", "de.spraener.test.Foo#bar");
+        tsMeta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("TS content", tsMeta));
 
         List<ScoredChunk> result = dao.searchByIndex(
@@ -298,10 +305,12 @@ class LucenePxChunkDaoTest {
     void searchVectorReturnsMostSimilarChunkFirst() {
         Metadata nearMeta = new Metadata();
         nearMeta.put("pxchunk_id", "near");
+        nearMeta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{0.5f, 0.3f, 0.2f}), TextSegment.from("Near content", nearMeta));
 
         Metadata farMeta = new Metadata();
         farMeta.put("pxchunk_id", "far");
+        farMeta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Far content", farMeta));
 
         List<ScoredChunk> result = dao.searchVector("any question", Map.of(), 10);
@@ -309,6 +318,28 @@ class LucenePxChunkDaoTest {
         assertThat(result).hasSize(2);
         assertThat(result.get(0).chunk().getId()).isEqualTo("near");
         assertThat(result.get(0).score()).isGreaterThan(0);
+    }
+
+    @Test
+    void searchVectorExcludesOtherProjectChunks() {
+        addChunkWithProject("own", "Own content", "test-project");
+        addChunkWithProject("other", "Other content", "other-project");
+
+        List<ScoredChunk> result = dao.searchVector("q", Map.of(), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("own");
+    }
+
+    @Test
+    void findAllScopedToProject() {
+        addChunkWithProject("own", "Own content", "test-project");
+        addChunkWithProject("other", "Other content", "other-project");
+
+        List<PxChunk> result = dao.findAll().collect(Collectors.toList());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getId()).isEqualTo("own");
     }
 
     @Test
@@ -355,6 +386,7 @@ class LucenePxChunkDaoTest {
     private void addChunk(String id, String content) {
         Metadata meta = new Metadata();
         meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
     }
 
@@ -363,6 +395,7 @@ class LucenePxChunkDaoTest {
         meta.put("pxchunk_id", id);
         meta.put(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code");
         meta.put("pxchunk_metadata.symbol_fqn", symbolFqn);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content of " + id, meta));
     }
 
@@ -370,6 +403,14 @@ class LucenePxChunkDaoTest {
         Metadata meta = new Metadata();
         meta.put("pxchunk_id", id);
         meta.put(PxChunk.PXCHUNK_MIME_TYPE, mimeType);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
+    }
+
+    private void addChunkWithProject(String id, String content, String project) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_PROJECT, project);
+        store.add(Embedding.from(new float[]{0.5f, 0.3f, 0.2f}), TextSegment.from(content, meta));
     }
 }

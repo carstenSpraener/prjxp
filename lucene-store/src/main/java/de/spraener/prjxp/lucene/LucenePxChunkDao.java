@@ -49,6 +49,16 @@ public class LucenePxChunkDao implements PxChunkDao {
         this.luceneStore = store instanceof LuceneEmbeddingStore ? (LuceneEmbeddingStore) store : null;
     }
 
+    private Map<String, String> scopedFilters(Map<String, String> filters) {
+        Map<String, String> scoped = new HashMap<>(filters == null ? Map.of() : filters);
+        scoped.put(PxChunk.PXCHUNK_PROJECT, storeReference.getProjectName());
+        return scoped;
+    }
+
+    private Filter projectFilter() {
+        return new IsEqualTo(PxChunk.PXCHUNK_PROJECT, storeReference.getProjectName());
+    }
+
     @Override
     public PrjXPEmbeddingStoreReference getStoreReference() {
         return storeReference;
@@ -56,7 +66,7 @@ public class LucenePxChunkDao implements PxChunkDao {
 
     @Override
     public List<PxChunk> findById(String id) {
-        Filter filter = new IsEqualTo(PxChunk.PXCHUNK_ID, id);
+        Filter filter = new And(new IsEqualTo(PxChunk.PXCHUNK_ID, id), projectFilter());
         return searchWithFilter(filter);
     }
 
@@ -66,7 +76,7 @@ public class LucenePxChunkDao implements PxChunkDao {
             return new ArrayList<>();
         }
 
-        Filter combinedFilter = null;
+        Filter combinedFilter = projectFilter();
         for (Map.Entry<String, String> entry : metaData.entrySet()) {
             Filter currentFilter = new IsEqualTo(entry.getKey(), entry.getValue());
             combinedFilter = (combinedFilter == null) ? currentFilter : new And(combinedFilter, currentFilter);
@@ -79,6 +89,7 @@ public class LucenePxChunkDao implements PxChunkDao {
         Embedding questionEmbedding = embeddingModel.embed(question).content();
         EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
                 .queryEmbedding(questionEmbedding)
+                .filter(projectFilter())
                 .maxResults(maxResults)
                 .minScore(minScore)
                 .build();
@@ -94,7 +105,7 @@ public class LucenePxChunkDao implements PxChunkDao {
         if (luceneStore != null) {
             return searchAllLucene().stream();
         }
-        return searchWithFilter(null).stream();
+        return searchWithFilter(projectFilter()).stream();
     }
 
     @Override
@@ -112,10 +123,8 @@ public class LucenePxChunkDao implements PxChunkDao {
         for (String token : tokens) {
             builder.add(new TermQuery(new Term("content", token)), BooleanClause.Occur.MUST);
         }
-        if (filters != null) {
-            for (Map.Entry<String, String> entry : filters.entrySet()) {
-                builder.add(new TermQuery(new Term(entry.getKey(), entry.getValue())), BooleanClause.Occur.FILTER);
-            }
+        for (Map.Entry<String, String> entry : scopedFilters(filters).entrySet()) {
+            builder.add(new TermQuery(new Term(entry.getKey(), entry.getValue())), BooleanClause.Occur.FILTER);
         }
 
         try {
@@ -144,7 +153,7 @@ public class LucenePxChunkDao implements PxChunkDao {
             throw new UnsupportedOperationException("Index search requires a Lucene store");
         }
 
-        Query query = buildFilterQuery(filters);
+        Query query = buildFilterQuery(scopedFilters(filters));
         try {
             IndexSearcher searcher = luceneStore.getSearcher();
             try {
@@ -170,7 +179,7 @@ public class LucenePxChunkDao implements PxChunkDao {
         }
 
         Embedding questionEmbedding = embeddingModel.embed(query).content();
-        Filter filter = buildFilter(filters);
+        Filter filter = buildFilter(scopedFilters(filters));
 
         EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()
                 .queryEmbedding(questionEmbedding)
@@ -229,10 +238,10 @@ public class LucenePxChunkDao implements PxChunkDao {
 
     private List<PxChunk> searchAllLucene() {
         try {
-            Query matchAll = new org.apache.lucene.search.MatchAllDocsQuery();
+            Query luceneQuery = LuceneFilterConverter.convert(projectFilter());
             IndexSearcher searcher = luceneStore.getSearcher();
             try {
-                TopDocs topDocs = searcher.search(matchAll, 10000);
+                TopDocs topDocs = searcher.search(luceneQuery, 10000);
                 List<PxChunk> result = new ArrayList<>();
                 for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
                     org.apache.lucene.document.Document doc = searcher.storedFields().document(scoreDoc.doc);

@@ -40,8 +40,10 @@ public class EmbeddingExportService {
     private final PrjXPConfig cfg;
 
     public void execute() {
-        ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException("No active project!"));
-        String input = firstNonBlank(cfg.getTransfer().getInput(), pd.getJsonlFile());
+        ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException(
+                "No active project '" + cfg.getActiveProjectName() + "' defined. Available projects: "
+                        + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
+        String input = firstNonBlank(cfg.getTransfer().getInput(), pd.resolvedJsonlFile());
         String output = cfg.getTransfer().getOutput();
         if (output == null || output.isBlank()) {
             throw new IllegalStateException("Export mode requires an output file (--output)");
