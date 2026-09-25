@@ -51,8 +51,10 @@ run_java() {
 }
 
 run_with_embedding_server() {
-  start_embedding_server
-  wait_for_embedding_server
+  if [[ "${SKIP_EMBEDDING_SERVER:-false}" != "true" ]]; then
+    start_embedding_server
+    wait_for_embedding_server
+  fi
 
   "$@" &
   local app_pid=$!

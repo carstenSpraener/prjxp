@@ -10,7 +10,7 @@ import java.util.List;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("#{'${mcp.cors.allowed-patterns}'.split(',')}")
+    @Value("#{'${mcp.cors.allowed-patterns:http://localhost:*}'.split(',')}")
     private List<String> allowedPatterns;
 
     @Override

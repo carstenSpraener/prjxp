@@ -290,6 +290,21 @@ The hub requires the Lucene store type — already set in `docker-compose.yml`
 (`EMBEDDING_STORE_TYPE=lucene`). All projects share one index; chunks are
 stamped with their project name.
 
+### Using an External Embedding Provider (e.g. LM Studio)
+
+The image ships with a TEI embedding server, but you can point the app at any
+OpenAI-compatible endpoint instead — e.g. LM Studio on the host (faster with GPU):
+
+```yaml
+# docker-compose.yml, hub service environment:
+EMBEDDING_API_BASE_URL: http://host.docker.internal:1234/v1
+EMBEDDING_MODEL_NAME: mxbai-embed-large-v1   # must match LUCENE_VECTOR_DIMENSION (1024)
+SKIP_EMBEDDING_SERVER: "true"                # don't start the in-container TEI
+```
+
+Keep the same model as your existing index (mxbai-embed-large-v1 = 1024 dims) —
+a different model changes the vector dimension and invalidates existing index data.
+
 ### Import a Project
 
 Package your project as a tar archive and drop it into `./import`:
