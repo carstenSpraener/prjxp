@@ -21,7 +21,8 @@ import java.util.Set;
 
 /**
  * Watches the import directory: extracts tar uploads into the projects root (snapshot flow) and syncs
- * live projects (directories with a prjxp.yaml/yml marker), enqueuing freshly discovered ones for the pipeline.
+ * live projects (directories with a prjxp.yaml/yml marker, searched recursively), enqueuing freshly
+ * discovered ones for the pipeline.
  */
 @Component
 @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
@@ -65,7 +66,9 @@ public class ImportPoller {
     /**
      * Discovers live projects (marker files) and enqueues the freshly discovered ones.
      * Entries known before this poll are never re-enqueued (no double pipeline runs);
-     * FAILED projects stay failed until an explicit reindex.
+     * FAILED projects stay failed until an explicit reindex. The marker file is the source of truth:
+     * a live project removed via DELETE /prjxp/projects/{name} is re-discovered and re-enqueued here
+     * (the deletion never touches the marker) — documented, intended behavior.
      */
     private void syncLiveProjects() {
         Set<String> before = new HashSet<>(registry.availableProjects());

@@ -195,6 +195,55 @@ class HubProjectRegistryTest {
     }
 
     @Test
+    void discoverFindsLiveProjectNestedInOrganizationalFolder() throws Exception {
+        Path nested = importDir.resolve("teamA").resolve("projekt-x");
+        Files.createDirectories(nested);
+        Files.writeString(nested.resolve("prjxp.yaml"), "name: x\n");
+
+        List<String> discovered = registry.discoverProjects();
+
+        assertThat(discovered).containsExactly("x");
+        assertThat(registry.entry("x").orElseThrow().getRootDir()).isEqualTo(nested);   // the marker dir, not the folder
+    }
+
+    @Test
+    void discoverFindsDeeplyNestedLiveProject() throws Exception {
+        Path nested = importDir.resolve("a").resolve("b").resolve("c");
+        Files.createDirectories(nested);
+        Files.writeString(nested.resolve("prjxp.yaml"), "name: deep\n");
+
+        assertThat(registry.discoverProjects()).containsExactly("deep");
+    }
+
+    @Test
+    void nestedMarkerInsideLiveProjectIsNotDiscoveredSeparately() throws Exception {
+        Path mono = importDir.resolve("mono");
+        Files.createDirectories(mono);
+        Files.writeString(mono.resolve("prjxp.yaml"), "name: mono\n");
+        Path svc = Files.createDirectories(mono.resolve("svc-a"));   // nested marker — part of mono
+        Files.writeString(svc.resolve("prjxp.yaml"), "name: svc-a\n");
+
+        List<String> discovered = registry.discoverProjects();
+
+        assertThat(discovered).containsExactly("mono");   // outermost marker wins — no double registration
+        assertThat(registry.entry("svc-a")).isEmpty();
+    }
+
+    @Test
+    void nestedMarkerBecomesActiveWhenOuterMarkerDisappears() throws Exception {
+        Path mono = importDir.resolve("mono");
+        Files.createDirectories(mono);
+        Files.writeString(mono.resolve("prjxp.yaml"), "name: mono\n");
+        Path svc = Files.createDirectories(mono.resolve("svc-a"));   // shadowed while the outer marker exists
+        Files.writeString(svc.resolve("prjxp.yaml"), "name: svc-a\n");
+        registry.discoverProjects();
+
+        Files.delete(mono.resolve("prjxp.yaml"));   // outer marker gone -> the nested one is now outermost
+
+        assertThat(registry.discoverProjects()).containsExactly("svc-a");
+    }
+
+    @Test
     void liveNameCollidingWithExistingEntryIsSkipped() throws Exception {
         projectDir("foo");   // snapshot 'foo' registered first
         registry.discoverProjects();

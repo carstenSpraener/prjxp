@@ -26,7 +26,6 @@ import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metad
 @RequiredArgsConstructor
 @Log
 public class EmbeddingService {
-    private static final int MAX_EMBEDDING_BATCH_SIZE = 32;
 
     private final PxLogService logService;
     private final ObjectMapper objMapper;
@@ -46,10 +45,13 @@ public class EmbeddingService {
 
     /** Runs the embedding pipeline for an explicitly given project + store (hub in-process use). */
     public void executeForProject(ProjectDefinition pd, EmbeddingStore<TextSegment> store) {
+        // Free choice per project (prjxp.yaml tibedBatchSize): the embedding provider's own limits apply —
+        // a batch it rejects fails per-batch in embedChunk (logged, pipeline continues). Only non-positive
+        // values are guarded, since BatchingUtils.pack would divide by zero / allocate negative capacity.
         int configuredBatchSize = pd.getTibedBatchSize();
-        int effectiveBatchSize = Math.max(1, Math.min(configuredBatchSize, MAX_EMBEDDING_BATCH_SIZE));
-        if (configuredBatchSize != effectiveBatchSize) {
-            log.warning("Configured tibedBatchSize=" + configuredBatchSize + " adjusted to " + effectiveBatchSize + " due to embedding API limits");
+        int effectiveBatchSize = Math.max(1, configuredBatchSize);
+        if (configuredBatchSize < 1) {
+            log.warning("Configured tibedBatchSize=" + configuredBatchSize + " is invalid, using 1");
         }
         if (pd.isTibedResetStore()) {
             log.warning("Resetting embedding store for project '" + pd.getName() + "'!");

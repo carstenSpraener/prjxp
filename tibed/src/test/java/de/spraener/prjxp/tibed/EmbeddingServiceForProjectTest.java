@@ -24,8 +24,10 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -153,5 +155,63 @@ class EmbeddingServiceForProjectTest {
         service.executeForProject(pd, store);
 
         verify(streamProvider).getJsonlStream(null);   // behavior preserved for null/blank
+    }
+
+    /**
+     * The configured batch size is a free per-project choice (prjxp.yaml tibedBatchSize) — values above
+     * the old hard cap of 32 must be honored as-is. Provider limits surface per-batch in embedChunk,
+     * not via a global clamp.
+     */
+    @Test
+    void configuredBatchSizeIsUsedAsIs() throws Exception {
+        Path jsonl = tempDir.resolve("big.jsonl");
+        StringBuilder sb = new StringBuilder();
+        for (int i = 0; i < 100; i++) {
+            sb.append("{\"id\":\"chunk-").append(i).append("\",\"content\":\"int x = ").append(i).append(";\"}\n");
+        }
+        Files.writeString(jsonl, sb.toString());
+
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("projD");
+        pd.setRootDir(tempDir.toString());
+        pd.setJsonlFile(jsonl.toString());
+        pd.setTibedBatchSize(500);   // above the old hard cap of 32 — must be honored
+
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        when(streamProvider.getJsonlStream(jsonl.toString()))
+                .thenReturn(Files.readAllLines(jsonl).stream());
+        when(storeIdChecker.needsImport(eq(store), anyString(), eq("projD"))).thenReturn(true);
+
+        service.executeForProject(pd, store);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PxChunk>> captor = ArgumentCaptor.forClass(List.class);
+        verify(embedder, times(1)).execute(eq(store), captor.capture());   // 100 chunks fit into one batch of 500
+        assertThat(captor.getValue()).hasSize(100);
+    }
+
+    @Test
+    void nonPositiveBatchSizeFallsBackToOne() throws Exception {
+        Path jsonl = tempDir.resolve("two.jsonl");
+        Files.writeString(jsonl, "{\"id\":\"chunk-1\",\"content\":\"int x = 1;\"}\n"
+                + "{\"id\":\"chunk-2\",\"content\":\"int x = 2;\"}\n");
+
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("projE");
+        pd.setRootDir(tempDir.toString());
+        pd.setJsonlFile(jsonl.toString());
+        pd.setTibedBatchSize(0);   // invalid — must fall back to 1, not crash BatchingUtils.pack
+
+        EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
+        when(streamProvider.getJsonlStream(jsonl.toString()))
+                .thenReturn(Files.readAllLines(jsonl).stream());
+        when(storeIdChecker.needsImport(eq(store), anyString(), eq("projE"))).thenReturn(true);
+
+        service.executeForProject(pd, store);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PxChunk>> captor = ArgumentCaptor.forClass(List.class);
+        verify(embedder, times(2)).execute(eq(store), captor.capture());   // two batches of one
+        assertThat(captor.getAllValues()).allSatisfy(batch -> assertThat(batch).hasSize(1));
     }
 }

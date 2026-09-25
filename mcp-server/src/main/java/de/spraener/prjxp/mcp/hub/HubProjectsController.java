@@ -34,6 +34,13 @@ public class HubProjectsController {
         return projectRegistry.projectInfos();
     }
 
+    /**
+     * Deletes a project from the hub. SNAPSHOT: scoped index wipe + recursive removal of the (hub-managed)
+     * project directory. LIVE: scoped index wipe + unregistration only — the source tree belongs to the user
+     * and is never touched. Note: for LIVE projects this is temporary by design — the marker file survives,
+     * so the import poller re-discovers and re-enqueues the project on its next cycle. Permanent removal of
+     * a live project = delete/rename its prjxp.yaml (or move it out of the import tree).
+     */
     @DeleteMapping("/{name}")
     public ResponseEntity<Void> delete(@PathVariable("name") String name) {
         lifecycle.delete(name);

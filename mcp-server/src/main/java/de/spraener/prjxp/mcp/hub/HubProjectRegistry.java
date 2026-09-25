@@ -23,15 +23,17 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Directory-driven {@link ProjectRegistry} for hub mode: discovers snapshot project directories under the
- * configured projects root and live projects (marker file) in the import dir, registers a Lucene DAO per
- * project at runtime and tracks lifecycle status. Active only when {@code prjxp.hub.enabled=true}
+ * configured projects root and live projects (marker file) anywhere below the import dir, registers a
+ * Lucene DAO per project at runtime and tracks lifecycle status. Active only when {@code prjxp.hub.enabled=true}
  * (requires the shared Lucene store).
  */
 @Component
@@ -184,9 +186,11 @@ public class HubProjectRegistry implements ProjectRegistry {
     }
 
     /**
-     * Import-dir subdirectories that contain a prjxp.yaml/yml marker, keyed by project name
-     * (yaml {@code name} or directory name). Returns null when the import dir is missing or unlistable
-     * (volume-glitch protection — callers must skip live sync, not wipe everything).
+     * Directories with a prjxp.yaml/yml marker anywhere below the import dir (recursive walk), keyed by
+     * project name (yaml {@code name} or directory name). The outermost marker wins: the walk stops
+     * descending into a project tree, so nested markers belong to that project. Returns null when the
+     * import dir is missing or any part of it is unlistable (volume-glitch protection — callers must
+     * skip live sync, not wipe everything).
      */
     private Map<String, Path> listLiveDirs() {
         Path root = Path.of(hub.getImportDir());
@@ -194,27 +198,51 @@ public class HubProjectRegistry implements ProjectRegistry {
             return null;   // missing -> skip live sync entirely
         }
         Map<String, Path> found = new HashMap<>();
+        Set<Path> visitedReal = new HashSet<>();   // symlink-cycle / duplicate-link protection
         try (var dirs = Files.list(root)) {
-            List<Path> liveDirs = dirs.filter(Files::isDirectory)
+            List<Path> subDirs = dirs.filter(Files::isDirectory)
                     .sorted(Comparator.comparing(p -> p.getFileName().toString()))   // deterministic on name collisions
                     .toList();
-            for (Path dir : liveDirs) {
-                if (configParser.markerFile(dir).isEmpty()) {
-                    continue;   // no marker file -> not a live project
-                }
-                String dirName = dir.getFileName().toString();
-                String name = configParser.parse(dir, dirName).getName();   // yaml name or directory name
-                if (found.containsKey(name)) {
-                    log.warn("Duplicate live project name '{}' in import dir — keeping {}", name, found.get(name));
-                } else {
-                    found.put(name, dir);
-                }
+            for (Path dir : subDirs) {
+                collectLiveDir(dir, visitedReal, found);
             }
         } catch (IOException e) {
             log.warn("Could not list hub import dir {}: {}", root, e.toString());
-            return null;   // unlistable -> skip live sync entirely (volume-glitch protection)
+            return null;   // unlistable (anywhere in the tree) -> skip live sync entirely (volume-glitch protection)
         }
         return found;
+    }
+
+    /**
+     * Recursively collects live projects below {@code dir}: a directory with a marker file becomes a
+     * project and the walk stops there (outermost marker wins). Children are visited in sorted order
+     * for deterministic name-collision handling.
+     */
+    private void collectLiveDir(Path dir, Set<Path> visitedReal, Map<String, Path> found) throws IOException {
+        if (configParser.markerFile(dir).isPresent()) {
+            registerLiveDir(dir, found);
+            return;   // never descend into a project tree — nested markers belong to it
+        }
+        if (!visitedReal.add(dir.toRealPath())) {
+            return;   // already visited (symlink cycle or duplicate link) — prune
+        }
+        try (var children = Files.list(dir)) {
+            List<Path> subDirs = children.filter(Files::isDirectory)
+                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
+                    .toList();
+            for (Path sub : subDirs) {
+                collectLiveDir(sub, visitedReal, found);
+            }
+        }
+    }
+
+    private void registerLiveDir(Path dir, Map<String, Path> found) {
+        String name = configParser.parse(dir, dir.getFileName().toString()).getName();   // yaml name or directory name
+        if (found.containsKey(name)) {
+            log.warn("Duplicate live project name '{}' in import dir — keeping {}", name, found.get(name));
+        } else {
+            found.put(name, dir);
+        }
     }
 
     // ------------------------------------------------------------------ ProjectRegistry

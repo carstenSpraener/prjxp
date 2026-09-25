@@ -34,6 +34,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -245,6 +246,32 @@ class ImportPollerTest {
     }
 
     @Test
+    void nestedLiveDirWithMarkerIsRegisteredAndEnqueued() throws IOException {
+        Path dir = Files.createDirectories(importDir.resolve("teamA").resolve("projekt-x"));
+        Files.writeString(dir.resolve("prjxp.yaml"), "name: x\n");
+
+        poller.poll();
+
+        ProjectEntry entry = registry.entry("x").orElseThrow();
+        assertThat(entry.getKind()).isEqualTo(ProjectEntry.Kind.LIVE);
+        assertThat(entry.getRootDir()).isEqualTo(dir);   // the marker dir, not the organizational folder
+        verify(orchestrator).enqueue("x");
+    }
+
+    @Test
+    void nestedMarkerInsideLiveProjectIsNotEnqueuedSeparately() throws IOException {
+        Path mono = Files.createDirectories(importDir.resolve("mono"));
+        Files.writeString(mono.resolve("prjxp.yaml"), "name: mono\n");
+        Path svc = Files.createDirectories(mono.resolve("svc-a"));   // shadowed by the outer marker
+        Files.writeString(svc.resolve("prjxp.yaml"), "name: svc-a\n");
+
+        poller.poll();
+
+        verify(orchestrator).enqueue("mono");
+        verify(orchestrator, never()).enqueue("svc-a");   // outermost marker wins
+    }
+
+    @Test
     void rePollWithNoChangesIsIdempotent() throws IOException {
         Path dir = liveDir("foo");
         Files.writeString(dir.resolve("prjxp.yaml"), "name: foo\n");
@@ -297,6 +324,23 @@ class ImportPollerTest {
 
         assertThat(registry.entry("foo")).isEmpty();
         assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "foo"))).isFalse();
+    }
+
+    @Test
+    void deletedLiveProjectIsRediscoveredAndReEnqueuedOnNextPoll() throws IOException {
+        Path dir = liveDir("foo");
+        Files.writeString(dir.resolve("prjxp.yaml"), "name: foo\n");
+
+        poller.poll();   // registered + enqueued
+        verify(orchestrator, times(1)).enqueue("foo");
+
+        ProjectLifecycleService lifecycle = new ProjectLifecycleService(registry, luceneStore, props);
+        lifecycle.delete("foo");   // index wipe + unregister; source tree and marker untouched
+
+        poller.poll();   // the marker survived -> re-discovered, re-registered, re-enqueued
+
+        assertThat(registry.entry("foo")).isPresent();
+        verify(orchestrator, times(2)).enqueue("foo");   // documented: DELETE is temporary for live projects
     }
 
     @Test

@@ -1,0 +1,4 @@
+name: prjxp
+chunoWhiteList: "java,md"
+tibedBatchSize: 150
+tibedResetStore: true

@@ -36,7 +36,9 @@ public class ProjectLifecycleService {
 
     /**
      * Full deletion: scoped index wipe + unregistration, plus recursive directory removal for SNAPSHOT projects.
-     * LIVE source trees belong to the user and are never touched by the hub.
+     * LIVE source trees belong to the user and are never touched by the hub — so for LIVE projects this is
+     * temporary by design: the marker file survives, and the import poller re-discovers + re-enqueues the
+     * project on its next cycle. Permanent removal of a live project = delete/rename its marker file.
      */
     public void delete(String name) {
         if (registry.entry(name).isEmpty()) {

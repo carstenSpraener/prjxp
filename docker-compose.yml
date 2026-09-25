@@ -1,26 +1,5 @@
 services:
-  mcp-server:
-    image: prjxp
-    # The TEI base image is amd64-only — pin the platform (runs via Rosetta on Apple Silicon)
-    platform: linux/amd64
-    build:
-      context: .
-      platforms: [linux/amd64]
-    ports:
-      - "7007:7007"
-    volumes:
-      # Mount project directory for application.yaml, .env, and source code
-      - ./:/app-source
-      # Persistent Lucene index storage
-      - prjxp-data:/app-source/.prjxp-data/lucene-index
-    environment:
-      EMBEDDING_STORE_TYPE: lucene
-      LUCENE_INDEX_PATH: .prjxp-data/lucene-index
-      LUCENE_VECTOR_DIMENSION: "1024"
-      PRJXP_ROOT_DIR: /app-source
-      SERVER_PORT: "7007"
-
-  hub:
+   hub:
     image: prjxp
     # The TEI base image is amd64-only — pin the platform (runs via Rosetta on Apple Silicon)
     platform: linux/amd64
@@ -29,9 +8,9 @@ services:
       platforms: [linux/amd64]
     command: ["hub"]
     ports:
-      - "7008:7007"          # hub on 7008 so it can run alongside the single-project service
+      - "7007:7007"
     volumes:
-      - /Users/casi/Projekte:/import     # drop tar archives here (e.g. foo.tar)
+      - ${PROJECTS_HOME}:/import     # drop tar archives here (e.g. foo.tar)
       - prjxp-projects:/projects
       - prjxp-hub-data:/data
     environment:
@@ -41,6 +20,11 @@ services:
       PRJXP_HUB_IMPORT_DIR: /import
       PRJXP_HUB_PROJECTS_ROOT: /projects
       SERVER_PORT: "7007"
+      # External embedding provider (LM Studio on the host) instead of in-container TEI:
+      EMBEDDING_API_BASE_URL: http://host.docker.internal:1234/v1
+      EMBEDDING_MODEL_NAME: mxbai-embed-large-v1   # must match LUCENE_VECTOR_DIMENSION (1024)
+      SKIP_EMBEDDING_SERVER: "true"
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
 
 volumes:
   prjxp-data:
