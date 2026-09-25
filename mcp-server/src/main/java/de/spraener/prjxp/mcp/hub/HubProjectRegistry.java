@@ -29,6 +29,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Directory-driven {@link ProjectRegistry} for hub mode: discovers snapshot project directories under the
@@ -51,6 +52,8 @@ public class HubProjectRegistry implements ProjectRegistry {
     private final ProjectConfigFileParser configParser;
 
     private final Map<String, ProjectEntry> projects = new ConcurrentHashMap<>();
+    /** Throttles the "import dir missing" warning to once per outage instead of once per 5s poll. */
+    private final AtomicBoolean importDirMissingWarned = new AtomicBoolean(false);
 
     /** Registers a snapshot project directory (tar import flow). */
     public void registerProject(String name, Path dir) {
@@ -73,6 +76,7 @@ public class HubProjectRegistry implements ProjectRegistry {
         storeRef.setProjectName(name);
         daoProvider.register(new LucenePxChunkDao(luceneStore, embeddingModel, storeRef));
         projects.put(name, new ProjectEntry(name, dir, kind, definition, storeRef));
+        log.info("Registered {} project '{}' at {}", kind, name, dir);
     }
 
     private void stampRootDir(ProjectDefinition def, Path dir) {
@@ -94,6 +98,7 @@ public class HubProjectRegistry implements ProjectRegistry {
     public void unregisterProject(String name) {
         daoProvider.unregisterByProject(name);
         projects.remove(name);
+        log.info("Unregistered project '{}'", name);
     }
 
     /** Updates the lifecycle status of a known project; no-op for unknown names. */
@@ -188,52 +193,106 @@ public class HubProjectRegistry implements ProjectRegistry {
     /**
      * Directories with a prjxp.yaml/yml marker anywhere below the import dir (recursive walk), keyed by
      * project name (yaml {@code name} or directory name). The outermost marker wins: the walk stops
-     * descending into a project tree, so nested markers belong to that project. Returns null when the
-     * import dir is missing or any part of it is unlistable (volume-glitch protection — callers must
-     * skip live sync, not wipe everything).
+     * descending into a project tree, so nested markers belong to that project. Directories named in
+     * {@code prjxp.hub.scan-exclude-dir-names} are pruned before recursion (see {@link #isExcludedFromScan}),
+     * any directory carrying a {@value ProjectConfigFileParser#EXCLUDE_MARKER_FILE_NAME} file is skipped
+     * individually (see {@link ProjectConfigFileParser#isExcluded}), and recursion is bounded by
+     * {@code prjxp.hub.scan-max-depth} (see {@link #collectLiveDir}). Returns null only when the import
+     * dir root itself is missing or unlistable (volume-glitch protection — callers must skip live sync,
+     * not wipe everything). An unreadable subtree further down (e.g. a permission-denied folder or a path
+     * too long for the host filesystem) is logged and skipped without affecting unrelated sibling projects.
      */
     private Map<String, Path> listLiveDirs() {
         Path root = Path.of(hub.getImportDir());
         if (!Files.isDirectory(root)) {
+            if (importDirMissingWarned.compareAndSet(false, true)) {
+                log.warn("Hub import dir {} does not exist (yet) — is the volume mounted? "
+                        + "Live project scan is skipped until it appears (retried every poll, this warning logs only once).", root);
+            }
             return null;   // missing -> skip live sync entirely
+        }
+        if (importDirMissingWarned.compareAndSet(true, false)) {
+            log.info("Hub import dir {} is now available — resuming live project scan", root);
         }
         Map<String, Path> found = new HashMap<>();
         Set<Path> visitedReal = new HashSet<>();   // symlink-cycle / duplicate-link protection
+        List<Path> subDirs;
         try (var dirs = Files.list(root)) {
-            List<Path> subDirs = dirs.filter(Files::isDirectory)
+            subDirs = dirs.filter(Files::isDirectory)
+                    .filter(p -> !isExcludedFromScan(p))
                     .sorted(Comparator.comparing(p -> p.getFileName().toString()))   // deterministic on name collisions
                     .toList();
-            for (Path dir : subDirs) {
-                collectLiveDir(dir, visitedReal, found);
-            }
         } catch (IOException e) {
             log.warn("Could not list hub import dir {}: {}", root, e.toString());
-            return null;   // unlistable (anywhere in the tree) -> skip live sync entirely (volume-glitch protection)
+            return null;   // the import dir root itself is unlistable -> skip live sync entirely (volume-glitch protection)
         }
+        for (Path dir : subDirs) {
+            collectLiveDirSafely(dir, 1, visitedReal, found);
+        }
+        log.debug("Live project scan of {} walked {} top-level entr{} and found {} project(s): {}",
+                root, subDirs.size(), subDirs.size() == 1 ? "y" : "ies", found.size(), found.keySet());
         return found;
+    }
+
+    /**
+     * Collects live projects below {@code dir}, isolating unreadable subtrees: an {@link IOException}
+     * anywhere below one top-level (or nested) entry only skips that entry, so a single bad directory
+     * (e.g. an unreadable folder, a broken symlink, or a path exceeding the host filesystem's limits —
+     * seen with long Windows bind-mount paths) never aborts the scan of unrelated sibling projects.
+     */
+    private void collectLiveDirSafely(Path dir, int depth, Set<Path> visitedReal, Map<String, Path> found) {
+        try {
+            collectLiveDir(dir, depth, visitedReal, found);
+        } catch (IOException e) {
+            log.warn("Skipping unreadable directory {} while scanning for live projects: {}", dir, e.toString());
+        }
     }
 
     /**
      * Recursively collects live projects below {@code dir}: a directory with a marker file becomes a
      * project and the walk stops there (outermost marker wins). Children are visited in sorted order
-     * for deterministic name-collision handling.
+     * for deterministic name-collision handling. A {@value ProjectConfigFileParser#EXCLUDE_MARKER_FILE_NAME}
+     * file makes the hub ignore {@code dir} entirely — it is neither registered nor descended into, even
+     * if a {@code prjxp.yaml}/{@code .yml} also sits there. Recursion stops once {@code depth} reaches
+     * {@code prjxp.hub.scan-max-depth} (see {@link HubProperties#getScanMaxDepth()}) — bounds the cost of
+     * huge marker-less sibling trees (e.g. when {@code importDir} is mounted broadly).
      */
-    private void collectLiveDir(Path dir, Set<Path> visitedReal, Map<String, Path> found) throws IOException {
+    private void collectLiveDir(Path dir, int depth, Set<Path> visitedReal, Map<String, Path> found) throws IOException {
+        if (configParser.isExcluded(dir)) {
+            return;   // .prjxp-exclude marker — directory (and its whole subtree) is ignored
+        }
         if (configParser.markerFile(dir).isPresent()) {
             registerLiveDir(dir, found);
             return;   // never descend into a project tree — nested markers belong to it
+        }
+        if (depth >= hub.getScanMaxDepth()) {
+            log.debug("Live project scan stopped at max depth {} below {} (no marker found within the limit)",
+                    hub.getScanMaxDepth(), dir);
+            return;   // bounds runaway recursion into huge, marker-less subtrees
         }
         if (!visitedReal.add(dir.toRealPath())) {
             return;   // already visited (symlink cycle or duplicate link) — prune
         }
         try (var children = Files.list(dir)) {
             List<Path> subDirs = children.filter(Files::isDirectory)
+                    .filter(p -> !isExcludedFromScan(p))
                     .sorted(Comparator.comparing(p -> p.getFileName().toString()))
                     .toList();
             for (Path sub : subDirs) {
-                collectLiveDir(sub, visitedReal, found);
+                collectLiveDirSafely(sub, depth + 1, visitedReal, found);
             }
         }
+    }
+
+    /**
+     * True when {@code dir}'s bare name (case-insensitive) is configured via
+     * {@code prjxp.hub.scan-exclude-dir-names}. Such directories are pruned before recursion, so heavy
+     * non-project subtrees (e.g. old SVN {@code branches}/{@code tags} checkouts) never slow down — or,
+     * on a single I/O hiccup, jeopardize — the discovery of markers elsewhere in the tree.
+     */
+    private boolean isExcludedFromScan(Path dir) {
+        String name = dir.getFileName().toString();
+        return hub.getScanExcludeDirNames().stream().anyMatch(excluded -> excluded.equalsIgnoreCase(name));
     }
 
     private void registerLiveDir(Path dir, Map<String, Path> found) {

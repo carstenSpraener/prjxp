@@ -261,6 +261,7 @@ The control script skips chunking if `px-chunks.jsonl` exists and skips embeddin
 | "No active project" error | Check `activeProject` in `application.yaml` matches your project name |
 | Docker image build fails | Check Docker is running: `docker info` |
 | Server started but ping failed | Check container logs: `docker logs mcp-<project-name>` |
+| Hub: live project never appears, `./import` mount contains huge unrelated folders | Add a `.prjxp-exclude` file to those folders, or configure `PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES` — see [Excluding Directories from the Live Scan](#multi-project-hub-one-container-many-projects) |
 
 ---
 
@@ -354,6 +355,62 @@ live tree. The hub never writes into your project — its JSONL output goes to
 
 The marker file doubles as the per-project config (`name`, `rootDir`,
 `chunoWhiteList`, `tibedBatchSize`) — the JSONL location is hub-managed for live projects.
+
+### Excluding Directories from the Live Scan
+
+The live-project scan walks the **entire** `./import` tree looking for `prjxp.yaml`/`.yml`
+markers. If your import root also contains huge non-project subtrees (e.g. an old SVN
+checkout with `branches/`/`tags/` full of legacy copies), the scan has to fully traverse
+them on every poll (~5s) before it can reach a marker that sorts alphabetically "after"
+them — this can make discovery take minutes, especially on slower bind-mounted volumes
+(e.g. Windows Docker Desktop). Two complementary ways to prune such subtrees:
+
+**1. `.prjxp-exclude` marker file (per-directory, drop it yourself):**
+
+```bash
+touch ~/Projekte/isa.net-master/branches/.prjxp-exclude
+touch ~/Projekte/isa.net-master/tags/.prjxp-exclude
+```
+
+Any directory containing a `.prjxp-exclude` file is ignored entirely — the hub neither
+registers it as a project nor descends into its subtree, even if a `prjxp.yaml` also
+happens to sit there (the exclude marker always wins). This is the recommended approach
+for one-off large trees you control (e.g. right inside `isa.net-master`).
+
+**2. `prjxp.hub.scan-exclude-dir-names` (global, by directory name):**
+
+```yaml
+# docker-compose.yml, hub service environment:
+PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES: .git,.svn,.hg,node_modules,branches,tags
+```
+
+A comma-separated, case-insensitive list of bare directory names that are never entered,
+applied everywhere below `./import`. Defaults to `.git,.svn,.hg,node_modules`. Use this
+when the same noise directory name (e.g. `branches`) recurs across many projects and you'd
+rather configure it once for the whole hub than drop a marker file into every occurrence.
+
+**3. `prjxp.hub.scan-max-depth` (global, by recursion depth):**
+
+```yaml
+# docker-compose.yml, hub service environment:
+PRJXP_HUB_SCAN_MAX_DEPTH: "8"
+```
+
+Caps how many directory levels below `./import` the scan ever descends into — default `8`.
+This is the safety net for the case that actually causes "nothing gets scanned" most often:
+mounting a broad directory (e.g. an entire projects drive) that contains many large,
+unrelated repositories alongside the one(s) you care about. Without a depth cap, a single
+huge marker-less sibling tree (any repo without its own `prjxp.yaml`, regardless of name)
+forces a full recursive walk of *all* its files on *every* poll — which can mean the very
+first scan never finishes, especially on slower bind-mounted volumes (Windows Docker
+Desktop). Raise it only if a real project's `prjxp.yaml` sits deeper than 8 levels below
+`./import`.
+
+> **Most effective fix:** mount `./import` as narrowly as possible — point it directly at
+> a directory that contains only the project(s) you want scanned (or a folder of symlinks/
+> junctions to just those projects), rather than an entire drive full of unrelated
+> repositories. The exclude options above help when a broad mount is unavoidable, but a
+> narrow mount avoids the problem altogether and is always faster.
 
 ### Check Status & Manage Projects
 

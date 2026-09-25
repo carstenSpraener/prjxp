@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp.hub;
 
+import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,11 +38,19 @@ public class ImportPoller {
     private final HubProjectRegistry registry;
     private final PipelineOrchestrator orchestrator;
 
+    /** Logs the resolved poll configuration once at startup — the first thing to check when "nothing scans". */
+    @PostConstruct
+    public void logStartupConfig() {
+        log.info("Hub import poller active: importDir={}, projectsRoot={}, pollIntervalMs={}, scanExcludeDirNames={}",
+                props.getImportDir(), props.getProjectsRoot(), props.getPollIntervalMs(), props.getScanExcludeDirNames());
+    }
+
     @Scheduled(fixedDelayString = "${prjxp.hub.poll-interval-ms:5000}")
     public void poll() {
         Path importDir = Path.of(props.getImportDir());
         if (!Files.isDirectory(importDir)) {
-            return; // silently — the directory may not exist yet (e.g. before a volume mount)
+            return; // silently — the directory may not exist yet (e.g. before a volume mount);
+            // HubProjectRegistry.listLiveDirs() logs a throttled warning for this same condition
         }
 
         List<Path> tarFiles;
@@ -80,7 +89,10 @@ public class ImportPoller {
                 .filter(e -> e.getKind() == ProjectEntry.Kind.LIVE)
                 .filter(e -> e.getStatus() == ProjectStatus.IMPORTING)   // freshly discovered — never re-enqueue FAILED
                 .filter(e -> !before.contains(e.getName()))               // not known before this poll — never re-enqueue
-                .forEach(e -> orchestrator.enqueue(e.getName()));
+                .forEach(e -> {
+                    log.info("Discovered new live project '{}' at {} — enqueuing pipeline", e.getName(), e.getRootDir());
+                    orchestrator.enqueue(e.getName());
+                });
     }
 
     private void process(Path tarFile) {

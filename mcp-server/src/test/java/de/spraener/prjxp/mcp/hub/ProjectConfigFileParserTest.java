@@ -156,4 +156,27 @@ class ProjectConfigFileParserTest {
     void markerFileEmptyWhenNoMarkerPresent() {
         assertThat(parser.markerFile(projectDir)).isEmpty();
     }
+
+    // ------------------------------------------------------------------ .prjxp-exclude
+
+    @Test
+    void isExcludedFalseWhenMarkerFileAbsent() {
+        assertThat(parser.isExcluded(projectDir)).isFalse();
+    }
+
+    @Test
+    void isExcludedTrueWhenMarkerFilePresent() throws Exception {
+        Files.writeString(projectDir.resolve(".prjxp-exclude"), "");
+
+        assertThat(parser.isExcluded(projectDir)).isTrue();
+    }
+
+    @Test
+    void isExcludedTrueEvenWhenPrjxpYamlAlsoPresent() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: foo\n");
+        Files.writeString(projectDir.resolve(".prjxp-exclude"), "");
+
+        assertThat(parser.isExcluded(projectDir)).isTrue();
+        assertThat(parser.markerFile(projectDir)).isPresent();   // orthogonal — exclusion wins in the registry
+    }
 }

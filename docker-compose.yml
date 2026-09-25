@@ -10,6 +10,12 @@ services:
     ports:
       - "7007:7007"
     volumes:
+      # IMPORTANT: mount the narrowest directory possible here — only the project(s) you actually
+      # want scanned (or a folder of symlinks/junctions to just those). Pointing this at a whole
+      # "projects" drive with many unrelated repos forces the recursive prjxp.yaml scan to walk
+      # ALL of them on every poll and can mean the first scan never finishes. See
+      # doc/Docker_Setup_Guide.md#excluding-directories-from-the-live-scan for mitigations if a
+      # broad mount is unavoidable.
       - ${PROJECTS_HOME}:/import     # drop tar archives here (e.g. foo.tar)
       - prjxp-projects:/projects
       - prjxp-hub-data:/data
@@ -19,12 +25,18 @@ services:
       LUCENE_VECTOR_DIMENSION: "1024"
       PRJXP_HUB_IMPORT_DIR: /import
       PRJXP_HUB_PROJECTS_ROOT: /projects
+      # Directory names (case-insensitive) the live-scan never walks into. Defaults already cover
+      # .git,.svn,.hg,node_modules.
+      PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES: .git,.svn,.hg,node_modules,branches,tags,.idea,.vs
+      # Safety net for a broad PROJECTS_HOME mount (see comment above): caps recursion depth below
+      # /import so unrelated, marker-less sibling repos can't force an unbounded full-tree walk.
+      PRJXP_HUB_SCAN_MAX_DEPTH: "8"
       SERVER_PORT: "7007"
       # External embedding provider (LM Studio on the host) instead of in-container TEI:
-      EMBEDDING_API_BASE_URL: http://host.docker.internal:1234/v1
-      EMBEDDING_MODEL_NAME: mxbai-embed-large-v1   # must match LUCENE_VECTOR_DIMENSION (1024)
-      SKIP_EMBEDDING_SERVER: "true"
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      # EMBEDDING_API_BASE_URL: http://host.docker.internal:1234/v1
+      # EMBEDDING_MODEL_NAME: mxbai-embed-large-v1   # must match LUCENE_VECTOR_DIMENSION (1024)
+      # SKIP_EMBEDDING_SERVER: "true"
+      # EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
 
 volumes:
   prjxp-data:

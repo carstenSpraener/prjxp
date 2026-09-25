@@ -22,6 +22,13 @@ public class ProjectConfigFileParser {
     private static final Logger log = LoggerFactory.getLogger(ProjectConfigFileParser.class);
     /** Marker file names in precedence order — yaml first. */
     private static final String[] CONFIG_FILE_NAMES = {"prjxp.yaml", "prjxp.yml"};
+    /**
+     * Marker file that tells the live-project scan to never enter a directory (and hence never descend
+     * into its subtree either) — regardless of whether a {@code prjxp.yaml}/{@code .yml} also sits there.
+     * Useful for pruning huge non-project subtrees (e.g. old VCS branch/tag checkouts) directly at the
+     * source, without touching the hub's global {@code prjxp.hub.scan-exclude-dir-names} configuration.
+     */
+    public static final String EXCLUDE_MARKER_FILE_NAME = ".prjxp-exclude";
 
     /** Parses the project's marker file (yaml preferred over yml); missing/empty -> all defaults. Never throws on bad content (log + defaults). */
     public ProjectDefinition parse(Path projectDir, String defaultName) {
@@ -60,6 +67,11 @@ public class ProjectConfigFileParser {
             }
         }
         return Optional.empty();
+    }
+
+    /** True when {@code dir} contains the {@value #EXCLUDE_MARKER_FILE_NAME} exclusion marker file. */
+    public boolean isExcluded(Path dir) {
+        return Files.exists(dir.resolve(EXCLUDE_MARKER_FILE_NAME));
     }
 
     private static ProjectDefinition defaults(String name) {

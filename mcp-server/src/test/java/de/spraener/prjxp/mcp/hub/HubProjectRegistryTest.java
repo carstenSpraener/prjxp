@@ -216,6 +216,120 @@ class HubProjectRegistryTest {
     }
 
     @Test
+    void discoverStopsRecursionAtConfiguredMaxDepth() throws Exception {
+        // Marker sits 4 levels below importDir — with scanMaxDepth=3 the walk must stop one level short.
+        Path tooDeep = importDir.resolve("a").resolve("b").resolve("c").resolve("d");
+        Files.createDirectories(tooDeep);
+        Files.writeString(tooDeep.resolve("prjxp.yaml"), "name: too-deep\n");
+
+        HubProperties shallowProps = new HubProperties();
+        shallowProps.setProjectsRoot(projectsRoot.toString());
+        shallowProps.setImportDir(importDir.toString());
+        shallowProps.setScanMaxDepth(3);
+        HubProjectRegistry shallowRegistry = new HubProjectRegistry(
+                new PrjXPConfig(), shallowProps, daoProvider, luceneStore,
+                mock(EmbeddingModel.class), new ProjectConfigFileParser());
+
+        assertThat(shallowRegistry.discoverProjects()).doesNotContain("too-deep");
+    }
+
+    @Test
+    void discoverFindsMarkerExactlyAtConfiguredMaxDepth() throws Exception {
+        // Marker sits 3 levels below importDir — with scanMaxDepth=3 the walk must still reach it
+        // (the marker check happens before the depth cutoff is applied).
+        Path exact = importDir.resolve("a").resolve("b").resolve("c");
+        Files.createDirectories(exact);
+        Files.writeString(exact.resolve("prjxp.yaml"), "name: exact\n");
+
+        HubProperties shallowProps = new HubProperties();
+        shallowProps.setProjectsRoot(projectsRoot.toString());
+        shallowProps.setImportDir(importDir.toString());
+        shallowProps.setScanMaxDepth(3);
+        HubProjectRegistry shallowRegistry = new HubProjectRegistry(
+                new PrjXPConfig(), shallowProps, daoProvider, luceneStore,
+                mock(EmbeddingModel.class), new ProjectConfigFileParser());
+
+        assertThat(shallowRegistry.discoverProjects()).containsExactly("exact");
+    }
+
+    @Test
+    void discoverSkipsConfiguredExcludeDirNamesEntirely() throws Exception {
+        // A huge sibling subtree (e.g. an old SVN 'branches' checkout) sorts alphabetically before the
+        // real project ('trunk') and has no marker of its own — it must be pruned, not walked.
+        Path noise = importDir.resolve("branches").resolve("very").resolve("deep").resolve("legacy");
+        Files.createDirectories(noise);
+        // A marker planted inside the excluded tree must never surface — proves the prune happens
+        // before the marker check, not just "no marker found here anyway".
+        Files.writeString(noise.resolve("prjxp.yaml"), "name: ghost\n");
+
+        Path real = importDir.resolve("trunk").resolve("ISA").resolve("isa");
+        Files.createDirectories(real);
+        Files.writeString(real.resolve("prjxp.yaml"), "name: isa\n");
+
+        HubProperties propsWithExclude = new HubProperties();
+        propsWithExclude.setProjectsRoot(projectsRoot.toString());
+        propsWithExclude.setImportDir(importDir.toString());
+        propsWithExclude.getScanExcludeDirNames().add("branches");
+        HubProjectRegistry excludingRegistry = new HubProjectRegistry(
+                new PrjXPConfig(), propsWithExclude, daoProvider, luceneStore,
+                mock(EmbeddingModel.class), new ProjectConfigFileParser());
+
+        List<String> discovered = excludingRegistry.discoverProjects();
+
+        assertThat(discovered).containsExactly("isa");
+        assertThat(excludingRegistry.entry("ghost")).isEmpty();
+    }
+
+    @Test
+    void discoverExcludeDirNameMatchIsCaseInsensitive() throws Exception {
+        Path noise = importDir.resolve("BRANCHES");
+        Files.createDirectories(noise);
+        Files.writeString(noise.resolve("prjxp.yaml"), "name: ghost\n");
+
+        HubProperties propsWithExclude = new HubProperties();
+        propsWithExclude.setProjectsRoot(projectsRoot.toString());
+        propsWithExclude.setImportDir(importDir.toString());
+        propsWithExclude.getScanExcludeDirNames().add("branches");
+        HubProjectRegistry excludingRegistry = new HubProjectRegistry(
+                new PrjXPConfig(), propsWithExclude, daoProvider, luceneStore,
+                mock(EmbeddingModel.class), new ProjectConfigFileParser());
+
+        assertThat(excludingRegistry.discoverProjects()).isEmpty();
+    }
+
+    // ------------------------------------------------------------------ .prjxp-exclude marker file
+
+    @Test
+    void discoverIgnoresDirectoryWithExcludeMarkerFile() throws Exception {
+        Path excluded = liveDir("legacy-branch");
+        Files.writeString(excluded.resolve("prjxp.yaml"), "name: ghost\n");
+        Files.writeString(excluded.resolve(".prjxp-exclude"), "");
+
+        assertThat(registry.discoverProjects()).isEmpty();
+        assertThat(registry.entry("ghost")).isEmpty();
+    }
+
+    @Test
+    void discoverIgnoresExcludeMarkerSubtreeEntirely() throws Exception {
+        // .prjxp-exclude on a parent must prune the whole subtree — a marker deeper inside never surfaces.
+        Path excludedParent = importDir.resolve("branches");
+        Files.createDirectories(excludedParent);
+        Files.writeString(excludedParent.resolve(".prjxp-exclude"), "");
+        Path nestedProject = excludedParent.resolve("old-copy").resolve("isa");
+        Files.createDirectories(nestedProject);
+        Files.writeString(nestedProject.resolve("prjxp.yaml"), "name: ghost\n");
+
+        Path real = importDir.resolve("trunk").resolve("isa");
+        Files.createDirectories(real);
+        Files.writeString(real.resolve("prjxp.yaml"), "name: isa\n");
+
+        List<String> discovered = registry.discoverProjects();
+
+        assertThat(discovered).containsExactly("isa");
+        assertThat(registry.entry("ghost")).isEmpty();
+    }
+
+    @Test
     void nestedMarkerInsideLiveProjectIsNotDiscoveredSeparately() throws Exception {
         Path mono = importDir.resolve("mono");
         Files.createDirectories(mono);

@@ -162,7 +162,13 @@ tar czf import/my-project.tar my-project/       # triggers the import
 
 Alternatively, mount a directory of live projects and drop a `prjxp.yaml` marker
 into any project — it is embedded in place (no tar needed) and refreshed with
-`POST /prjxp/projects/{name}/reindex`.
+`POST /prjxp/projects/{name}/reindex`. A `.prjxp-exclude` marker file has the
+opposite effect: it makes the hub ignore that directory (and its whole subtree)
+entirely — handy for pruning huge non-project folders (e.g. old VCS branches)
+out of the recursive scan. **Tip:** mount the narrowest possible directory as
+`./import` — a broad mount (e.g. an entire projects drive) forces every poll to
+recursively walk *all* sibling repos, which can make discovery take minutes or
+longer; `prjxp.hub.scan-max-depth` caps this as a safety net.
 
 Projects appear in the web UI (`http://localhost:7008/`) with their lifecycle
 status — `importing → chunking → embedding → ready` — and are only searchable
