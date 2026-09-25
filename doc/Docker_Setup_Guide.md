@@ -25,6 +25,10 @@ This guide explains how to set up **prjxp** as a project-expert MCP server using
 - **Docker** installed and running
 - **Git** for cloning the repository
 - A source code project you want to index (e.g., your own Java/TypeScript project)
+- **Apple Silicon (M-series Macs):** the image is built for `linux/amd64` (the embedded TEI
+  embedding server only ships an x86_64 build) and runs via **Rosetta** — make sure
+  "Use Rosetta for x86_64/amd64 emulation on Apple Silicon" is enabled in Docker Desktop
+  settings (on by default). Expect some embedding throughput loss vs. a native arm64 build.
 
 ---
 

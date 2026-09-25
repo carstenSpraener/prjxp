@@ -1,7 +1,11 @@
 services:
   mcp-server:
     image: prjxp
-    build: .
+    # The TEI base image is amd64-only — pin the platform (runs via Rosetta on Apple Silicon)
+    platform: linux/amd64
+    build:
+      context: .
+      platforms: [linux/amd64]
     ports:
       - "7007:7007"
     volumes:
@@ -18,12 +22,16 @@ services:
 
   hub:
     image: prjxp
-    build: .
+    # The TEI base image is amd64-only — pin the platform (runs via Rosetta on Apple Silicon)
+    platform: linux/amd64
+    build:
+      context: .
+      platforms: [linux/amd64]
     command: ["hub"]
     ports:
       - "7008:7007"          # hub on 7008 so it can run alongside the single-project service
     volumes:
-      - ./import:/import     # drop tar archives here (e.g. foo.tar)
+      - /Users/casi/Projekte:/import     # drop tar archives here (e.g. foo.tar)
       - prjxp-projects:/projects
       - prjxp-hub-data:/data
     environment:
