@@ -20,7 +20,6 @@ services:
       - prjxp-projects:/projects
       - prjxp-hub-data:/data
     environment:
-      EMBEDDING_STORE_TYPE: lucene
       LUCENE_INDEX_PATH: /data/lucene-index
       LUCENE_VECTOR_DIMENSION: "1024"
       PRJXP_HUB_IMPORT_DIR: /import

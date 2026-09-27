@@ -47,7 +47,7 @@ public class PxChunkDaoProvider implements Function<Predicate<PrjXPEmbeddingStor
     public String getModelName(String prjName) {
         for( var  chunkDao : chunkDaos ) {
             if( chunkDao.getStoreReference().getProjectName().equals(prjName) ) {
-                return chunkDao.getStoreReference().getDbName();
+                return chunkDao.getStoreReference().getProjectName();
             }
         }
         return "default";

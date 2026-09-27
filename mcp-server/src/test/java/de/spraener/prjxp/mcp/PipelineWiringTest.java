@@ -21,8 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * but no CLI runner from those modules fires.
  */
 @SpringBootTest(properties = {
-        "prjxp.cli.enabled=false",
-        "prjxp.embedding-store-type=lucene"
+        "prjxp.cli.enabled=false"
 })
 class PipelineWiringTest {
 

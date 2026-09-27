@@ -45,8 +45,6 @@ langchain4j-tika-docparser = { group = "dev.langchain4j", name = "langchain4j-do
 langchain4j-pdf-docparser = { group = "dev.langchain4j", name = "langchain4j-document-parser-apache-pdfbox", version.ref = "langchain4j-beta"}
 langchain4j-mcp = { group = "dev.langchain4j", name = "langchain4j-mcp", version.ref = "langchain4j-beta"}
 
-# Sonderfall: Chroma hat ein eigenes Version Suffix
-langchain4j-chroma = { group = "dev.langchain4j", name = "langchain4j-chroma", version.ref = "langchain4j-beta" }
 langchain4j-google-ai-gemini = { group = "dev.langchain4j", name = "langchain4j-google-ai-gemini", version.ref = "langchain4j" }
 
 # Utilities
@@ -83,7 +81,7 @@ conversion=["pdfbox", "xdocreport", "flexmark", "jsoup"]
 # Standard Testing Stack
 test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
 # Ein Bundle für LangChain4j spart Platz im Build-Script
-langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-chroma", "langchain4j-google-ai-gemini", "langchain4j-openai", "langchain4j-mcp"]
+langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-google-ai-gemini", "langchain4j-openai", "langchain4j-mcp"]
 langchain-docparser = ["langchain4j-tika-docparser", "langchain4j-pdf-docparser"]
 
 spring-ai = ["spring-ai-mcp-server"]

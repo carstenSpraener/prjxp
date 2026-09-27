@@ -11,8 +11,6 @@ prjxp:
       tibedResetStore: true
 
   # Embedding model type: ollama or open_ai
-  # Embedding store type: lucene or chroma
-  embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
   embeddingStoreLucene:
     indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
@@ -26,10 +24,6 @@ prjxp:
 
   embeddingStores:
     - projectName: cwd
-      providerUrl: http://localhost:8000
-      tenant: prjxp
-      dbName: prjxp
-      collectionName: prjxp-src
       isDefault: true
 
 mcp:

@@ -78,7 +78,6 @@ prjxp:
     modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
 
   # Vector store: Lucene (local, no external DB)
-  embeddingStoreType: ${EMBEDDING_STORE_TYPE:lucene}
   embeddingStoreLucene:
     indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
@@ -101,7 +100,6 @@ The control script also copies `.env.example` to `.env` on first run. Verify the
 
 ```bash
 PRJXP_ROOT_DIR=/app-source
-EMBEDDING_STORE_TYPE=lucene
 EMBEDDING_API_BASE_URL=http://localhost:80/v1
 EMBEDDING_MODEL_NAME=mixedbread-ai/mxbai-embed-large-v1
 LUCENE_INDEX_PATH=.prjxp-data/lucene-index
@@ -287,9 +285,9 @@ server on 7007) and mounts:
 | named volume `prjxp-projects` → `/projects` | Extracted project directories (persistent) |
 | named volume `prjxp-hub-data` → `/data` | Shared Lucene index (persistent) |
 
-The hub requires the Lucene store type — already set in `docker-compose.yml`
-(`EMBEDDING_STORE_TYPE=lucene`). All projects share one index; chunks are
-stamped with their project name.
+The hub uses the Lucene index unconditionally (no store-type switch since the
+LuceneOnlyStorage cleanup). All projects share one index; chunks are stamped
+with their project name.
 
 ### Using an External Embedding Provider (e.g. LM Studio)
 

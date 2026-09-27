@@ -1,7 +1,7 @@
 # Software Architecture Assessment: Golden Retriever (Code-Aware RAG System)
 
 ## 1. Executive Summary
-The "Golden Retriever" project is a Retrieval-Augmented Generation (RAG) framework specifically designed for source code analysis and documentation. It leverages vector databases (ChromaDB) and Large Language Models (LLMs) to provide context-aware answers regarding Java and TypeScript codebases.
+The "Golden Retriever" project is a Retrieval-Augmented Generation (RAG) framework specifically designed for source code analysis and documentation. It leverages a local Lucene vector index and Large Language Models (LLMs) to provide context-aware answers regarding Java and TypeScript codebases.
 
 **Current State:** The architecture follows a modular, service-oriented approach using Spring Boot. It successfully abstracts the complexity of vector search and hierarchical code reconstruction. However, it suffers from significant code duplication across language-specific implementations and exhibits tight coupling between data models and prompt-building logic.
 
@@ -14,14 +14,14 @@ The "Golden Retriever" project is a Retrieval-Augmented Generation (RAG) framewo
 *   **Strategy Pattern:** Extensively used for language-specific retrieval (`GoldenRetriever` interface) and ranking (`ChunkRankingStrategy`). This allows the system to support new languages by adding new strategy implementations.
 *   **Session-Based Prompt Construction:** The system uses "Session" objects to maintain state during the multi-step process of retrieving chunks, building a tree hierarchy, and formatting the final prompt.
 *   **Event-Driven Communication:** Utilizes Spring's `ApplicationEventPublisher` for post-processing tasks, such as logging generated JavaDoc via `JavaDocGeneratedEvent`.
-*   **Data Access Object (DAO):** The `PxChunkDao` provides an abstraction over the underlying vector store (LangChain4j/ChromaDB), separating search logic from business logic.
+*   **Data Access Object (DAO):** The `PxChunkDao` provides an abstraction over the underlying vector store (Lucene), separating search logic from business logic.
 
 ## 3. Quality Attribute Evaluation
 
 ### Maintainability & Readability
 *   **Adherence to SOLID:** The project follows the Open/Closed principle for retrievers and rankers. However, it fails the Single Responsibility Principle (SRP) in classes like `JavaDocEnricher`, which handles file I/O, parsing, LLM orchestration, and rate limiting.
 *   **Naming Conventions:** Generally follow standard Java/Spring idioms.
-*   **Cleanliness:** The presence of commented-out code, `TODO` markers in `ChromaDBPxChunkDao`, and inconsistent use of `Optional` (calling `.get()` directly) reduces maintainability.
+*   **Cleanliness:** The presence of commented-out code, `TODO` markers in `LucenePxChunkDao`, and inconsistent use of `Optional` (calling `.get()` directly) reduces maintainability.
 
 ### Extensibility
 *   **LLM Providers:** High. LangChain4j integration makes switching models relatively easy.

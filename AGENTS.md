@@ -14,7 +14,7 @@ Gradle multi-project with version catalog (`gradle/libs.versions.toml`). Modules
 
 - **prjxp-common** – shared `PxChunk` data model and utilities; dependency of all other modules.
 - **chunk-norris** – CLI chunking framework; outputs JSONL. Extensible via Java SPI (`META-INF/services/de.spraener.chuno.ChunkerBroker`). Main class: `de.spraener.prjxp.chuno.ChunkNorris`.
-- **tibed** – batch embedding engine; reads chunk-norris JSONL, writes to ChromaDB.
+- **tibed** – batch embedding engine; reads chunk-norris JSONL, writes to the Lucene index.
 - **golden-retriever** – RAG engine with `JavaCodeRetriever`, forest-of-trees enrichment, veto system.
 - **mcp-server** – Spring AI MCP server (WebMVC).
 - **docpipe** – document processing pipeline.

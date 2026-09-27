@@ -235,7 +235,7 @@ class SymbolReaderServiceTest {
         when(projectRegistry.resolve("p")).thenReturn("p");
         when(chunkDaoProvider.get("p")).thenReturn(Optional.of(dao));
         when(dao.searchByIndex(anyMap(), anyInt()))
-                .thenThrow(new UnsupportedOperationException("chroma store"));
+                .thenThrow(new UnsupportedOperationException("unsupported vector store"));
 
         SymbolReadResult result = service.readBySignature("bar", null, "p");
 

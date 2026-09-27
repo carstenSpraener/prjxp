@@ -90,13 +90,12 @@ class PxChunkDaoProviderTest {
     }
 
     @Test
-    void getModelNameReturnsDbNameOfMatchingDao() {
+    void getModelNameReturnsProjectNameOfMatchingDao() {
         PrjXPEmbeddingStoreReference ref = ref("alpha", false);
-        ref.setDbName("alpha-db");
 
         PxChunkDaoProvider provider = new PxChunkDaoProvider(List.of(dao(ref)));
 
-        assertThat(provider.getModelName("alpha")).isEqualTo("alpha-db");
+        assertThat(provider.getModelName("alpha")).isEqualTo("alpha");
     }
 
     @Test

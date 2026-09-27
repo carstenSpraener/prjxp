@@ -253,13 +253,13 @@ Files.walk(Paths.get("src"))
     .filter(path -> PxFileType.TYPESCRIPT_CODE.matches(path.toFile()))
     .forEach(path -> {
         Stream<PxChunk> chunks = chunker.chunk(path.toFile());
-        // Speicher in ChromaDB
+        // Speicher in Lucene
     });
 ```
 
 ### 2. Vector-Search
 ```java
-List<PxChunk> results = chromaDB.search("how to initialize component", topK=5);
+List<PxChunk> results = lucene.search("how to initialize component", topK=5);
 ```
 
 ### 3. Prompt-Building

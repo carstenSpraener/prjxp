@@ -45,7 +45,6 @@ class LucenePxChunkDaoTest {
 
         storeReference = new PrjXPEmbeddingStoreReference();
         storeReference.setProjectName("test-project");
-        storeReference.setCollectionName("test-collection");
 
         dao = new LucenePxChunkDao(store, embeddingModel, storeReference);
 

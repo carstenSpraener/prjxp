@@ -17,7 +17,7 @@ Ein strikterer Request (0.93) liefert also *mehr* Output als ein lockerer (0.92)
 ```text
 PrjxpMcpTool.vectorSearch (mcp-server)
   → GRPromptEnrichment.enrich: do { findRelevant(minScore); alle Retriever; } while (Kontext leer)
-  → ChromaDBPxChunkDao.findRelevant: top-N aus Chroma, dann Client-Cutoff score ≥ minScore
+  → LucenePxChunkDao.findRelevant: top-N aus dem Index, dann Client-Cutoff score ≥ minScore
   → JavaPromptSession: Parent-Kette → Chunk-Bäume, rootRank pro Baum
   → buildPrompt: Bäume nach rootRank sortiert, Rank-0-Veto (break), 50k-Budget (break)
   → JavaPromptModifier: „## Hier ein Rumpf" + Skeleton, getreffene Methods → Body-Splice
@@ -30,7 +30,7 @@ Relevante Dateien:
 | MCP-Tool, Parameter-Clamping | `mcp-server/src/main/java/de/spraener/prjxp/mcp/PrjxpMcpTool.java` |
 | Enrichment-Loop, Re-Iteration | `golden-retriever/src/main/java/de/spraener/prjxp/gldrtrvr/enrichment/GRPromptEnrichment.java` |
 | Suchparameter | `golden-retriever/src/main/java/de/spraener/prjxp/gldrtrvr/enrichment/SearchParams.java` |
-| Chroma-Query (top-N + Cutoff) | `golden-retriever/src/main/java/de/spraener/prjxp/gldrtrvr/chunks/ChromaDBPxChunkDao.java` |
+| Lucene-Query (top-N + Cutoff) | `lucene-store/src/main/java/de/spraener/prjxp/lucene/LucenePxChunkDao.java` |
 | Score-Verwurf | `golden-retriever/src/main/java/de/spraener/prjxp/gldrtrvr/chunks/TextSegment2PxChunkConverter.java` |
 | Typ-basiertes Ranking | `golden-retriever/src/main/java/de/spraener/prjxp/gldrtrvr/code/java/JavaChunkRanker.java` |
 | Baum-Aufbau, Veto, Budget | `golden-retriever/src/main/java/de/spraener/prjxp/gldrtrvr/code/java/JavaPromptSession.java` |
@@ -88,8 +88,8 @@ Relevante Dateien:
 
 ### P6 – Top-N-Fenster vergrößern / konfigurierbar machen
 
-- **Problem:** `ChromaDBPxChunkDao` holt top-N (MCP: 20) und filtert client-seitig per Cutoff. Liegen mehr als N Treffer über der Schwelle, gehen sie **still** verloren.
-- **Änderung:** Fenster konfigurierbar (z. B. Default 50); Chroma liefert das günstig.
+- **Problem:** `LucenePxChunkDao` holt top-N (MCP: 20) und filtert client-seitig per Cutoff. Liegen mehr als N Treffer über der Schwelle, gehen sie **still** verloren.
+- **Änderung:** Fenster konfigurierbar (z. B. Default 50); Lucene liefert das günstig.
 - **Effekt:** Kein stiller Verlust bei vielen relevanten Chunks (z. B. nach dem embeddingPrefix-Experiment, das mehr Chunks in die Score-Bänder bringt).
 - **Aufwand:** trivial.
 

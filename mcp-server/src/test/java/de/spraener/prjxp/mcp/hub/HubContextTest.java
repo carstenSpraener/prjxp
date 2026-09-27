@@ -20,8 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  */
 @SpringBootTest(properties = {
         "prjxp.hub.enabled=true",
-        "prjxp.cli.enabled=false",
-        "prjxp.embedding-store-type=lucene"
+        "prjxp.cli.enabled=false"
 })
 class HubContextTest {
 

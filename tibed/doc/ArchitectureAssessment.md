@@ -13,16 +13,16 @@ The TiBed project is a Spring Boot-based CLI application designed to process tex
 **Critical Risks:**
 - **Security:** Hardcoded database credentials ("root" with no password) and lack of sensitive data externalization.
 - **Resource Management:** Manual JDBC connection handling without pooling or proper lifecycle management.
-- **Implementation Gaps:** The custom `MySqlEmbeddingStore` provides a partial and potentially dangerous implementation of the `EmbeddingStore` interface (e.g., `removeAll` ignores filters and performs a `TRUNCATE`).
+- **Implementation Gaps (resolved):** The former JDBC-based custom store provided a partial and potentially dangerous implementation of the `EmbeddingStore` interface (e.g., `removeAll` ignored filters and performed a `TRUNCATE`) — removed with the LuceneOnlyStorage cleanup.
 
 ## 2. Architectural Style & Patterns
 - **Spring Boot Idiomatic:** The project utilizes standard Spring annotations (`@Service`, `@Configuration`, `@Bean`) for lifecycle management and dependency injection.
-- **Strategy Pattern:** By using the `EmbeddingStore` and `EmbeddingModel` interfaces, the system can switch between different vector databases (Chroma vs. MySQL) and LLM providers (Ollama) with minimal impact on business logic.
+- **Strategy Pattern:** By using the `EmbeddingStore` and `EmbeddingModel` interfaces, the system abstracts the vector store (Lucene) and LLM providers (Ollama) with minimal impact on business logic.
 - **Layered CLI Architecture:**
     - **Entry Point:** `TiBedCliApp` (Bootstrap and Runner).
     - **Orchestration Layer:** `EmbeddingService` (Workflow control).
     - **Logic Layer:** `LangChain4JEmbedderImpl` (Transformation and execution).
-    - **Infrastructure Layer:** `EmbeddingStoreSupplier` and `MySqlEmbeddingStore` (Data access).
+    - **Infrastructure Layer:** `EmbeddingStoreSupplier` and the shared `LuceneEmbeddingStore` (Data access).
 
 ## 3. Quality Attribute Evaluation
 
@@ -38,12 +38,12 @@ The TiBed project is a Spring Boot-based CLI application designed to process tex
 ### Robustness & Error Handling
 - **Moderate to Low:** 
     - The application uses `try-catch` blocks that log errors but often wrap them in generic `RuntimeException`.
-    - `MySqlEmbeddingStore` throws `UnsupportedOperationException` for several interface methods, which could lead to runtime crashes if the LangChain4j core library attempts to use them.
+    - **Resolved:** The former JDBC-based store threw `UnsupportedOperationException` for several interface methods — the class was removed with the LuceneOnlyStorage cleanup.
     - `needsEmbedding` relies on a "dummy embedding" of a fixed size (1024), which is brittle if the underlying model changes.
 
 ### Performance & Resource Efficiency
 - **Bottlenecks:** `LangChain4JEmbedderImpl` contains a `synchronized (storeSupplier)` block. This effectively serializes database writes across the entire application, which will severely limit throughput during large-scale ingestions.
-- **Resource Leaks:** The JDBC `Connection` in `MySqlEmbeddingStore` is passed via constructor and never explicitly closed, nor is it managed by a connection pool (like HikariCP).
+- **Resource Leaks (resolved):** The JDBC `Connection` in the former custom store was passed via constructor without pooling or lifecycle management — removed with the LuceneOnlyStorage cleanup.
 
 ## 4. Strengths & Best Practices
 - **Decoupling:** The use of `PxChunk2TextSegmentConverter` ensures that the internal data model is not leaked into the LangChain4j integration logic.
@@ -53,9 +53,9 @@ The TiBed project is a Spring Boot-based CLI application designed to process tex
 
 ## 5. Identified Risks & Technical Debt
 - **Hardcoded Credentials:** `DriverManager.getConnection(ref.getProviderUrl(), "root", "")` in `EmbeddingStoreSupplier` is a critical security vulnerability.
-- **Inconsistent `removeAll` Logic:** In `MySqlEmbeddingStore`, the `removeAll(Filter filter)` method ignores the provided filter and executes a `TRUNCATE TABLE`. This is a destructive anti-pattern that violates the contract of the interface.
+- **Inconsistent `removeAll` Logic (resolved):** The former JDBC-based store ignored the provided filter in `removeAll(Filter)` and executed a `TRUNCATE TABLE` — removed with the LuceneOnlyStorage cleanup.
 - **Manual JDBC Handling:** Using `DriverManager` and manual `PreparedStatement` management is outdated. It lacks connection pooling, automatic reconnection, and transaction management.
-- **Little-Endian Hardcoding:** The vector conversion in `MySqlEmbeddingStore` uses `ByteOrder.LITTLE_ENDIAN` with a comment about "PHP compatibility." This introduces a hidden dependency on external system requirements within the persistence layer.
+- **Little-Endian Hardcoding (resolved):** The vector conversion in the former JDBC-based store used `ByteOrder.LITTLE_ENDIAN` with a comment about "PHP compatibility" — removed with the LuceneOnlyStorage cleanup.
 - **Synchronized Block:** Synchronizing on a `Supplier` service is architecturally "smelly" and indicates a lack of thread-safe design in the underlying store implementation.
 
 ## 6. Actionable Recommendations
@@ -65,9 +65,7 @@ The TiBed project is a Spring Boot-based CLI application designed to process tex
     - Implement a proper connection pool (HikariCP, which is default in Spring Boot).
 2.  **Externalize Secrets:**
     - Remove hardcoded "root" credentials. Use Spring's `@Value` or `@ConfigurationProperties` to pull credentials from `application.properties` or environment variables.
-3.  **Fix Store Logic:**
-    - Update `MySqlEmbeddingStore.removeAll(Filter filter)` to actually respect the filter (e.g., convert the LangChain4j `Filter` to a SQL `WHERE` clause).
-    - Implement the missing `add` and `addAll` methods to ensure full compatibility with the LangChain4j ecosystem.
+3.  **Fix Store Logic (resolved):** The former JDBC-based store was removed with the LuceneOnlyStorage cleanup — its open issues (filter-ignoring `removeAll`, missing `add`/`addAll`) are moot.
 4.  **Improve Concurrency:**
     - Remove the `synchronized` block in `LangChain4JEmbedderImpl`. If the database requires serialized writes, handle this at the datasource level or via a dedicated task queue.
 5.  **Enhance Robustness:**
@@ -77,4 +75,3 @@ The TiBed project is a Spring Boot-based CLI application designed to process tex
     - Refactor `EmbeddingStoreSupplier` to be a true Factory. Move the logic for creating specific store instances into separate Factory classes or specialized Spring Profiles.
 
 _This document was generated with .dp and gemini-3-flash-preview_
-

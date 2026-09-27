@@ -10,17 +10,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
-import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 /**
- * Phase 01 (DockerHub): with a shared {@link LuceneEmbeddingStore} bean present
- * (hub / auto-config), the supplier must reuse it — never open a second IndexWriter
- * on the same index dir. Without one, it falls back to creating its own store.
+ * Lucene-only supplier (LuceneOnlyStorage Phase 02): with a shared {@link LuceneEmbeddingStore}
+ * bean present (hub / auto-config), the supplier must reuse it — never open a second IndexWriter
+ * on the same index dir. Without one, it creates its own store from the lucene config —
+ * no project definition or store reference lookup anymore.
  */
 class EmbeddingStoreSupplierSharedLuceneTest {
 
@@ -36,19 +35,17 @@ class EmbeddingStoreSupplierSharedLuceneTest {
         }
     }
 
-    private PrjXPConfig cfg(PrjXPConfig.EmbeddingStoreType type) {
-        PrjXPConfig cfg = mock(PrjXPConfig.class);
-        when(cfg.getEmbeddingStoreType()).thenReturn(type);
-        return cfg;
+    private PrjXPConfig cfg() {
+        return mock(PrjXPConfig.class);
     }
 
     @Test
-    void luceneTypeWithSharedBeanReturnsTheSharedStore() {
+    void withSharedBeanReturnsTheSharedStore() {
         sharedStore = new LuceneEmbeddingStore(tempDir.resolve("shared-index"), 8);
         org.springframework.beans.factory.ObjectProvider<LuceneEmbeddingStore> shared = mock(org.springframework.beans.factory.ObjectProvider.class);
         when(shared.getIfAvailable()).thenReturn(sharedStore);
 
-        EmbeddingStoreSupplier supplier = new EmbeddingStoreSupplier(cfg(PrjXPConfig.EmbeddingStoreType.LUCENE), shared);
+        EmbeddingStoreSupplier supplier = new EmbeddingStoreSupplier(cfg(), shared);
 
         EmbeddingStore<TextSegment> store = supplier.getStore("any-project");
 
@@ -57,11 +54,11 @@ class EmbeddingStoreSupplierSharedLuceneTest {
     }
 
     @Test
-    void luceneTypeWithoutSharedBeanCreatesOwnStore() {
+    void withoutSharedBeanCreatesOwnStoreFromLuceneConfig() {
         org.springframework.beans.factory.ObjectProvider<LuceneEmbeddingStore> shared = mock(org.springframework.beans.factory.ObjectProvider.class);
         when(shared.getIfAvailable()).thenReturn(null);
 
-        PrjXPConfig cfg = cfg(PrjXPConfig.EmbeddingStoreType.LUCENE);
+        PrjXPConfig cfg = cfg();
         PrjXPConfig.LuceneEmbeddingStoreConfig lc = mock(PrjXPConfig.LuceneEmbeddingStoreConfig.class);
         when(lc.getIndexPath()).thenReturn(tempDir.resolve("own-index").toString());
         when(lc.getVectorDimension()).thenReturn(8);
@@ -76,15 +73,20 @@ class EmbeddingStoreSupplierSharedLuceneTest {
     }
 
     @Test
-    void nonLuceneTypeStillResolvesProjectDefinition() {
-        PrjXPConfig cfg = cfg(PrjXPConfig.EmbeddingStoreType.CHROMA);
-        when(cfg.getProjectDefinition("nope")).thenReturn(Optional.empty());
+    void getStoreNoLongerRequiresProjectDefinition() {
         org.springframework.beans.factory.ObjectProvider<LuceneEmbeddingStore> shared = mock(org.springframework.beans.factory.ObjectProvider.class);
+        when(shared.getIfAvailable()).thenReturn(null);
+
+        PrjXPConfig cfg = cfg();
+        PrjXPConfig.LuceneEmbeddingStoreConfig lc = new PrjXPConfig.LuceneEmbeddingStoreConfig();
+        lc.setIndexPath(tempDir.resolve("own-index-2").toString());
+        lc.setVectorDimension(8);
+        when(cfg.getEmbeddingStoreLucene()).thenReturn(lc);
 
         EmbeddingStoreSupplier supplier = new EmbeddingStoreSupplier(cfg, shared);
 
-        assertThatThrownBy(() -> supplier.getStore("nope"))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("No project definition for 'nope'");
+        // Unknown project name must NOT throw — the single shared index needs no per-project lookup.
+        assertThat(supplier.getStore("nope")).isInstanceOf(LuceneEmbeddingStore.class);
+        supplier.destroy();
     }
 }

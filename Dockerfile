@@ -56,7 +56,6 @@ VOLUME /app-source/.prjxp-data/lucene-index
 ENV SPRING_CONFIG_LOCATION=file:/app/
 
 # Konfiguration via Environment Variables (wie in application.yaml referenziert)
-ENV EMBEDDING_STORE_TYPE=lucene
 ENV LUCENE_INDEX_PATH=.prjxp-data/lucene-index
 ENV LUCENE_VECTOR_DIMENSION=1024
 
