@@ -18,7 +18,7 @@ public class EmbeddingModelConfig {
     public EmbeddingModel embeddingModel(PrjXPConfig cfg) {
 
         if( cfg.getEmbedding().getType() == PrjXPConfig.EmbeddingModelType.OPEN_AI) {
-            log.info("Using Open-AI compatible embedding provider " + cfg.getEmbeddingApiBaseURL());
+            log.info("Using Open-AI compatible embedding provider " + cfg.getEmbedding().getApiBaseURL() + " with model " + cfg.getEmbedding().getModelName());
             PrjXPConfig.EmbeddingConfig ebCfg = cfg.getEmbedding();
             return OpenAiEmbeddingModel.builder()
                     .apiKey(ebCfg.getApiKey())
@@ -28,7 +28,7 @@ public class EmbeddingModelConfig {
                     .build()
                     ;
         }
-        log.info("Using Ollama embedding model at " + cfg.getEmbeddingOllamaUrl());
+        log.info("Using Ollama embedding model at " + cfg.getEmbeddingOllamaUrl() + " with model " + cfg.getEmbeddingModelName());
         return OllamaEmbeddingModel.builder()
                 .baseUrl(cfg.getEmbeddingOllamaUrl())
                 .modelName(cfg.getEmbeddingModelName())
