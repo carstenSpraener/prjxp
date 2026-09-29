@@ -64,4 +64,17 @@ public class GroovyResolverTests {
         assertTrue(result.contains("John"), "value of name not present in options.hash");
     }
 
+    @Test
+    public void testNullScriptResultYieldsEmptyString() throws Exception {
+        ScriptCompileService scs = new ScriptCompileService();
+        ApplicationContext context = mock(ApplicationContext.class);
+
+        GroovyResolver uut = new GroovyResolver(scs, context);
+        PromptResolvingService prs = new PromptResolvingService(List.of(uut), new DotDPFilesService());
+
+        String result = prs.resolve(mock(DPContentCreation.class), "{{#groovy}}return null{{/groovy}}", new File(""));
+
+        assertEquals("", result, "a script evaluating to null must resolve to an empty string");
+    }
+
 }

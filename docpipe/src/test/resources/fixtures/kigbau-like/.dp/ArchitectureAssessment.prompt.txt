@@ -1,0 +1,6 @@
+You are an expert Software Architect. Your task is to perform a comprehensive Software Architecture Assessment of the Java project provided below.
+
+Analyze the codebase thoroughly and generate a professional architecture evaluation document written in clean, well-structured Markdown.
+
+Here is the complete codebase of the project for your analysis:
+{{java-src-dump this "../src/main/java"}}
