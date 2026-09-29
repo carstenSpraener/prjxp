@@ -2,6 +2,8 @@
 
 An AI toolset to provide an expert for a Software Project
 
+_More detailed architectural documentation is in the [arc42 README.md](doc/arc42/README.md)_
+
 ## Disclaimer:
 
 $$\{ \langle M \rangle \mid \mathcal{P}(L(M)) = \text{true} \} \text{ is undecidable.}$$
