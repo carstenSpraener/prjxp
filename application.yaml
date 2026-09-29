@@ -1,68 +1,27 @@
 prjxp:
-  # which project to work on if none is on command line.
-  activeProject: "cwd"
-
-  projects:
-    - name: cwd
-      rootDir: .
-      jsonlFile: "px-chunks.jsonl"
-      chunoWhiteList: "java,ts,cs,vb"
-      tibedBatchSize: 32
-      tibedResetStore: true
 
   # Embedding model type: ollama or open_ai
   embeddingStoreLucene:
     indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
-    name: isa
+    name: lucene
 
-  mcp-servers:
-    - name: "filesystem-mcp"
-      type: "stdio"
-      command: "npx"
-      args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
+#  mcp-servers:
+#    - name: "filesystem-mcp"
+#      type: "stdio"
+#      command: "npx"
+#      args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
 
   embedding:
     type: "OPEN_AI"
-    apiBaseURL: "http://localhost:11435/v1"
-    modelName: "mxbai-embed-large-v1"
+    apiBaseURL: ${PRJXP_EMBEDDING_API_BASE_URL:http://localhost:1234/v1}
+    modelName: ${PRJXP_EMBEDDING_MODEL_NAME:mxbai-embed-large-v1}
     timeout: 20
     apiKey: ${EMBEDDING_API_KEY}
 
   embeddingStores:
     - projectName: cwd
       isDefault: true
-
-
-  chatModels:
-    - stereoType: documentation
-      serverType: lm-studio
-      modelName: gemma-4-31b-it-mlx
-      providerUrl: http://localhost:1234/v1
-      timeoutSecs: 600
-
-    - stereoType: javadoc
-      modelName: qwen3.6-27b-ud-mlx
-      providerUrl: http://localhost:1234/v1
-      serverType: lm-studio
-      timeoutSecs: 600
-
-    - stereoType: faq
-      modelName: gemma-4-31b-it-mlx
-      providerUrl: http://localhost:1234/v1
-      serverType: lm-studio
-      timeoutSecs: 600
-
-    - stereotype: detailed
-      modelName: gemini-3-flash-preview
-      serverType: gemini
-      timeoutSecs: 240
-
-    - stereoType: embedding
-      serverType: lm-studio
-      providerUrl: http://localhost:1234/v1
-      modelName: mxbai-embed-large
-      timeoutSecs: 60
 
 mcp:
   cors:

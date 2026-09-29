@@ -81,7 +81,7 @@ public class EmbeddingService {
                     .filter( c -> needsEmbedding(store, projectName, c))
                     .toList()
             );
-            log.info("Embedded batch of " + chunks.length + " chunks");
+            log.info("Embedded batch of " + chunks.length + " chunks for project "+projectName);
         } catch (Exception e) {
             logService.error(e, "Embedding of chunk batch failed: %s", e.getMessage());
         }

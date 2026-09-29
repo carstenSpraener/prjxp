@@ -1,11 +1,8 @@
 services:
    hub:
     image: prjxp
-    # The TEI base image is amd64-only — pin the platform (runs via Rosetta on Apple Silicon)
-    platform: linux/amd64
     build:
       context: .
-      platforms: [linux/amd64]
     command: ["hub"]
     ports:
       - "7007:7007"
@@ -32,10 +29,10 @@ services:
       PRJXP_HUB_SCAN_MAX_DEPTH: "8"
       SERVER_PORT: "7007"
       # External embedding provider (LM Studio on the host) instead of in-container TEI:
-      # EMBEDDING_API_BASE_URL: http://host.docker.internal:1234/v1
-      # EMBEDDING_MODEL_NAME: mxbai-embed-large-v1   # must match LUCENE_VECTOR_DIMENSION (1024)
-      # SKIP_EMBEDDING_SERVER: "true"
-      # EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      PRJXP_EMBEDDING_API_BASE_URL: http://host.docker.internal:1234/v1
+      PRJXP_EMBEDDING_MODEL_NAME: mxbai-embed-large-v1   # must match LUCENE_VECTOR_DIMENSION (1024)
+      SKIP_EMBEDDING_SERVER: "true"
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
 
 volumes:
   prjxp-data:

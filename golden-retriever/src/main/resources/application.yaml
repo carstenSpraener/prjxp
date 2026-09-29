@@ -6,9 +6,10 @@ prjxp:
     - project-name: "kigbau"
 
   embedding:
-    ollama-url: http://192.168.188.92:11434
-    model-name: mxbai-embed-large
-    timeout-secs: 60
+    type: OLLAMA
+    apiBaseURL: http://192.168.188.92:11434
+    modelName: mxbai-embed-large
+    timeout: 60
 
   # Chat-Schnittstelle
   chat-models:

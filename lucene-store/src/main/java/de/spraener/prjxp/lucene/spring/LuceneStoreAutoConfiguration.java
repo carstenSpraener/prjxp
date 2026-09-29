@@ -22,7 +22,7 @@ public class LuceneStoreAutoConfiguration {
     private final PrjXPConfig config;
 
     @Bean
-    public LuceneEmbeddingStore luceneEmbeddingStore() {
+    public EmbeddingStore<TextSegment> luceneEmbeddingStore() {
         PrjXPConfig.LuceneEmbeddingStoreConfig lc = config.getEmbeddingStoreLucene();
         return new LuceneEmbeddingStore(
                 Path.of(lc.getIndexPath()),
@@ -33,16 +33,11 @@ public class LuceneStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(EmbeddingModel.class)
-    public List<PxChunkDao> lucenePxChunkDaos(LuceneEmbeddingStore store, EmbeddingModel embeddingModel) {
+    public List<PxChunkDao> lucenePxChunkDaos(EmbeddingStore<TextSegment> store, EmbeddingModel embeddingModel) {
         List<PxChunkDao> daos = new ArrayList<>();
         for (var ref : config.getEmbeddingStores()) {
             daos.add(new LucenePxChunkDao(store, embeddingModel, ref));
         }
         return daos;
-    }
-
-    @Bean
-    public EmbeddingStore<TextSegment> luceneEmbeddingStoreBean(LuceneEmbeddingStore store) {
-        return store;
     }
 }

@@ -20,17 +20,6 @@ public class PrjXPConfig {
     private List<McpServerReference> mcpServers = new ArrayList<>();
     // --- Embedding Sektion ---
 
-    // Standardwerte setzt du einfach direkt am Feld!
-    private String embeddingOllamaUrl = "http://192.168.1.228:11434";
-    private String embeddingApiBaseURL = "http://host.docker.internal:1234";
-    private String embeddingApiKey = "lm-studio";
-    private String embeddingModelName = "mxbai-embed-large";
-    private String embeddingProviderType = "openai";
-    private int embeddingTimeoutSecs = 60;
-
-    // Embedding model type: "ollama" or "open_ai"
-    private EmbeddingModelType embeddingModelType = EmbeddingModelType.OLLAMA;
-
     public enum EmbeddingModelType {
         OLLAMA, OPEN_AI
     }

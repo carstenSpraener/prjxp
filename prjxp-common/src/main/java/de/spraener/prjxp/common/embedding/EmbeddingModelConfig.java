@@ -16,23 +16,23 @@ public class EmbeddingModelConfig {
 
     @Bean
     public EmbeddingModel embeddingModel(PrjXPConfig cfg) {
+        PrjXPConfig.EmbeddingConfig ebCfg = cfg.getEmbedding();
 
-        if( cfg.getEmbedding().getType() == PrjXPConfig.EmbeddingModelType.OPEN_AI) {
-            log.info("Using Open-AI compatible embedding provider " + cfg.getEmbedding().getApiBaseURL() + " with model " + cfg.getEmbedding().getModelName());
-            PrjXPConfig.EmbeddingConfig ebCfg = cfg.getEmbedding();
+        if (ebCfg.getType() == PrjXPConfig.EmbeddingModelType.OPEN_AI) {
+            log.info("Using Open-AI compatible embedding provider " + ebCfg.getApiBaseURL() + " with model " + ebCfg.getModelName());
             return OpenAiEmbeddingModel.builder()
                     .apiKey(ebCfg.getApiKey())
                     .baseUrl(ebCfg.getApiBaseURL())
                     .modelName(ebCfg.getModelName())
                     .timeout(Duration.ofSeconds(ebCfg.getTimeout()))
-                    .build()
-                    ;
+                    .build();
         }
-        log.info("Using Ollama embedding model at " + cfg.getEmbeddingOllamaUrl() + " with model " + cfg.getEmbeddingModelName());
+
+        log.info("Using Ollama embedding model at " + ebCfg.getApiBaseURL() + " with model " + ebCfg.getModelName());
         return OllamaEmbeddingModel.builder()
-                .baseUrl(cfg.getEmbeddingOllamaUrl())
-                .modelName(cfg.getEmbeddingModelName())
-                .timeout(Duration.ofSeconds(cfg.getEmbeddingTimeoutSecs()))
+                .baseUrl(ebCfg.getApiBaseURL())
+                .modelName(ebCfg.getModelName())
+                .timeout(Duration.ofSeconds(ebCfg.getTimeout()))
                 .build();
     }
 }

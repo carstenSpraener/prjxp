@@ -1,14 +1,4 @@
 prjxp:
-  # which project to work on if none is on command line.
-  activeProject: "cwd"
-
-  projects:
-    - name: cwd
-      rootDir: /app-source
-      jsonlFile: "px-chunks.jsonl"
-      chunoWhiteList: "cs,vb,java,ts"
-      tibedBatchSize: 32
-      tibedResetStore: true
 
   # Embedding model type: ollama or open_ai
   embeddingStoreLucene:
@@ -17,14 +7,10 @@ prjxp:
 
   embedding:
     type: "OPEN_AI"
-    apiBaseURL: ${EMBEDDING_API_BASE_URL:http://localhost:80/v1}
+    apiBaseURL: ${EMBEDDING_API_BASE_URL:http://host.docker.internal:1234/v1}
     modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
     timeout: ${EMBEDDING_TIMEOUT:180}
     apiKey: ${EMBEDDING_API_KEY:dummy}
-
-  embeddingStores:
-    - projectName: cwd
-      isDefault: true
 
 mcp:
   cors:
