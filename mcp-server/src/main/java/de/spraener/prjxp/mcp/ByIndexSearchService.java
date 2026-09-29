@@ -1,0 +1,63 @@
+package de.spraener.prjxp.mcp;
+
+import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.model.SymbolMetadata;
+import de.spraener.prjxp.common.store.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import lombok.RequiredArgsConstructor;
+import org.springframework.stereotype.Service;
+
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+@Service
+@RequiredArgsConstructor
+public class ByIndexSearchService {
+    public static final String SOURCE = "index";
+
+    private final PxChunkDaoProvider chunkDaoProvider;
+    private final SearchCapabilitiesRegistry registry;
+    private final ProjectRegistry projectRegistry;
+
+    public List<SearchHit> search(ByIndexQuery query) {
+        projectRegistry.ensureSearchable(query.project());   // throws UnknownProjectException for unknown projects
+        String resolvedProject = projectRegistry.resolve(query.project());
+        PxChunkDao dao = chunkDaoProvider.get(resolvedProject).orElse(null);
+        if (dao == null) {
+            return List.of();
+        }
+
+        Map<String, String> filters = new HashMap<>();
+        registry.forLanguage(query.language())
+                .filter(cap -> !cap.mimeTypes().isEmpty())
+                .ifPresent(cap -> filters.put(PxChunk.PXCHUNK_MIME_TYPE, cap.mimeTypes().get(0)));
+        putIfPresent(filters, SymbolMetadata.SYMBOL_FQN, query.fqn());
+        putIfPresent(filters, SymbolMetadata.SYMBOL_TYPE, query.symbolType());
+        putIfPresent(filters, SymbolMetadata.SYMBOL_NAME, query.methodName());
+        putIfPresent(filters, SymbolMetadata.SYMBOL_SIGNATURE_HASH, query.signatureHash());
+        putIfPresent(filters, SymbolMetadata.SYMBOL_CONTAINER_FQN, query.containerFqn());
+
+        List<ScoredChunk> results;
+        try {
+            results = dao.searchByIndex(filters, query.limit());
+        } catch (UnsupportedOperationException e) {
+            return List.of();
+        }
+
+        return results.stream()
+                .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed()
+                        .thenComparing(sc -> sc.chunk().getId(), Comparator.nullsLast(String::compareTo)))
+                .map(sc -> SearchHit.from(sc.chunk(), sc.score(), SearchHit.preview(sc.chunk().getContent()), SOURCE))
+                .toList();
+    }
+
+    private void putIfPresent(Map<String, String> filters, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            filters.put(key, value.trim());
+        }
+    }
+}

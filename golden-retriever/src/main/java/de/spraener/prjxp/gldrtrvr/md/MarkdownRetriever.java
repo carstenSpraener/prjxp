@@ -1,18 +1,18 @@
 package de.spraener.prjxp.gldrtrvr.md;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
+import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 
 @Service
@@ -23,18 +23,30 @@ public class MarkdownRetriever implements GoldenRetriever {
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
         StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
         // Die Session verwaltet den Baum-Aufbau der Dokumente
         MarkdownPromptSession session = new MarkdownPromptSession(chunkDao, rankingService);
-        session.setChunks(combineChunksByID(chunkDao, chunks));
+        session.setMaxContentLength(params.getMaxContentLength());
+        session.setChunksByScore(combineScoredChunksByID(chunkDao, chunks));
 
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
     }
 
+    @Override
+    @SafeVarargs
+    // TODO: Implement this method
+    public final List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks, Function<String, Boolean>... contextValidators) {
+        return Collections.EMPTY_LIST;
+    }
+
     private String modifyPromptByChunk(PxChunk pxChunk, String currentPrompt) {
+        String mimeType = pxChunk.getMimeType();
+        if( !mimeType.equals("text/markdown")  ) {
+            return "";
+        }
         String type = pxChunk.getMetadata().get("pxchunk_type");
         StringBuilder sb = new StringBuilder(currentPrompt);
 
@@ -62,6 +74,26 @@ public class MarkdownRetriever implements GoldenRetriever {
                 result.add(PxChunk.combine(chunkDao.findById(first.getId())));
             } else {
                 result.add(PxChunk.combine(list));
+            }
+        }
+        return result;
+    }
+
+    private List<ScoredChunk> combineScoredChunksByID(PxChunkDao chunkDao, List<ScoredChunk> chunks) {
+        Map<String, List<ScoredChunk>> chunkMap = new HashMap<>();
+        for (var c : chunks) {
+            chunkMap.computeIfAbsent(c.chunk().getId(), k -> new ArrayList<>()).add(c);
+        }
+
+        List<ScoredChunk> result = new ArrayList<>();
+        for (var list : chunkMap.values()) {
+            ScoredChunk first = list.getFirst();
+            double bestScore = list.stream().mapToDouble(ScoredChunk::score).max().orElse(0.0);
+            // Wenn nicht alle Teile in den Findings waren, laden wir alle nach
+            if (first.chunk().getTotal() > list.size()) {
+                result.add(new ScoredChunk(PxChunk.combine(chunkDao.findById(first.chunk().getId())), bestScore));
+            } else {
+                result.add(new ScoredChunk(PxChunk.combine(new ArrayList<>(list.stream().map(ScoredChunk::chunk).toList())), bestScore));
             }
         }
         return result;

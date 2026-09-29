@@ -15,18 +15,26 @@ gradle-app.setting
 .bin/
 .nb-gradle/
 
-# Secrets & Local Config
+# Secrets & Local Config (but NOT .env.example which is a template)
 .env
 **/.env
-.env.*
-! .env.example
+!.env.example
 
-# App-Specific (LangChain4j / Vector DBs)
-chroma_data/
-**/chroma_data/
+**/content-hashes.properties
+**/.hints
+**/.hints/*
+
+# Local agent tooling state (conversation DBs, hooks) - never commit
+.agentbridge/
 
 # OS spezifisch
 .DS_Store
 Thumbs.db
 /chunk-norris/src/test/resources/*.pdf
 /prjxp-src.jsonl
+/LinkedIn-Artikel.md
+/docs/Tasks/
+.prjxp-data/
+/docpipe/src/test/tmp/src-dmp.txt
+/px-chunks.jsonl
+/doc/Tasks/

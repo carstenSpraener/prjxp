@@ -2,6 +2,7 @@ package de.spraener.prjxp.chuno.docs.txt;
 
 import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
 import de.spraener.prjxp.common.annotations.Chunker;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxFileType;
 import de.spraener.prjxp.common.scripting.ScriptCompileService;
@@ -27,6 +28,7 @@ import java.util.stream.Stream;
 @Log
 @RequiredArgsConstructor
 public class TextChunker {
+    private final PxLogService logService;
     private final ScriptCompileService scSrv;
 
     @Chunker(
@@ -50,8 +52,7 @@ public class TextChunker {
                     try {
                         script.eval(bindings);
                     } catch (ScriptException e) {
-                        e.printStackTrace();
-                        log.severe("Error while evaluating groovy script for " + txt.getAbsolutePath() + ": " + e.getMessage());
+                        logService.error(e, "Error while evaluating groovy script for %s: %s", txt.getAbsolutePath(), e.getMessage());
                     }
                 });
             }
@@ -107,7 +108,7 @@ public class TextChunker {
             }
             return chunkList.stream();
         } catch (Exception e) {
-            log.severe("Error while chunking txt file  " + txt.getAbsolutePath() + ": " + e.getMessage());
+            logService.error(e, "Error while chunking txt file %s: %s", txt.getAbsolutePath(), e.getMessage());
             throw new RuntimeException(e);
         }
     }

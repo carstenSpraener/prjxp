@@ -50,9 +50,10 @@ public class ContentSplitter {
                 chunk.setPart(i);
                 chunk.setSize(chunk.getContent().length());
                 chunk.setOverlap(this.overlap);
+                int lineCount = StringUtils.countOccurrencesOf(chunkContent, "\n");
                 chunk.setFromLine("" + chunkStartLine);
-                chunk.setToLine("" + chunkStartLine + StringUtils.countOccurrencesOf(chunkContent, "\n"));
-                chunkStartLine += StringUtils.countOccurrencesOf(chunkContent, "\n");
+                chunk.setToLine("" + (chunkStartLine + lineCount));
+                chunkStartLine += lineCount;
 
                 chunks.add(chunk);
                 chunkStart += chunkSize - overlap;

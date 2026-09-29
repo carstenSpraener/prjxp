@@ -2,6 +2,8 @@ package de.spraener.prjxp.chuno.docs;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import de.spraener.prjxp.common.errorlog.PxLogService;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Component;
 
@@ -11,8 +13,10 @@ import java.util.HashMap;
 import java.util.Map;
 
 @Component
+@RequiredArgsConstructor
 @Log
 public class MetaInfReader {
+    private final PxLogService logService;
     private static final ObjectMapper mapper = new ObjectMapper();
 
     public Map<String, String> readMetaInf(File originalFile) {
@@ -30,7 +34,7 @@ public class MetaInfReader {
             // Einlesen des JSON-Inhalts in eine Map<String, String>
             return mapper.readValue(metaFile, new TypeReference<Map<String, String>>() {});
         } catch (IOException e) {
-            log.severe("Fehler beim Parsen der .meta Datei %s: %s".formatted(metaFile.getAbsolutePath(), e.getMessage()) );
+            logService.error(e, "Fehler beim Parsen der .meta Datei %s: %s", metaFile.getAbsolutePath(), e.getMessage());
             return new HashMap<>();
         }
     }

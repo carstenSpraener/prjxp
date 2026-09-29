@@ -5,9 +5,12 @@ import com.fasterxml.jackson.databind.json.JsonMapper;
 import de.spraener.prjxp.chuno.spring.SpringPreWalkEvent;
 import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
-import lombok.NoArgsConstructor;
+import de.spraener.prjxp.common.transfer.TransferCrypto;
+import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
+import de.spraener.prjxp.common.transfer.TransferSession;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.context.ApplicationEventPublisher;
@@ -19,22 +22,32 @@ import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.Set;
 
-import static java.lang.System.out;
-
 @Service
 @Log
 @RequiredArgsConstructor
 public class ChunkProcess {
+    private final PxLogService logService;
     private final ChunkerFactory factory;
     private final ApplicationEventPublisher eventPublisher;
     private final VetoRegistry vetoRegistry;
     private final Set<String> processedFiles = new HashSet<>();
     private final JsonMapper jsonMapper = new JsonMapper();
     private final PrjXPConfig cfg;
+    private final TransferPasswordResolver transferPasswordResolver;
 
     public void execute() throws Exception {
-        final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException("No active project!"));
-        final PrintStream out = createWriter(pd);
+        final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException(
+                "No active project '" + cfg.getActiveProjectName() + "' defined. Available projects: "
+                        + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
+        executeForProject(pd);
+    }
+
+    /** Runs the chunking pipeline for an explicitly given project definition (hub in-process use). */
+    public void executeForProject(ProjectDefinition pd) throws Exception {
+        processedFiles.clear();   // per-run state: a reindex must re-chunk everything, not filter out files of a previous run
+        final TransferSession session = transferPasswordResolver.prepare(
+                cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
+        final PrintStream out = createWriter(pd, session);
         eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg));
 
         Files.walk(Path.of(pd.getRootDir()))
@@ -44,16 +57,29 @@ public class ChunkProcess {
                 .forEach(path -> handlePath(out, pd, path));
         ;
         doPostWalk(out);
+        if (out != System.out) {
+            out.close();
+        }
+        if (session.generatedPassword()) {
+            transferPasswordResolver.printRepeatBanner(session.password());
+        }
     }
 
-    private PrintStream createWriter(ProjectDefinition pd) {
-        if( pd.getJsonlFile()==null ) {
+    private PrintStream createWriter(ProjectDefinition pd, TransferSession session) {
+        if( pd.resolvedJsonlFile()==null ) {
             return System.out;
         }
         try {
-            return new PrintStream(pd.getJsonlFile());
+            OutputStream out = new FileOutputStream(pd.resolvedJsonlFile());
+            if (session.encrypt()) {
+                out = TransferCrypto.openEncryptedOutputStream(out, session.password());
+            }
+            return new PrintStream(out);
         } catch( FileNotFoundException fnfXC) {
-            log.warning("Coulde not find output file "+pd.getJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
+            log.warning("Coulde not find output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
+            return System.out;
+        } catch( IOException ioXC) {
+            log.warning("Could not open output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+ioXC.getMessage());
             return System.out;
         }
     }
@@ -96,7 +122,7 @@ public class ChunkProcess {
         try {
             return jsonMapper.writeValueAsString(chunk);
         } catch (JsonProcessingException jpXC) {
-            log.severe("Could not write jsonl for chunk " + chunk.getId() + ": " + jpXC);
+            logService.error(jpXC, "Could not write jsonl for chunk %s", chunk.getId());
             return "";
         }
     }

@@ -3,6 +3,7 @@ package de.spraener.prjxp.chuno.docs;
 import de.spraener.prjxp.chuno.docs.model.ConversionAccuracy;
 import de.spraener.prjxp.chuno.docs.model.DocArtifaktType;
 import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.annotations.Chunker;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxFileType;
@@ -30,6 +31,8 @@ import java.util.stream.Stream;
 @Log
 @RequiredArgsConstructor
 public class MarkdownChunker {
+    private final static String MIME_TYPE = "text/markdown";
+    private final PxLogService logService;
     private final DocConversionRouter converter;
     private final MetaInfReader metaInfReader;
 
@@ -67,7 +70,7 @@ public class MarkdownChunker {
             return chunkMarkdownText(input, mdText);
 
         } catch (Exception e) {
-            log.severe("Fehler beim Chunking von " + input.getAbsolutePath() + ": " + e.getMessage());
+            logService.error(e, "Fehler beim Chunking von %s: %s", input.getAbsolutePath(), e.getMessage());
             return Stream.empty();
         }
     }
@@ -77,6 +80,7 @@ public class MarkdownChunker {
             Map<String,String> metaInf = metaInfReader.readMetaInf(originalFile);
             List<PxChunk> chunkList = new ArrayList<>();
             chunkList.add( PxChunk.create(
+                    c -> c.setMimeType(MIME_TYPE),
                     c -> c.setId(originalFile.getName()),
                     c -> c.setFile(originalFile.getAbsolutePath()),
                     c -> c.setContent(""),
@@ -121,7 +125,7 @@ public class MarkdownChunker {
             }
             return chunkList.stream();
         } catch (Exception e) {
-            log.severe("Fehler beim Chunking von " + originalFile.getAbsolutePath() + ": " + e.getMessage());
+            logService.error(e, "Fehler beim Chunking von %s: %s", originalFile.getAbsolutePath(), e.getMessage());
             return Stream.empty();
         }
     }
@@ -129,6 +133,7 @@ public class MarkdownChunker {
     private PxChunk createSectionChunk(File file, int[] sectionCounters, List<String> headers) {
         String sectionNumber = formatSectionNumber(sectionCounters);
         return PxChunk.create(
+                c -> c.setMimeType(MIME_TYPE),
                 c->c.setId(file.getName()+":"+sectionNumber),
                 c->c.setParent(file.getName()),
                 c->c.setContent(""),
@@ -214,7 +219,7 @@ public class MarkdownChunker {
         // Nutzt deinen ContentSplitter für i of N Splitting
         List<PxChunk> chunks = new ContentSplitter(500, 100).splitContent(content, startLine, currentLine,
                 () -> PxChunk.create(
-                        c -> c.setMimeType("text/markdown"),
+                        c -> c.setMimeType(MIME_TYPE),
                         c -> c.setFile(file.getAbsolutePath()),
                         c -> {
                             c.setId(file.getName()+":"+sectionNum+":"+String.format("%02d",paragraphCount));

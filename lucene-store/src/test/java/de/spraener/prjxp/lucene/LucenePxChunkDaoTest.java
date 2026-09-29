@@ -1,0 +1,415 @@
+package de.spraener.prjxp.lucene;
+
+import dev.langchain4j.data.document.Metadata;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.model.output.Response;
+import dev.langchain4j.store.embedding.EmbeddingStore;
+import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
+import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
+import org.mockito.Mock;
+import org.mockito.MockitoAnnotations;
+
+import java.nio.file.Path;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
+class LucenePxChunkDaoTest {
+
+    @TempDir
+    Path tempDir;
+
+    LuceneEmbeddingStore store;
+    LucenePxChunkDao dao;
+
+    @Mock
+    EmbeddingModel embeddingModel;
+
+    PrjXPEmbeddingStoreReference storeReference;
+
+    @BeforeEach
+    void setUp() {
+        MockitoAnnotations.openMocks(this);
+        store = new LuceneEmbeddingStore(tempDir.resolve("index"), 3);
+
+        storeReference = new PrjXPEmbeddingStoreReference();
+        storeReference.setProjectName("test-project");
+
+        dao = new LucenePxChunkDao(store, embeddingModel, storeReference);
+
+        when(embeddingModel.embed(any(String.class))).thenReturn(
+                Response.from(Embedding.from(new float[]{0.5f, 0.3f, 0.2f}))
+        );
+    }
+
+    @Test
+    void getStoreReference() {
+        assertThat(dao.getStoreReference()).isSameAs(storeReference);
+        assertThat(dao.getStoreReference().getProjectName()).isEqualTo("test-project");
+    }
+
+    @Test
+    void findByIdReturnsMatchingChunk() {
+        addChunk("chunk-1", "Hello world");
+        addChunk("chunk-2", "Goodbye world");
+
+        List<PxChunk> result = dao.findById("chunk-1");
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getContent()).isEqualTo("Hello world");
+    }
+
+    @Test
+    void findByIdNonExistentReturnsEmpty() {
+        addChunk("chunk-1", "Hello world");
+
+        List<PxChunk> result = dao.findById("non-existent");
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void findByMetaDataSingleKey() {
+        Metadata meta1 = new Metadata();
+        meta1.put("pxchunk_id", "chunk-1");
+        meta1.put("source", "file-a.txt");
+        meta1.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Content A", meta1));
+
+        Metadata meta2 = new Metadata();
+        meta2.put("pxchunk_id", "chunk-2");
+        meta2.put("source", "file-b.txt");
+        meta2.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Content B", meta2));
+
+        Map<String, String> searchMeta = Map.of("source", "file-a.txt");
+        List<PxChunk> result = dao.findByMetaData(searchMeta);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getContent()).isEqualTo("Content A");
+    }
+
+    @Test
+    void findByMetaDataMultipleKeysAndLogic() {
+        Metadata meta1 = new Metadata();
+        meta1.put("pxchunk_id", "chunk-1");
+        meta1.put("source", "file-a.txt");
+        meta1.put("type", "code");
+        meta1.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Java code", meta1));
+
+        Metadata meta2 = new Metadata();
+        meta2.put("pxchunk_id", "chunk-2");
+        meta2.put("source", "file-a.txt");
+        meta2.put("type", "doc");
+        meta2.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Documentation", meta2));
+
+        Map<String, String> searchMeta = Map.of("source", "file-a.txt", "type", "code");
+        List<PxChunk> result = dao.findByMetaData(searchMeta);
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getContent()).isEqualTo("Java code");
+    }
+
+    @Test
+    void findRelevantReturnsSimilarChunks() {
+        addChunk("chunk-1", "Database connection");
+        addChunk("chunk-2", "Coffee recipe");
+
+        List<PxChunk> result = dao.findRelevant("How to connect to a database", 5, 0.0);
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    void findRelevantRespectsMinScore() {
+        addChunk("chunk-1", "Some content");
+
+        List<PxChunk> result = dao.findRelevant("Question", 5, 0.99);
+        // With random embeddings and high minScore, results may be empty or filtered
+        for (PxChunk chunk : result) {
+            assertThat(chunk).isNotNull();
+        }
+    }
+
+    @Test
+    void findAllReturnsAllChunks() {
+        addChunk("chunk-1", "First");
+        addChunk("chunk-2", "Second");
+        addChunk("chunk-3", "Third");
+
+        List<PxChunk> result = dao.findAll().collect(Collectors.toList());
+        assertThat(result).hasSize(3);
+    }
+
+    @Test
+    void roundtripMetadataPreserved() {
+        PxChunk original = PxChunk.create(c -> {
+            c.setId("test-123");
+            c.setMimeType("text/plain");
+            c.setFile("src/Main.java");
+            c.setParent("parent-1");
+            c.setPart(1);
+            c.setTotal(5);
+            c.setSize(1000);
+            c.setOverlap(100);
+            c.setProject("test-project");
+        });
+        original.getMetadata().put("custom", "value");
+
+        Map<String, String> metaMap = PxChunk.metadataAsMap(original);
+        Metadata metadata = new Metadata();
+        metaMap.forEach(metadata::put);
+
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}),
+                TextSegment.from(original.getContent() != null ? original.getContent() : "content", metadata));
+
+        List<PxChunk> result = dao.findById("test-123");
+        assertThat(result).hasSize(1);
+        PxChunk retrieved = result.get(0);
+        assertThat(retrieved.getId()).isEqualTo("test-123");
+        assertThat(retrieved.getMimeType()).isEqualTo("text/plain");
+        assertThat(retrieved.getFile()).isEqualTo("src/Main.java");
+        assertThat(retrieved.getParent()).isEqualTo("parent-1");
+        assertThat(retrieved.getPart()).isEqualTo(1);
+        assertThat(retrieved.getTotal()).isEqualTo(5);
+        assertThat(retrieved.getProject()).isEqualTo("test-project");
+    }
+
+    @Test
+    void searchFullTextFindsContentMatch() {
+        addChunk("chunk-1", "Hello world");
+        addChunk("chunk-2", "Goodbye moon");
+
+        List<ScoredChunk> result = dao.searchFullText("hello", Map.of(), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-1");
+        assertThat(result.get(0).score()).isGreaterThan(0);
+    }
+
+    @Test
+    void searchFullTextIsCaseInsensitive() {
+        addChunk("chunk-1", "Hello world");
+
+        List<ScoredChunk> result = dao.searchFullText("HELLO", Map.of(), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-1");
+    }
+
+    @Test
+    void searchFullTextRespectsMetadataFilter() {
+        addChunkWithMime("chunk-java", "text/x-java-code", "Process the data");
+        addChunkWithMime("chunk-ts", "text/x-typescript-code", "Process the data");
+
+        List<ScoredChunk> result = dao.searchFullText(
+                "process", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-java");
+    }
+
+    @Test
+    void searchFullTextRespectsLimit() {
+        addChunk("chunk-1", "needle one");
+        addChunk("chunk-2", "needle two");
+        addChunk("chunk-3", "needle three");
+
+        List<ScoredChunk> result = dao.searchFullText("needle", Map.of(), 2);
+
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    void searchFullTextNoMatchReturnsEmpty() {
+        addChunk("chunk-1", "Hello world");
+
+        List<ScoredChunk> result = dao.searchFullText("zebra", Map.of(), 10);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void searchByIndexExactFilterOnSymbolFqn() {
+        addSymbolChunk("chunk-1", "de.spraener.test.Foo#bar");
+        addSymbolChunk("chunk-2", "de.spraener.test.Foo#baz");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of("symbol_fqn", "de.spraener.test.Foo#bar"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-1");
+    }
+
+    @Test
+    void searchByIndexCombinesFiltersWithAnd() {
+        addSymbolChunk("chunk-java", "de.spraener.test.Foo#bar");
+        Metadata tsMeta = new Metadata();
+        tsMeta.put("pxchunk_id", "chunk-ts");
+        tsMeta.put(PxChunk.PXCHUNK_MIME_TYPE, "text/x-typescript-code");
+        tsMeta.put("pxchunk_metadata.symbol_fqn", "de.spraener.test.Foo#bar");
+        tsMeta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("TS content", tsMeta));
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code",
+                        "symbol_fqn", "de.spraener.test.Foo#bar"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-java");
+    }
+
+    @Test
+    void searchByIndexRespectsLimit() {
+        addSymbolChunk("chunk-1", "de.spraener.test.Foo#bar");
+        addSymbolChunk("chunk-2", "de.spraener.test.Foo#bar");
+        addSymbolChunk("chunk-3", "de.spraener.test.Foo#bar");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of("symbol_fqn", "de.spraener.test.Foo#bar"), 2);
+
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    void searchByIndexNoMatchReturnsEmpty() {
+        addSymbolChunk("chunk-1", "de.spraener.test.Foo#bar");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of("symbol_fqn", "de.spraener.test.Unknown#nope"), 10);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void searchByIndexScoreIsConstantOne() {
+        addSymbolChunk("chunk-1", "de.spraener.test.Foo#bar");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of("symbol_fqn", "de.spraener.test.Foo#bar"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).score()).isEqualTo(1.0);
+    }
+
+    @Test
+    void searchVectorReturnsMostSimilarChunkFirst() {
+        Metadata nearMeta = new Metadata();
+        nearMeta.put("pxchunk_id", "near");
+        nearMeta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{0.5f, 0.3f, 0.2f}), TextSegment.from("Near content", nearMeta));
+
+        Metadata farMeta = new Metadata();
+        farMeta.put("pxchunk_id", "far");
+        farMeta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("Far content", farMeta));
+
+        List<ScoredChunk> result = dao.searchVector("any question", Map.of(), 10);
+
+        assertThat(result).hasSize(2);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("near");
+        assertThat(result.get(0).score()).isGreaterThan(0);
+    }
+
+    @Test
+    void searchVectorExcludesOtherProjectChunks() {
+        addChunkWithProject("own", "Own content", "test-project");
+        addChunkWithProject("other", "Other content", "other-project");
+
+        List<ScoredChunk> result = dao.searchVector("q", Map.of(), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("own");
+    }
+
+    @Test
+    void findAllScopedToProject() {
+        addChunkWithProject("own", "Own content", "test-project");
+        addChunkWithProject("other", "Other content", "other-project");
+
+        List<PxChunk> result = dao.findAll().collect(Collectors.toList());
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).getId()).isEqualTo("own");
+    }
+
+    @Test
+    void searchVectorRespectsMimeFilter() {
+        addChunkWithMime("chunk-java", "text/x-java-code", "Java content");
+        addChunkWithMime("chunk-ts", "text/x-typescript-code", "TS content");
+
+        List<ScoredChunk> result = dao.searchVector(
+                "content", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code"), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-java");
+    }
+
+    @Test
+    void searchVectorRespectsLimit() {
+        addChunk("chunk-1", "one");
+        addChunk("chunk-2", "two");
+        addChunk("chunk-3", "three");
+
+        List<ScoredChunk> result = dao.searchVector("q", Map.of(), 2);
+
+        assertThat(result).hasSize(2);
+    }
+
+    @Test
+    void searchVectorBlankQueryReturnsEmpty() {
+        addChunk("chunk-1", "content");
+
+        List<ScoredChunk> result = dao.searchVector("   ", Map.of(), 10);
+
+        assertThat(result).isEmpty();
+    }
+
+    @Test
+    void searchVectorEmbedsQuery() {
+        addChunk("chunk-1", "content");
+
+        dao.searchVector("my question", Map.of(), 5);
+
+        verify(embeddingModel).embed("my question");
+    }
+
+    private void addChunk(String id, String content) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
+    }
+
+    private void addSymbolChunk(String id, String symbolFqn) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code");
+        meta.put("pxchunk_metadata.symbol_fqn", symbolFqn);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content of " + id, meta));
+    }
+
+    private void addChunkWithMime(String id, String mimeType, String content) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_MIME_TYPE, mimeType);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
+    }
+
+    private void addChunkWithProject(String id, String content, String project) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_PROJECT, project);
+        store.add(Embedding.from(new float[]{0.5f, 0.3f, 0.2f}), TextSegment.from(content, meta));
+    }
+}

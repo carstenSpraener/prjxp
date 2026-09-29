@@ -18,11 +18,30 @@ import java.util.Properties;
 
 @Component
 @RequiredArgsConstructor
+/**
+ * Controller that determines if documentation content needs to be updated.
+ * <p>
+ * This class maintains a hash-based database of prompts used to generate specific output files.
+ * If the prompt for a task has changed since the last execution, it triggers an update to avoid
+ * redundant LLM calls.
+ * </p>
+ */
 public class ContentUpdateRequiredController {
     private final DotDPFilesService dpFilesService;
 
     // Speicherort für die flache Hash-Datenbank
 
+    /**
+     * Checks if an update is required for a given task and executes the updater if so.
+     * <p>
+     * This method compares the hash of the current prompt with the stored hash for the output file.
+     * If they differ or no hash exists, it runs the provided {@code updater} and updates the stored hash.
+     * </p>
+     *
+     * @param prompt the resolved prompt to check
+     * @param cct the content creation task
+     * @param updater a runnable that performs the actual content generation and writing
+     */
     public void onUpdateRequired(String prompt, ContentCreationTask cct, Runnable updater) {
         String outputFile = cct.getDpContentCreation().getOutputFile();
         if (updateRequired(cct, prompt, outputFile)) {
@@ -31,6 +50,14 @@ public class ContentUpdateRequiredController {
         }
     }
 
+    /**
+     * Determines if the content for a task needs to be updated based on prompt changes.
+     *
+     * @param cct the content creation task
+     * @param prompt the current resolved prompt
+     * @param outputFile the path to the output file
+     * @return true if an update is required, false otherwise
+     */
     private boolean updateRequired(ContentCreationTask cct, String prompt, String outputFile) {
         String currentHash = toHash(prompt);
         String storedHash = readEntry(cct, outputFile);
@@ -39,6 +66,13 @@ public class ContentUpdateRequiredController {
         return storedHash == null || !storedHash.equals(currentHash);
     }
 
+    /**
+     * Reads the stored hash for a specific output file from the hashes properties file.
+     *
+     * @param cct the content creation task
+     * @param outputFile the path to the output file
+     * @return the stored hash string, or null if no entry exists or an error occurs
+     */
     private String readEntry(ContentCreationTask cct, String outputFile) {
         File file = dpFilesService.getContentHashesFrom(cct);
         if (!file.exists()) {
@@ -55,6 +89,18 @@ public class ContentUpdateRequiredController {
         }
     }
 
+    /**
+     * Writes a new hash entry for an output file to the hashes properties file.
+     * <p>
+     * This method loads existing entries, updates the hash for the specified output file,
+     * and writes the updated properties back to the filesystem.
+     * </p>
+     *
+     * @param cct the content creation task
+     * @param hash the SHA-256 hash of the prompt
+     * @param outputFile the path to the output file
+     * @throws IllegalStateException if an IOException occurs during writing
+     */
     private void writeEntry(ContentCreationTask cct, String hash, String outputFile) {
         File file = dpFilesService.getContentHashesFrom(cct);
         Properties props = new Properties();
@@ -82,6 +128,13 @@ public class ContentUpdateRequiredController {
         }
     }
 
+    /**
+     * Computes the SHA-256 hash of a given prompt string.
+     *
+     * @param prompt the prompt to hash
+     * @return the hexadecimal representation of the SHA-256 hash
+     * @throws IllegalStateException if the SHA-256 algorithm is not available
+     */
     private String toHash(String prompt) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");

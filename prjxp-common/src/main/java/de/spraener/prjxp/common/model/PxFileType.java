@@ -4,9 +4,10 @@ import java.io.File;
 import java.nio.file.Path;
 
 public enum PxFileType {
-    NONE(null),
+    NONE(),
     JAVA_CODE(".java"),
     TYPESCRIPT_CODE(".ts"),
+    VISUAL_BASIC_CODE(".vb", ".bas", ".cls", ".frm"),
     JSP(".jsp"),
     XML(".xml"),
     PDF(".pdf"),
@@ -19,19 +20,19 @@ public enum PxFileType {
     RTF(".rtf"),
     MARK_DOWN(".md");
 
-    private final String endingMatch;
+    private final String[] endingMatches;
 
-    PxFileType(String endingMatch) {
-        this.endingMatch = endingMatch;
+    PxFileType(String... endingMatches) {
+        this.endingMatches = endingMatches;
     }
 
     public static PxFileType from(Path p) {
         String fileName = p.getFileName().toString();
         for (PxFileType type : values()) {
-            if (type.endingMatch == null) {
+            if (type.endingMatches == null) {
                 continue;
             }
-            if (fileName.endsWith(type.endingMatch)) {
+            if (type.matches(fileName)) {
                 return type;
             }
         }
@@ -39,6 +40,18 @@ public enum PxFileType {
     }
 
     public boolean matches(File f) {
-        return f.getName().endsWith(endingMatch);
+        return matches(f.getName());
+    }
+
+    private boolean matches(String fileName) {
+        if (endingMatches == null) {
+            return false;
+        }
+        for (String endingMatch : endingMatches) {
+            if (endingMatch != null && fileName.endsWith(endingMatch)) {
+                return true;
+            }
+        }
+        return false;
     }
 }

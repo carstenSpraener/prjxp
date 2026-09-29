@@ -20,8 +20,6 @@ Add a section für further reading that contains a list of links to the document
 * FAQs pointing to doc/FAQ.md which answers the most important questions about Doc|Pipe
 * ArchitectureAssessment pointing to doc/ArchitectureAssessment.md which contains a assessment of the architecture of Doc|Pipe based on its source code.
 
-```java
 {{#java-src-dump this ../src/main/java}}{{/java-src-dump}}
-```
 
 As a fun fact add a footer that mentions that DocPipe generates its own architecture assessment under doc/ArchitectureAssessment.md and add a link to that file.

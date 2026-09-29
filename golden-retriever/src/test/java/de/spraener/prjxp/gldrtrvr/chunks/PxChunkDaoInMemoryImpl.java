@@ -2,7 +2,6 @@ package de.spraener.prjxp.gldrtrvr.chunks;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.PxChunkFromJsonLReader;
-import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.model.PxChunk;
@@ -10,8 +9,6 @@ import de.spraener.prjxp.common.store.PxChunkDao;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.experimental.Accessors;
-import org.springframework.context.annotation.Profile;
-import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.util.ArrayList;

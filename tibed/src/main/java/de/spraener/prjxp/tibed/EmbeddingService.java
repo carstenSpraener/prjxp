@@ -4,13 +4,13 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.PxChunkFromJsonLReader;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
-import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
@@ -26,69 +26,78 @@ import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metad
 @RequiredArgsConstructor
 @Log
 public class EmbeddingService {
+
+    private final PxLogService logService;
     private final ObjectMapper objMapper;
     private final EmbeddingExecutor embedder;
     private final EmbeddingStoreSupplier embeddingStoreSupplier;
     private final PrjXPJsonStreamProvider streamProvider;
+    private final StoreIdChecker storeIdChecker;
     private final PrjXPConfig cfg;
 
     public void execute() {
-        ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException("No active project!"));
+        ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException(
+                "No active project '" + cfg.getActiveProjectName() + "' defined. Available projects: "
+                        + cfg.getProjects().stream().map(ProjectDefinition::getName).toList()));
         EmbeddingStore<TextSegment> store = embeddingStoreSupplier.getStore(pd.getName());
+        executeForProject(pd, store);
+    }
+
+    /** Runs the embedding pipeline for an explicitly given project + store (hub in-process use). */
+    public void executeForProject(ProjectDefinition pd, EmbeddingStore<TextSegment> store) {
+        // Free choice per project (prjxp.yaml tibedBatchSize): the embedding provider's own limits apply —
+        // a batch it rejects fails per-batch in embedChunk (logged, pipeline continues). Only non-positive
+        // values are guarded, since BatchingUtils.pack would divide by zero / allocate negative capacity.
+        int configuredBatchSize = pd.getTibedBatchSize();
+        int effectiveBatchSize = Math.max(1, configuredBatchSize);
+        if (configuredBatchSize < 1) {
+            log.warning("Configured tibedBatchSize=" + configuredBatchSize + " is invalid, using 1");
+        }
         if (pd.isTibedResetStore()) {
-            log.warning("Resetting embedding store!");
-            store.removeAll(metadataKey("id").isNotEqualTo(0));
+            log.warning("Resetting embedding store for project '" + pd.getName() + "'!");
+            Filter resetFilter = store instanceof LuceneEmbeddingStore
+                    ? new IsEqualTo(PxChunk.PXCHUNK_PROJECT, pd.getName())  // shared index: only this project
+                    : metadataKey("id").isNotEqualTo(0);                     // dedicated store: wipe all
+            store.removeAll(resetFilter);
         }
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
-            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(pd.getJsonlFile()), pd.getTibedBatchSize(), this::fromJSONL)
+            // resolvedJsonlFile(): rootDir-relative, mirroring the writer (null/blank -> stdin, as before)
+            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(pd.resolvedJsonlFile()), effectiveBatchSize, this::fromJSONL)
                     .forEach(batch -> {
-                        embedChunk(store, batch);
+                        embedChunk(store, pd.getName(), batch);
                     });
             ;
         } catch (Exception e) {
-            e.printStackTrace();
+            logService.error(e, "Error during chunk processing: "+e.getMessage());
         }
     }
 
-    private void embedChunk(EmbeddingStore<TextSegment> store, PxChunk[] chunks) {
+    private void embedChunk(EmbeddingStore<TextSegment> store, String projectName, PxChunk[] chunks) {
         try {
             embedder.execute(store, Arrays.asList(chunks)
                     .stream()
-                    .filter( c -> needsEmbedding(store, c))
+                    .peek(c -> c.setProject(projectName))   // stamp BEFORE needsEmbedding (StoreIdChecker is project-scoped)
+                    .filter( c -> needsEmbedding(store, projectName, c))
                     .toList()
             );
-            log.info("Embedded batch of " + chunks.length + " chunks");
+            log.info("Embedded batch of " + chunks.length + " chunks for project "+projectName);
         } catch (Exception e) {
-            log.severe("Embedding of chunk batch failed: " + e.getMessage());
+            logService.error(e, "Embedding of chunk batch failed: %s", e.getMessage());
         }
     }
 
-    private boolean needsEmbedding(EmbeddingStore embeddingStore, PxChunk chunk) {
-        Filter filter = new IsEqualTo(PxChunk.PXCHUNK_ID, chunk.getId());
-        return !hasEntriesWithFilter(embeddingStore, filter);
+    private boolean needsEmbedding(EmbeddingStore<TextSegment> embeddingStore, String projectName, PxChunk chunk) {
+        return storeIdChecker.needsImport(embeddingStore, chunk.getId(), projectName);
     }
 
     private PxChunk fromJSONL(String line) {
         try {
             return objMapper.readValue(line, PxChunk.class);
         } catch (JsonProcessingException e) {
-            log.severe("Error while parsing JSONL as a PxChunk: " + e.getMessage());
+            logService.error(e, "Error while parsing JSONL as a PxChunk: %s", e.getMessage());
             return null;
         }
-    }
-
-    private boolean hasEntriesWithFilter(EmbeddingStore embeddingStore, Filter filter) {
-        Embedding dummyEmbedding = Embedding.from(new float[1024]);
-        // Wir führen eine Suche aus, die nur auf Metadaten basiert (max 100 Treffer)
-        // Hinweis: EmbeddingStore.search gibt oft Scored-Matches zurück
-        EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()
-                .queryEmbedding(dummyEmbedding)
-                .filter(filter)
-                .maxResults(100)
-                .build();
-        return !embeddingStore.search(request)
-                .matches().isEmpty();
     }
 
 }

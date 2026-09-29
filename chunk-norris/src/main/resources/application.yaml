@@ -1,3 +1,8 @@
+prjxp:
+  transfer:
+    password-env: PRJXP_TRANSFER_PASSWORD
+    encrypt: auto
+
 logging:
   level:
     org:

@@ -1,16 +1,13 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
-import org.springaicommunity.mcp.annotation.McpTool;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
+
+import java.util.List;
 
 @RestController
 @RequestMapping("/prjxp/tools")
@@ -18,7 +15,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Log
 public class McpRestController {
     private final GRPromptEnrichment enrichment;
-    private final PrjXPConfig cfg;
+    private final ProjectRegistry projectRegistry;
 
     @GetMapping("/ping")
     @Operation(description = "Answers a request with 'pong!' in order to check network functionality.")
@@ -28,40 +25,65 @@ public class McpRestController {
 
     @GetMapping("/context")
     @Operation(
-            // summary =  "Liefert Relevanten Kontext aus den Projekten passend zur Frage des Benutzers.",
             description = """
-                    SUCHE-TOOL: Liefert relevanten Kontext aus dem Projekt. 
-                    STRATEGIE: Wenn die erste Antwort nicht ausreicht, rufe dieses Tool bis zu 3-mal iterativ auf. 
-                    PARAMETER-REGEL: Nutze beim ersten Aufruf die User-Frage. Bei Folge-Aufrufen (Nachfragen) 
-                    formuliere bitte eine eigene, technisch präzisere Suchanfrage als 'userQuestion', 
-                    basierend auf den fehlenden Informationen aus dem vorherigen Schritt.
+                    SUCHE-TOOL: Delivers relevant information from the project. 
+                    STRATEGIE: You should call this tool whenever possible to gather information before searching the file system.
+                    You can do multiple follow up questions for more detailed information 
+                    PARAMETER-REGEL: Build a precise question for a vector search based on the information
+                    you are looking for.
                     """,
             operationId = "readRelevantSource"
     )
-    @McpTool(description = """
-            SUCHE-TOOL: Liefert relevanten Kontext aus dem Projekt. 
-            STRATEGIE: Wenn die erste Antwort nicht ausreicht, rufe dieses Tool bis zu 3-mal iterativ auf. 
-            PARAMETER-REGEL: Nutze beim ersten Aufruf die User-Frage. Bei Folge-Aufrufen (Nachfragen) 
-            formuliere bitte eine eigene, technisch präzisere Suchanfrage als 'userQuestion', 
-            basierend auf den fehlenden Informationen aus dem vorherigen Schritt.
-            """)
     public String readRelevantSource(
-            @Parameter(description = "Die ursprüngliche Frage des Benutzers, zu der Information von den Projekten benötigt wird.")
-            @RequestParam(name = "userQuestion", required = true) String userQuestion,
-            @RequestParam(name="project", required = false, defaultValue = "default") String projectName
-    ) {
-        log.info("enriching question " + userQuestion);
+            @Parameter(description = "A targeted, standalone search prompt optimized for vector retrieval based on what you need to find.")
+            @RequestParam(name = "userQuestion", required = true)
+            String userQuestion,
+
+            @RequestParam(name = "project", required = false, defaultValue = "default")
+            String projectName,
+
+            @Parameter(description = "Similarity threshold 0.0-1.0 (default 0.85).")
+            @RequestParam(name = "similarity", required = false) Double similarity,
+
+            @Parameter(description = "Maximum results 1-20 (default 20).")
+            @RequestParam(name = "maxResults", required = false) Integer maxResults,
+
+            @Parameter(description = "Return class skeletons instead of full method context (default false).")
+            @RequestParam(name = "skeletonsOnly", required = false) Boolean skeletonsOnly) {
         String prefix = """
-                Du bist ein erfahrener Software-Architekt. Beantworte die Frage des Nutzers 
-                ausschließlich basierend auf dem unten stehenden Kontext aus seinem Java-Projekt. 
-                Wenn du die Antwort nicht im Kontext findest, sage das deutlich.                                
                 """;
-        if( projectName.equals("default") ) {
-            projectName = cfg.getActiveProject().get().getName();
+        try {
+            projectRegistry.ensureSearchable(projectName);
+        } catch (UnknownProjectException e) {
+            return "ERROR: " + e.getMessage();
         }
-        String context = enrichment.enrich(projectName, userQuestion);
-        String result = String.format("%s\n%s\nFRAGE: %s",prefix, context, userQuestion);
-        log.info("Returning:\n"+result+"\n---------\n");
+        String resolved = projectRegistry.resolve(projectName);
+
+        log.info(String.format("searching context for '%s' for project '%s'.", userQuestion, resolved));
+        String context;
+        if (similarity == null && maxResults == null && skeletonsOnly == null) {
+            context = enrichment.enrich(resolved, userQuestion);   // legacy behavior unchanged
+        } else {
+            if (similarity == null || similarity < 0.0 || similarity > 1.0) similarity = 0.85;
+            if (maxResults == null || maxResults < 1 || maxResults > 20) maxResults = 20;
+            if (skeletonsOnly == null) skeletonsOnly = false;
+            context = enrichment.enrich(resolved, userQuestion, similarity, maxResults, skeletonsOnly);
+        }
+        String result = String.format("%s\n%s", prefix, context);
+        log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length()/4));
         return result;
+    }
+
+    /**
+     * Convenience overload without search parameters — delegates with defaults (legacy behavior).
+     */
+    public String readRelevantSource(String userQuestion, String projectName) {
+        return readRelevantSource(userQuestion, projectName, null, null, null);
+    }
+
+    @GetMapping("projects")
+    @Operation(description = "Returns all projects with their lifecycle status.")
+    public List<ProjectInfo> listProjects() {
+        return projectRegistry.projectInfos();
     }
 }

@@ -1,10 +1,11 @@
 package de.spraener.prjxp.common.config;
 
+import de.spraener.prjxp.common.transfer.TransferEncryptMode;
+import de.spraener.prjxp.common.transfer.TransferMode;
 import lombok.Data;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
-import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -15,54 +16,83 @@ import java.util.Optional;
 public class PrjXPConfig {
     private String activeProject = "cwd";
     private List<ProjectDefinition> projects = new ArrayList<>();
-
+    // In PrjXPConfig.java ergänzen:
+    private List<McpServerReference> mcpServers = new ArrayList<>();
     // --- Embedding Sektion ---
 
-    // Standardwerte setzt du einfach direkt am Feld!
-    private String embeddingOllamaUrl = "http://192.168.1.228:11434";
-    private String embeddingModelName = "mxbai-embed-large";
-    private int embeddingTimeoutSecs = 60;
+    public enum EmbeddingModelType {
+        OLLAMA, OPEN_AI
+    }
 
     // Hierarchische Listen MÜSSEN vorinitialisiert sein
     private List<PrjXPEmbeddingStoreReference> embeddingStores = new ArrayList<>();
     private List<PrjXPChatModelReference> chatModels = new ArrayList<>();
 
-    {
+    private LuceneEmbeddingStoreConfig embeddingStoreLucene = new LuceneEmbeddingStoreConfig();
+    /** Maximum characters returned by the readFile MCP tool (0 = uncapped). Property: prjxp.reader-max-output-chars */
+    private int readerMaxOutputChars = 100_000;
+    private EmbeddingConfig embedding = new EmbeddingConfig();
+
+    @lombok.Data
+    public static class LuceneEmbeddingStoreConfig {
+        private String indexPath = ".prjxp-data/lucene-index";
+        private int vectorDimension = 1024;
+        private String name = "prjxp";
+    }
+
+    @lombok.Data
+    public static class EmbeddingConfig {
+        private EmbeddingModelType type = EmbeddingModelType.OPEN_AI;
+        private String apiBaseURL = "http://host.docker.internal:1234";
+        private String apiKey = "lm-studio";
+        private String modelName = "mxbai-embed-large-v1";
+        private int timeout = 20;
+    }
+
+    // --- Transfer Sektion (externes Embedding) ---
+    private TransferConfig transfer = new TransferConfig();
+
+    @lombok.Data
+    public static class TransferConfig {
+        private String passwordEnv = "PRJXP_TRANSFER_PASSWORD";
+        private TransferEncryptMode encrypt = TransferEncryptMode.AUTO;
+        private String input;
+        private String output;
+        private TransferMode mode = TransferMode.STORE;
+    }
+
+    private ProjectDefinition createCwdFallback() {
         ProjectDefinition cwd = new ProjectDefinition();
         cwd.setName("cwd");
         cwd.setRootDir(".");
         cwd.setJsonlFile("px-chunks.jsonl");
         cwd.setChunoWhiteList("java,ts");
-        cwd.setTibedBatchSize(50);
+        cwd.setTibedBatchSize(32);
         cwd.setTibedResetStore(true);
-        projects.add(cwd);
-
-        PrjXPEmbeddingStoreReference local = new PrjXPEmbeddingStoreReference();
-        local.setProjectName("default");
-        local.setProviderUrl("http://localhost:8000");
-        local.setDbName("prjxp");
-        local.setTenant("prjxp");
-        local.setCollectionName("prjxp");
-        embeddingStores.add(local);
-
-        PrjXPChatModelReference chatModelReference = new PrjXPChatModelReference();
-        chatModelReference.setStereoType("default");
-        chatModelReference.setProviderUrl("http://192.168.1.224:1234");
-        chatModelReference.setModelName("gemma-4-31b");
-        chatModelReference.setServerType("openAI");
-        chatModelReference.setApiKey("lm-studio");
-
-        chatModels.add(chatModelReference);
+        return cwd;
     }
 
     public Optional<ProjectDefinition> getProjectDefinition(String name) {
+        if (projects.isEmpty() && "cwd".equals(name)) {
+            return Optional.of(createCwdFallback());
+        }
         return projects.stream()
-                .filter(
-                pd -> pd.getName().equals(name)
-                ).findFirst();
+                .filter(pd -> pd.getName().equals(name))
+                .findFirst();
     }
 
     public Optional<ProjectDefinition> getActiveProject() {
         return getProjectDefinition(activeProject);
     }
+
+    /** Raw configured active-project name (may not match any entry in projects[]). */
+    public String getActiveProjectName() { return activeProject; }
+
+    /** Like getProjectDefinition but fails fast with the list of available projects. */
+    public ProjectDefinition requireProject(String name) {
+        return getProjectDefinition(name).orElseThrow(() -> new IllegalStateException(
+                "Unknown project '" + name + "'. Available projects: "
+                        + projects.stream().map(ProjectDefinition::getName).toList()));
+    }
+
 }

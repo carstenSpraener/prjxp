@@ -2,21 +2,14 @@ prjxp:
   # Embedding Stores
   embedding-stores:
     - project-name: "prjxp"
-      store-URL: "http://localhost:8000"
-      store-tenant: "prjxp"
-      store-DB-name: "prjxp"
-      store-collection-name: "prjxp"
 
     - project-name: "kigbau"
-      store-uRL: "http://localhost:8000"
-      store-dBName: "kigbau"
-      store-tenant: "kigbau"
-      store-collection-name: "kigbau-src"
 
   embedding:
-    ollama-url: http://192.168.188.92:11434
-    model-name: mxbai-embed-large
-    timeout-secs: 60
+    type: OLLAMA
+    apiBaseURL: http://192.168.188.92:11434
+    modelName: mxbai-embed-large
+    timeout: 60
 
   # Chat-Schnittstelle
   chat-models:

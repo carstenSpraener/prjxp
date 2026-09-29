@@ -14,7 +14,7 @@ class OragelSearch extends HTMLElement {
         return attr ? attr.split(',').map(p => p.trim()) : [];
     }
 
-    connectedCallback() {
+    async connectedCallback() {
         const projectOptions = this.projects.map((p, i) =>
             `<option value="${p}" ${i === 0 ? 'selected' : ''}>${p}</option>`
         ).join('');
@@ -42,7 +42,16 @@ class OragelSearch extends HTMLElement {
                 <input type="text" id="query" placeholder="Frage an den Project Expert (Enter zum Suchen)...">
                 <button id="searchBtn">Suchen</button>
             </div>
-            
+
+            <div class="param-row" style="display:flex; gap:15px; margin-bottom:10px; font-size:0.9rem;">
+                <label>Similarity
+                    <input type="range" id="similarity" min="0.5" max="1" step="0.05" value="0.85">
+                    <span id="similarityVal">0.85</span>
+                </label>
+                <label>Max results <input type="number" id="maxResults" min="1" max="20" value="20"></label>
+                <label><input type="checkbox" id="skeletonsOnly"> Skeletons only</label>
+            </div>
+
             <div id="status" class="status-msg"></div>
 
             <details id="resultContainer" style="display: none;">
@@ -59,6 +68,69 @@ class OragelSearch extends HTMLElement {
         });
 
         btn.onclick = () => this.search();
+
+        const sim = this.shadowRoot.getElementById('similarity');
+        sim.addEventListener('input', () => {
+            this.shadowRoot.getElementById('similarityVal').textContent = sim.value;
+        });
+
+        await this.populateProjects();
+        setInterval(() => this.refreshProjects(), 10_000);
+    }
+
+    async populateProjects() {
+        const select = this.shadowRoot.getElementById('projectSelect');
+        if (this.projects.length > 0) return;   // explicit 'projects' attribute wins
+        try {
+            const scriptUrl = new URL(import.meta.url);
+            const basePath = scriptUrl.pathname.replace('/js/component.js', '');
+            const res = await fetch(`${basePath}/prjxp/tools/projects`);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const projects = data.map(p => (typeof p === 'string')
+                    ? { name: p, status: 'READY', lastError: null } : p);
+                const firstReady = projects.findIndex(p => (p.status || 'READY') === 'READY');
+                const selIdx = firstReady >= 0 ? firstReady : 0;
+                select.innerHTML = projects.map((p, i) => {
+                    const ready = (p.status || 'READY') === 'READY';
+                    const label = p.name + (ready ? '' : ` (${(p.status || '').toLowerCase()})`);
+                    return `<option value="${p.name}" ${i === selIdx ? 'selected' : ''} ${ready ? '' : 'disabled'}>${label}</option>`;
+                }).join('');
+            } else {
+                select.innerHTML = '<option value="default">default</option>';
+            }
+        } catch (err) {
+            console.error('Project list fetch failed', err);
+            select.innerHTML = '<option value="default">default</option>';
+        }
+    }
+
+    async refreshProjects() {
+        const select = this.shadowRoot.getElementById('projectSelect');
+        if (this.projects.length > 0) return;   // explicit 'projects' attribute wins
+        const current = select.value;
+        try {
+            const scriptUrl = new URL(import.meta.url);
+            const basePath = scriptUrl.pathname.replace('/js/component.js', '');
+            const res = await fetch(`${basePath}/prjxp/tools/projects`);
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            const data = await res.json();
+            if (Array.isArray(data) && data.length > 0) {
+                const projects = data.map(p => (typeof p === 'string')
+                    ? { name: p, status: 'READY', lastError: null } : p);
+                const presentIdx = projects.findIndex(p => p.name === current);
+                const firstReady = projects.findIndex(p => (p.status || 'READY') === 'READY');
+                const selIdx = presentIdx >= 0 ? presentIdx : (firstReady >= 0 ? firstReady : 0);
+                select.innerHTML = projects.map((p, i) => {
+                    const ready = (p.status || 'READY') === 'READY';
+                    const label = p.name + (ready ? '' : ` (${(p.status || '').toLowerCase()})`);
+                    return `<option value="${p.name}" ${i === selIdx ? 'selected' : ''} ${ready ? '' : 'disabled'}>${label}</option>`;
+                }).join('');
+            }
+        } catch (err) {
+            console.error('Project list refresh failed', err);   // keep current options on failure
+        }
     }
 
     async search() {
@@ -77,7 +149,11 @@ class OragelSearch extends HTMLElement {
         try {
             const scriptUrl = new URL(import.meta.url);
             const basePath = scriptUrl.pathname.replace('/js/component.js', '');
-            const apiUrl = `${basePath}/prjxp/tools/context?project=${encodeURIComponent(project)}&userQuestion=${encodeURIComponent(query)}`;
+            const params = new URLSearchParams({ project, userQuestion: query });
+            params.set('similarity', this.shadowRoot.getElementById('similarity').value);
+            params.set('maxResults', this.shadowRoot.getElementById('maxResults').value);
+            params.set('skeletonsOnly', String(this.shadowRoot.getElementById('skeletonsOnly').checked));
+            const apiUrl = `${basePath}/prjxp/tools/context?${params.toString()}`;
 
             const response = await fetch(apiUrl);
             this.lastContext = await response.text();

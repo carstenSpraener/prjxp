@@ -136,7 +136,7 @@ Jeder Chunk enthält folgende Metadaten:
 private TypeScriptCodeChunker chunker;
 
 Stream<PxChunk> chunks = chunker.chunk(new File("myComponent.ts"));
-// Speicher Chunks in ChromaDB für Vektor-Suche
+// Speicher Chunks in Lucene für Vektor-Suche
 ```
 
 ### Retrieval von Chunks

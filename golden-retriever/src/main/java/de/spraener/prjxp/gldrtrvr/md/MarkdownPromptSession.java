@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.md;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.util.ValueContainer;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
@@ -19,7 +20,7 @@ public class MarkdownPromptSession {
     private PxChunkDao chunkDao;
     private List<PxChunk> chunks;
     private List<ChunkNode> rootForrest = new ArrayList<>();
-    private final int maxContentLength = 5000;
+    private int maxContentLength = 5000;
     private final ChunkRankingService rankingService;
 
     public MarkdownPromptSession(PxChunkDao chunkDao, ChunkRankingService rankingService) {
@@ -40,6 +41,20 @@ public class MarkdownPromptSession {
                 rootForrest.add(root);
             }
             root.rank(chunk, rankingService);
+        }
+    }
+
+    public void setChunksByScore(List<ScoredChunk> scoredChunks) {
+        this.chunks = scoredChunks.stream().map(ScoredChunk::chunk).toList();
+        this.rootForrest.clear();
+        for (var scoredChunk : scoredChunks) {
+            PxChunk chunk = scoredChunk.chunk();
+            ChunkNode root = findRootForChunk(chunk);
+            if (root == null) {
+                root = buildGraphToRoot(chunk).root();
+                rootForrest.add(root);
+            }
+            root.rank(chunk, rankingService, scoredChunk.score());
         }
     }
 
@@ -65,14 +80,19 @@ public class MarkdownPromptSession {
         }
         rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank));
 
+        int skippedByBudget = 0;
         for (var rp : rankedPrompts) {
             if (rp.rootRank() == 0) {
-                break;
+                continue;
             }
             if (context.length() + rp.treeContext().length() > maxContentLength) {
+                skippedByBudget++;
                 continue;
             }
             context.append(rp.treeContext());
+        }
+        if (skippedByBudget > 0) {
+            context.append("\n[weitere %d Klassen wegen Groessenlimit nicht enthalten]\n".formatted(skippedByBudget));
         }
         return context.toString();
     }

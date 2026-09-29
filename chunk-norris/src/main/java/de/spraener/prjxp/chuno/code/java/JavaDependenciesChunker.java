@@ -34,12 +34,12 @@ public class JavaDependenciesChunker {
 
     private Stream<PxChunk> createDependencyChunkForSource(String source) {
         StringBuilder content = new StringBuilder();
-        content.append("Die Klasse " + source + " benutzt die folgenden Klassen:").append('\n');
+        content.append("## Dependencies of " + source + ":\n\n**Outgoing**\n");
         depRegMgr.get(JavaDependencyHandler.JAVA_DEPENDENCIES)
                 .getDependencies(source)
                 .stream()
                 .forEach(str -> content.append("  * ").append(str).append('\n'));
-        content.append("Die folgenden Klassen verweisen auf die Klasse " + source + ":\n");
+        content.append("\n\n**Incoming**:\n");
         depRegMgr.get(JavaDependencyHandler.JAVA_DEPENDENCIES)
                 .getUsedBy(source)
                 .forEach(str -> content.append("  * ").append(str).append('\n'));

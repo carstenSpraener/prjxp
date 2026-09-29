@@ -16,3 +16,5 @@ include('prjxp-common', 'chunk-norris', 'tibed', 'golden-retriever', 'mcp-server
 
 include 'mcp-server'
 include 'docpipe'
+include 'lucene-store'
+include 'prjxp-launcher'

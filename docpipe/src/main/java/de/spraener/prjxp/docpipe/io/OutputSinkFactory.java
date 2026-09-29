@@ -6,8 +6,11 @@ import java.io.IOException;
 import java.nio.file.Path;
 
 /**
- * Factory for creating OutputSink instances.
- * Can be mocked in tests to capture output without actual file I/O.
+ * Factory for creating {@link OutputSink} instances.
+ * <p>
+ * This factory abstracts the creation of output mechanisms, allowing for easy substitution 
+ * with mock or in-memory implementations during testing to avoid actual file I/O.
+ * </p>
  */
 @Service
 public class OutputSinkFactory {

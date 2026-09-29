@@ -18,6 +18,9 @@ public interface OutputSink extends AutoCloseable {
      */
     void printf(String format, Object... args);
 
+    /**
+     * Closes the output sink and releases any associated resources.
+     */
     @Override
     void close();
 }

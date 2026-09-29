@@ -1,20 +1,20 @@
+import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
+
 plugins {
     id 'application'
     alias(libs.plugins.shadow)
 }
 
-repositories {
-    mavenCentral()
-}
-
 dependencies {
     implementation project(':prjxp-common')
+    testFixturesImplementation project(':prjxp-common')
+    implementation project(':golden-retriever')
 
     // Spring & DevTools
     implementation libs.spring.boot.starter.json
     implementation libs.spring.boot.starter.validation
     implementation libs.bundles.langchain.stack
-    developmentOnly libs.spring.boot.devtools
+    // developmentOnly libs.spring.boot.devtools
     implementation libs.commons.cli
     implementation libs.dotenv.java
     implementation libs.commons.io
@@ -41,4 +41,18 @@ application {
 
 shadowJar {
     zip64=true
+    exclude 'application.yaml'
+
+    // WICHTIG: Diese Transformer mergen die Spring-Konfigurationen
+    mergeServiceFiles()
+    append 'META-INF/spring.handlers'
+    append 'META-INF/spring.schemas'
+    append 'META-INF/spring.tooling'
+    append 'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports'
+    append 'META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports'
+
+    transform(PropertiesFileTransformer) {
+        paths = ['META-INF/spring.factories']
+        mergeStrategy = 'append'
+    }
 }

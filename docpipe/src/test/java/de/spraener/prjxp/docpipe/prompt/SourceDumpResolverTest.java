@@ -8,8 +8,10 @@ import org.mockito.Mockito;
 
 import java.io.File;
 import java.io.FileWriter;
+import java.util.HashMap;
 
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 class SourceDumpResolverTest {
@@ -20,6 +22,7 @@ class SourceDumpResolverTest {
         SourceDumpResolver resolver = new SourceDumpResolver();
         Options optionsMock = Mockito.mock(Options.class);
         when(optionsMock.param(any(Integer.class))).thenReturn("src/main/java");
+        when(optionsMock.hash(any(), any())).thenAnswer(i -> i.getArgument(1));
         String prompt = resolver.resolve(new File("."), null, optionsMock);
     }
 
@@ -29,6 +32,7 @@ class SourceDumpResolverTest {
         SourceDumpResolver uut = new SourceDumpResolver();
         Options optionsMock = Mockito.mock(Options.class);
         when(optionsMock.param(any(Integer.class))).thenReturn("../chunk-norris/src/main/java");
+        when(optionsMock.hash(any(), any())).thenAnswer(i -> i.getArgument(1));
         String dump = uut.resolve(new File("."), null, optionsMock);
         Assertions.assertThat(dump).isNotEmpty();
         new File("./src/test/tmp").mkdirs();

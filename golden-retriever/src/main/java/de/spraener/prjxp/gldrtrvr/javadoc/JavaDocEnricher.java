@@ -10,11 +10,11 @@ import com.github.javaparser.javadoc.description.JavadocDescription;
 import com.github.javaparser.printer.lexicalpreservation.LexicalPreservingPrinter;
 import com.github.javaparser.utils.SourceRoot;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.util.ValueContainer;
 import de.spraener.prjxp.gldrtrvr.GldRtrvrQuestioner;
-import de.spraener.prjxp.common.store.PxChunkDao;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.context.ApplicationEventPublisher;
@@ -36,9 +36,11 @@ import java.util.List;
 public class JavaDocEnricher {
 
     public static final long MIN_WAIT = 5000;
+    private final PxLogService logService;
     private final GldRtrvrQuestioner questioner;
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ApplicationEventPublisher eventPublisher;
+    private final PrjXPConfig cfg;
 
     public void enrichProject(Path[] paths) throws IOException {
         Arrays.asList(paths).stream()
@@ -46,7 +48,7 @@ public class JavaDocEnricher {
                     try {
                         enrichProject(p);
                     } catch (IOException e) {
-                        log.severe("Exception while enriching project " + p.toAbsolutePath().toString() + ": " + e.getMessage());
+                        logService.error(e, "Exception while enriching project %s: %s", p.toAbsolutePath().toString(), e.getMessage());
                     }
                 });
     }
@@ -121,11 +123,11 @@ public class JavaDocEnricher {
                             log.info("Enriched file saved to: " + targetPath);
 
                         } catch (IOException e) {
-                            log.severe("Fehler beim Schreiben in target/enriched: " + e.getMessage());
+                            logService.error(e, "Fehler beim Schreiben in target/enriched: %s", e.getMessage());
                         }
                     }
                 } catch (Exception e) {
-                    log.severe("Fehler beim enrichment von " + cu.getPrimaryType().get().getFullyQualifiedName().get() + ": " + e.getMessage());
+                    logService.error(e, "Fehler beim enrichment von %s: %s", cu.getPrimaryType().get().getFullyQualifiedName().get(), e.getMessage());
                 }
 
             });
@@ -184,7 +186,7 @@ public class JavaDocEnricher {
         }
         String methodName = asMethodSignature(method);
 
-        List<PxChunk> methodChunks = chunkDaoProvider.get("default").get().findById(className + "." + methodName);
+        List<PxChunk> methodChunks = chunkDaoProvider.get(cfg.getActiveProject().get().getName()).get().findById(className + "." + methodName);
         log.info("Asking for %s.%s".formatted(className, methodName));
         String question = (
                 "Du bist eine erfahrener Java-Entwickler und sollst mich bei der Dokumentation meines QuellCodes unterstützen." +

@@ -1,6 +1,8 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.util.ValueContainer;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkNode;
@@ -23,7 +25,7 @@ public class JavaPromptSession {
     private PxChunkDao chunkDao;
     private List<PxChunk> chunks;
     private List<ChunkNode> rootForrest = new ArrayList<>();
-    private final int maxContentLength = 50000;
+    private int maxContentLength = 50000;
     private final ChunkRankingService rankingService;
 
     public JavaPromptSession(PxChunkDao chunkDao, ChunkRankingService rankingService) {
@@ -31,7 +33,7 @@ public class JavaPromptSession {
         this.rankingService = rankingService;
     }
 
-    record RankedPrompt(double rootRank, String treeContext) {
+    record RankedPrompt(double rootRank, String treeContext, PxChunk rootChunk) {
     }
 
     public void setChunks(List<PxChunk> chunks) {
@@ -44,6 +46,20 @@ public class JavaPromptSession {
                 rootForrest.add(root);
             }
             root.rank(chunk, rankingService);
+        }
+    }
+
+    public void setChunksByScore(List<ScoredChunk> scoredChunks) {
+        this.chunks = scoredChunks.stream().map(ScoredChunk::chunk).toList();
+        this.rootForrest.clear();
+        for (var scoredChunk : scoredChunks) {
+            PxChunk chunk = scoredChunk.chunk();
+            ChunkNode root = findRootForChunk(chunk);
+            if (root == null) {
+                root = buildGraphToRoot(chunk).root();
+                rootForrest.add(root);
+            }
+            root.rank(chunk, rankingService, scoredChunk.score());
         }
     }
 
@@ -66,20 +82,57 @@ public class JavaPromptSession {
                     continue;
                 }
             }
-            rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext));
+            rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext, r.getChunk()));
+        }
+        rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
+        int skippedByBudget = 0;
+        for (var rp : rankedPrompts) {
+            if (rp.rootRank() == 0) {
+                continue;
+            }
+            if (context.length() + rp.treeContext().length() > maxContentLength) {
+                skippedByBudget++;
+                continue;
+            }
+            context += rp.treeContext();
+        }
+        if (skippedByBudget > 0) {
+            context += "\n[weitere %d Klassen wegen Groessenlimit nicht enthalten]\n".formatted(skippedByBudget);
+        }
+        return context;
+    }
+
+    public List<SearchHit> buildSearchHits(PromptModifier promptModifier, Function<String, Boolean>[] contextValidator) {
+        List<SearchHit> result = new ArrayList<>();
+        List<RankedPrompt> rankedPrompts = new ArrayList<>();
+        for (var r : this.rootForrest) {
+            final ValueContainer<String> vcPrompt = new ValueContainer<String>("");
+            r.visit(c -> {
+                vcPrompt.setValue(promptModifier.modifyPrompt(chunkDao,
+                        c.getChunk(), vcPrompt.getValue()));
+            });
+            String treeContext = vcPrompt.getValue();
+            if (contextValidator != null) {
+                boolean valid = true;
+                for (var v : contextValidator) {
+                    valid &= v.apply(treeContext);
+                }
+                if (!valid) {
+                    continue;
+                }
+            }
+            rankedPrompts.add(new RankedPrompt(r.getRootRank(), treeContext, r.getChunk()));
         }
         rankedPrompts.sort(Comparator.comparingDouble(RankedPrompt::rootRank).reversed());
         for (var rp : rankedPrompts) {
             if (rp.rootRank() == 0) {
-                break;
+                continue;
             }
-            context += rp.treeContext();
-            if (context.length() > maxContentLength) {
-                break;
-            }
+            result.add(SearchHit.from(rp.rootChunk, rp.rootRank(), "", rp.treeContext));
         }
-        return context;
+        return result;
     }
+
 
     private ChunkNode findRootForChunk(PxChunk chunk) {
         for (var r : rootForrest) {

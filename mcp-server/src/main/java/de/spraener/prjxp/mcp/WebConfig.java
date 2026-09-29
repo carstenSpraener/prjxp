@@ -10,12 +10,18 @@ import java.util.List;
 @Configuration
 public class WebConfig implements WebMvcConfigurer {
 
-    @Value("#{'${mcp.cors.allowed-patterns}'.split(',')}")
+    @Value("#{'${mcp.cors.allowed-patterns:http://localhost:*}'.split(',')}")
     private List<String> allowedPatterns;
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
         registry.addMapping("/prjxp/tools/**")
+                .allowedOriginPatterns(allowedPatterns.toArray(new String[0]))
+                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true);
+
+        registry.addMapping("/mcp")
                 .allowedOriginPatterns(allowedPatterns.toArray(new String[0]))
                 .allowedMethods("GET", "POST", "OPTIONS")
                 .allowedHeaders("*")

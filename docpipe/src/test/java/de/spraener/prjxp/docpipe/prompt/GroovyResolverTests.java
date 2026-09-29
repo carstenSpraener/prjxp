@@ -3,6 +3,7 @@ package de.spraener.prjxp.docpipe.prompt;
 import com.github.jknack.handlebars.Options;
 import de.spraener.prjxp.common.scripting.ScriptCompileService;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
+import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import org.junit.jupiter.api.Test;
 import org.mockito.Mockito;
 import org.springframework.context.ApplicationContext;
@@ -12,33 +13,35 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 public class GroovyResolverTests {
 
     @Test
     public void testGroovyResolving() throws Exception {
         ScriptCompileService scs = new ScriptCompileService();
-        ApplicationContext context = Mockito.mock(ApplicationContext.class);
+        ApplicationContext context = mock(ApplicationContext.class);
 
         GroovyResolver uut = new GroovyResolver(scs, context);
         PromptResolvingService prs = new PromptResolvingService(List.of(uut), new DotDPFilesService());
 
-        Options optMock = Mockito.mock(Options.class);
+        Options optMock = mock(Options.class);
 
-        String result = prs.resolve("{{#groovy}}return 'Hello World'{{/groovy}}", new File(""));
+        String result = prs.resolve(mock(DPContentCreation.class), "{{#groovy}}return 'Hello World'{{/groovy}}", new File(""));
         assertEquals("Hello World", result);
     }
 
     @Test
     public void testBindings() throws Exception {
         ScriptCompileService scs = new ScriptCompileService();
-        ApplicationContext context = Mockito.mock(ApplicationContext.class);
+        ApplicationContext context = mock(ApplicationContext.class);
 
         GroovyResolver uut = new GroovyResolver(scs, context);
         PromptResolvingService prs = new PromptResolvingService(List.of(uut), new DotDPFilesService());
 
-        Options optMock = Mockito.mock(Options.class);
+        Options optMock = mock(Options.class);
         String result = prs.resolve(
+            mock(DPContentCreation.class),
             """
                 {{#groovy name="John"}}
                 if( dir==null) {

@@ -1,13 +1,8 @@
-
-// Repositories können theoretisch auch in die zentrale build.gradle,
-// aber hier schadet es nicht.
-repositories {
-    mavenCentral()
-}
-
 dependencies {
     // Internes Modul
     implementation project(':prjxp-common')
+    implementation project(':lucene-store')
+    testFixturesImplementation project(':prjxp-common')
 
     // Spring Boot
     implementation libs.spring.boot.starter.json

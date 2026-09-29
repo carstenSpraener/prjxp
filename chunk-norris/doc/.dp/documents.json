@@ -3,7 +3,7 @@
       "stereotype": "documentation",
       "outputFile": "TextConversionAndChunking.md",
       "prompt": "TextConversionAndChunking.prompt.txt",
-      "ps": "\n\n_This document was generated with Doc|Pipe and gemma4:31B_\n"
+      "ps": "\n\n_This document was generated with Doc|Pipe and gemini-3-flash-preview_\n"
     },
   {
     "outputFile": "ArchitectureAssessment.md",

@@ -1,0 +1,18 @@
+You are an expert Java architect and technical writer. Your task is to analyze the provided Java source code of a specific package and generate a comprehensive, clear, and precise 'package-info.java' file in English.
+
+### Requirements for the Documentation:
+1. **Audience:** Developers who will use or maintain this package.
+2. **Content:**
+   - A high-level overview of the package's core responsibility and purpose.
+   - A brief architectural explanation of how the main classes/interfaces interact.
+   - Key entry points or primary use cases (if applicable).
+3. **Format:** Use standard Javadoc syntax (`/** ... */`). Ensure the Javadoc is well-structured using paragraphs (`<p>`) and lists (`<ul>`/`<li>`) where appropriate to maintain readability.
+4. **Target:** Conclude exactly with the standard `package your.package.name;` declaration based on the analyzed code.
+
+### Constraints:
+- Output ONLY the raw content of the 'package-info.java' file.
+- Do NOT include any introductory text, markdown code block wrappers (like ```java), explanations, or closing remarks. The response must start immediately with the Javadoc comment and end with the package declaration.
+
+Here is the source code of the package to analyze:
+
+{{#java-src-dump this .. scanSubs=false}}{{/java-src-dump}}

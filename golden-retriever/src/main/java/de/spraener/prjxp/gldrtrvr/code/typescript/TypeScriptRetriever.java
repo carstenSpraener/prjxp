@@ -2,18 +2,18 @@ package de.spraener.prjxp.gldrtrvr.code.typescript;
 
 import de.spraener.prjxp.common.code.typescript.TypeScriptCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
+import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.function.Function;
 
 @Service
@@ -24,17 +24,46 @@ public class TypeScriptRetriever implements GoldenRetriever {
     private final ChunkRankingService rankingService;
 
     @SafeVarargs
-    public final StringBuilder buildPromptForFindings(String projectName, List<PxChunk> chunks, Function<String, Boolean>... contextValidators) {
+    public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
         StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
-        List<PxChunk> tsChunks = combineChunksByID(chunkDao, chunks);
+        List<ScoredChunk> tsChunks = combineScoredChunksByID(chunkDao, chunks);
         if( tsChunks.isEmpty() ) {
             return prompt;
         }
         TypeScriptPromptSession session = new TypeScriptPromptSession(chunkDao, rankingService);
-        session.setChunks(tsChunks);
+        session.setMaxContentLength(params.getMaxContentLength());
+        session.setChunksByScore(tsChunks);
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
+    }
+
+    private List<ScoredChunk> combineScoredChunksByID(PxChunkDao chunkDao, List<ScoredChunk> chunks) {
+        Map<String, List<ScoredChunk>> chunkMap = new HashMap<>();
+        for (var c : chunks) {
+            if (isTypeScriptChunk(c.chunk())) {
+                List<ScoredChunk> idList = chunkMap.computeIfAbsent(c.chunk().getId(), k -> new ArrayList<>());
+                idList.add(c);
+            }
+        }
+        List<ScoredChunk> result = new ArrayList<>();
+        for (var chunkList : chunkMap.values()) {
+            ScoredChunk c = chunkList.getFirst();
+            double bestScore = chunkList.stream().mapToDouble(ScoredChunk::score).max().orElse(0.0);
+            if (c.chunk().getTotal() > chunkList.size()) {
+                result.add(new ScoredChunk(combineChunks(chunkDao.findById(c.chunk().getId())), bestScore));
+            } else {
+                result.add(new ScoredChunk(combineChunks(new ArrayList<>(chunkList.stream().map(ScoredChunk::chunk).toList())), bestScore));
+            }
+        }
+        return result;
+    }
+
+    @Override
+    @SafeVarargs
+    // TODO: Implement this method
+    public final List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks, Function<String, Boolean>... contextValidators) {
+        return Collections.EMPTY_LIST;
     }
 
     private String modifyPromptByChunk(PxChunkDao chunkDao, PxChunk pxChunk, String prompt) {

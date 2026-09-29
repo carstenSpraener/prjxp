@@ -1,0 +1,33 @@
+prjxp:
+
+  # Embedding model type: ollama or open_ai
+  embeddingStoreLucene:
+    indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
+    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
+
+  embedding:
+    type: "OPEN_AI"
+    apiBaseURL: ${EMBEDDING_API_BASE_URL:http://host.docker.internal:1234/v1}
+    modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
+    timeout: ${EMBEDDING_TIMEOUT:180}
+    apiKey: ${EMBEDDING_API_KEY:dummy}
+
+mcp:
+  cors:
+    allowed-patterns: "http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*"
+
+server:
+  port: ${SERVER_PORT:7007}
+  forward-headers-strategy: framework
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
+  devtools:
+    restart:
+      additional-exclude: "**/package-info.java"
+  ai:
+    mcp:
+      server:
+        protocol: STATELESS
+        transport: sse
