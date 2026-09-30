@@ -9,7 +9,6 @@ import de.spraener.prjxp.docpipe.model.DPJob;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
-import org.springframework.validation.Validator;
 
 import java.io.File;
 import java.net.URISyntaxException;
@@ -31,7 +30,6 @@ import static org.mockito.Mockito.verify;
 class JobCreationServiceTest {
 
     private PrjXPConfig pxCfg;
-    private Validator validator;
     private PxLogService logService;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final DotDPFilesService dpFilesService = new DotDPFilesService();
@@ -41,9 +39,8 @@ class JobCreationServiceTest {
     @BeforeEach
     void setUp() {
         pxCfg = mock(PrjXPConfig.class);
-        validator = mock(Validator.class); // injected but currently unused (dead dependency)
         logService = mock(PxLogService.class);
-        service = new JobCreationService(pxCfg, objectMapper, dpFilesService, validator, logService);
+        service = new JobCreationService(pxCfg, objectMapper, dpFilesService, logService);
     }
 
     private File fixtureRoot() throws URISyntaxException {
@@ -114,6 +111,46 @@ class JobCreationServiceTest {
         assertThat(plain).isNotNull();
         assertThat(plain.getOutputFile()).isEqualTo("README.md");
         assertThat(plain.getArgs()).isEmpty();
+    }
+
+    @Test
+    void readJobs_globMatchesAllFileKinds_baseNameHandlesExtensionlessAndDotfiles(@TempDir Path tempDir) throws Exception {
+        // built on disk (not as a classpath fixture): Gradle's processResources skips dot files
+        Files.createDirectories(tempDir.resolve(".dp"));
+        Files.writeString(tempDir.resolve(".dp/documents.json"),
+                "[ { \"forEach\": \"**/*\", \"outputFile\": \".md\" } ]");
+        Files.createDirectories(tempDir.resolve("src"));
+        Files.writeString(tempDir.resolve("src/Hello.java"), "public class Hello { }");
+        Files.writeString(tempDir.resolve("src/Makefile"), "all:\n");
+        Files.writeString(tempDir.resolve("src/.gitignore"), "*.class\n");
+
+        List<DPJob> jobs = service.readJobs(Optional.of(pdFor(tempDir.toFile()))).toList();
+
+        assertThat(jobs).hasSize(1);
+        DPJob job = jobs.get(0);
+
+        // **/* matches the three src files plus .dp/documents.json itself
+        assertThat(job.getContentCreationList()).hasSize(4);
+
+        // file with extension: dot > 0 -> base name is the part before the last dot
+        DPContentCreation hello = byCurrentFile(job, "src/Hello.java");
+        assertThat(hello).isNotNull();
+        assertThat(hello.getOutputFile()).isEqualTo("./Hello.md");
+
+        // file without extension: lastIndexOf('.') == -1 -> the whole name is kept
+        DPContentCreation makefile = byCurrentFile(job, "src/Makefile");
+        assertThat(makefile).isNotNull();
+        assertThat(makefile.getOutputFile()).isEqualTo("./Makefile.md");
+
+        // dot file: dot at position 0 is not an extension separator -> the whole name is kept
+        DPContentCreation gitignore = byCurrentFile(job, "src/.gitignore");
+        assertThat(gitignore).isNotNull();
+        assertThat(gitignore.getOutputFile()).isEqualTo("./.gitignore.md");
+
+        // the .dp config file itself also matches **/*
+        DPContentCreation documents = byCurrentFile(job, ".dp/documents.json");
+        assertThat(documents).isNotNull();
+        assertThat(documents.getOutputFile()).isEqualTo("./documents.md");
     }
 
     private DPContentCreation byCurrentFile(DPJob job, String currentFile) {

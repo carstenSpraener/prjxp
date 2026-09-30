@@ -12,7 +12,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
-import org.springframework.validation.Validator;
 
 import java.io.File;
 import java.io.IOException;
@@ -41,7 +40,6 @@ public class JobCreationService {
     private final PrjXPConfig pxCfg;
     private final ObjectMapper objectMapper;
     private final DotDPFilesService dpFilesService;
-    private final Validator validator;
     private final PxLogService logService;
 
     /**
@@ -127,7 +125,8 @@ public class JobCreationService {
                           if( StringUtils.hasText(c.getOutputDir()) ) {
                               outputDir = outputDir + "/" + c.getOutputDir();
                           }
-                          String baseName = fileName.substring(0, fileName.lastIndexOf('.'));
+                          int dot = fileName.lastIndexOf('.');
+                          String baseName = dot > 0 ? fileName.substring(0, dot) : fileName;
                           copy.setOutputFile(outputDir + "/" + baseName + c.getOutputFile());
                           if( StringUtils.hasText(c.getStorePrompt())) {
                               copy.setStorePrompt(outputDir + "/" + baseName + c.getStorePrompt());
