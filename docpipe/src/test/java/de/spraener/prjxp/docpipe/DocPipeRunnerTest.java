@@ -2,6 +2,7 @@ package de.spraener.prjxp.docpipe;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
+import de.spraener.prjxp.common.errorlog.PxLogMessage;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.config.JobCreationService;
@@ -18,6 +19,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.io.File;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Level;
 import java.util.stream.Stream;
 
@@ -36,9 +38,9 @@ import static org.mockito.Mockito.when;
  * The {@code maxThreads} field is a plain {@code @Value}-annotated (non-final) field,
  * so it is injected via {@link ReflectionTestUtils} instead of the constructor.
  * <p>
- * NOTE: The {@code logService.maxLevel() >= SEVERE} branch (which ends in
- * {@code System.exit(1)}) is deliberately NOT tested — no SecurityManager or other
- * exit tricks. That path stays intentionally uncovered by design.
+ * The {@code logService.maxLevel() >= SEVERE} branch is tested via the package-private
+ * {@code setExitHandler} seam, which replaces the default {@code System::exit} callback
+ * with a capturing lambda — no SecurityManager or other exit tricks needed.
  */
 class DocPipeRunnerTest {
 
@@ -135,5 +137,24 @@ class DocPipeRunnerTest {
         assertThatCode(() -> runner(1).run(cfg())).doesNotThrowAnyException();
 
         verify(contentCreationService, never()).createContent(any());
+    }
+
+    @Test
+    void run_severeErrors_exitsWithStatus1() throws Exception {
+        when(jobCreationService.readJobs(any())).thenReturn(Stream.empty());
+        // PxLogMessage is a plain POJO (Level, message) — real instances stand in for the logged errors
+        PxLogMessage msg1 = new PxLogMessage(Level.SEVERE, "first error");
+        PxLogMessage msg2 = new PxLogMessage(Level.SEVERE, "second error");
+        when(logService.maxLevel()).thenReturn(Level.SEVERE);
+        when(logService.getMessagesWithLevelMin(Level.SEVERE)).thenReturn(Stream.of(msg1, msg2));
+
+        AtomicInteger exitCode = new AtomicInteger();
+        DocPipeRunner uut = runner(1);
+        uut.setExitHandler(exitCode::set);
+
+        assertThatCode(() -> uut.run(cfg())).doesNotThrowAnyException();
+
+        verify(logService).getMessagesWithLevelMin(Level.SEVERE);
+        assertThat(exitCode).hasValue(1);
     }
 }
