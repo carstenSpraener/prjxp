@@ -5,11 +5,11 @@ plugins {
 
 // JaCoCo Coverage-Ratchets pro Modul (LINE COVEREDRATIO).
 // Die Werte liegen bewusst unter dem aktuellen Stand (gemessen in DockerHub Phase 02):
-//   prjxp-common: 54.5% · chunk-norris: 71.7% · tibed: 57.5%
+//   prjxp-common: 92.3% · chunk-norris: 71.7% · tibed: 57.5%
 //   golden-retriever: 40.6% · lucene-store: 79.0% · docpipe: 94.8% · mcp-server: 87.6%
 // Nur nach oben rücken, wenn Legacy-Code getestet wurde — nie senken.
 def coverageRatchets = [
-        'prjxp-common'     : 0.50,
+        'prjxp-common'     : 0.85,
         'chunk-norris'     : 0.70,
         'tibed'            : 0.55,
         'golden-retriever' : 0.35,

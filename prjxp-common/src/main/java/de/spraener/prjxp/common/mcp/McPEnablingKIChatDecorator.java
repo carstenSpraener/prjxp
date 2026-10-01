@@ -41,7 +41,8 @@ public class McPEnablingKIChatDecorator implements KIChat {
         return agent.chat(prompt);
     }
 
-    private McpAgent createMcpAgent(String prompt) {
+    /* package-private for testability (overridable in test subclasses) */
+    McpAgent createMcpAgent(String prompt) {
         ChatModel bridgeModel = new ChatModel() {
             @Override
             public ChatResponse doChat(ChatRequest chatRequest) {
