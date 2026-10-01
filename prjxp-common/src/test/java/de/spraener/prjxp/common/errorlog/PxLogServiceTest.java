@@ -12,6 +12,7 @@ import org.springframework.test.context.ActiveProfiles;
 import java.util.logging.Level;
 import java.util.stream.Stream;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 
@@ -55,6 +56,47 @@ class PxLogServiceTest {
         uut.error(new Exception("Test Exception"), "Formatted Error Message: %s", "Test Argument");
         assertThatNoException().isThrownBy(() -> {});
     }
+
+    // --- Phase 04 additions (unique message strings: the Spring bean is shared across tests) ---
+
+    @Test
+    void error_withArgs_formatsMessage() {
+        PxLogService result = uut.error("disk %s full", "C:");
+
+        assertThat(result).isSameAs(uut);
+        assertThat(uut.getMessagesWithLevelMin(Level.SEVERE))
+                .map(PxLogMessage::getMessage)
+                .contains("disk C: full");
+    }
+
+    @Test
+    void error_withoutArgs_keepsRawMessage() {
+        uut.error("boom");
+
+        assertThat(uut.getMessagesWithLevelMin(Level.SEVERE))
+                .map(PxLogMessage::getMessage)
+                .contains("boom");
+    }
+
+    @Test
+    void getMessagesWithLevelMin_filtersByLevel() {
+        uut.logMessage(new PxLogMessage(Level.WARNING, "w-unique"));
+        uut.error("s-unique");
+
+        assertThat(uut.getMessagesWithLevelMin(Level.SEVERE))
+                .map(PxLogMessage::getMessage)
+                .contains("s-unique")
+                .doesNotContain("w-unique");
+        assertThat(uut.getMessagesWithLevelMin(Level.WARNING))
+                .map(PxLogMessage::getMessage)
+                .contains("w-unique", "s-unique");
+    }
+
+    @Test
+    void maxLevel_withoutMessages_returnsFinest() {
+        assertThat(new PxLogService().maxLevel()).isEqualTo(Level.FINEST);
+    }
+
     @Configuration
     static class TestConfig {
         @Bean
