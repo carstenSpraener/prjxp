@@ -1,6 +1,7 @@
 package de.spraener.prjxp.docpipe.prompt.groovy;
 
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -92,6 +93,7 @@ class DPGroovyToolTest {
     void grepWrapsIoFailureInRuntimeException() throws Exception {
         Path unreadable = rootDir.resolve("locked.java");
         Files.writeString(unreadable, "TODO locked\n", StandardCharsets.UTF_8);
+        Assumptions.assumeTrue(Files.getFileStore(unreadable).supportsFileAttributeView("posix"));
         // strip all permissions -> opening the file fails with an IOException
         Files.setPosixFilePermissions(unreadable, EnumSet.noneOf(PosixFilePermission.class));
 

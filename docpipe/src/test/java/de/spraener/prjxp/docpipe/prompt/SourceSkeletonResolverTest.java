@@ -1,6 +1,7 @@
 package de.spraener.prjxp.docpipe.prompt;
 
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -152,6 +153,7 @@ class SourceSkeletonResolverTest {
         Path srcDir = Files.createDirectories(tempDir.resolve("src"));
         Path unreadable = srcDir.resolve("locked.txt");
         Files.writeString(unreadable, "TOP SECRET CONTENT");
+        Assumptions.assumeTrue(Files.getFileStore(unreadable).supportsFileAttributeView("posix"));
         // strip all permissions -> the fallback dump's FileInputStream fails and must be logged, not thrown
         Files.setPosixFilePermissions(unreadable, EnumSet.noneOf(PosixFilePermission.class));
 

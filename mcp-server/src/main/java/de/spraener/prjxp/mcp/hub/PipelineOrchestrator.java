@@ -20,6 +20,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Hub pipeline: a single FIFO worker running chunk → scoped reset + embed per project,
@@ -53,7 +54,15 @@ public class PipelineOrchestrator implements ImportHandler {
 
     @PreDestroy
     public void shutdown() {
-        worker.shutdownNow();
+        worker.shutdown();
+        try {
+            if (!worker.awaitTermination(5, TimeUnit.SECONDS)) {
+                worker.shutdownNow();
+            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            worker.shutdownNow();
+        }
     }
 
     @Override
@@ -103,7 +112,6 @@ public class PipelineOrchestrator implements ImportHandler {
     private void runPipeline(String name) {
         ProjectDefinition def = registry.definitionOf(name);
         if (def == null) {
-            wipeIfDeregistered(name);   // deregistered between enqueue and start — nothing was written, but be safe
             return;
         }
         try {

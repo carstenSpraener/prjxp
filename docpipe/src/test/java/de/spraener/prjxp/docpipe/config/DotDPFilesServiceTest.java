@@ -40,9 +40,8 @@ class DotDPFilesServiceTest {
 
         File result = service.dotPipeDir(task);
 
-        // implementation hard-codes "/" as separator (POSIX layout)
-        assertThat(result.getAbsolutePath())
-                .isEqualTo(tempDir.toAbsolutePath() + "/" + DotDPFilesService.DP_DIR);
+        assertThat(result.toPath().toAbsolutePath().normalize())
+                .isEqualTo(tempDir.resolve(DotDPFilesService.DP_DIR).toAbsolutePath().normalize());
     }
 
     @Test
@@ -52,7 +51,8 @@ class DotDPFilesServiceTest {
 
         String result = service.globalModelsFileName(cfg);
 
-        assertThat(result).isEqualTo(tempDir + "/" + DotDPFilesService.DP_DIR + "/models.json");
+        assertThat(Path.of(result).toAbsolutePath().normalize())
+                .isEqualTo(tempDir.resolve(DotDPFilesService.DP_DIR).resolve("models.json").toAbsolutePath().normalize());
     }
 
     @Test
@@ -71,8 +71,8 @@ class DotDPFilesServiceTest {
     void getDotPipeDir_appendsDpToDirectory() {
         File result = service.getDotPipeDir(tempDir.toFile());
 
-        assertThat(result.getAbsolutePath())
-                .isEqualTo(tempDir.toAbsolutePath() + "/" + DotDPFilesService.DP_DIR);
+        assertThat(result.toPath().toAbsolutePath().normalize())
+                .isEqualTo(tempDir.resolve(DotDPFilesService.DP_DIR).toAbsolutePath().normalize());
     }
 
     @Test
@@ -81,8 +81,8 @@ class DotDPFilesServiceTest {
 
         assertThat(result.getName()).isEqualTo("models.json");
         assertThat(result.getParentFile().getName()).isEqualTo(DotDPFilesService.DP_DIR);
-        assertThat(result.getAbsolutePath())
-                .isEqualTo(tempDir.toAbsolutePath() + "/" + DotDPFilesService.DP_DIR + "/models.json");
+        assertThat(result.toPath().toAbsolutePath().normalize())
+                .isEqualTo(tempDir.resolve(DotDPFilesService.DP_DIR).resolve("models.json").toAbsolutePath().normalize());
     }
 
     @Test
@@ -107,8 +107,8 @@ class DotDPFilesServiceTest {
 
         File result = service.getContentHashesFrom(task);
 
-        assertThat(result.getAbsolutePath())
-                .isEqualTo(tempDir.toAbsolutePath() + "/" + DotDPFilesService.DP_DIR + "/content-hashes.properties");
+        assertThat(result.toPath().toAbsolutePath().normalize())
+                .isEqualTo(tempDir.resolve(DotDPFilesService.DP_DIR).resolve("content-hashes.properties").toAbsolutePath().normalize());
     }
 
     @Test
@@ -117,6 +117,7 @@ class DotDPFilesServiceTest {
 
         String result = service.getOutputFilePath(task);
 
-        assertThat(result).isEqualTo(tempDir.toAbsolutePath() + "/output.md");
+        assertThat(Path.of(result).toAbsolutePath().normalize())
+                .isEqualTo(tempDir.resolve("output.md").toAbsolutePath().normalize());
     }
 }

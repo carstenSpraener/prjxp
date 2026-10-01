@@ -245,10 +245,10 @@ class TransferPipelineE2ETest {
     }
 
     private String extractGeneratedPassword(String output) {
-        String[] lines = output.split("\n");
+        String[] lines = output.split("\\R");
         for (int i = 0; i < lines.length - 1; i++) {
             if (lines[i].contains("[SECURITY] Generated transfer password:")) {
-                return lines[i + 1];
+                return lines[i + 1].trim();
             }
         }
         throw new AssertionError("Kein generiertes Passwort in der Ausgabe gefunden:\n" + output);

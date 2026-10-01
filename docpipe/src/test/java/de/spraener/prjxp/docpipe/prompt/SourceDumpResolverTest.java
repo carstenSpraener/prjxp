@@ -2,6 +2,7 @@ package de.spraener.prjxp.docpipe.prompt;
 
 import com.github.jknack.handlebars.Options;
 import org.assertj.core.api.Assertions;
+import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.Mockito;
@@ -94,6 +95,7 @@ class SourceDumpResolverTest {
         Files.writeString(tempDir.resolve("src").resolve("good.java"), "class Good {}");
         Path broken = tempDir.resolve("src").resolve("broken.java");
         Files.writeString(broken, "class Broken { SECRET }");
+        Assumptions.assumeTrue(Files.getFileStore(broken).supportsFileAttributeView("posix"));
         // strip all permissions -> FileInputStream fails and the resolver must log & continue
         Files.setPosixFilePermissions(broken, EnumSet.noneOf(PosixFilePermission.class));
 

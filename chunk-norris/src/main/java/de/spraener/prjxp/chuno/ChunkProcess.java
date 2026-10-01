@@ -89,12 +89,12 @@ public class ChunkProcess {
     }
 
     protected void handlePath(PrintStream out, ProjectDefinition pd, Path p) {
-        final String rootDir = new File(pd.getRootDir()).getAbsolutePath();
+        final Path rootPath = Path.of(pd.getRootDir()).toAbsolutePath().normalize();
         factory.createChunker(p.toFile())
                 .parallel()
                 .flatMap(c -> c.chunk(p.toFile()))
                 .map( chunk -> {
-                    chunk.setFile(chunk.getFile().replace(rootDir, ""));
+                    chunk.setFile(toProjectRelativePath(rootPath, chunk.getFile()));
                     return chunk;
                 })
                 .map(chunk -> toJSONL(chunk))
@@ -104,6 +104,22 @@ public class ChunkProcess {
         ;
         out.flush();
         processedFiles.add(p.toAbsolutePath().toString());
+    }
+
+    private String toProjectRelativePath(Path rootPath, String chunkFile) {
+        if (chunkFile == null || chunkFile.isBlank()) {
+            return chunkFile;
+        }
+        Path rawPath = Path.of(chunkFile);
+        Path normalizedPath = rawPath.isAbsolute() ? rawPath.normalize() : rootPath.resolve(rawPath).normalize();
+        Path relativePath;
+        try {
+            relativePath = rootPath.relativize(normalizedPath);
+        } catch (IllegalArgumentException ignored) {
+            // Different roots (e.g. different drive letters on Windows): keep normalized absolute path.
+            relativePath = normalizedPath;
+        }
+        return relativePath.toString().replace(File.separatorChar, '/');
     }
 
     protected void doPostWalk(PrintStream out) {

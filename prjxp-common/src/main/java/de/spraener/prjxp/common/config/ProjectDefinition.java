@@ -20,10 +20,20 @@ public class ProjectDefinition {
             return null;
         }
         Path p = Paths.get(jsonlFile);
-        if (p.isAbsolute()) {
+        if (p.isAbsolute() || isAbsolutePathPortable(jsonlFile)) {
             return jsonlFile;
         }
         String root = (rootDir == null || rootDir.isBlank()) ? "." : rootDir;
         return Paths.get(root).resolve(jsonlFile).toString();
+    }
+
+    private boolean isAbsolutePathPortable(String value) {
+        if (value.startsWith("/")) {
+            return true;
+        }
+        return value.length() >= 3
+                && Character.isLetter(value.charAt(0))
+                && value.charAt(1) == ':'
+                && (value.charAt(2) == '/' || value.charAt(2) == '\\');
     }
 }
