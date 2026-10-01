@@ -81,7 +81,7 @@ class OragelSearch extends HTMLElement {
                     <h2 id="deleteModalTitle"></h2>
                     <p id="deleteModalText"></p>
                     <div class="modal-actions">
-                        <button id="deleteCancelBtn">Abbruch</button>
+                        <button id="deleteCancelBtn">Cancel</button>
                         <button id="deleteConfirmBtn" class="danger">Delete</button>
                     </div>
                 </div>
@@ -181,11 +181,11 @@ class OragelSearch extends HTMLElement {
     openDeleteModal() {
         const name = this.shadowRoot.getElementById('manageProjectSelect').value;
         if (!name || name === 'default') return;   // no valid selection -> ignore click
-        this.shadowRoot.getElementById('deleteModalTitle').textContent = `Projekt „${name}“ glösche?`;
+        this.shadowRoot.getElementById('deleteModalTitle').textContent = `Delete project "${name}"?`;
         this.shadowRoot.getElementById('deleteModalText').innerHTML =
-            `Achtung! Mit Delete wird s'Projekt „${name}“ us de Embedding-Datenbank glöscht.<br>` +
-            `Falls es ein Live-Projekt isch, wird s' automatisch wieder neu iigbettet (Chunking + Embedding) — das cha e chli wiere.<br>` +
-            `Wotsch du s'Projekt wirklich glösche?`;
+            `Warning! Deleting the project "${name}" will remove it from the Embedding database.<br>` +
+            `If it's a live project, it will be automatically re-imported (Chunking + Embedding) — this might take a little while.<br>` +
+            `Do you really want to delete the project?`;
         this.shadowRoot.getElementById('deleteConfirmBtn').disabled = false;   // re-enable after a previous in-flight delete
         this.shadowRoot.getElementById('deleteModal').style.display = 'flex';
     }
