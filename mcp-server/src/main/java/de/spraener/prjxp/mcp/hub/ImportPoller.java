@@ -1,5 +1,8 @@
 package de.spraener.prjxp.mcp.hub;
 
+import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -37,6 +40,7 @@ public class ImportPoller {
     private final ObjectProvider<ImportHandler> handlerProvider;
     private final HubProjectRegistry registry;
     private final PipelineOrchestrator orchestrator;
+    private final LuceneEmbeddingStore luceneStore;
 
     /** Logs the resolved poll configuration once at startup — the first thing to check when "nothing scans". */
     @PostConstruct
@@ -90,8 +94,14 @@ public class ImportPoller {
                 .filter(e -> e.getStatus() == ProjectStatus.IMPORTING)   // freshly discovered — never re-enqueue FAILED
                 .filter(e -> !before.contains(e.getName()))               // not known before this poll — never re-enqueue
                 .forEach(e -> {
-                    log.info("Discovered new live project '{}' at {} — enqueuing pipeline", e.getName(), e.getRootDir());
-                    orchestrator.enqueue(e.getName());
+                    String name = e.getName();
+                    if (luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name))) {
+                        registry.setStatus(name, ProjectStatus.READY, null);
+                        log.info("Discovered live project '{}' at {} with existing index entries — marking READY", name, e.getRootDir());
+                    } else {
+                        log.info("Discovered new live project '{}' at {} — enqueuing pipeline", name, e.getRootDir());
+                        orchestrator.enqueue(name);
+                    }
                 });
     }
 

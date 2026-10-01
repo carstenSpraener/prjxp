@@ -6,7 +6,7 @@ spring:
   ai:
     mcp:
       server:
-        protocol: streamable
+        protocol: STREAMABLE
         name: "prjxp-mcp"
         version: "1.0.0"
 
