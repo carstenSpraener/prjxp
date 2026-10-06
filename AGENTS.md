@@ -13,11 +13,13 @@
 Gradle multi-project with version catalog (`gradle/libs.versions.toml`). Modules:
 
 - **prjxp-common** – shared `PxChunk` data model and utilities; dependency of all other modules.
+- **lucene-store** – Lucene-based chunk storage (`LucenePxChunkDao`) and LangChain4j embedding store, exposed as a Spring Boot auto-configuration; used by tibed, golden-retriever and mcp-server.
 - **chunk-norris** – CLI chunking framework; outputs JSONL. Extensible via Java SPI (`META-INF/services/de.spraener.chuno.ChunkerBroker`). Main class: `de.spraener.prjxp.chuno.ChunkNorris`.
 - **tibed** – batch embedding engine; reads chunk-norris JSONL, writes to the Lucene index.
 - **golden-retriever** – RAG engine with `JavaCodeRetriever`, forest-of-trees enrichment, veto system.
 - **mcp-server** – Spring AI MCP server (WebMVC).
 - **docpipe** – document processing pipeline.
+- **prjxp-launcher** – empty placeholder module (no sources, no build.gradle).
 - **encubator/oragel** – experimental/incubator module (not in default `settings.gradle` includes).
 
 All modules use Spring Boot 3.5.x, Lombok, LangChain4j, JUnit 5 + Mockito + AssertJ.
