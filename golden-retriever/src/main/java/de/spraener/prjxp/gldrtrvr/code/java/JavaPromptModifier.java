@@ -4,7 +4,7 @@ import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
-import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
+import de.spraener.prjxp.common.retrieval.SearchParams;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;

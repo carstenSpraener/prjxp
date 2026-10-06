@@ -3,7 +3,7 @@ package de.spraener.prjxp.tibed;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.chuno.ChunkProcess;
 import de.spraener.prjxp.chuno.ChunkerFactory;
-import de.spraener.prjxp.chuno.PxChunker;
+import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;

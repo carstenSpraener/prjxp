@@ -1,9 +1,7 @@
-package de.spraener.prjxp.gldrtrvr;
+package de.spraener.prjxp.common.retrieval;
 
-import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
-import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
 
 import java.util.List;
 import java.util.function.Function;

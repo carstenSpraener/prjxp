@@ -1,5 +1,7 @@
 package de.spraener.prjxp.chuno;
 
+import de.spraener.prjxp.chuno.language.LanguagePackBroker;
+import de.spraener.prjxp.common.model.PxChunker;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
@@ -10,22 +12,18 @@ import java.util.stream.Stream;
 
 @Service
 public class ChunkerFactory extends AnnotationBasedChunkerBrokerImpl {
+    private final LanguagePackBroker languagePackBroker;
     private List<ChunkerBroker> brokerList;
 
-    public ChunkerFactory() {
+    public ChunkerFactory(LanguagePackBroker languagePackBroker) {
         super(ChunkerFactory.class.getPackageName());
+        this.languagePackBroker = languagePackBroker;
     }
 
-    /**
-     * Initialisiert die interne Liste der {@link ChunkerBroker}.
-     * Diese Methode fügt zuerst die aktuelle Instanz der {@link ChunkerFactory}
-     * zur Liste hinzu und lädt anschließend alle weiteren {@link ChunkerBroker}-Implementierungen,
-     * die über den Java {@link java.util.ServiceLoader} registriert sind.
-     * Dies ermöglicht es der {@link ChunkerFactory}, Anfragen an alle verfügbaren Chunker-Broker zu delegieren.
-     */
     private void initBrokerList() {
         this.brokerList = new ArrayList<>();
         brokerList.add(this);
+        brokerList.add(languagePackBroker);
         ServiceLoader<ChunkerBroker> chunkerBrokers = ServiceLoader.load(ChunkerBroker.class);
         for (ChunkerBroker broker : chunkerBrokers) {
             brokerList.add(broker);
@@ -38,5 +36,10 @@ public class ChunkerFactory extends AnnotationBasedChunkerBrokerImpl {
         }
         return brokerList.stream()
                 .flatMap(broker -> broker.findPxChunkers(f));
+    }
+
+    @Override
+    public Stream<PxChunker> listPostWalkChunker() {
+        return Stream.concat(super.listPostWalkChunker(), languagePackBroker.listPostWalkChunker());
     }
 }

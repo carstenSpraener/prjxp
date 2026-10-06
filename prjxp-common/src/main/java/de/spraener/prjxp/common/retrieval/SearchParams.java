@@ -1,4 +1,4 @@
-package de.spraener.prjxp.gldrtrvr.enrichment;
+package de.spraener.prjxp.common.retrieval;
 
 import lombok.Data;
 

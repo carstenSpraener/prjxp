@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;

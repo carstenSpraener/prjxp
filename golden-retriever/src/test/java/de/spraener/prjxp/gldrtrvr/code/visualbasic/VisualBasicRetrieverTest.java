@@ -7,7 +7,7 @@ import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingStrategy;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
-import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
+import de.spraener.prjxp.common.retrieval.SearchParams;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 

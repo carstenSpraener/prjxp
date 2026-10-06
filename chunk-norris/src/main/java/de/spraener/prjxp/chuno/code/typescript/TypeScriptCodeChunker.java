@@ -1,7 +1,6 @@
 package de.spraener.prjxp.chuno.code.typescript;
 
-import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
-import de.spraener.prjxp.common.annotations.Chunker;
+import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxFileType;
 import de.spraener.prjxp.common.util.ChunkRange;
@@ -44,11 +43,10 @@ import java.util.stream.Stream;
  */
 @Component
 @RequiredArgsConstructor
-@ChunkNorrisComponent
 @Log
-public class TypeScriptCodeChunker {
+public class TypeScriptCodeChunker implements PxChunker {
 
-    private static final String TYPESCRIPT_CODE_MIME_TYPE = "text/x-typescript-code";
+    public static final String TYPESCRIPT_CODE_MIME_TYPE = "text/x-typescript-code";
 
     /**
      * Metadaten-Schlüssel für die Klassifizierung von TypeScript-Code-Abschnitten.
@@ -84,7 +82,7 @@ public class TypeScriptCodeChunker {
      * @param f die zu chunkende TypeScript-Datei
      * @return ein Stream von {@link PxChunk}-Objekten; leerer Stream bei Fehlern
      */
-    @Chunker(fileTypes = PxFileType.TYPESCRIPT_CODE)
+    @Override
     public Stream<PxChunk> chunk(File f) {
         try {
             List<String> codeLines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
@@ -99,6 +97,11 @@ public class TypeScriptCodeChunker {
             log.warning("Exception while chunking file " + f.getAbsolutePath() + ": " + e.getMessage());
             return Stream.of();
         }
+    }
+
+    @Override
+    public boolean matches(File f) {
+        return PxFileType.TYPESCRIPT_CODE.matches(f);
     }
 
     private ChunkRange getImportsRange(List<String> codeLines) {

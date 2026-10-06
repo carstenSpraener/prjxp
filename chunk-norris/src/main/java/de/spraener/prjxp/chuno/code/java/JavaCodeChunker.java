@@ -7,8 +7,7 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
-import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
-import de.spraener.prjxp.common.annotations.Chunker;
+import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SymbolMetadata;
@@ -35,11 +34,10 @@ import java.util.stream.Stream;
 
 @Component
 @RequiredArgsConstructor
-@ChunkNorrisComponent
 @Log
-public class JavaCodeChunker {
+public class JavaCodeChunker implements PxChunker {
     private static final String CHUNKER_NAME = "JavaCodeChunker";
-    private static final String JAVA_CODE_MIME_TYPE = "text/x-java-code";
+    public static final String JAVA_CODE_MIME_TYPE = "text/x-java-code";
     public static final String MDKEY_CODESECTION = "java_code_section";
 
     private final JavaDependencyHandler javaDependencyHandler;
@@ -49,7 +47,7 @@ public class JavaCodeChunker {
     @Value("${prjxp.java.chunkoverlap:100}")
     private int overlap;
 
-    @Chunker(fileTypes = PxFileType.JAVA_CODE)
+    @Override
     public Stream<PxChunk> chunk(File f) {
         try {
             List<String> codeLines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
@@ -73,6 +71,11 @@ public class JavaCodeChunker {
             log.warning("Exception while chunking file " + f.getAbsolutePath() + ": " + e.getMessage());
             return Stream.of();
         }
+    }
+
+    @Override
+    public boolean matches(File f) {
+        return PxFileType.JAVA_CODE.matches(f);
     }
 
     private ChunkRange getImportsRange(CompilationUnit cu, List<String> codeLines) {

@@ -1,7 +1,6 @@
 package de.spraener.prjxp.chuno.code.visualbasic;
 
-import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
-import de.spraener.prjxp.common.annotations.Chunker;
+import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.code.visualbasic.VisualBasicCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxFileType;
@@ -29,10 +28,9 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 @Component
-@ChunkNorrisComponent
 @Log
-public class VisualBasicCodeChunker {
-    private static final String VISUAL_BASIC_CODE_MIME_TYPE = "text/x-visual-basic-code";
+public class VisualBasicCodeChunker implements PxChunker {
+    public static final String VISUAL_BASIC_CODE_MIME_TYPE = "text/x-visual-basic-code";
     public static final String MDKEY_CODESECTION = "visualbasic_code_section";
 
     private static final Pattern ATTRIBUTE_NAME_PATTERN = Pattern.compile("^\\s*Attribute\\s+VB_Name\\s*=\\s*\"([^\"]+)\"", Pattern.CASE_INSENSITIVE);
@@ -47,7 +45,7 @@ public class VisualBasicCodeChunker {
     @Value("${visualbasic.chunkoverlap:100}")
     private int overlap = 100;
 
-    @Chunker(fileTypes = PxFileType.VISUAL_BASIC_CODE)
+    @Override
     public Stream<PxChunk> chunk(File f) {
         try {
             List<String> codeLines = readAllLines(f);
@@ -65,6 +63,11 @@ public class VisualBasicCodeChunker {
             log.warning("Exception while chunking file " + f.getAbsolutePath() + ": " + e.getMessage());
             return Stream.of();
         }
+    }
+
+    @Override
+    public boolean matches(File f) {
+        return PxFileType.VISUAL_BASIC_CODE.matches(f);
     }
 
     private List<String> readAllLines(File f) throws IOException {

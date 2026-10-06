@@ -4,9 +4,8 @@ import de.spraener.prjxp.common.chat.KIChatProvider;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
-import de.spraener.prjxp.gldrtrvr.code.java.JavaRetriever;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
-import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
+import de.spraener.prjxp.common.retrieval.SearchParams;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -16,7 +15,6 @@ import java.util.function.Function;
 @Service
 @RequiredArgsConstructor
 public class GldRtrvrQuestioner {
-    private final JavaRetriever javaRetriever;
     private final PxChunkDaoProvider chunkDao;
     private final KIChatProvider chatProvider;
     private final GRPromptEnrichment promptEnrichment;

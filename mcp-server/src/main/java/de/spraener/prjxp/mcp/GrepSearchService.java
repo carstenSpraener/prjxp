@@ -1,12 +1,14 @@
 package de.spraener.prjxp.mcp;
 
+import de.spraener.prjxp.common.language.LanguagePack;
+import de.spraener.prjxp.common.language.LanguagePacks;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
-import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
-import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
+import de.spraener.prjxp.common.retrieval.SearchParams;
+import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,17 +19,12 @@ import java.util.*;
 public class GrepSearchService {
     public static final String SOURCE = "grep";
 
-    private static final Map<String, String> LANGUAGE_MIME_TYPES = Map.of(
-            "java", "text/x-java-code",
-            "ts", "text/x-typescript-code",
-            "typescript", "text/x-typescript-code"
-    );
-
     private static final int SNIPPET_CONTEXT = 120;
     private static final int SNIPPET_MAX = 240;
 
     private final PxChunkDaoProvider chunkDaoProvider;
-    private final List<GoldenRetriever> retrieverList;
+    private final RetrieverRegistry retrieverRegistry;
+    private final List<LanguagePack> languagePacks;
     private final ProjectRegistry projectRegistry;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
@@ -65,7 +62,7 @@ public class GrepSearchService {
         for( String fileName : fileToHitsMap.keySet() ) {
             List<ScoredChunk> scoredChunks = fileToHitsMap.get(fileName);
             StringBuilder sb = new StringBuilder();
-            for( var gr : retrieverList ) {
+            for( var gr : retrieverRegistry.all() ) {
                 sb.append(gr.buildPromptForFindings(project, scoredChunks, sp));
             }
             double totalScore = scoredChunks.stream().mapToDouble(ScoredChunk::score).sum();
@@ -89,9 +86,21 @@ public class GrepSearchService {
         Map<String, String> filters = new HashMap<>();
         if (language != null && !language.isBlank()) {
             String normalized = language.trim().toLowerCase(Locale.ROOT);
-            filters.put(PxChunk.PXCHUNK_MIME_TYPE, LANGUAGE_MIME_TYPES.getOrDefault(normalized, language.trim()));
+            if ("ts".equals(normalized)) {
+                normalized = "typescript";   // Alias, wie bisher
+            }
+            filters.put(PxChunk.PXCHUNK_MIME_TYPE, mimeByLanguage().getOrDefault(normalized, language.trim()));
         }
         return filters;
+    }
+
+    /** Sprache -> MIME aus allen Packs (Spring-Beans + externe ServiceLoader-Packs). */
+    private Map<String, String> mimeByLanguage() {
+        Map<String, String> map = new HashMap<>();
+        for (LanguagePack pack : LanguagePacks.merge(languagePacks)) {
+            map.put(pack.language().toLowerCase(Locale.ROOT), pack.mimeType());
+        }
+        return map;
     }
 
     private String extractSnippet(String content, String query) {

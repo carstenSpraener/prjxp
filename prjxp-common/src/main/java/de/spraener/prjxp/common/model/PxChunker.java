@@ -1,6 +1,4 @@
-package de.spraener.prjxp.chuno;
-
-import de.spraener.prjxp.common.model.PxChunk;
+package de.spraener.prjxp.common.model;
 
 import java.io.File;
 import java.util.stream.Stream;

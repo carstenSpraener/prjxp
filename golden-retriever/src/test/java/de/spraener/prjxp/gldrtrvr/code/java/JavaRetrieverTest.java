@@ -9,7 +9,7 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.chunks.PxChunkDaoInMemoryImpl;
-import de.spraener.prjxp.gldrtrvr.enrichment.SearchParams;
+import de.spraener.prjxp.common.retrieval.SearchParams;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
