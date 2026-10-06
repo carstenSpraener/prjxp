@@ -6,6 +6,13 @@ langchain4j-beta = "1.13.0-beta23"
 langchain4j-http = "1.13.1"   # langchain4j-http-client-jdk
 shadow = "8.3.0"
 springAi = "1.1.8"
+# Security-Pins (SecurityFindings.csv / Grype-Scan der Shadow-JARs)
+jackson = "2.21.7"       # GHSA: PolymorphicTypeValidator-Bypass, DoS (zuvor 2.21.x via langchain4j/Starter-POMs)
+log4j = "2.25.5"         # GHSA-qv9r: MapMessage JSON-Encoding (zuvor 2.24.x via Spring Boot)
+logback = "1.5.34"       # GHSA: Objekt-Injection/Deserialisierung (zuvor 1.5.32 via Spring Boot)
+jline = "3.30.15"        # GHSA-r2xf: ReDoS in grep-Command (zuvor 3.30.9 via Groovy/MCP-SDK)
+mcpSdk = "1.1.4"         # GHSA-8jxr: DNS-Rebinding, Fix erst in 1.0.0 (zuvor 0.18.x via Spring AI)
+mcpSdkLegacy = "0.18.4"  # letztes 0.x-Release: mcp-spring-webmvc existiert nur bis 0.18.x, und Spring AI referenziert das alte Binding-Package (in 1.x umbenannt) — OSV-clean
 javafx = "21.0.5"
 
 # Libraries
@@ -40,6 +47,19 @@ spring-boot-openapi-starter-webmvc-ui = { group = "org.springdoc", name = "sprin
 spring-boot-starter-validation = { group = "org.springframework.boot", name = "spring-boot-starter-validation", version.ref = "springBoot" }
 spring-ai-mcp-server = { group = "org.springframework.ai", name = "spring-ai-starter-mcp-server-webmvc", version.ref = "springAi" }
 
+# Security-Pins (SecurityFindings.csv / Grype-Scan der Shadow-JARs)
+jackson-core = { group = "com.fasterxml.jackson.core", name = "jackson-core", version.ref = "jackson" }
+jackson-databind = { group = "com.fasterxml.jackson.core", name = "jackson-databind", version.ref = "jackson" }
+log4j-api = { group = "org.apache.logging.log4j", name = "log4j-api", version.ref = "log4j" }
+log4j-to-slf4j = { group = "org.apache.logging.log4j", name = "log4j-to-slf4j", version.ref = "log4j" }
+logback-core = { group = "ch.qos.logback", name = "logback-core", version.ref = "logback" }
+logback-classic = { group = "ch.qos.logback", name = "logback-classic", version.ref = "logback" }
+jline-reader = { group = "org.jline", name = "jline-reader", version.ref = "jline" }
+jline-builtins = { group = "org.jline", name = "jline-builtins", version.ref = "jline" }
+mcp-core = { group = "io.modelcontextprotocol.sdk", name = "mcp-core", version.ref = "mcpSdk" }
+mcp-json-jackson2 = { group = "io.modelcontextprotocol.sdk", name = "mcp-json-jackson2", version.ref = "mcpSdkLegacy" }
+mcp-spring-webmvc = { group = "io.modelcontextprotocol.sdk", name = "mcp-spring-webmvc", version.ref = "mcpSdkLegacy" }
+
 # Langchain4j
 langchain4j-core   = { group = "dev.langchain4j", name = "langchain4j-core", version.ref = "langchain4j" }
 langchain4j-ollama = { group = "dev.langchain4j", name = "langchain4j-ollama", version.ref = "langchain4j" }
@@ -69,7 +89,7 @@ handlebars = { group = "com.github.jknack", name = "handlebars", version.ref = "
 pdfbox = {group = "org.apache.pdfbox", name="pdfbox", version="3.0.7"}
 xdocreport = {group="fr.opensagres.xdocreport", name="fr.opensagres.poi.xwpf.converter.xhtml", version="2.2.0"}
 flexmark = {group="com.vladsch.flexmark", name="flexmark-html2md-converter", version="0.64.8"}
-jsoup = {group="org.jsoup", name="jsoup", version="1.17.2"}
+jsoup = {group="org.jsoup", name="jsoup", version="1.23.2"} # Security-Pin: Tika zieht 1.21.x transitiv (GHSA: XmlTreeBuilder-OOM, Cleaner)
 
 # Annotation Processors
 lombok = { group = "org.projectlombok", name = "lombok", version.ref = "lombok" }
@@ -91,7 +111,9 @@ conversion=["pdfbox", "xdocreport", "flexmark", "jsoup"]
 test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
 # Ein Bundle für LangChain4j spart Platz im Build-Script
 # opennlp-tools: Version-Pin, da langchain4j 2.5.4 transitiv zieht (Security-CVEs)
-langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-google-ai-gemini", "langchain4j-openai", "langchain4j-mcp", "opennlp-tools"]
-langchain-docparser = ["langchain4j-tika-docparser", "langchain4j-pdf-docparser"]
+# jackson-core/databind: Version-Pin, da langchain4j/Starter 2.21.x ziehen (Security-CVEs)
+langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-google-ai-gemini", "langchain4j-openai", "langchain4j-mcp", "opennlp-tools", "jackson-core", "jackson-databind"]
+# jsoup: Version-Pin, da Tika 1.21.x transitiv zieht (Security-CVEs)
+langchain-docparser = ["langchain4j-tika-docparser", "langchain4j-pdf-docparser", "jsoup"]
 
 spring-ai = ["spring-ai-mcp-server"]

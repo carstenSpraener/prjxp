@@ -23,6 +23,18 @@ dependencies {
     implementation libs.spring.boot.openapi.starter.webmvc.ui
     implementation libs.bundles.spring.ai
 
+    // Security-Pins (SecurityFindings.csv): mcp-core auf 1.x pinnen — DNS-Rebinding-Fix erst in 1.0.0.
+    // mcp-spring-webmvc + mcp-json-jackson2 bleiben auf 0.18.x: es existiert kein 1.x-Release von
+    // mcp-spring-webmvc, und Spring AI referenziert das alte Binding-Package
+    // (io.modelcontextprotocol.json.jackson), das in 1.x umbenannt wurde. Die McpJsonMapper-Interfaces
+    // sind zwischen 0.18 und 1.x identisch, d.h. binär-kompatibel (per mcp-server-Tests verifiziert).
+    implementation libs.mcp.core
+    implementation libs.mcp.json.jackson2
+    implementation libs.mcp.spring.webmvc
+    // JLine kommt hier zusätzlich via MCP-SDK/Groovy (ReDoS-CVEs)
+    implementation libs.jline.reader
+    implementation libs.jline.builtins
+
     // LangChain4j (Inklusive Gemini über das Bundle)
     implementation libs.bundles.langchain.stack
 
