@@ -7,7 +7,7 @@ dependencies {
 
     implementation libs.lucene.core
     implementation libs.langchain4j.core
-    implementation 'dev.langchain4j:langchain4j:1.13.0'
+    implementation libs.langchain4j.community
     implementation libs.opennlp.tools   // Version-Pin: langchain4j zieht opennlp-tools 2.5.4 (Security-CVEs)
 
     testImplementation libs.bundles.test.bundle

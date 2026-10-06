@@ -3,6 +3,7 @@
 springBoot = "3.5.13"
 langchain4j = "1.13.0"
 langchain4j-beta = "1.13.0-beta23"
+langchain4j-http = "1.13.1"   # langchain4j-http-client-jdk
 shadow = "8.3.0"
 springAi = "1.1.8"
 javafx = "21.0.5"
@@ -16,6 +17,7 @@ commonsCompress = "1.27.1"
 lombok = "1.18.34"
 groovy = "5.0.5"
 opennlp = "2.5.12"   # pinned: langchain4j pulls 2.5.4 transitively (CVE-2026-42027/-40682/-42440)
+handlebars = "4.5.1"
 
 lucene = "9.12.0"
 
@@ -47,6 +49,8 @@ langchain4j-pdf-docparser = { group = "dev.langchain4j", name = "langchain4j-doc
 langchain4j-mcp = { group = "dev.langchain4j", name = "langchain4j-mcp", version.ref = "langchain4j-beta"}
 
 langchain4j-google-ai-gemini = { group = "dev.langchain4j", name = "langchain4j-google-ai-gemini", version.ref = "langchain4j" }
+langchain4j-community = { group = "dev.langchain4j", name = "langchain4j", version.ref = "langchain4j" }
+langchain4j-http-client-jdk = { group = "dev.langchain4j", name = "langchain4j-http-client-jdk", version.ref = "langchain4j-http" }
 
 # Version pin for langchain4j's transitive OpenNLP dependency (CVE-2026-42027, CVE-2026-40682, CVE-2026-42440)
 opennlp-tools = { group = "org.apache.opennlp", name = "opennlp-tools", version.ref = "opennlp" }
@@ -59,6 +63,7 @@ commons-io = { group = "commons-io", name = "commons-io", version.ref = "commons
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 jgrapht = { group = "org.jgrapht", name="jgrapht-core", version="1.5.3"}
 lucene-core = { group = "org.apache.lucene", name = "lucene-core", version.ref = "lucene" }
+handlebars = { group = "com.github.jknack", name = "handlebars", version.ref = "handlebars" }
 
 # Document conversion libraries
 pdfbox = {group = "org.apache.pdfbox", name="pdfbox", version="3.0.7"}
