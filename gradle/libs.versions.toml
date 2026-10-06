@@ -15,6 +15,7 @@ commonsIo = "2.21.0"
 commonsCompress = "1.27.1"
 lombok = "1.18.34"
 groovy = "5.0.5"
+opennlp = "2.5.12"   # pinned: langchain4j pulls 2.5.4 transitively (CVE-2026-42027/-40682/-42440)
 
 lucene = "9.12.0"
 
@@ -46,6 +47,9 @@ langchain4j-pdf-docparser = { group = "dev.langchain4j", name = "langchain4j-doc
 langchain4j-mcp = { group = "dev.langchain4j", name = "langchain4j-mcp", version.ref = "langchain4j-beta"}
 
 langchain4j-google-ai-gemini = { group = "dev.langchain4j", name = "langchain4j-google-ai-gemini", version.ref = "langchain4j" }
+
+# Version pin for langchain4j's transitive OpenNLP dependency (CVE-2026-42027, CVE-2026-40682, CVE-2026-42440)
+opennlp-tools = { group = "org.apache.opennlp", name = "opennlp-tools", version.ref = "opennlp" }
 
 # Utilities
 commons-cli = { group = "commons-cli", name = "commons-cli", version.ref = "commonsCli" }
@@ -81,7 +85,8 @@ conversion=["pdfbox", "xdocreport", "flexmark", "jsoup"]
 # Standard Testing Stack
 test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
 # Ein Bundle für LangChain4j spart Platz im Build-Script
-langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-google-ai-gemini", "langchain4j-openai", "langchain4j-mcp"]
+# opennlp-tools: Version-Pin, da langchain4j 2.5.4 transitiv zieht (Security-CVEs)
+langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-google-ai-gemini", "langchain4j-openai", "langchain4j-mcp", "opennlp-tools"]
 langchain-docparser = ["langchain4j-tika-docparser", "langchain4j-pdf-docparser"]
 
 spring-ai = ["spring-ai-mcp-server"]
