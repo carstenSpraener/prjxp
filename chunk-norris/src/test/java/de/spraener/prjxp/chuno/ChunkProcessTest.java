@@ -172,6 +172,7 @@ class ChunkProcessTest {
     private VetoRegistry noVeto() {
         VetoRegistry vetos = Mockito.mock(VetoRegistry.class);
         Mockito.when(vetos.shouldVeto(Mockito.any(Path.class))).thenReturn(false);
+        Mockito.when(vetos.shouldVeto(Mockito.any(Path.class), Mockito.any(de.spraener.prjxp.common.config.ProjectDefinition.class))).thenReturn(false);
         return vetos;
     }
 

@@ -52,7 +52,7 @@ public class ChunkProcess {
 
         Files.walk(Path.of(pd.getRootDir()))
                 .filter(Files::isRegularFile)
-                .filter(path -> checkVetos(path))
+                .filter(path -> checkVetos(path, pd))
                 .filter(path -> !processedFiles.contains(path.toAbsolutePath().toString()))
                 .forEach(path -> handlePath(out, pd, path));
         ;
@@ -86,6 +86,11 @@ public class ChunkProcess {
 
     protected boolean checkVetos(Path p) {
         return !vetoRegistry.shouldVeto(p);
+    }
+
+    /** Like {@link #checkVetos(Path)} but evaluates vetos in the context of a specific project definition. */
+    protected boolean checkVetos(Path p, ProjectDefinition pd) {
+        return !vetoRegistry.shouldVeto(p, pd);
     }
 
     protected void handlePath(PrintStream out, ProjectDefinition pd, Path p) {
