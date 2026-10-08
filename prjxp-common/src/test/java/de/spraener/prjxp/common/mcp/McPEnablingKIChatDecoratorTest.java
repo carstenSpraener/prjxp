@@ -30,7 +30,7 @@ class McPEnablingKIChatDecoratorTest {
         PrjXPChatModelReference ref = mock(PrjXPChatModelReference.class);
         when(delegate.getChatModelReference()).thenReturn(ref);
 
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of());
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
 
         assertThat(decorator.getChatModelReference()).isSameAs(ref);
     }
@@ -40,7 +40,7 @@ class McPEnablingKIChatDecoratorTest {
         KIChat delegate = mock(KIChat.class);
         when(delegate.analyzeImage(any(BufferedImage.class))).thenReturn("image-result");
 
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of());
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
         BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
 
         String result = decorator.analyzeImage(image);
@@ -82,7 +82,7 @@ class McPEnablingKIChatDecoratorTest {
                 .build();
 
         // Now test the decorator with real AiServices by creating a subclass
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, Collections.emptyList()) {
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, Collections.emptyList(), null) {
             @Override
             McpAgent createMcpAgent(String prompt) {
                 // Build real agent with bridge model tunneling to delegate
@@ -112,5 +112,36 @@ class McPEnablingKIChatDecoratorTest {
 
         assertThat(result).isEqualTo("answer");
         verify(delegate).chat("hello");
+    }
+
+    @Test
+    void buildSystemPrompt_withoutDefaultProject_excludesProjectName() {
+        KIChat delegate = mock(KIChat.class);
+
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
+        String prompt = decorator.buildSystemPrompt();
+
+        assertThat(prompt).contains("You have access to MCP tools for searching embedded project code");
+        assertThat(prompt).doesNotContain("The active project is:");
+    }
+
+    @Test
+    void chat_withDefaultProject_includesProjectInSystemPrompt() {
+        KIChat delegate = mock(KIChat.class);
+
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), "my-project");
+        String prompt = decorator.buildSystemPrompt();
+
+        assertThat(prompt).contains("The active project is: 'my-project'");
+    }
+
+    @Test
+    void buildSystemPrompt_withBlankProject_excludesProjectName() {
+        KIChat delegate = mock(KIChat.class);
+
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), "   ");
+        String prompt = decorator.buildSystemPrompt();
+
+        assertThat(prompt).doesNotContain("The active project is:");
     }
 }

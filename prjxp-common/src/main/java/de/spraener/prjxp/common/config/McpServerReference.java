@@ -10,4 +10,6 @@ public class McpServerReference {
     private String command;
     private List<String> args;
     private String url;
+    // NEW: default project name for MCP tool queries
+    private String defaultProject;
 }

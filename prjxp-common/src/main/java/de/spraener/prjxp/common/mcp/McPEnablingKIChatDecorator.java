@@ -11,8 +11,6 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.UserMessage;
-import lombok.RequiredArgsConstructor;
-import okhttp3.Response;
 
 import java.awt.image.BufferedImage;
 import java.util.List;
@@ -24,10 +22,12 @@ public class McPEnablingKIChatDecorator implements KIChat {
 
     private final KIChat delegate;
     private final List<McpClient> mcpClients;
+    private final String defaultProject; // NEW
 
-    public McPEnablingKIChatDecorator(KIChat delegate, List<McpClient> mcpClients) {
+    public McPEnablingKIChatDecorator(KIChat delegate, List<McpClient> mcpClients, String defaultProject) {
         this.delegate = delegate;
         this.mcpClients = mcpClients;
+        this.defaultProject = defaultProject; // may be null
     }
 
     @Override
@@ -95,9 +95,27 @@ public class McPEnablingKIChatDecorator implements KIChat {
         // 3. AiServices-Builder für v1.13.0 konfigurieren
         McpAgent agent = AiServices.builder(McpAgent.class)
                 .chatModel(bridgeModel)
+                .systemMessageProvider(context -> buildSystemPrompt())  // NEW
                 .toolProvider(mcpToolProvider) // Registriert den Provider direkt
                 .build();
         return agent;
+    }
+
+    /* package-private for testability */
+    String buildSystemPrompt() {
+        StringBuilder sb = new StringBuilder();
+        sb.append("You have access to MCP tools for searching embedded project code.");
+
+        if (defaultProject != null && !defaultProject.isBlank()) {
+            sb.append(" The active project is: '").append(defaultProject).append("'");
+        }
+
+        sb.append(". Available tools include: vectorSearch (semantic search over code chunks), ");
+        sb.append("grep (exact text search), readFile (full file content), ");
+        sb.append("readBySignature (lookup method by name).");
+        sb.append(" Use these tools to gather information before answering the user's question.");
+
+        return sb.toString();
     }
 
     @Override

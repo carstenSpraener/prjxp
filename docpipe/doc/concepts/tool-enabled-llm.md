@@ -1,10 +1,12 @@
 # DocPipe Tool-Enabled LLM Concept
 
+**Status: IMPLEMENTED (Oct 2026)** — via `McPEnablingKIChatDecorator` in prjxp-common.
+
 **Goal:** Define how DocPipe can allow an LLM to use MCP/tools while still exposing the existing `String chat(String)` generation principle to the rest of DocPipe.
 
-**Architecture:** Keep DocPipe's external flow as “prompt in, document string out”. Add an optional internal tool-enabled chat execution path that performs model/tool iterations before returning the final answer string. Use the existing `stereotype` model selection concept and configure tool permission per document.
+**Architecture:** Keep DocPipe's external flow as "prompt in, document string out". The LLM is wrapped by `McPEnablingKIChatDecorator` (prjxp-common), which creates a LangChain4j `AiServices` agent with MCP tools. Tool calls happen transparently inside `chat(String)` — docpipe sees only the final answer string.
 
-**Tech Stack:** Java, Spring Boot, current DocPipe model/config classes, existing PrjXP `KIChat` abstraction, LangChain4j as primary candidate for the first tool-calling implementation, optional Spring AI/MCP later.
+**Tech Stack:** Java, Spring Boot, LangChain4j **1.21.0-beta31** (for `StreamableHttpMcpTransport`), prjxp MCP server on HTTP (`:7007/mcp`).
 
 ---
 
@@ -572,5 +574,69 @@ Before implementing, run a small spike against the currently available LangChain
 - tool-call model responses
 - feeding tool results back into the conversation
 - whether MCP can be adapted directly or needs a custom bridge
+
+---
+
+## Implementation Summary (Oct 2026)
+
+The tool-enabled LLM capability is **implemented** via the following components in `prjxp-common`:
+
+### What was built
+
+| Component | Location | Purpose |
+|---|---|---|
+| **LangChain4j upgrade** | `gradle/libs.versions.toml` | Upgraded from `1.13.0-beta23` to `1.21.0-beta31` for `StreamableHttpMcpTransport` |
+| **McpClientManager** | `prjxp-common/.../mcp/McpClientManager.java` | Added `"http"` transport branch; creates `StreamableHttpMcpTransport` clients from config |
+| **McPEnablingKIChatDecorator** | `prjxp-common/.../mcp/McPEnablingKIChatDecorator.java` | Wraps `KIChat` in LangChain4j `AiServices` agent with MCP tools; injects system prompt |
+| **McpServerReference** | `prjxp-common/.../config/McpServerReference.java` | Added `defaultProject` field for project context in system prompt |
+| **McpProjectResolver** | `docpipe/.../prompt/McpProjectResolver.java` | Handlebars helper `{{mcp-project project="..."}}` for explicit project context in templates |
+
+### How it works (runtime)
+
+1. `KIChatProvider.getByStereotype(...)` returns a `KIChat`
+2. `McpClientManager.decorate()` wraps it in `McPEnablingKIChatDecorator` (if MCP servers are configured)
+3. The decorator creates an `AiServices` agent with:
+   - **System prompt:** "You have access to MCP tools... The active project is: 'prjxp'..."
+   - **McpToolProvider:** connected to the prjxp MCP server via `StreamableHttpMcpTransport`
+4. When `chat(prompt)` is called, the LLM can autonomously call MCP tools (`vectorSearch`, `grep`, `readFile`, `readBySignature`)
+5. The final answer string is returned — docpipe sees no difference from a non-tool call
+
+### Configuration
+
+```yaml
+# application.yaml
+prjxp:
+  mcp-servers:
+    - name: "prjxp-search"
+      type: "http"
+      url: "${PRJXP_MCP_URL:http://localhost:7007/mcp}"
+      defaultProject: "prjxp"
+```
+
+### Prompt template usage
+
+```handlebars
+{{mcp-project project="prjxp"}}
+
+Erstelle eine Architektur-Dokumentation. Nutze die Suchwerkzeuge, um
+Informationen über die Module, ihre Abhängigkeiten und Hauptklassen zu finden.
+```
+
+### Design decisions vs. original concept
+
+| Original concept | Implemented approach | Rationale |
+|---|---|---|
+| Per-document `tools` config in `documents.json` | **Global** MCP server config in `application.yaml` | Simpler; one MCP server serves all docpipe jobs; no per-job tool allowlists needed for read-only search |
+| `.dp/tools.json` central config file | **No separate file** — uses existing `PrjXPConfig.mcpServers[]` | Reuses the same config structure already used by other modules; avoids config proliferation |
+| `ToolRunConfig`, `DocPipeToolProvider`, `ToolAwareKIChat` | **`McPEnablingKIChatDecorator`** (existing decorator pattern) | Leverages LangChain4j's `AiServices` + `McpToolProvider` directly; no custom abstraction layer needed |
+| Per-document tool profiles & allowlists | **All MCP tools available** (read-only by design) | The prjxp MCP server only exposes read-only search tools; no need for fine-grained filtering |
+| Tool trace storage (`.dp/tool-traces/`) | **Not implemented** (future work) | Tool traces can be added later if needed; current focus is on functionality over observability |
+
+### Open questions (from original concept, still relevant)
+
+1. **Per-document tool control:** Should certain documents be able to opt out of MCP tools? (Currently all stereotypes get MCP decoration if servers are configured.)
+2. **Tool trace storage:** Should tool call traces be stored for debugging/audit? (Not yet implemented.)
+3. **Max iterations:** Should there be a cap on tool loop iterations? (LangChain4j's `AiServices` has no explicit iteration limit; the LLM decides when to stop.)
+4. **Fallback behavior:** Should a failed MCP connection degrade gracefully (no tools) or fail the document? (Currently: `failIfOneServerFails(false)` — tools from working servers are still available.)
 
 After the spike, update this concept into an implementation plan with concrete classes, tests, and exact code paths.

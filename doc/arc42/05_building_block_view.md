@@ -46,13 +46,13 @@ as **api** (its DAO types appear in its public signatures).
 
 | Black box | Purpose / Responsibility | Interface(s) | Quality characteristics |
 |---|---|---|---|
-| **prjxp-common** (`de.spraener.prjxp.common`) | Shared kernel: `PxChunk` model + metadata keys, config binding (`PrjXPConfig`, `ProjectDefinition`, store/chat/MCP references), chat abstraction (`KIChat`, `KIChatProvider` + per-server suppliers: Ollama, OpenAI-compatible, Gemini, LM Studio, Azure), store abstractions (`PxChunkDao`, `PxChunkDaoProvider`), transfer crypto (AES-256-GCM/PBKDF2), annotations (`@Chunker`, `@ChunkVeto`, `@Retriever`, `@PreWalk`, `@PostWalkChunker`, `@ChunkNorrisComponent`), capability registry types, reader SPI (`FileViewProvider`), error log service. | Java API (no own process) | Dependency of all modules; keeps the `PxChunk` contract in exactly one place. |
+| **prjxp-common** (`de.spraener.prjxp.common`) | Shared kernel: `PxChunk` model + metadata keys, config binding (`PrjXPConfig`, `ProjectDefinition`, store/chat/MCP references), chat abstraction (`KIChat`, `KIChatProvider` + per-server suppliers: Ollama, OpenAI-compatible, Gemini, LM Studio, Azure), **MCP client infrastructure** (`McpClientManager` with stdio + **Streamable HTTP transport**, `McPEnablingKIChatDecorator` for tool-enabled LLMs with system prompts), store abstractions (`PxChunkDao`, `PxChunkDaoProvider`), transfer crypto (AES-256-GCM/PBKDF2), annotations (`@Chunker`, `@ChunkVeto`, `@Retriever`, `@PreWalk`, `@PostWalkChunker`, `@ChunkNorrisComponent`), capability registry types, reader SPI (`FileViewProvider`), error log service. | Java API (no own process) | Dependency of all modules; keeps the `PxChunk` contract in exactly one place. LangChain4j MCP **1.21.0-beta31** for `StreamableHttpMcpTransport`. |
 | **chunk-norris** (`de.spraener.prjxp.chuno`) | CLI chunking framework: walks a project tree, applies vetoes, selects & runs chunkers per file (SPI), writes JSONL (optionally encrypted). | `ChunkNorris` main; `ChunkerBroker` SPI (`META-INF/services/de.spraener.chuno.ChunkerBroker`); `PxChunker`; `@Chunker`/`@PostWalkChunker` discovery; `VetoRegistry`. | Parallel file processing; per-file fault isolation (parse errors → empty stream, run continues). |
 | **lucene-store** (`de.spraener.prjxp.lucene`) | File-based vector + full-text index: `LuceneEmbeddingStore` (LangChain4j `EmbeddingStore`, KNN search, filter-based delete), `LucenePxChunkDao` (project-scoped DAO: vector/full-text/index search, find-by-id/metadata), Spring auto-configuration. | `EmbeddingStore<TextSegment>`, `PxChunkDao`; `LuceneStoreAutoConfiguration`. | Single-writer index; stale-lock recovery; read/write locking. |
 | **tibed** (`de.spraener.prjxp.tibed`) | Batch embedding engine: reads JSONL in batches, embeds via LangChain4j `EmbeddingModel`, writes to the store. Modes: **STORE** (default), **EXPORT** (chunks → `embedding.jsonl` with vectors, encrypted transfer), **IMPORT** (`embedding.jsonl` → store). | `TiBedCliApp` main; `EmbeddingService.executeForProject()` (in-process use by hub). | Incremental embed (`StoreIdChecker` skips existing ids); project-scoped reset; batch size per project. |
 | **golden-retriever** (`de.spraener.prjxp.gldrtrvr`) | RAG engine: `GoldenRetriever` implementations per language (Java, TypeScript, Visual Basic, Markdown), chunk ranking services/rankers, prompt sessions with **Forest of Trees** reconstruction, `GRPromptEnrichment` (search + fallback iteration + budgets), per-language `FileViewProvider`s, Javadoc enricher. | `GoldenRetriever` (buildPromptForFindings / retrieveSearchHits), `GRPromptEnrichment.enrich(...)`, `FileViewProvider` beans. | Deterministic context construction; global content budget across retrievers. |
 | **mcp-server** (`de.spraener.prjxp.mcp`) | Runtime: Spring AI MCP server (streamable) with tools `vectorSearch`, `grep`, `readFile`, `readBySignature`, `listProjects`; REST API + OpenAPI; project registries (static / hub); search capability registry; reader services; **hub package** (import poller, tar extractor with security limits, pipeline orchestrator, lifecycle service, projects REST + web UI). | `McpServer` main; MCP endpoint `/mcp`; REST `/prjxp/*`; web UI `/`. | Strictest coverage ratchet (0.80); compatibility filter for legacy MCP protocol versions. |
-| **docpipe** (`de.spraener.prjxp.docpipe`) | Documentation pipeline: reads jobs from `.dp/documents.json`, resolves Handlebars prompt templates via pluggable resolvers (`gr` → golden-retriever enrichment, `source-dump`, `source-skeleton`, `groovy` scripts, `url`, `current-file`), calls LLMs by stereotype, writes output files. | `DocPipeCliApp` main; `.dp/` job configuration directory. | Parallel task execution (fixed pool, `prjxp.docpipe.maxthreads`); misconfigured jobs degrade to empty job instead of aborting. |
+| **docpipe** (`de.spraener.prjxp.docpipe`) | Documentation pipeline: reads jobs from `.dp/documents.json`, resolves Handlebars prompt templates via pluggable resolvers (`gr` → golden-retriever enrichment, `source-dump`, `source-skeleton`, `groovy` scripts, `url`, `current-file`, **`mcp-project`** → project context for MCP tool usage), calls LLMs by stereotype, writes output files. The LLM can use **MCP tools over HTTP** (via `McPEnablingKIChatDecorator`) to query the prjxp MCP server (`vectorSearch`, `grep`, `readFile`, `readBySignature`) for embedded project information during content generation. | `DocPipeCliApp` main; `.dp/` job configuration directory. | Parallel task execution (fixed pool, `prjxp.docpipe.maxthreads`); misconfigured jobs degrade to empty job instead of aborting; MCP tool loop runs transparently inside `String chat(String)`. |
 | **oragel** (`de.spraener.prjxp.oragel`, *incubator*) | Experimental interactive CLI: prompt sources + enrichment events, console log listener. Scans `gldrtrvr` beans. | `OragelCliApp` main. | **Not included** in the default `settings.gradle`; experimental, no stability promise. |
 
 > Placeholder: `prjxp-launcher` is listed in `settings.gradle` but contains no sources yet
@@ -78,7 +78,7 @@ flowchart LR
         KIP["KIChatProvider<br/>byName / byStereotype"]
         KIM["KIChatModelProvider<br/>supplier loop + cache"]
         SUP["ChatModelSuppliers:<br/>Ollama   OpenAI-compatible<br/>Gemini   LMStudio   Azure"]
-        KIW["KIChatModelWrapper / KIChat<br/>+ McpEnablingKIChatDecorator"]
+        KIW["KIChatModelWrapper / KIChat<br/>+ McPEnablingKIChatDecorator<br/>(system prompt + MCP tool loop)"]
     end
     subgraph store ["store"]
         DAO["PxChunkDao<br/>findById findByMetaData<br/>findRelevant searchFullText<br/>searchByIndex searchVector"]
@@ -107,7 +107,9 @@ Key interfaces:
 - `PxChunkDaoProvider.get(projectName)` — `"default"` resolves to the store reference with
   `isDefault=true`; supports runtime `register`/`unregisterByProject` (hub).
 - `KIChatProvider.getByStereotype(...)` — docpipe selects LLMs by stereotype (e.g.
-  `javadoc`); the MCP client manager decorates chats with external MCP tools.
+  `javadoc`); the MCP client manager decorates chats with external MCP tools via
+  `McPEnablingKIChatDecorator` (supports **stdio** and **Streamable HTTP** transports,
+  injects system prompt with `defaultProject` context).
 
 ### 5.2.2 chunk-norris
 
@@ -305,6 +307,7 @@ flowchart LR
         SD["source-dump   source-skeleton<br/>(+ VisualBasic skeletonizer)"]
         GRO["groovy → ScriptCompileService"]
         URL["url   current-file resolvers"]
+        MCP["mcp-project resolver<br/>(project context for MCP tools)"]
     end
     subgraph io ["io package"]
         SINK["OutputSink / FileOutputSink<br/>+ OutputSinkFactory"]

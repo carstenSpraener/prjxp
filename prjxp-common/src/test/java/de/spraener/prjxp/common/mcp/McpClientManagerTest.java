@@ -7,6 +7,7 @@ import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.mcp.client.DefaultMcpClient;
 import dev.langchain4j.mcp.client.transport.McpTransport;
 import dev.langchain4j.mcp.client.transport.stdio.StdioMcpTransport;
+import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
 
 import org.springframework.test.util.ReflectionTestUtils;
 
@@ -95,7 +96,7 @@ class McpClientManagerTest {
             try (MockedConstruction<DefaultMcpClient.Builder> d = Mockito.mockConstruction(
                     DefaultMcpClient.Builder.class,
                     (m, c) -> {
-                        when(m.clientName(anyString())).thenReturn(m);
+                        when(m.key(anyString())).thenReturn(m);
                         when(m.transport(any(McpTransport.class))).thenReturn(m);
                         when(m.toolExecutionTimeout(any(Duration.class))).thenReturn(m);
                         when(m.build()).thenReturn(clientMock);
@@ -105,6 +106,76 @@ class McpClientManagerTest {
         }
 
         assertThat(manager.getActiveClients()).containsExactly(clientMock);
+    }
+
+    @Test
+    void init_httpServer_createsClient() {
+        StreamableHttpMcpTransport transportMock = mock(StreamableHttpMcpTransport.class);
+        DefaultMcpClient clientMock = mock(DefaultMcpClient.class);
+
+        McpServerReference ref = new McpServerReference();
+        ref.setName("http-server");
+        ref.setType("http");
+        ref.setUrl("http://localhost:7007/mcp");
+
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        when(cfg.getMcpServers()).thenReturn(List.of(ref));
+
+        McpClientManager manager = new McpClientManager(cfg);
+
+        try (MockedConstruction<StreamableHttpMcpTransport.Builder> t = Mockito.mockConstruction(
+                StreamableHttpMcpTransport.Builder.class,
+                (m, c) -> {
+                    when(m.url(anyString())).thenReturn(m);
+                    when(m.logRequests(anyBoolean())).thenReturn(m);
+                    when(m.logResponses(anyBoolean())).thenReturn(m);
+                    when(m.build()).thenReturn(transportMock);
+                })) {
+            try (MockedConstruction<DefaultMcpClient.Builder> d = Mockito.mockConstruction(
+                    DefaultMcpClient.Builder.class,
+                    (m, c) -> {
+                        when(m.key(anyString())).thenReturn(m);
+                        when(m.transport(any(McpTransport.class))).thenReturn(m);
+                        when(m.toolExecutionTimeout(any(Duration.class))).thenReturn(m);
+                        when(m.build()).thenReturn(clientMock);
+                    })) {
+                manager.init();
+            }
+        }
+
+        assertThat(manager.getActiveClients()).containsExactly(clientMock);
+    }
+
+    @Test
+    void init_httpServerMissingUrl_skipsWithWarning() {
+        McpServerReference ref = new McpServerReference();
+        ref.setName("http-no-url");
+        ref.setType("http");
+        // no URL set
+
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        when(cfg.getMcpServers()).thenReturn(List.of(ref));
+
+        McpClientManager manager = new McpClientManager(cfg);
+        manager.init();
+
+        assertThat(manager.getActiveClients()).isEmpty();
+    }
+
+    @Test
+    void init_httpServerBlankUrl_skipsWithWarning() {
+        McpServerReference ref = new McpServerReference();
+        ref.setName("http-blank-url");
+        ref.setType("http");
+        ref.setUrl("   ");
+
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        when(cfg.getMcpServers()).thenReturn(List.of(ref));
+
+        McpClientManager manager = new McpClientManager(cfg);
+        manager.init();
+
+        assertThat(manager.getActiveClients()).isEmpty();
     }
 
     @Test
@@ -158,7 +229,7 @@ class McpClientManagerTest {
             try (MockedConstruction<DefaultMcpClient.Builder> d = Mockito.mockConstruction(
                     DefaultMcpClient.Builder.class,
                     (m, c) -> {
-                        when(m.clientName(anyString())).thenReturn(m);
+                        when(m.key(anyString())).thenReturn(m);
                         when(m.transport(any(McpTransport.class))).thenReturn(m);
                         when(m.toolExecutionTimeout(any(Duration.class))).thenReturn(m);
                         when(m.build()).thenReturn(clientMock);

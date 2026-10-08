@@ -7,6 +7,7 @@ import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.mcp.client.DefaultMcpClient;
 import dev.langchain4j.mcp.client.transport.McpTransport;
 import dev.langchain4j.mcp.client.transport.stdio.StdioMcpTransport;
+import dev.langchain4j.mcp.client.transport.http.StreamableHttpMcpTransport;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Component;
@@ -42,19 +43,39 @@ public class McpClientManager {
                     }
 
                     // 2. Übergib die gesamte Liste direkt an .command(...)
-                    McpTransport transport = new StdioMcpTransport.Builder()
+                    McpTransport transport = StdioMcpTransport.builder()
                             .command(fullCommand)
                             .logEvents(false)
                             .build();
 
                     // 3. MCP Client erzeugen
-                    McpClient client = new DefaultMcpClient.Builder()
-                            .clientName(ref.getName())
+                    McpClient client = DefaultMcpClient.builder()
+                            .key(ref.getName())
                             .transport(transport)
                             .toolExecutionTimeout(Duration.ofSeconds(60))
                             .build();
 
                     activeClients.add(client);
+                } else if ("http".equalsIgnoreCase(ref.getType())) {
+                    String url = ref.getUrl();
+                    if (url == null || url.isBlank()) {
+                        log.severe("HTTP MCP Server '" + ref.getName() + "' has no URL configured. Skipping.");
+                        continue;
+                    }
+
+                    McpTransport httpTransport = StreamableHttpMcpTransport.builder()
+                            .url(url)
+                            .logRequests(false)
+                            .logResponses(false)
+                            .build();
+
+                    McpClient httpClient = DefaultMcpClient.builder()
+                            .key(ref.getName())
+                            .transport(httpTransport)
+                            .toolExecutionTimeout(Duration.ofSeconds(60))
+                            .build();
+
+                    activeClients.add(httpClient);
                 }
             } catch (Exception e) {
                 log.severe("Fehler beim Starten des globalen MCP-Servers " + ref.getName() + ": " + e.getMessage());
@@ -77,10 +98,17 @@ public class McpClientManager {
             return optionalChat;
         }
 
+        // Collect defaultProject from the first MCP server ref that has one
+        String project = cfg.getMcpServers().stream()
+                .filter(ref -> ref.getDefaultProject() != null && !ref.getDefaultProject().isBlank())
+                .map(McpServerReference::getDefaultProject)
+                .findFirst()
+                .orElse(null);
+
         // * Ansonsten: Verpacke den originalen KIChat in den MCP-Decorator
         log.info("Verpacke KIChat in ein McPEnabledKIChatImpl mit " + activeClients.size() + " aktiven MCP-Servern.");
         KIChat originalChat = optionalChat.get();
-        KIChat mcpEnabledChat = new McPEnablingKIChatDecorator(originalChat, activeClients);
+        KIChat mcpEnabledChat = new McPEnablingKIChatDecorator(originalChat, activeClients, project);
 
         return Optional.of(mcpEnabledChat);
     }

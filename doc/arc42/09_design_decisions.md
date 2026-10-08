@@ -127,3 +127,19 @@ reflected in code and the phase documents under `doc/Tasks/` and `docs/`).
   ratchets may only move up, after legacy code gets tested.
 - **Consequences:** (+) coverage can only improve; (−) initial ratchets sit below the
   measured state to avoid blocking work.
+
+## D14 — MCP HTTP Transport for docpipe's LLM (LangChain4j 1.21)
+
+- **Context:** docpipe's LLM needed access to the prjxp MCP server's search tools
+  (`vectorSearch`, `grep`, `readFile`, `readBySignature`) to query embedded project
+  information during documentation generation. The existing LangChain4j MCP version
+  (`1.13.0-beta23`) only supported `StdioMcpTransport` (subprocess), but the mcp-server
+  runs as a Spring Boot web app on HTTP (`:7007/mcp`, streamable protocol).
+- **Decision:** upgrade LangChain4j MCP to `1.21.0-beta31` (Oct 2026) which includes
+  `StreamableHttpMcpTransport`; add HTTP transport branch to `McpClientManager.init()`;
+  inject system prompt with `defaultProject` into `McPEnablingKIChatDecorator`; add
+  `mcp-project` Handlebars resolver for explicit project context in prompt templates.
+- **Consequences:** (+) docpipe's LLM can autonomously query the MCP server for project
+  information; (−) requires mcp-server to be running and reachable at the configured URL;
+  (−) LangChain4j beta version carries inherent instability risk (mitigated by comprehensive
+  test coverage and the fact that MCP API is stable since `1.19.x`).
