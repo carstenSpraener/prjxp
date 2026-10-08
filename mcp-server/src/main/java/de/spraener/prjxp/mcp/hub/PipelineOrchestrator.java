@@ -71,7 +71,12 @@ public class PipelineOrchestrator implements ImportHandler {
             registry.unregisterProject(name);   // re-import: drop stale DAO/entry first
         }
         registry.registerProject(name, projectDir);   // status IMPORTING
-        enqueueForced(name);   // a re-import must run even if the previous pipeline for this name is still in flight
+        if (hasIndexedChunks(name)) {
+            registry.setStatus(name, ProjectStatus.READY, null);
+            log.info("Imported project '{}' already has index entries — skipping pipeline and marking READY", name);
+            return;
+        }
+        enqueueForced(name);   // no index data yet -> run full pipeline
     }
 
     @Override
@@ -136,11 +141,15 @@ public class PipelineOrchestrator implements ImportHandler {
         }
     }
 
+    private boolean hasIndexedChunks(String name) {
+        return luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));
+    }
+
     /** On startup: sync the registry with both roots (snapshots + live), then mark indexed projects READY or re-run them. */
     @EventListener(ApplicationReadyEvent.class)
     public void selfHeal() {
         for (String name : registry.discoverProjects()) {
-            if (luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name))) {
+            if (hasIndexedChunks(name)) {
                 registry.setStatus(name, ProjectStatus.READY, null);   // index already has this project's chunks
             } else {
                 enqueue(name);   // nothing/partial in index -> full pipeline
