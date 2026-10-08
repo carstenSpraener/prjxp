@@ -234,6 +234,20 @@ class PipelineOrchestratorTest {
     }
 
     @Test
+    void onImportedSkipsPipelineWhenIndexAlreadyHasProjectChunks() throws Exception {
+        TextSegment stamped = TextSegment.from(
+                "already indexed",
+                Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, "foo")));
+        luceneStore.addAll(List.of(Embedding.from(new float[8])), List.of(stamped));
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator.onImported("foo", projectDir("foo"));
+
+        assertThat(registry.entry("foo").orElseThrow().getStatus()).isEqualTo(ProjectStatus.READY);
+        verifyNoInteractions(chunkProcess, embeddingService);
+    }
+
+    @Test
     void selfHealEnqueuesFullPipelineWhenIndexHasNoChunksForProject() throws Exception {
         registry.registerProject("bar", projectDir("bar"));   // index is empty for 'bar'
 
