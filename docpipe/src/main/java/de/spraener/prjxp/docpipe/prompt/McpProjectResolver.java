@@ -1,6 +1,8 @@
 package de.spraener.prjxp.docpipe.prompt;
 
 import com.github.jknack.handlebars.Options;
+import de.spraener.prjxp.common.toolregistry.ToolRegistry;
+import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Component;
 
@@ -17,8 +19,11 @@ import java.util.List;
  * </pre>
  */
 @Component
+@RequiredArgsConstructor
 @Log
 public class McpProjectResolver implements TemplateResolver {
+
+    private final ToolRegistry toolRegistry;
 
     @Override
     public String getID() {
@@ -35,11 +40,26 @@ public class McpProjectResolver implements TemplateResolver {
         // Named parameter: project="..." (default to empty string if not provided)
         String project = options.hash("project", "");
 
-        if (project == null || project.isBlank()) {
-            return "Search the embedded project using available MCP tools (vectorSearch, grep, readFile).";
+        // Get dynamic tool descriptions from ToolRegistry
+        List<String> toolDescriptions = toolRegistry.getToolDescriptions();
+
+        if (toolDescriptions.isEmpty()) {
+            return "";   // No tools available — inject nothing
         }
 
-        return "Search the embedded project '" + project + "' using available MCP tools (vectorSearch, grep, readFile, readBySignature). "
-                + "Use these tools to gather information about the project's structure, modules, and key classes before answering.";
+        StringBuilder sb = new StringBuilder();
+        sb.append("You have access to the following tools:\n\n");
+        for (String desc : toolDescriptions) {
+            sb.append(desc).append("\n\n");
+        }
+
+        if (project != null && !project.isBlank()) {
+            sb.append("The active project is: '").append(project).append("'.\n\n");
+            sb.append("Use these tools to gather information about the project's structure, modules, and key classes before answering.");
+        } else {
+            sb.append("Use these tools to gather information before answering the user's question.");
+        }
+
+        return sb.toString();
     }
 }
