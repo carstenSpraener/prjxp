@@ -7,6 +7,9 @@ dependencies {
     implementation libs.langchain4j.mcp
     implementation libs.langchain4j.http.client.jdk
 
+    // Groovy for dynamic tool scripting (Phase 01: MCP Tool Support)
+    implementation libs.groovy
+
     testImplementation libs.bundles.test.bundle
     testFixturesImplementation libs.bundles.test.bundle
 }
