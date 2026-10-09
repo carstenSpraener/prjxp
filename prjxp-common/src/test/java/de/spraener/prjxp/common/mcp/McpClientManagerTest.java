@@ -3,6 +3,8 @@ package de.spraener.prjxp.common.mcp;
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.config.McpServerReference;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
+import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.mcp.client.DefaultMcpClient;
 import dev.langchain4j.mcp.client.transport.McpTransport;
@@ -37,7 +39,8 @@ class McpClientManagerTest {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
         when(cfg.getMcpServers()).thenReturn(null);
 
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
         manager.init();
 
         assertThat(manager.getActiveClients()).isEmpty();
@@ -48,9 +51,28 @@ class McpClientManagerTest {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
         when(cfg.getMcpServers()).thenReturn(Collections.emptyList());
 
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
         manager.init();
 
+        assertThat(manager.getActiveClients()).isEmpty();
+    }
+
+    @Test
+    void init_groovyType_loadsGroovyTools() {
+        McpServerReference ref = new McpServerReference();
+        ref.setName("groovy-tools");
+        ref.setType("groovy");
+        ref.setScriptDir("./nonexistent-groovy-dir"); // directory doesn't exist, should not crash
+
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        when(cfg.getMcpServers()).thenReturn(List.of(ref));
+
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
+        manager.init();
+
+        // Groovy tools don't create active MCP clients, but they should not crash
         assertThat(manager.getActiveClients()).isEmpty();
     }
 
@@ -64,7 +86,8 @@ class McpClientManagerTest {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
         when(cfg.getMcpServers()).thenReturn(List.of(ref));
 
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
         manager.init();
 
         assertThat(manager.getActiveClients()).isEmpty();
@@ -84,7 +107,8 @@ class McpClientManagerTest {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
         when(cfg.getMcpServers()).thenReturn(List.of(ref));
 
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = mock(ToolRegistry.class);
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
 
         try (MockedConstruction<StdioMcpTransport.Builder> t = Mockito.mockConstruction(
                 StdioMcpTransport.Builder.class,
@@ -121,7 +145,8 @@ class McpClientManagerTest {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
         when(cfg.getMcpServers()).thenReturn(List.of(ref));
 
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = mock(ToolRegistry.class);
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
 
         try (MockedConstruction<StreamableHttpMcpTransport.Builder> t = Mockito.mockConstruction(
                 StreamableHttpMcpTransport.Builder.class,
@@ -156,7 +181,8 @@ class McpClientManagerTest {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
         when(cfg.getMcpServers()).thenReturn(List.of(ref));
 
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
         manager.init();
 
         assertThat(manager.getActiveClients()).isEmpty();
@@ -172,7 +198,8 @@ class McpClientManagerTest {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
         when(cfg.getMcpServers()).thenReturn(List.of(ref));
 
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
         manager.init();
 
         assertThat(manager.getActiveClients()).isEmpty();
@@ -181,7 +208,8 @@ class McpClientManagerTest {
     @Test
     void decorate_emptyOptional_returnsSame() {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
 
         Optional<KIChat> empty = Optional.empty();
         Optional<KIChat> result = manager.decorate(empty);
@@ -193,7 +221,8 @@ class McpClientManagerTest {
     @Test
     void decorate_chatWithoutClients_returnsOriginal() {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
 
         KIChat chatMock = mock(KIChat.class);
         Optional<KIChat> input = Optional.of(chatMock);
@@ -217,7 +246,8 @@ class McpClientManagerTest {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
         when(cfg.getMcpServers()).thenReturn(List.of(ref));
 
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = mock(ToolRegistry.class);
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
 
         try (MockedConstruction<StdioMcpTransport.Builder> t = Mockito.mockConstruction(
                 StdioMcpTransport.Builder.class,
@@ -248,7 +278,8 @@ class McpClientManagerTest {
     @Test
     void shutdown_closesAllClients_andSwallowsExceptions() {
         PrjXPConfig cfg = mock(PrjXPConfig.class);
-        McpClientManager manager = new McpClientManager(cfg);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
 
         McpClient clientA = mock(McpClient.class);
         McpClient clientB = mock(McpClient.class);

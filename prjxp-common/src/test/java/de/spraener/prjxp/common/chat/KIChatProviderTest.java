@@ -84,8 +84,15 @@ class KIChatProviderTest {
         }
 
         @Bean
-        de.spraener.prjxp.common.mcp.McpClientManager mcpClientManager(PrjXPConfig config) {
-            return new de.spraener.prjxp.common.mcp.McpClientManager(config);
+        de.spraener.prjxp.common.toolregistry.ToolRegistry toolRegistry() {
+            return new de.spraener.prjxp.common.toolregistry.ToolRegistry(
+                    new de.spraener.prjxp.common.toolregistry.GroovyToolExecutor());
+        }
+
+        @Bean
+        de.spraener.prjxp.common.mcp.McpClientManager mcpClientManager(PrjXPConfig config,
+                de.spraener.prjxp.common.toolregistry.ToolRegistry toolRegistry) {
+            return new de.spraener.prjxp.common.mcp.McpClientManager(config, toolRegistry);
         }
 
         @Bean

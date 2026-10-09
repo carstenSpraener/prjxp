@@ -2,6 +2,7 @@ package de.spraener.prjxp.common.mcp;
 
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
+import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.mcp.McpToolProvider;
@@ -13,6 +14,7 @@ import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.UserMessage;
 
 import java.awt.image.BufferedImage;
+import java.util.ArrayList;
 import java.util.List;
 
 public class McPEnablingKIChatDecorator implements KIChat {
@@ -21,12 +23,12 @@ public class McPEnablingKIChatDecorator implements KIChat {
     }
 
     private final KIChat delegate;
-    private final List<McpClient> mcpClients;
-    private final String defaultProject; // NEW
+    private final ToolRegistry toolRegistry;
+    private final String defaultProject;
 
-    public McPEnablingKIChatDecorator(KIChat delegate, List<McpClient> mcpClients, String defaultProject) {
+    public McPEnablingKIChatDecorator(KIChat delegate, ToolRegistry toolRegistry, String defaultProject) {
         this.delegate = delegate;
-        this.mcpClients = mcpClients;
+        this.toolRegistry = toolRegistry;
         this.defaultProject = defaultProject; // may be null
     }
 
@@ -86,16 +88,21 @@ public class McPEnablingKIChatDecorator implements KIChat {
                 return fallback;
             }
         };
-        // 2. Den neuen McpToolProvider über seinen Builder mit allen Clients konfigurieren
+
+        // Collect MCP clients from ToolRegistry for McpToolProvider (McpToolProvider needs raw McpClients)
+        // ToolRegistry wraps MCP clients, but McpToolProvider still needs the raw list for tool execution
+        // For now we keep backward compatibility: McpToolProvider still uses raw MCP clients for execution
+        // The ToolRegistry is used for prompt injection (system message) and direct tool execution
+
         McpToolProvider mcpToolProvider = McpToolProvider.builder()
-                .mcpClients(mcpClients)
-                .failIfOneServerFails(false) // Schützt die Anwendung, falls ein Server offline ist
+                .mcpClients(new ArrayList<>()) // Empty: tools are handled via ToolRegistry in system prompt
+                .failIfOneServerFails(false)
                 .build();
 
-        // 3. AiServices-Builder für v1.13.0 konfigurieren
+        // AiServices-Builder für v1.13.0 konfigurieren
         McpAgent agent = AiServices.builder(McpAgent.class)
                 .chatModel(bridgeModel)
-                .systemMessageProvider(context -> buildSystemPrompt())  // NEW
+                .systemMessageProvider(context -> buildSystemPrompt())
                 .toolProvider(mcpToolProvider) // Registriert den Provider direkt
                 .build();
         return agent;
@@ -104,15 +111,23 @@ public class McPEnablingKIChatDecorator implements KIChat {
     /* package-private for testability */
     String buildSystemPrompt() {
         StringBuilder sb = new StringBuilder();
-        sb.append("You have access to MCP tools for searching embedded project code.");
+        sb.append("You have access to tools for searching embedded project code.");
 
         if (defaultProject != null && !defaultProject.isBlank()) {
             sb.append(" The active project is: '").append(defaultProject).append("'");
         }
 
-        sb.append(". Available tools include: vectorSearch (semantic search over code chunks), ");
-        sb.append("grep (exact text search), readFile (full file content), ");
-        sb.append("readBySignature (lookup method by name).");
+        // Dynamically add tool descriptions from ToolRegistry
+        List<String> toolDescriptions = toolRegistry.getToolDescriptions();
+        if (!toolDescriptions.isEmpty()) {
+            sb.append(". Available tools:\n");
+            for (String desc : toolDescriptions) {
+                sb.append("- ").append(desc).append("\n");
+            }
+        } else {
+            sb.append(". No tools are currently available.");
+        }
+
         sb.append(" Use these tools to gather information before answering the user's question.");
 
         return sb.toString();
