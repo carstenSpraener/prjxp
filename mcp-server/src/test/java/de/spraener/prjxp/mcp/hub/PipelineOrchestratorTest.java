@@ -8,6 +8,9 @@ import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.EmbeddingService;
+import de.spraener.prjxp.tibed.EmbeddingImportService;
+import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -60,6 +63,9 @@ class PipelineOrchestratorTest {
 
     private ChunkProcess chunkProcess;       // mocked
     private EmbeddingService embeddingService;  // mocked
+    private EmbeddingImportService embeddingImportService;  // mocked
+    private EmbeddingCompatibilityChecker compatibilityChecker;  // mocked
+    private ObjectMapper objMapper;  // mocked
 
     private PipelineOrchestrator orchestrator;
 
@@ -79,6 +85,9 @@ class PipelineOrchestratorTest {
 
         chunkProcess = mock(ChunkProcess.class);
         embeddingService = mock(EmbeddingService.class);
+        embeddingImportService = mock(EmbeddingImportService.class);
+        compatibilityChecker = mock(EmbeddingCompatibilityChecker.class);
+        objMapper = mock(ObjectMapper.class);
     }
 
     @AfterEach
@@ -112,7 +121,7 @@ class PipelineOrchestratorTest {
     @Test
     void onImportedWalksStatusFromImportingToReady() throws Exception {
         HubProjectRegistry spied = spy(registry);
-        orchestrator = new PipelineOrchestrator(spied, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(spied, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
 
         CountDownLatch embedded = new CountDownLatch(1);
         AtomicReference<ProjectDefinition> defAtEmbed = new AtomicReference<>();
@@ -142,7 +151,7 @@ class PipelineOrchestratorTest {
     void reImportDoesNotLeaveDuplicateDaoInProvider() throws Exception {
         PxChunkDaoProvider spiedProvider = spy(new PxChunkDaoProvider(List.of()));
         HubProjectRegistry reg = new HubProjectRegistry(cfg, hub, spiedProvider, luceneStore, embeddingModel, parser);
-        orchestrator = new PipelineOrchestrator(reg, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(reg, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
 
         CountDownLatch firstEmbedded = new CountDownLatch(1);
         CountDownLatch secondEmbedded = new CountDownLatch(1);
@@ -181,7 +190,7 @@ class PipelineOrchestratorTest {
     @Test
     void chunkFailureMarksProjectFailedAndSkipsEmbedding() throws Exception {
         doThrow(new RuntimeException("chunking exploded")).when(chunkProcess).executeForProject(any());
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
 
         orchestrator.onImported("alpha", projectDir("alpha"));
 
@@ -203,7 +212,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(embeddingService).executeForProject(any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("a");
         orchestrator.enqueue("b");
 
@@ -226,7 +235,7 @@ class PipelineOrchestratorTest {
                 Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, "foo")));
         luceneStore.addAll(List.of(Embedding.from(new float[8])), List.of(stamped));
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.selfHeal();   // synchronous
 
         assertThat(registry.entry("foo").orElseThrow().getStatus()).isEqualTo(ProjectStatus.READY);
@@ -240,7 +249,7 @@ class PipelineOrchestratorTest {
                 Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, "foo")));
         luceneStore.addAll(List.of(Embedding.from(new float[8])), List.of(stamped));
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.onImported("foo", projectDir("foo"));
 
         assertThat(registry.entry("foo").orElseThrow().getStatus()).isEqualTo(ProjectStatus.READY);
@@ -257,7 +266,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(embeddingService).executeForProject(any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.selfHeal();   // enqueues the pipeline asynchronously
 
         assertThat(embedded.await(10, TimeUnit.SECONDS)).isTrue();
@@ -268,7 +277,7 @@ class PipelineOrchestratorTest {
     @Test
     void onFailedMarksKnownProjectAsFailed() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
 
         orchestrator.onFailed("alpha", "tar extraction exploded");   // synchronous
 
@@ -279,7 +288,7 @@ class PipelineOrchestratorTest {
 
     @Test
     void onFailedForUnregisteredProjectIsIgnored() {
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
 
         orchestrator.onFailed("ghost", "tar extraction exploded");   // must not throw
 
@@ -304,7 +313,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(embeddingService).executeForProject(any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("foo");
 
         assertThat(embedded.await(10, TimeUnit.SECONDS)).isTrue();   // chunk is in the index now
@@ -316,7 +325,7 @@ class PipelineOrchestratorTest {
 
     @Test
     void enqueueForDeregisteredProjectIsSafeNoOp() throws Exception {
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
 
         assertThatCode(() -> orchestrator.enqueue("ghost")).doesNotThrowAnyException();   // entry gone before the run
 
@@ -325,7 +334,7 @@ class PipelineOrchestratorTest {
 
     @Test
     void enqueueIsIdempotentWhilePipelineInFlight() throws Exception {
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, luceneStore);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         registry.registerProject("a", projectDir("a"));
 
         CountDownLatch started = new CountDownLatch(1);

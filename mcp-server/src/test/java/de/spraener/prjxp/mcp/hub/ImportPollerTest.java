@@ -87,7 +87,7 @@ class ImportPollerTest {
 
         orchestrator = mock(PipelineOrchestrator.class);
 
-        poller = new ImportPoller(props, new TarExtractor(props), handlerProvider, registry, orchestrator, luceneStore);
+        poller = new ImportPoller(props, new TarExtractor(props), handlerProvider, registry, orchestrator, luceneStore, new ProjectConfigFileParser());
     }
 
     @AfterEach

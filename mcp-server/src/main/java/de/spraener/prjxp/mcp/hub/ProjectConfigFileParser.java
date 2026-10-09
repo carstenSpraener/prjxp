@@ -30,6 +30,11 @@ public class ProjectConfigFileParser {
      */
     public static final String EXCLUDE_MARKER_FILE_NAME = ".prjxp-exclude";
 
+    /** Marker file that signals a pre-embedded project is ready for import.
+     * A project with {@code embeddingsFile} set in its prjxp.yaml is only enqueued when this file exists,
+     * preventing race conditions during file transfers (the JSONL may still be incomplete without it). */
+    public static final String READY_MARKER_FILE_NAME = ".ready";
+
     /** Parses the project's marker file (yaml preferred over yml); missing/empty -> all defaults. Never throws on bad content (log + defaults). */
     public ProjectDefinition parse(Path projectDir, String defaultName) {
         Optional<Path> configFile = markerFile(projectDir);
@@ -51,6 +56,7 @@ public class ProjectConfigFileParser {
             def.setJsonlFile(stringOf(map.get("jsonlFile"), "px-chunks.jsonl"));
             def.setChunoWhiteList(stringOf(map.get("chunoWhiteList"), "java,ts"));
             def.setTibedBatchSize(intOf(map.get("tibedBatchSize"), 32));
+            def.setEmbeddingsFile(stringOf(map.get("embeddingsFile"), null));
             return def;
         } catch (Exception e) {
             log.warn("Could not parse {} — falling back to defaults: {}", configFile.get(), e.toString());
@@ -72,6 +78,11 @@ public class ProjectConfigFileParser {
     /** True when {@code dir} contains the {@value #EXCLUDE_MARKER_FILE_NAME} exclusion marker file. */
     public boolean isExcluded(Path dir) {
         return Files.exists(dir.resolve(EXCLUDE_MARKER_FILE_NAME));
+    }
+
+    /** True when {@code dir} contains the {@value #READY_MARKER_FILE_NAME} readiness marker file. */
+    public boolean isReadyMarkerPresent(Path dir) {
+        return Files.exists(dir.resolve(READY_MARKER_FILE_NAME));
     }
 
     private static ProjectDefinition defaults(String name) {
