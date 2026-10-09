@@ -1,7 +1,7 @@
 # DocPipe MCP-Tool — Praxisbeispiel
 
 Dieses Dokument zeigt Schritt für Schritt, wie man docpipe mit MCP-Tools einsetzt, um
-dokumentation aus einem eingebetteten Projekt zu generieren.
+Dokumentation aus einem eingebetteten Projekt zu generieren.
 
 ---
 
@@ -60,29 +60,69 @@ curl http://localhost:7007/prjxp/tools/projects
 
 ## Schritt 3: docpipe konfigurieren
 
-### 3a. `application.yaml` — MCP-Server definieren
+### 3a. `application.yaml` — MCP-Server & Modelle definieren
 
 ```yaml
 prjxp:
-  # ... (embedding, chatModels etc.)
+  hub:
+    enabled: true
+    importDir: "."
+    projectsRoot: "/path/to/.prjxp/projects"
+    liveJsonlDir: "/path/to/.prjxp/data/chunks"
+
+  embeddingStoreLucene:
+    indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
+    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
+    name: lucene
 
   mcp-servers:
     - name: "prjxp-search"
       type: "http"
-      url: "${PRJXP_MCP_URL:http://localhost:7007/mcp}"
+      url: "http://localhost:7007/mcp"
       defaultProject: "my-spring-app"
 
-  docpipe:
-    maxthreads: 5
+  chatModels:
+    - stereoType: documentation
+      serverType: lm-studio
+      modelName: qwen3.6-27b
+      providerUrl: http://localhost:1234/v1
+      apiKey: ${LM_STUDIO_API_KEY}
+      temperature: 0.5
+      timeoutSecs: 120
+
+  embedding:
+    type: "OPEN_AI"
+    apiBaseURL: http://localhost:1234/v1
+    modelName: mxbai-embed-large-v1
+    timeout: 20
+    apiKey: ${LM_STUDIO_API_KEY}
+
+  embeddingStores:
+    - projectName: cwd
+      isDefault: true
+
+mcp:
+  cors:
+    allowed-patterns: "http://localhost:*"
+
+server:
+  port: ${SERVER_PORT:7007}
+
+spring:
+  main:
+    allow-bean-definition-overriding: true
 ```
 
 **Erläuterung:**
 
 | Feld | Bedeutung |
 |------|-----------|
-| `type: "http"` | Streamable HTTP-Transport (nicht stdio) |
-| `url` | URL des MCP-Servers (`/mcp`-Endpoint) |
-| `defaultProject` | Name des eingebetteten Projekts — wird im System-Prompt an den LLM übergeben |
+| `mcp-servers[].type: "http"` | Streamable HTTP-Transport (nicht stdio) |
+| `mcp-servers[].url` | URL des MCP-Servers (`/mcp`-Endpoint) |
+| `mcp-servers[].defaultProject` | Name des eingebetteten Projekts — wird im System-Prompt an den LLM übergeben |
+| `chatModels[].stereoType` | Stereotyp-Name (wird in documents.json referenziert) |
+| `chatModels[].serverType` | Provider (`ollama`, `lm-studio`, `openai`, `gemini`, `azure`) |
+| `chatModels[].providerUrl` | API-Endpoint des Providers |
 
 ### 3b. `.dp/`-Verzeichnis erstellen
 
@@ -91,41 +131,26 @@ Im Projekt-Root (oder einem Unterverzeichnis) eine `.dp/`-Struktur anlegen:
 ```
 my-spring-app/
 ├── .dp/
-│   ├── documents.json          # Job-Definitionen
-│   ├── models.json             # LLM-Modelle (Stereotype)
+│   ├── documents.json          # Job-Definitionen (Array)
 │   └── architecture-overview.hbs  # Handlebars-Prompt-Template
 ```
 
-### 3c. `documents.json` — Job definieren
+### 3c. `documents.json` — Job definieren (Array)
+
+**Wichtig:** `documents.json` ist ein **Array von Objekten**, nicht ein Objekt mit einem
+`contentCreations`-Feld.
 
 ```json
-{
-  "contentCreations": [
-    {
-      "outputFile": "docs/architecture-overview.md",
-      "stereotype": "architect",
-      "promptTemplate": "architecture-overview.hbs"
-    }
-  ]
-}
+[
+  {
+    "outputFile": "docs/architecture-overview.md",
+    "stereotype": "documentation",
+    "prompt": "architecture-overview.hbs"
+  }
+]
 ```
 
-### 3d. `models.json` — LLM-Modell definieren
-
-```json
-{
-  "chatModels": [
-    {
-      "stereoType": "architect",
-      "serverType": "ollama",
-      "modelName": "qwen3.6-27b",
-      "apiBaseURL": "http://localhost:11434"
-    }
-  ]
-}
-```
-
-### 3e. `architecture-overview.hbs` — Prompt-Template
+### 3d. `architecture-overview.hbs` — Prompt-Template
 
 ```handlebars
 {{mcp-project project="my-spring-app"}}
@@ -161,10 +186,10 @@ Dies signalisiert dem LLM, dass es MCP-Tools zur Verfügung stehen.
 
 **Was passiert intern:**
 
-1. `DocPipeRunner` entdeckt `.dp/documents.json` → erstellt `ContentCreationTask`
+1. `DocPipeRunner` entdeckt `.dp/documents.json` → erstellt `ContentCreationTask`(s)
 2. `PromptResolvingService` kompiliert `architecture-overview.hbs`:
    - `{{mcp-project project="my-spring-app"}}` → injiziert Projekt-Kontext
-3. `LLMService.chat()` ruft `KIChatProvider.getByStereotype("architect")` auf
+3. `LLMService.chat()` ruft `KIChatProvider.getByStereotype("documentation")` auf
 4. `McpClientManager.decorate()` wrappt den LLM in `McPEnablingKIChatDecorator`
 5. Der Decorator erstellt einen LangChain4j `AiServices` Agent mit:
    - **System-Prompt:** "You have access to MCP tools... The active project is: 'my-spring-app'..."
@@ -215,40 +240,36 @@ Das Projekt besteht aus folgenden Hauptmodulen:
 ### Beispiel A: Mehrere Dokumente in einem Job
 
 ```json
-{
-  "contentCreations": [
-    {
-      "outputFile": "docs/api-reference.md",
-      "stereotype": "architect",
-      "promptTemplate": "api-reference.hbs"
-    },
-    {
-      "outputFile": "docs/data-model.md",
-      "stereotype": "architect",
-      "promptTemplate": "data-model.hbs"
-    },
-    {
-      "outputFile": "docs/dependencies.md",
-      "stereotype": "architect",
-      "promptTemplate": "dependencies.hbs"
-    }
-  ]
-}
+[
+  {
+    "outputFile": "docs/api-reference.md",
+    "stereotype": "documentation",
+    "prompt": "api-reference.hbs"
+  },
+  {
+    "outputFile": "docs/data-model.md",
+    "stereotype": "documentation",
+    "prompt": "data-model.hbs"
+  },
+  {
+    "outputFile": "docs/dependencies.md",
+    "stereotype": "documentation",
+    "prompt": "dependencies.hbs"
+  }
+]
 ```
 
 ### Beispiel B: `forEach` für per-Datei-Dokumentation
 
 ```json
-{
-  "contentCreations": [
-    {
-      "outputFile": "docs/class-docs/{fileName}.md",
-      "stereotype": "javadoc",
-      "promptTemplate": "class-doc.hbs",
-      "forEach": "src/main/java/**/*Controller.java"
-    }
-  ]
-}
+[
+  {
+    "outputFile": "docs/class-docs/{fileName}.md",
+    "stereotype": "documentation",
+    "prompt": "class-doc.hbs",
+    "forEach": "src/main/java/**/*Controller.java"
+  }
+]
 ```
 
 Dies erzeugt für jeden Controller eine separate Klassendokumentation.
@@ -268,6 +289,28 @@ Ergänze die Informationen durch eigene MCP-Tool-Suchen, falls Lücken bestehen.
 Hier wird zuerst `GRPromptEnrichment` (RAG) verwendet, dann kann der LLM
 zusätzlich MCP-Tools für vertiefende Recherchen nutzen.
 
+### Beispiel D: `args` im Template verwenden
+
+```json
+[
+  {
+    "outputFile": "docs/custom-doc.md",
+    "stereotype": "documentation",
+    "prompt": "custom-doc.hbs",
+    "args": {
+      "focusArea": "security"
+    }
+  }
+]
+```
+
+Template (`custom-doc.hbs`):
+```handlebars
+{{mcp-project project="my-spring-app"}}
+
+Erstelle eine Dokumentation mit Fokus auf "{{args.focusArea}}".
+```
+
 ---
 
 ## Troubleshooting
@@ -279,6 +322,7 @@ zusätzlich MCP-Tools für vertiefende Recherchen nutzen.
 | `{{mcp-project}}` gibt leeren String zurück | Prüfe, ob der `project`-Parameter korrekt übergeben wird: `{{mcp-project project="name"}}` |
 | MCP-Server nicht erreichbar | `curl http://localhost:7007/prjxp/tools/ping` → sollte `"pong!"` zurückgeben |
 | LLM antwortet ohne Tools zu nutzen | Der LLM muss Tool-Calling unterstützen; einige kleinere Modelle ignorieren Tool-Definitionen — verwende ein Modell mit guter Tool-Support (z.B. Qwen 3, Llama 4) |
+| `documents.json` wird nicht gefunden | Stelle sicher, dass die Datei im `.dp/`-Verzeichnis liegt und ein gültiges JSON-**Array** ist (nicht ein Objekt) |
 
 ---
 
@@ -295,27 +339,33 @@ prjxp:
       defaultProject: "my-spring-app"    # Projektname für System-Prompt (optional)
 ```
 
-### `documents.json` — Job-Definition
+### `documents.json` — Job-Definition (Array)
+
+**Achtung:** `documents.json` ist ein **JSON-Array**, kein Objekt.
 
 | Feld | Typ | Pflicht | Beschreibung |
 |------|-----|---------|-------------|
 | `outputFile` | String | Ja | Ausgabepfad (relativ zu project.dir) |
-| `stereotype` | String | Ja | Modell-Stereotyp (muss in `models.json` existieren) |
-| `promptTemplate` | String | Ja | Handlebars-Template-Datei (in `.dp/`) |
-| `filterList` | String[] | Nein | Post-Processing-Filter (z.B. `"noSurroundingCodeBlock"`) |
+| `stereotype` | String | Ja | Modell-Stereotyp (muss in `chatModels[]` existieren) |
+| `prompt` | String | Ja | Handlebars-Template-Datei (in `.dp/`) |
+| `forEach` | String | Nein | Glob-Pattern für per-Datei-Jobs (z.B. `src/**/*Controller.java`) |
+| `outputDir` | String | Nein | Ausgabeverzeichnis (Alternative zu outputFile) |
 | `ps` | String | Nein | Post-Script (wird an das Ergebnis angehängt) |
-| `args` | Map | Nein | Kontext-Argumente für das Template (z.B. `currentFile`) |
-| `forEach` | String | Nein | Glob-Pattern für per-Datei-Jobs |
+| `filterList` | String | Nein | Post-Processing-Filter (z.B. `"noSurroundingCodeBlock"`) |
+| `storePrompt` | String | Nein | Pfad zum Speichern des aufgelösten Prompts |
+| `args` | Map | Nein | Kontext-Argumente für das Template (z.B. `{ "focusArea": "security" }`) |
 
-### `models.json` — Modell-Konfiguration
+### `chatModels[]` — Modell-Konfiguration (in application.yaml)
 
 | Feld | Typ | Pflicht | Beschreibung |
 |------|-----|---------|-------------|
-| `stereoType` | String | Ja | Stereotyp-Name (z.B. `"architect"`, `"javadoc"`) |
-| `serverType` | String | Ja | Provider (`ollama`, `openai`, `gemini`, `lmstudio`, `azure`) |
+| `stereoType` | String | Ja | Stereotyp-Name (z.B. `"documentation"`, `"javadoc"`) |
+| `serverType` | String | Ja | Provider (`ollama`, `lm-studio`, `openai`, `gemini`, `azure`) |
 | `modelName` | String | Ja | Modell-Name (z.B. `"qwen3.6-27b"`) |
-| `apiBaseURL` | String | Nein | API-Endpoint (provider-spezifisch) |
+| `providerUrl` | String | Nein | API-Endpoint (provider-spezifisch) |
 | `apiKey` | String | Nein | API-Schlüssel (oder `${ENV_VAR}`) |
+| `temperature` | Double | Nein | Temperatur (default: 0.0) |
+| `timeoutSecs` | Int | Nein | Timeout in Sekunden (default: 60) |
 
 ### Handlebars-Helper — `mcp-project`
 
