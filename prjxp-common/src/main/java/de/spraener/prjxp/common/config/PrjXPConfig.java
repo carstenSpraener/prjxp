@@ -95,4 +95,19 @@ public class PrjXPConfig {
                         + projects.stream().map(ProjectDefinition::getName).toList()));
     }
 
+    /** Create a safe, read-only subset of this config for sandboxed Groovy execution. */
+    public ConfigSubset toConfigSubset() {
+        return new ConfigSubset(
+                getActiveProjectName(),
+                getProjects().stream().map(ProjectDefinition::getName).toList(),
+                getChatModels() != null ? getChatModels().stream()
+                        .map(PrjXPChatModelReference::getStereoType).toList() : List.of(),
+                getMcpServers() != null ? getMcpServers().stream()
+                        .map(McpServerReference::getName).toList() : List.of(),
+                "LUCENE", // Only Lucene is supported in this project
+                getEmbeddingStoreLucene() != null ? getEmbeddingStoreLucene().getIndexPath() : ".prjxp-data/lucene-index",
+                getEmbeddingStoreLucene() != null ? getEmbeddingStoreLucene().getVectorDimension() : 1024
+        );
+    }
+
 }
