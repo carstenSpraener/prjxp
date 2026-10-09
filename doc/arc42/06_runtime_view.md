@@ -164,7 +164,8 @@ sequenceDiagram
     participant JOBS as JobCreationService (.dp/documents.json)
     participant PRS as PromptResolvingService (Handlebars)
     participant GR as golden-retriever (gr helper)
-    participant LLM as KIChatProvider → chat model by stereotype
+    participant LLM as KIChatProvider → McPEnablingKIChatDecorator
+    participant MCP as prjxp MCP server (HTTP :7007/mcp)
     participant OUT as OutputSink (file)
 
     U->>RUN: run(activeProject)
@@ -173,13 +174,25 @@ sequenceDiagram
         RUN->>PRS: resolve template (.dp/*.hbt)
         PRS->>GR: {{#gr prj="…"}} … {{/gr}} → enriched project context
         PRS->>PRS: source-dump / source-skeleton / groovy / url helpers
+        PRS->>PRS: {{mcp-project project="…"}} → project context hint
         PRS-->>RUN: final prompt (optionally stored via store-prompt)
         RUN->>LLM: chat(prompt)   % model selected by stereotype (e.g. "javadoc")
-        LLM-->>RUN: generated text
+        Note over LLM: McPEnablingKIChatDecorator runs<br/>AiServices tool loop internally
+        LLM->>MCP: vectorSearch / grep / readFile / readBySignature<br/>(if LLM decides tools are needed)
+        MCP-->>LLM: tool results
+        LLM-->>RUN: final answer string (after 0..N tool iterations)
         RUN->>OUT: write outputFile (± postscript)
     end
     Note over RUN: any SEVERE log message → summary + exit code 1
 ```
+
+**Particularities:** The `McPEnablingKIChatDecorator` wraps the base `KIChat` in a
+LangChain4j `AiServices` agent with MCP tools. The LLM decides autonomously whether to
+use tools (based on the system prompt and user question). The `mcp-project` Handlebars
+helper injects project context into the prompt so the LLM knows which embedded project to
+query. MCP servers are configured globally in `PrjXPConfig.mcpServers[]` with `type: "http"`,
+`url`, and optional `defaultProject`. The tool loop is transparent to docpipe — the outer
+contract remains `String chat(String)`.
 
 ## 6.7 Scenario: Hub Startup Self-Heal
 

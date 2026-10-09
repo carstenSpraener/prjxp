@@ -15,6 +15,7 @@ import org.springframework.stereotype.Component;
 import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.function.IntConsumer;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -38,6 +39,11 @@ public class DocPipeRunner {
     private final ModelConfigLoader modelConfigLoader;
     private final DotDPFilesService dpFilesService;
     private final de.spraener.prjxp.common.errorlog.PxLogService logService;
+
+    private IntConsumer exitHandler = System::exit;
+
+    /** Test seam: replaces the process-exit callback (defaults to {@code System::exit}). */
+    void setExitHandler(IntConsumer exitHandler) { this.exitHandler = exitHandler; }
 
     /**
      * Executes the documentation pipeline for the active project.
@@ -70,7 +76,7 @@ public class DocPipeRunner {
             log.severe("The run produced one or more errors! Here is a summary:");
             Stream<PxLogMessage> errorMessages = logService.getMessagesWithLevelMin(Level.SEVERE);
             errorMessages.forEach(msg -> log.severe(msg.getMessage()));
-            System.exit(1);
+            exitHandler.accept(1);
         }
     }
 }

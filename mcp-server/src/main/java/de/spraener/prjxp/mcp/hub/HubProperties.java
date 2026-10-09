@@ -42,4 +42,13 @@ public class HubProperties {
      * Increase this if a real project's {@code prjxp.yaml} sits deeper than 8 levels below {@code importDir}.
      */
     private int scanMaxDepth = 8;
+
+    // --- Pre-embedded import compatibility check defaults (overridable via prjxp.hub.compatibility.*) ---
+
+    /** Number of chunks to sample for the embedding compatibility check (default 4). */
+    private int compatibilitySampleSize = 4;
+    /** Minimum average COSINE similarity for COMPATIBLE verdict (default 0.995). */
+    private float compatibilityThresholdHigh = 0.995f;
+    /** Minimum average COSINE similarity for PARTIALLY_COMPATIBLE verdict (default 0.975). */
+    private float compatibilityThresholdLow = 0.975f;
 }

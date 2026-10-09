@@ -81,9 +81,28 @@ public class HubProjectRegistry implements ProjectRegistry {
 
     private void stampRootDir(ProjectDefinition def, Path dir) {
         String rootDir = def.getRootDir();
-        if (rootDir == null || !Path.of(rootDir).isAbsolute()) {
+        if (rootDir == null || !isAbsolutePathPortable(rootDir)) {
             def.setRootDir(dir.resolve(rootDir == null ? "." : rootDir).toAbsolutePath().normalize().toString());
         }
+    }
+
+    private boolean isAbsolutePathPortable(String value) {
+        if (value == null || value.isBlank()) {
+            return false;
+        }
+        Path path = Path.of(value);
+        if (path.isAbsolute()) {
+            return true;
+        }
+        // Accept Unix absolute style independent of host OS (important for cross-platform tests/configs).
+        if (value.startsWith("/")) {
+            return true;
+        }
+        // Windows drive absolute path, e.g. C:/x or C:\x
+        return value.length() >= 3
+                && Character.isLetter(value.charAt(0))
+                && value.charAt(1) == ':'
+                && (value.charAt(2) == '/' || value.charAt(2) == '\\');
     }
 
     private void ensureLiveJsonlDir() {

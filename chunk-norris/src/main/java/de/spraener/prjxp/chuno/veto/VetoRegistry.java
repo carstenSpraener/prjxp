@@ -22,6 +22,7 @@ import java.util.Map;
 public class VetoRegistry implements BeanPostProcessor {
     private final List<VetoMethodWrapper> vetoMethods = new ArrayList<>();
     private final ListableBeanFactory beanFactory;
+    private final VetoContext vetoContext;
 
     @Override
     public Object postProcessAfterInitialization(Object bean, String beanName) throws BeansException {
@@ -46,6 +47,16 @@ public class VetoRegistry implements BeanPostProcessor {
 
     public boolean shouldVeto(Path path) {
         return vetoMethods.stream().anyMatch(m -> m.check(path));
+    }
+
+    /** Like {@link #shouldVeto(Path)} but evaluates vetos in the context of a specific project definition. */
+    public boolean shouldVeto(Path path, de.spraener.prjxp.common.config.ProjectDefinition definition) {
+        vetoContext.set(definition);
+        try {
+            return vetoMethods.stream().anyMatch(m -> m.check(path));
+        } finally {
+            vetoContext.clear();
+        }
     }
 
     // Hilfsklasse zum Aufruf

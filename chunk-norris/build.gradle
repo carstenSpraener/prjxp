@@ -20,6 +20,11 @@ dependencies {
 
     implementation libs.bundles.langchain.docparser
     implementation libs.groovy
+
+    // Security-Pin (SecurityFindings.csv): JLine wird transitiv via Groovy gezogen
+    implementation libs.jline.reader
+    implementation libs.jline.builtins
+
     implementation libs.jgrapht
     implementation libs.bundles.conversion
 

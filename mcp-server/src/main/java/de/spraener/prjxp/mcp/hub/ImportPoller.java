@@ -1,5 +1,8 @@
 package de.spraener.prjxp.mcp.hub;
 
+import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -37,6 +40,8 @@ public class ImportPoller {
     private final ObjectProvider<ImportHandler> handlerProvider;
     private final HubProjectRegistry registry;
     private final PipelineOrchestrator orchestrator;
+    private final LuceneEmbeddingStore luceneStore;
+    private final ProjectConfigFileParser configParser;
 
     /** Logs the resolved poll configuration once at startup — the first thing to check when "nothing scans". */
     @PostConstruct
@@ -78,6 +83,9 @@ public class ImportPoller {
      * FAILED projects stay failed until an explicit reindex. The marker file is the source of truth:
      * a live project removed via DELETE /prjxp/projects/{name} is re-discovered and re-enqueued here
      * (the deletion never touches the marker) — documented, intended behavior.
+     *
+     * Pre-embedded projects (embeddingsFile set in prjxp.yaml) require a {@value ProjectConfigFileParser#READY_MARKER_FILE_NAME}
+     * marker file before they are enqueued — this prevents race conditions during file transfers.
      */
     private void syncLiveProjects() {
         Set<String> before = new HashSet<>(registry.availableProjects());
@@ -89,10 +97,33 @@ public class ImportPoller {
                 .filter(e -> e.getKind() == ProjectEntry.Kind.LIVE)
                 .filter(e -> e.getStatus() == ProjectStatus.IMPORTING)   // freshly discovered — never re-enqueue FAILED
                 .filter(e -> !before.contains(e.getName()))               // not known before this poll — never re-enqueue
+                .filter(e -> isReadyForImport(e))                         // pre-embedded projects require .ready marker
                 .forEach(e -> {
-                    log.info("Discovered new live project '{}' at {} — enqueuing pipeline", e.getName(), e.getRootDir());
-                    orchestrator.enqueue(e.getName());
+                    String name = e.getName();
+                    if (luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name))) {
+                        registry.setStatus(name, ProjectStatus.READY, null);
+                        log.info("Discovered live project '{}' at {} with existing index entries — marking READY", name, e.getRootDir());
+                    } else {
+                        log.info("Discovered new live project '{}' at {} — enqueuing pipeline", name, e.getRootDir());
+                        orchestrator.enqueue(name);
+                    }
                 });
+    }
+
+    /**
+     * Checks whether a project is ready for import. Pre-embedded projects (embeddingsFile set) require
+     * a {@value ProjectConfigFileParser#READY_MARKER_FILE_NAME} marker file; all other projects are always ready.
+     */
+    private boolean isReadyForImport(ProjectEntry entry) {
+        if (entry.getDefinition().getEmbeddingsFile() == null || entry.getDefinition().getEmbeddingsFile().isBlank()) {
+            return true;   // normal live project — no .ready marker needed
+        }
+        if (configParser.isReadyMarkerPresent(entry.getRootDir())) {
+            log.info("Pre-embedded project '{}' has .ready marker — enqueuing import", entry.getName());
+            return true;
+        }
+        log.debug("Pre-embedded project '{}' missing .ready marker — skipping until ready", entry.getName());
+        return false;
     }
 
     private void process(Path tarFile) {

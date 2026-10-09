@@ -1,6 +1,7 @@
 package de.spraener.prjxp.chuno;
 
 import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
+import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.annotations.Chunker;
 import de.spraener.prjxp.common.annotations.PostWalkChunker;
 import de.spraener.prjxp.common.model.PxChunk;

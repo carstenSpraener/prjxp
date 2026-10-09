@@ -1,18 +1,39 @@
 package de.spraener.prjxp.mcp.hub;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import de.spraener.prjxp.common.config.ProjectDefinition;
+import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
+import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.mcp.ProjectInfo;
 import de.spraener.prjxp.mcp.ProjectRegistry;
 import de.spraener.prjxp.mcp.UnknownProjectException;
+import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
+import de.spraener.prjxp.tibed.PxChunk2TextSegmentConverter;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.filter.Filter;
+import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import lombok.RequiredArgsConstructor;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -25,9 +46,17 @@ import java.util.List;
 @RequiredArgsConstructor
 public class HubProjectsController {
 
+    private static final Logger log = LoggerFactory.getLogger(HubProjectsController.class);
+
     private final ProjectRegistry projectRegistry;   // interface — resolves to HubProjectRegistry in hub mode
     private final ProjectLifecycleService lifecycle;
     private final PipelineOrchestrator orchestrator;
+    private final HubProjectRegistry hubRegistry;   // concrete type for definitionOf() access
+    private final EmbeddingCompatibilityChecker compatibilityChecker;
+    private final EmbeddingModel embeddingModel;
+    private final LuceneEmbeddingStore luceneStore;
+    private final HubProperties hubProps;
+    private final ObjectMapper objMapper;
 
     @GetMapping
     public List<ProjectInfo> list() {
@@ -55,5 +84,113 @@ public class HubProjectsController {
         }
         orchestrator.enqueue(name);
         return ResponseEntity.accepted().build();   // the pipeline runs asynchronously on the single worker
+    }
+
+    /**
+     * Imports pre-computed embeddings for a known project. Accepts a JSONL file containing {@link EmbeddedChunkRecord}
+     * objects, validates embedding compatibility against the local model and imports into the shared Lucene index.
+     * The project's existing chunks are wiped before import (scoped reset).
+     */
+    @PostMapping("/{name}/importEmbeddings")
+    public ResponseEntity<String> importEmbeddings(
+            @PathVariable("name") String name,
+            @RequestParam("file") MultipartFile file) {
+
+        if ("UNKNOWN".equals(projectRegistry.statusOf(name))) {
+            throw new UnknownProjectException(name, projectRegistry.availableProjects());
+        }
+
+        ProjectDefinition def = hubRegistry.definitionOf(name);
+        if (def == null) {
+            return ResponseEntity.badRequest().body("Project '" + name + "' has no definition");
+        }
+
+        // Parse all records from the uploaded JSONL file
+        List<EmbeddedChunkRecord> allRecords = parseJsonlFile(file);
+        if (allRecords.isEmpty()) {
+            return ResponseEntity.badRequest().body("No valid embedded chunk records found in uploaded file");
+        }
+
+        // Compatibility check: compare imported vectors against locally computed ones
+        EmbeddingCompatibilityChecker.CheckReport report = compatibilityChecker.check(
+                allRecords, embeddingModel,
+                hubProps.getCompatibilitySampleSize(),
+                hubProps.getCompatibilityThresholdHigh(),
+                hubProps.getCompatibilityThresholdLow()
+        );
+
+        if (report.verdict() == EmbeddingCompatibilityChecker.Verdict.INCOMPATIBLE) {
+            String msg = "Embedding model incompatible: avg cosine=" + String.format("%.4f", report.avgCosine())
+                    + " (threshold: " + hubProps.getCompatibilityThresholdLow() + "). "
+                    + "The uploaded embeddings were likely generated with a different model or incompatible hardware.";
+            log.error("Embedding import blocked for project '{}': {}", name, msg);
+            return ResponseEntity.badRequest().body(msg);
+        }
+
+        if (report.verdict() == EmbeddingCompatibilityChecker.Verdict.PARTIALLY_COMPATIBLE) {
+            log.warn("Embedding import for project '{}' with PARTIAL compatibility (avg cosine={:.4f})",
+                    name, report.avgCosine());
+        }
+
+        // Scoped reset: wipe existing chunks for this project
+        Filter resetFilter = new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name);
+        luceneStore.removeAll(resetFilter);
+
+        // Import in batches
+        int batchSize = Math.max(1, def.getTibedBatchSize());
+        List<EmbeddedChunkRecord> batch = new ArrayList<>();
+        int importedCount = 0;
+
+        for (EmbeddedChunkRecord record : allRecords) {
+            if (record.vector() == null || record.vector().length == 0) {
+                continue;   // skip records without vectors
+            }
+            batch.add(record);
+            if (batch.size() >= batchSize) {
+                importedCount += flushBatch(name, batch);
+                batch.clear();
+            }
+        }
+        if (!batch.isEmpty()) {
+            importedCount += flushBatch(name, batch);
+        }
+
+        log.info("Imported {} pre-embedded chunks for project '{}'", importedCount, name);
+        return ResponseEntity.ok("Imported " + importedCount + "/" + allRecords.size() + " chunks for project '" + name + "'");
+    }
+
+    private List<EmbeddedChunkRecord> parseJsonlFile(MultipartFile file) {
+        List<EmbeddedChunkRecord> records = new ArrayList<>();
+        try (BufferedReader reader = new BufferedReader(
+                new InputStreamReader(file.getInputStream(), StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                if (line.isBlank()) continue;
+                try {
+                    EmbeddedChunkRecord record = objMapper.readValue(line, EmbeddedChunkRecord.class);
+                    records.add(record);
+                } catch (Exception e) {
+                    log.warn("Skipping unparseable line: {}", e.getMessage());
+                }
+            }
+        } catch (Exception e) {
+            log.error("Failed to read uploaded file: {}", e.getMessage());
+        }
+        return records;
+    }
+
+    private int flushBatch(String projectName, List<EmbeddedChunkRecord> batch) {
+        List<Embedding> embeddings = new ArrayList<>();
+        List<TextSegment> segments = new ArrayList<>();
+
+        for (EmbeddedChunkRecord record : batch) {
+            embeddings.add(Embedding.from(record.vector()));
+            PxChunk chunk = record.toPxChunk();
+            chunk.setProject(projectName);   // stamp (multi-project store separation)
+            segments.add(PxChunk2TextSegmentConverter.convert(chunk));
+        }
+
+        luceneStore.addAll(embeddings, segments);
+        return batch.size();
     }
 }

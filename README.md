@@ -197,5 +197,36 @@ soul.
 **Documentation is a generation task, not a manual one.**
 
 ---
+
+## 🔌 MCP Tool Integration for docpipe (HTTP Transport)
+
+Starting with **LangChain4j MCP 1.21.0-beta31**, docpipe's LLM can use the prjxp MCP
+server over **Streamable HTTP** to query embedded project information during documentation
+generation. The LLM autonomously calls tools like `vectorSearch`, `grep`, `readFile`, and
+`readBySignature` — all transparently inside the existing `String chat(String)` contract.
+
+**Configuration:**
+```yaml
+prjxp:
+  mcp-servers:
+    - name: "prjxp-search"
+      type: "http"
+      url: "${PRJXP_MCP_URL:http://localhost:7007/mcp}"
+      defaultProject: "prjxp"
+```
+
+**Prompt template usage:**
+```handlebars
+{{mcp-project project="prjxp"}}
+
+Erstelle eine Architektur-Dokumentation. Nutze die Suchwerkzeuge, um
+Informationen über die Module und ihre Abhängigkeiten zu finden.
+```
+
+The `McPEnablingKIChatDecorator` wraps the LLM in a LangChain4j `AiServices` agent with
+MCP tools. A system prompt tells the LLM about available tools and the active project name.
+The `mcp-project` Handlebars helper injects explicit project context into prompt templates.
+
+---
 _This README was generated with Gemini – based on code documented by
 Chunk-Norris._

@@ -5,7 +5,10 @@ dependencies {
     implementation libs.dotenv.java
     implementation libs.commons.cli
     implementation libs.langchain4j.mcp
-    implementation 'dev.langchain4j:langchain4j-http-client-jdk:1.13.1'
+    implementation libs.langchain4j.http.client.jdk
+
+    // Groovy for dynamic tool scripting (Phase 01: MCP Tool Support)
+    implementation libs.groovy
 
     testImplementation libs.bundles.test.bundle
     testFixturesImplementation libs.bundles.test.bundle

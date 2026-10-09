@@ -42,7 +42,7 @@ Any other metadata key is stored under `pxchunk_metadata.<key>` in the index.
 
 | Level | File / Source | Scope | Examples |
 |---|---|---|---|
-| 1. Application | `application.yaml` (Spring, prefix `prjxp`) + `.env` (dotenv-java) | whole process | embedding endpoint, Lucene path/dimension, chat models, MCP CORS, hub properties (`prjxp.hub.*`) |
+| 1. Application | `application.yaml` (Spring, prefix `prjxp`) + `.env` (dotenv-java) | whole process | embedding endpoint, Lucene path/dimension, chat models, MCP CORS, hub properties (`prjxp.hub.*`), **MCP servers** (`prjxp.mcp-servers[]`: `type: "stdio"|"http"`, `url`, `defaultProject`) |
 | 2. Project | `prjxp.yaml` marker (or `projects[]` in application.yaml) | one project | `name`, `rootDir`, `jsonlFile`, `chunoWhiteList` (default `java,ts`), `tibedBatchSize` (32), `tibedResetStore` |
 | 3. Component | `@Value` properties | one component | `prjxp.java.chunksize/overlap`, `prjxp.gldrtrvr.maxcontentlength/vector-window/totalcontentlength`, `chunknorris.veto.maxsize`, `prjxp.reader-max-output-chars`, `prjxp.docpipe.maxthreads` |
 
@@ -105,3 +105,42 @@ reports its effective similarity threshold + fallback round count.
   don't start their CLIs.
 - `spring.main.allow-bean-definition-overriding=true` is set to tolerate the overlapping
   component scans.
+
+## 8.9 MCP Client Infrastructure (prjxp-common)
+
+`McpClientManager` initializes MCP clients at startup from `PrjXPConfig.mcpServers[]`.
+Two transport types are supported:
+
+| Transport | Config `type` | Use case |
+|---|---|---|
+| **Stdio** (subprocess) | `"stdio"` | Local MCP servers run as child processes (`npx`, `docker run … -i`) |
+| **Streamable HTTP** | `"http"` | Remote MCP servers reachable via HTTP (e.g. prjxp's own `mcp-server` on `:7007/mcp`) |
+
+When `KIChatProvider.getByStereotype(...)` is called, the resulting `KIChat` is wrapped
+in `McPEnablingKIChatDecorator`, which creates a LangChain4j `AiServices` agent with
+`McpToolProvider`. The LLM can then autonomously call MCP tools during `chat(String)`.
+
+**System prompt:** The decorator injects a system message that tells the LLM about available
+MCP tools and, if configured, the `defaultProject` name from the MCP server reference:
+
+```
+You have access to MCP tools for searching embedded project code.
+The active project is: 'prjxp'. Available tools include: vectorSearch, grep, readFile, readBySignature.
+Use these tools to gather information before answering the user's question.
+```
+
+**Handlebars integration:** docpipe's `mcp-project` resolver (`McpProjectResolver`) lets
+prompt templates inject project context explicitly: `{{mcp-project project="prjxp"}}`.
+
+**Configuration example:**
+```yaml
+prjxp:
+  mcp-servers:
+    - name: "prjxp-search"
+      type: "http"
+      url: "${PRJXP_MCP_URL:http://localhost:7007/mcp}"
+      defaultProject: "prjxp"
+```
+
+**LangChain4j version:** `1.21.0-beta31` (required for `StreamableHttpMcpTransport`;
+upgraded from `1.13.0-beta23` which only supported stdio).

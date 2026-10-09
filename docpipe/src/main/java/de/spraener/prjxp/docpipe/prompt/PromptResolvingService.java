@@ -15,8 +15,9 @@ import org.springframework.util.StringUtils;
 
 import java.io.File;
 import java.io.FileOutputStream;
-import java.io.FileReader;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.List;
 
 @Service
@@ -54,7 +55,9 @@ public class PromptResolvingService {
         log.finer(()-> "Prompt for creation of File "+dpcc.getOutputFile()+" is: " + prompt);
         if( StringUtils.hasText(ccTask.getDpContentCreation().getStorePrompt())) {
             log.info("Storing prompt for "+ccTask.getDpContentCreation().getOutputFile()+" in "+ccTask.getDpContentCreation().getStorePrompt());
-            IOUtils.write(prompt, new FileOutputStream(new File(ccTask.getDpContentCreation().getStorePrompt())));
+            try (FileOutputStream out = new FileOutputStream(new File(ccTask.getDpContentCreation().getStorePrompt()))) {
+                IOUtils.write(prompt, out, StandardCharsets.UTF_8);
+            }
         }
         return prompt;
     }
@@ -96,7 +99,7 @@ public class PromptResolvingService {
      * @throws IOException if an error occurs while reading the file
      */
     private String readTemplate(File cfgDir, String prompt) throws IOException {
-        return IOUtils.toString(new FileReader(cfgDir.getAbsolutePath()+"/"+prompt));
+        return Files.readString(cfgDir.toPath().resolve(prompt), StandardCharsets.UTF_8);
     }
 
 

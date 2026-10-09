@@ -1,0 +1,24 @@
+[
+  {
+    "forEach": "**/*.java",
+    "outputFile": ".md",
+    "stereotype": "doc-writer",
+    "prompt": "src-doc.prompt.txt"
+  },
+  {
+    "forEach": "**/*.txt",
+    "outputFile": ".md",
+    "outputDir": "docs",
+    "storePrompt": ".prompt.txt",
+    "stereotype": "reader"
+  },
+  {
+    "forEach": "**/*.xyz",
+    "outputFile": ".md",
+    "stereotype": "doc-writer"
+  },
+  {
+    "outputFile": "README.md",
+    "stereotype": "reader"
+  }
+]

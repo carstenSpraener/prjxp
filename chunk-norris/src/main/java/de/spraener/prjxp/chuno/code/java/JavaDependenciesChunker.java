@@ -2,8 +2,7 @@ package de.spraener.prjxp.chuno.code.java;
 
 import de.spraener.prjxp.chuno.util.DependencyRegistry;
 import de.spraener.prjxp.chuno.util.DependencyRegistryManager;
-import de.spraener.prjxp.common.annotations.ChunkNorrisComponent;
-import de.spraener.prjxp.common.annotations.PostWalkChunker;
+import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.util.ContentSplitter;
@@ -11,12 +10,12 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.File;
 import java.util.stream.Stream;
 
 @RequiredArgsConstructor
 @Component
-@ChunkNorrisComponent
-public class JavaDependenciesChunker {
+public class JavaDependenciesChunker implements PxChunker {
     @Value("${java.chunksize:600}")
     private int chunkSize;
     @Value("${java.chunkoverlap:50}")
@@ -24,7 +23,16 @@ public class JavaDependenciesChunker {
 
     private final DependencyRegistryManager depRegMgr;
 
-    @PostWalkChunker
+    @Override
+    public Stream<PxChunk> chunk(File f) {
+        return createDependencyChunks();
+    }
+
+    @Override
+    public boolean matches(File f) {
+        return false;
+    }
+
     public Stream<PxChunk> createDependencyChunks() {
         DependencyRegistry depReg = depRegMgr.get(JavaDependencyHandler.JAVA_DEPENDENCIES);
         return depReg.keyStream()

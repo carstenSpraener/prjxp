@@ -87,7 +87,7 @@ class ImportPollerTest {
 
         orchestrator = mock(PipelineOrchestrator.class);
 
-        poller = new ImportPoller(props, new TarExtractor(props), handlerProvider, registry, orchestrator);
+        poller = new ImportPoller(props, new TarExtractor(props), handlerProvider, registry, orchestrator, luceneStore, new ProjectConfigFileParser());
     }
 
     @AfterEach
@@ -280,6 +280,19 @@ class ImportPollerTest {
         poller.poll();   // marker still there, entry already known
 
         verify(orchestrator, times(1)).enqueue("foo");   // never re-enqueued
+    }
+
+    @Test
+    void indexedLiveProjectIsMarkedReadyAndNotEnqueued() throws IOException {
+        indexChunkFor("foo");
+        Path dir = liveDir("foo");
+        Files.writeString(dir.resolve("prjxp.yaml"), "name: foo\n");
+
+        poller.poll();
+
+        assertThat(registry.entry("foo")).isPresent();
+        assertThat(registry.entry("foo").orElseThrow().getStatus()).isEqualTo(ProjectStatus.READY);
+        verify(orchestrator, never()).enqueue("foo");
     }
 
     @Test

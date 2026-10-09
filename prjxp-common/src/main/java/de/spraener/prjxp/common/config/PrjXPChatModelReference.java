@@ -13,6 +13,6 @@ public class PrjXPChatModelReference {
     private String apiKey;
     private String providerUrl;
     private int timeoutSecs = 60;
-    private double temperature = 0.7;
+    private double temperature = 0.;
     private Map<String,String> args = new HashMap<>();
 }

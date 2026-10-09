@@ -20,8 +20,12 @@ dependencies {
     implementation libs.commons.io
     implementation libs.groovy
 
-    implementation 'dev.langchain4j:langchain4j-http-client-jdk:1.13.1'
-    implementation 'com.github.jknack:handlebars:4.5.1'
+    // Security-Pin (SecurityFindings.csv): JLine wird transitiv via Groovy gezogen
+    implementation libs.jline.reader
+    implementation libs.jline.builtins
+
+    implementation libs.langchain4j.http.client.jdk
+    implementation libs.handlebars
 
     testImplementation libs.bundles.test.bundle
 }

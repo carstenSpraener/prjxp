@@ -2,6 +2,7 @@ package de.spraener.prjxp.common.chat;
 
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.UserMessage;
+import dev.langchain4j.exception.RateLimitException;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
@@ -9,6 +10,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.awt.image.BufferedImage;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -133,5 +135,23 @@ class KIChatModelWrapperTest {
         uut.analyzeImage(image2);
 
         verify(chatModel, times(2)).chat(any(UserMessage.class));
+    }
+
+    @Test
+    void chat_rateLimited_retriesAfterInterrupt() throws Exception {
+        when(chatModel.chat("q"))
+                .thenThrow(new RateLimitException("rate limit exceeded"))
+                .thenReturn("retried");
+
+        AtomicReference<String> result = new AtomicReference<>();
+        Thread worker = new Thread(() -> result.set(uut.chat("q")));
+        worker.start();
+
+        Thread.sleep(300);
+        worker.interrupt();
+        worker.join(10_000);
+
+        assertThat(result.get()).isEqualTo("retried");
+        verify(chatModel, times(2)).chat("q");
     }
 }

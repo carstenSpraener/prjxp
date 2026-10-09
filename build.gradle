@@ -5,16 +5,16 @@ plugins {
 
 // JaCoCo Coverage-Ratchets pro Modul (LINE COVEREDRATIO).
 // Die Werte liegen bewusst unter dem aktuellen Stand (gemessen in DockerHub Phase 02):
-//   prjxp-common: 54.5% · chunk-norris: 71.7% · tibed: 57.5%
-//   golden-retriever: 40.6% · lucene-store: 79.0% · docpipe: 34.3% · mcp-server: 87.6%
+//   prjxp-common: 92.3% · chunk-norris: 71.7% · tibed: 57.5%
+//   golden-retriever: 40.6% · lucene-store: 79.0% · docpipe: 94.8% · mcp-server: 87.6%
 // Nur nach oben rücken, wenn Legacy-Code getestet wurde — nie senken.
 def coverageRatchets = [
-        'prjxp-common'     : 0.50,
+        'prjxp-common'     : 0.85,
         'chunk-norris'     : 0.70,
         'tibed'            : 0.55,
         'golden-retriever' : 0.35,
         'lucene-store'     : 0.75,
-        'docpipe'          : 0.30,
+        'docpipe'          : 0.80,   // >80% LOC-Ziel erreicht (gemessen 94.8%)
         'mcp-server'       : 0.80   // strikt: hier landet der DockerHub-Code
 ]
 
@@ -41,6 +41,12 @@ subprojects {
         // Spring Boot Starter aus dem Version Catalog
         implementation libs.spring.boot.starter
         implementation libs.spring.boot.starter.validation
+
+        // Security-Pins (SecurityFindings.csv): log4j/logback werden transitiv via starter-logging gezogen
+        implementation libs.log4j.api
+        implementation libs.log4j.to.slf4j
+        implementation libs.logback.core
+        implementation libs.logback.classic
 
         developmentOnly libs.spring.boot.devtools
 

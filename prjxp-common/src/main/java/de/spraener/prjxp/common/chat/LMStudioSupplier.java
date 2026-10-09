@@ -49,7 +49,7 @@ public class LMStudioSupplier implements de.spraener.prjxp.common.chat.ChatModel
         return OpenAiChatModel.builder()
                 .baseUrl(cmRef.getProviderUrl())
                 .modelName(cmRef.getModelName()) // Name des Modells in LM-Studio
-                .apiKey("lm-studio")
+                .apiKey(cmRef.getApiKey())
                 .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
                 // In 1.13 wird die Factory mit dem angepassten Client übergeben
                 .httpClientBuilder(langchainHttpClientBuilder)

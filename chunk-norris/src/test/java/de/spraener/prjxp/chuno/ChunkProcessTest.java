@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
@@ -171,6 +172,7 @@ class ChunkProcessTest {
     private VetoRegistry noVeto() {
         VetoRegistry vetos = Mockito.mock(VetoRegistry.class);
         Mockito.when(vetos.shouldVeto(Mockito.any(Path.class))).thenReturn(false);
+        Mockito.when(vetos.shouldVeto(Mockito.any(Path.class), Mockito.any(de.spraener.prjxp.common.config.ProjectDefinition.class))).thenReturn(false);
         return vetos;
     }
 

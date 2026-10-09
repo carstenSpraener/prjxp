@@ -35,6 +35,15 @@ class OragelSearch extends HTMLElement {
                 .status-msg { margin-top: 10px; font-size: 0.9rem; font-weight: bold; }
                 .success { color: #28a745; }
                 .loading { color: #00529b; }
+                button.danger { background: #c0392b; }
+                button.danger:hover { background: #96281b; }
+                .manage-row { display: flex; gap: 10px; align-items: center; padding: 10px; }
+                .manage-row select { flex-grow: 1; }
+                .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); display: none; align-items: center; justify-content: center; z-index: 1000; }
+                .modal-card { background: #fff; border-radius: 8px; padding: 20px; max-width: 480px; box-shadow: 0 4px 20px rgba(0,0,0,0.3); }
+                .modal-card h2 { margin: 0 0 10px; font-size: 1.1rem; color: #c0392b; }
+                .modal-card p { margin: 0 0 15px; font-size: 0.95rem; line-height: 1.4; }
+                .modal-actions { display: flex; gap: 10px; justify-content: flex-end; }
             </style>
             
             <div class="search-box">
@@ -52,12 +61,31 @@ class OragelSearch extends HTMLElement {
                 <label><input type="checkbox" id="skeletonsOnly"> Skeletons only</label>
             </div>
 
+            <details id="manageContainer">
+                <summary>Projekte verwalten</summary>
+                <div class="manage-row">
+                    <select id="manageProjectSelect"></select>
+                    <button id="deleteBtn" class="danger">Delete</button>
+                </div>
+            </details>
+
             <div id="status" class="status-msg"></div>
 
             <details id="resultContainer" style="display: none;">
                 <summary>Gefundener Kontext (wurde automatisch kopiert)</summary>
                 <pre id="results"></pre>
             </details>
+
+            <div id="deleteModal" class="modal-overlay" role="dialog" aria-modal="true">
+                <div class="modal-card">
+                    <h2 id="deleteModalTitle"></h2>
+                    <p id="deleteModalText"></p>
+                    <div class="modal-actions">
+                        <button id="deleteCancelBtn">Cancel</button>
+                        <button id="deleteConfirmBtn" class="danger">Delete</button>
+                    </div>
+                </div>
+            </div>
         `;
 
         const input = this.shadowRoot.getElementById('query');
@@ -74,12 +102,22 @@ class OragelSearch extends HTMLElement {
             this.shadowRoot.getElementById('similarityVal').textContent = sim.value;
         });
 
+        const deleteBtn = this.shadowRoot.getElementById('deleteBtn');
+        deleteBtn.onclick = () => this.openDeleteModal();
+
+        const cancelBtn = this.shadowRoot.getElementById('deleteCancelBtn');
+        cancelBtn.onclick = () => this.closeDeleteModal();
+
+        const confirmBtn = this.shadowRoot.getElementById('deleteConfirmBtn');
+        confirmBtn.onclick = () => this.confirmDelete();
+
         await this.populateProjects();
         setInterval(() => this.refreshProjects(), 10_000);
     }
 
     async populateProjects() {
         const select = this.shadowRoot.getElementById('projectSelect');
+        const manageSelect = this.shadowRoot.getElementById('manageProjectSelect');
         if (this.projects.length > 0) return;   // explicit 'projects' attribute wins
         try {
             const scriptUrl = new URL(import.meta.url);
@@ -92,24 +130,25 @@ class OragelSearch extends HTMLElement {
                     ? { name: p, status: 'READY', lastError: null } : p);
                 const firstReady = projects.findIndex(p => (p.status || 'READY') === 'READY');
                 const selIdx = firstReady >= 0 ? firstReady : 0;
-                select.innerHTML = projects.map((p, i) => {
-                    const ready = (p.status || 'READY') === 'READY';
-                    const label = p.name + (ready ? '' : ` (${(p.status || '').toLowerCase()})`);
-                    return `<option value="${p.name}" ${i === selIdx ? 'selected' : ''} ${ready ? '' : 'disabled'}>${label}</option>`;
-                }).join('');
+                select.innerHTML = projects.map((p, i) => this.projectOption(p, i === selIdx, true)).join('');
+                manageSelect.innerHTML = projects.map((p, i) => this.projectOption(p, i === selIdx, false)).join('');
             } else {
                 select.innerHTML = '<option value="default">default</option>';
+                manageSelect.innerHTML = '<option value="default" disabled>default</option>';
             }
         } catch (err) {
             console.error('Project list fetch failed', err);
             select.innerHTML = '<option value="default">default</option>';
+            manageSelect.innerHTML = '<option value="default" disabled>default</option>';
         }
     }
 
     async refreshProjects() {
         const select = this.shadowRoot.getElementById('projectSelect');
+        const manageSelect = this.shadowRoot.getElementById('manageProjectSelect');
         if (this.projects.length > 0) return;   // explicit 'projects' attribute wins
         const current = select.value;
+        const manageCurrent = manageSelect.value;
         try {
             const scriptUrl = new URL(import.meta.url);
             const basePath = scriptUrl.pathname.replace('/js/component.js', '');
@@ -122,14 +161,67 @@ class OragelSearch extends HTMLElement {
                 const presentIdx = projects.findIndex(p => p.name === current);
                 const firstReady = projects.findIndex(p => (p.status || 'READY') === 'READY');
                 const selIdx = presentIdx >= 0 ? presentIdx : (firstReady >= 0 ? firstReady : 0);
-                select.innerHTML = projects.map((p, i) => {
-                    const ready = (p.status || 'READY') === 'READY';
-                    const label = p.name + (ready ? '' : ` (${(p.status || '').toLowerCase()})`);
-                    return `<option value="${p.name}" ${i === selIdx ? 'selected' : ''} ${ready ? '' : 'disabled'}>${label}</option>`;
-                }).join('');
+                const mPresentIdx = projects.findIndex(p => p.name === manageCurrent);
+                const mSelIdx = mPresentIdx >= 0 ? mPresentIdx : selIdx;
+                select.innerHTML = projects.map((p, i) => this.projectOption(p, i === selIdx, true)).join('');
+                manageSelect.innerHTML = projects.map((p, i) => this.projectOption(p, i === mSelIdx, false)).join('');
             }
         } catch (err) {
             console.error('Project list refresh failed', err);   // keep current options on failure
+        }
+    }
+
+    projectOption(p, selected, disableNonReady) {
+        const ready = (p.status || 'READY') === 'READY';
+        const label = p.name + (ready ? '' : ` (${(p.status || '').toLowerCase()})`);
+        const disabled = (disableNonReady && !ready) ? 'disabled' : '';
+        return `<option value="${p.name}" ${selected ? 'selected' : ''} ${disabled}>${label}</option>`;
+    }
+
+    openDeleteModal() {
+        const name = this.shadowRoot.getElementById('manageProjectSelect').value;
+        if (!name || name === 'default') return;   // no valid selection -> ignore click
+        this.shadowRoot.getElementById('deleteModalTitle').textContent = `Delete project "${name}"?`;
+        this.shadowRoot.getElementById('deleteModalText').innerHTML =
+            `Warning! Deleting the project "${name}" will remove it from the Embedding database.<br>` +
+            `If it's a live project, it will be automatically re-imported (Chunking + Embedding) — this might take a little while.<br>` +
+            `Do you really want to delete the project?`;
+        this.shadowRoot.getElementById('deleteConfirmBtn').disabled = false;   // re-enable after a previous in-flight delete
+        this.shadowRoot.getElementById('deleteModal').style.display = 'flex';
+    }
+
+    closeDeleteModal() {
+        this.shadowRoot.getElementById('deleteModal').style.display = 'none';
+        this.shadowRoot.getElementById('manageContainer').open = false;   // "wie nichts passiert"
+    }
+
+    async confirmDelete() {
+        const name = this.shadowRoot.getElementById('manageProjectSelect').value;
+        if (!name || name === 'default') { this.closeDeleteModal(); return; }
+
+        const status = this.shadowRoot.getElementById('status');
+        this.shadowRoot.getElementById('deleteConfirmBtn').disabled = true;   // double-click guard while in flight
+
+        let ok = false;
+        try {
+            const scriptUrl = new URL(import.meta.url);
+            const basePath = scriptUrl.pathname.replace('/js/component.js', '');
+            const res = await fetch(`${basePath}/prjxp/projects/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            ok = true;
+        } catch (err) {
+            console.error('Project delete failed', err);
+        }
+
+        this.closeDeleteModal();          // per spec: modal + section disappear after the request
+        await this.refreshProjects();     // immediate update of both selects (don't wait for the 10 s poll)
+
+        if (ok) {
+            status.className = "status-msg success";
+            status.innerHTML = `✅ Projekt „${name}“ gelöscht.`;
+        } else {
+            status.className = "status-msg";
+            status.innerHTML = `❌ Projekt „${name}“ konnte nicht gelöscht werden.`;
         }
     }
 

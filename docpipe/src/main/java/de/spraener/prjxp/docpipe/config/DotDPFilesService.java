@@ -26,7 +26,7 @@ public class DotDPFilesService {
      * @return the {@link File} object representing the configuration directory
      */
     public File dotPipeDir(ContentCreationTask cct) {
-        return new File(cct.getDpJob().getRootDir().getAbsolutePath() +"/" + DP_DIR);
+        return new File(cct.getDpJob().getRootDir(), DP_DIR);
     }
 
     /**
@@ -36,7 +36,7 @@ public class DotDPFilesService {
      * @return the absolute path to the {@code models.json} file
      */
     public String globalModelsFileName(DocPipeConfig cfg) {
-        return cfg.getProjectDir() + "/" + DP_DIR + "/models.json";
+        return cfg.getProjectDir().resolve(DP_DIR).resolve("models.json").toString();
     }
 
     /**
@@ -56,7 +56,7 @@ public class DotDPFilesService {
      * @return the {@link File} object representing the configuration directory
      */
     public File getDotPipeDir(File directory) {
-        return new File(directory.getAbsolutePath() + "/"+DP_DIR);
+        return new File(directory, DP_DIR);
     }
 
     /**
@@ -66,7 +66,7 @@ public class DotDPFilesService {
      * @return the {@link File} object representing the models configuration file
      */
     public File getModelsJsonFrom(File directory) {
-        return new File(directory.getAbsolutePath() + "/"+DP_DIR+"/models.json");
+        return new File(getDotPipeDir(directory), "models.json");
     }
 
     /**
@@ -76,7 +76,7 @@ public class DotDPFilesService {
      * @return the {@link File} object representing the documents configuration file
      */
     public File getDocumentsJsonFrom(File directory) {
-        return new File(directory.getAbsolutePath() + "/"+DP_DIR+"/documents.json");
+        return new File(getDotPipeDir(directory), "documents.json");
     }
 
     /**
@@ -86,7 +86,7 @@ public class DotDPFilesService {
      * @return the {@link File} object representing the content hashes file
      */
     public File getContentHashesFrom(File directory) {
-        return new File(directory.getAbsolutePath() + "/"+DP_DIR+"/content-hashes.properties");
+        return new File(getDotPipeDir(directory), HASH_FILE_PATH);
     }
 
     /**
@@ -106,6 +106,8 @@ public class DotDPFilesService {
      * @return the absolute path to the output file as a string
      */
     public String getOutputFilePath(ContentCreationTask cct) {
-        return cct.getDpJob().getRootDir().getAbsoluteFile() + "/" + cct.getDpContentCreation().getOutputFile();
+        return cct.getDpJob().getRootDir().toPath().toAbsolutePath()
+                .resolve(cct.getDpContentCreation().getOutputFile())
+                .toString();
     }
 }

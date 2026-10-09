@@ -105,7 +105,7 @@ public class TarExtractor {
 
     private void validateEntry(TarArchiveEntry entry) {
         String name = entry.getName();
-        if (Path.of(name).isAbsolute()) {
+        if (isAbsoluteTarPath(name)) {
             throw new TarSecurityException("tar entry with absolute path: " + name);
         }
         for (String segment : name.split("/")) {
@@ -117,6 +117,23 @@ public class TarExtractor {
         if (entry.isSymbolicLink() || entry.isLink()) {
             throw new TarSecurityException("tar entry with link is not allowed: " + name);
         }
+    }
+
+    private boolean isAbsoluteTarPath(String name) {
+        if (name == null || name.isBlank()) {
+            return false;
+        }
+        // Tar payloads may use Unix-like paths even when validated on Windows.
+        if (name.startsWith("/") || name.startsWith("\\")) {
+            return true;
+        }
+        // Windows drive absolute path, e.g. C:/foo or C:\foo
+        if (name.length() >= 3 && Character.isLetter(name.charAt(0)) && name.charAt(1) == ':'
+                && (name.charAt(2) == '/' || name.charAt(2) == '\\')) {
+            return true;
+        }
+        // UNC path, e.g. \\server\share
+        return name.startsWith("\\\\");
     }
 
     private boolean isGzipped(Path tarFile) {

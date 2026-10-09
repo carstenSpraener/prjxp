@@ -2,6 +2,8 @@ package de.spraener.prjxp.common.config;
 
 import org.junit.jupiter.api.Test;
 
+import java.nio.file.Path;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class ProjectDefinitionTest {
@@ -13,7 +15,8 @@ class ProjectDefinitionTest {
         pd.setRootDir("/x/proj");
         pd.setJsonlFile("px-chunks.jsonl");
 
-        assertThat(pd.resolvedJsonlFile()).isEqualTo("/x/proj/px-chunks.jsonl");
+        assertThat(Path.of(pd.resolvedJsonlFile()).normalize())
+                .isEqualTo(Path.of("/x/proj").resolve("px-chunks.jsonl").normalize());
     }
 
     @Test
@@ -22,7 +25,8 @@ class ProjectDefinitionTest {
         pd.setRootDir("/x/proj");
         pd.setJsonlFile("/abs/out.jsonl");
 
-        assertThat(pd.resolvedJsonlFile()).isEqualTo("/abs/out.jsonl");
+        assertThat(Path.of(pd.resolvedJsonlFile()).normalize())
+                .isEqualTo(Path.of("/abs/out.jsonl").normalize());
     }
 
     @Test
@@ -49,7 +53,8 @@ class ProjectDefinitionTest {
         pd.setJsonlFile("px-chunks.jsonl");
 
         // CWD-relative, as before (rootDir falls back to ".")
-        assertThat(pd.resolvedJsonlFile()).isEqualTo("./px-chunks.jsonl");
+        assertThat(Path.of(pd.resolvedJsonlFile()).normalize())
+                .isEqualTo(Path.of(".").resolve("px-chunks.jsonl").normalize());
     }
 
     @Test
@@ -57,6 +62,7 @@ class ProjectDefinitionTest {
         ProjectDefinition pd = new ProjectDefinition();
         pd.setJsonlFile("px-chunks.jsonl");
 
-        assertThat(pd.resolvedJsonlFile()).isEqualTo("./px-chunks.jsonl");
+        assertThat(Path.of(pd.resolvedJsonlFile()).normalize())
+                .isEqualTo(Path.of(".").resolve("px-chunks.jsonl").normalize());
     }
 }

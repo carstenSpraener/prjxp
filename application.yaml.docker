@@ -29,5 +29,4 @@ spring:
   ai:
     mcp:
       server:
-        protocol: STATELESS
-        transport: sse
+        protocol: STREAMABLE

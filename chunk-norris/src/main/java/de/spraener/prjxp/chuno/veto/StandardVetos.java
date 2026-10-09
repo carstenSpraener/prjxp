@@ -21,6 +21,7 @@ public class StandardVetos {
     @Value("${chunknorris.veto.maxsize:1000000}")
     private long maxSize;
     private final PrjXPConfig cfg;
+    private final VetoContext vetoContext;
 
     @ChunkVeto
     public boolean isBuildArtifact(Path p) {
@@ -54,10 +55,14 @@ public class StandardVetos {
 
     @ChunkVeto
     public boolean notListedInWhiteList(Path p) {
-        if (!StringUtils.hasText(cfg.getActiveProject().get().getChunoWhiteList())) {
+        de.spraener.prjxp.common.config.ProjectDefinition def = vetoContext.get();
+        if (def == null) {
+            def = cfg.getActiveProject().orElse(null);
+        }
+        if (def == null || !StringUtils.hasText(def.getChunoWhiteList())) {
             return false;
         }
         String ending = p.toString().substring(p.toString().lastIndexOf(".") + 1);
-        return !cfg.getActiveProject().get().getChunoWhiteList().contains(ending);
+        return !def.getChunoWhiteList().contains(ending);
     }
 }

@@ -3,8 +3,10 @@ package de.spraener.prjxp.gldrtrvr.enrichment;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
-import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
+import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -18,7 +20,7 @@ import java.util.function.Function;
 @RequiredArgsConstructor
 public class GRPromptEnrichment {
     private final PxChunkDaoProvider chunkDaoProvider;
-    private final List<GoldenRetriever> retrieverList;
+    private final RetrieverRegistry retrieverRegistry;
     @Value("${prjxp.gldrtrvr.maxcontentlength:50000}")
     private int maxContentLength = 50000;
     @Value("${prjxp.gldrtrvr.vector-window:50}")
@@ -91,7 +93,7 @@ public class GRPromptEnrichment {
 
             StringBuilder sb = new StringBuilder();
             int skippedRetrievers = 0;
-            for( var gr : retrieverList ) {
+            for( var gr : retrieverRegistry.all() ) {
                 String part = gr.buildPromptForFindings(projectName, relevantChunks, searchParams, contextValidator).toString();
                 // Global budget across all retrievers: the first output always goes in,
                 // subsequent ones only if they still fit (prevents mega-dumps).

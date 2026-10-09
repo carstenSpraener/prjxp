@@ -6,7 +6,9 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
-import de.spraener.prjxp.gldrtrvr.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.SearchParams;
+import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -19,7 +21,7 @@ import static org.assertj.core.data.Offset.offset;
 
 class GRPromptEnrichmentTest {
 
-    private final GRPromptEnrichment enrichment = new GRPromptEnrichment(null, List.of());
+    private final GRPromptEnrichment enrichment = new GRPromptEnrichment(null, new RetrieverRegistry(List.of(), List.of()));
 
     @Test
     void reIterateSnapsOffGridThresholdToNextLowerGridPoint() {
@@ -81,9 +83,9 @@ class GRPromptEnrichmentTest {
     void totalBudgetSkipsRetrieversThatDoNotFit() {
         var withBudget = new GRPromptEnrichment(
                 new PxChunkDaoProvider(List.of(new FakeChunkDao("test"))),
-                List.of(
+                new RetrieverRegistry(List.of(), List.of(
                         new FixedRetriever("A".repeat(40_000)),
-                        new FixedRetriever("B".repeat(40_000))));
+                        new FixedRetriever("B".repeat(40_000)))));
 
         String result = withBudget.enrich("test", "query", List.of(),
                 c -> "CTX[" + c + "]",
@@ -98,9 +100,9 @@ class GRPromptEnrichmentTest {
     void totalBudgetKeepsRetrieversThatFit() {
         var withBudget = new GRPromptEnrichment(
                 new PxChunkDaoProvider(List.of(new FakeChunkDao("test"))),
-                List.of(
+                new RetrieverRegistry(List.of(), List.of(
                         new FixedRetriever("A".repeat(10_000)),
-                        new FixedRetriever("B".repeat(10_000))));
+                        new FixedRetriever("B".repeat(10_000)))));
 
         String result = withBudget.enrich("test", "query", List.of(),
                 c -> "CTX[" + c + "]",

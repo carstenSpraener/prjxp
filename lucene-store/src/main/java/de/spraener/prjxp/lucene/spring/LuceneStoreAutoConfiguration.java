@@ -1,8 +1,6 @@
 package de.spraener.prjxp.lucene.spring;
 
-import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.store.embedding.EmbeddingStore;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
@@ -21,8 +19,14 @@ import java.util.List;
 public class LuceneStoreAutoConfiguration {
     private final PrjXPConfig config;
 
+    /**
+     * Declared as the concrete {@link LuceneEmbeddingStore} on purpose: Spring matches @Bean
+     * methods by their declared return type, and the hub beans (plus tibed's
+     * {@code EmbeddingStoreSupplier}) inject the concrete class — an interface-typed return
+     * would make this bean invisible to them.
+     */
     @Bean
-    public EmbeddingStore<TextSegment> luceneEmbeddingStore() {
+    public LuceneEmbeddingStore luceneEmbeddingStore() {
         PrjXPConfig.LuceneEmbeddingStoreConfig lc = config.getEmbeddingStoreLucene();
         return new LuceneEmbeddingStore(
                 Path.of(lc.getIndexPath()),
@@ -33,7 +37,7 @@ public class LuceneStoreAutoConfiguration {
 
     @Bean
     @ConditionalOnBean(EmbeddingModel.class)
-    public List<PxChunkDao> lucenePxChunkDaos(EmbeddingStore<TextSegment> store, EmbeddingModel embeddingModel) {
+    public List<PxChunkDao> lucenePxChunkDaos(LuceneEmbeddingStore store, EmbeddingModel embeddingModel) {
         List<PxChunkDao> daos = new ArrayList<>();
         for (var ref : config.getEmbeddingStores()) {
             daos.add(new LucenePxChunkDao(store, embeddingModel, ref));

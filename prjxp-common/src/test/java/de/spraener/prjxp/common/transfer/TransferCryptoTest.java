@@ -181,4 +181,161 @@ class TransferCryptoTest {
 
         assertThat(new String(ciphertext, StandardCharsets.UTF_8)).doesNotContain("\"id\"");
     }
+
+    // --- Phase 04 additions: previously untested I/O paths (fast KDF for test speed) ---
+
+    private byte[] encryptToBytesFast(String plaintext) throws IOException {
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        try (var out = TransferCrypto.openEncryptedOutputStream(raw, PASSWORD, 1_000)) {
+            out.write(plaintext.getBytes(StandardCharsets.UTF_8));
+        }
+        return raw.toByteArray();
+    }
+
+    private String decryptToStringFast(byte[] ciphertext) throws IOException {
+        try (InputStream in = TransferCrypto.openAuto(new ByteArrayInputStream(ciphertext), PASSWORD)) {
+            return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+        }
+    }
+
+    @Test
+    void write_singleBytePath_roundTrips() throws IOException {
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        try (var out = TransferCrypto.openEncryptedOutputStream(raw, PASSWORD, 1_000)) {
+            for (char c : "hello".toCharArray()) {
+                out.write((int) c);
+            }
+        }
+
+        assertThat(decryptToStringFast(raw.toByteArray())).isEqualTo("hello");
+    }
+
+    @Test
+    void flush_withoutClose_thenContinue() throws IOException {
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        try (var out = TransferCrypto.openEncryptedOutputStream(raw, PASSWORD, 1_000)) {
+            out.write("abc".getBytes(StandardCharsets.UTF_8));
+            out.flush();
+            out.write("def".getBytes(StandardCharsets.UTF_8));
+        }
+
+        assertThat(decryptToStringFast(raw.toByteArray())).isEqualTo("abcdef");
+    }
+
+    @Test
+    void read_singleBytePath_reconstructs() throws IOException {
+        byte[] ciphertext = encryptToBytesFast("single-byte-read");
+
+        try (InputStream in = TransferCrypto.openAuto(new ByteArrayInputStream(ciphertext), PASSWORD)) {
+            StringBuilder sb = new StringBuilder();
+            int b;
+            while ((b = in.read()) != -1) {
+                sb.append((char) b);
+            }
+            assertThat(sb.toString()).isEqualTo("single-byte-read");
+        }
+    }
+
+    @Test
+    void read_arrayZeroLength_returnsZero() throws IOException {
+        byte[] ciphertext = encryptToBytesFast("x");
+
+        try (InputStream in = TransferCrypto.openAuto(new ByteArrayInputStream(ciphertext), PASSWORD)) {
+            assertThat(in.read(new byte[16], 0, 0)).isZero();
+        }
+    }
+
+    @Test
+    void read_smallBuffersCrossingBoundary() throws IOException {
+        String plaintext = "boundary-crossing-content-1234567890";
+        byte[] ciphertext = encryptToBytesFast(plaintext);
+
+        try (InputStream in = TransferCrypto.openAuto(new ByteArrayInputStream(ciphertext), PASSWORD)) {
+            byte[] buf = new byte[3];
+            ByteArrayOutputStream collected = new ByteArrayOutputStream();
+            int r;
+            while ((r = in.read(buf, 0, buf.length)) != -1) {
+                collected.write(buf, 0, r);
+            }
+            assertThat(collected.toString(StandardCharsets.UTF_8)).isEqualTo(plaintext);
+        }
+    }
+
+    @Test
+    void decrypt_wrongFormatVersion_throws() {
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        try {
+            raw.write(TransferCrypto.MAGIC);
+            raw.write(0x02); // unsupported format version
+            raw.write(new byte[16]); // salt placeholder (never reached)
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+
+        assertThatThrownBy(() -> TransferCrypto.openDecryptedInputStream(new ByteArrayInputStream(raw.toByteArray()), PASSWORD))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("Format-Version");
+    }
+
+    @Test
+    void decrypt_truncatedHeader_throws() {
+        ByteArrayOutputStream raw = new ByteArrayOutputStream();
+        try {
+            raw.write(TransferCrypto.MAGIC);
+            raw.write(0x01); // version byte, then the stream ends mid-header
+        } catch (IOException e) {
+            throw new AssertionError(e);
+        }
+
+        assertThatThrownBy(() -> TransferCrypto.openDecryptedInputStream(new ByteArrayInputStream(raw.toByteArray()), PASSWORD))
+                .isInstanceOf(IOException.class)
+                .hasMessageContaining("zu kurz");
+    }
+
+    /** InputStream wrapper that delivers at most one byte per {@code read(byte[], int, int)} call. */
+    private static class OneByteAtATimeInputStream extends InputStream {
+        private final ByteArrayInputStream delegate;
+
+        private OneByteAtATimeInputStream(byte[] data) {
+            this.delegate = new ByteArrayInputStream(data);
+        }
+
+        @Override
+        public int read() throws IOException {
+            return delegate.read();
+        }
+
+        @Override
+        public int read(byte[] b, int off, int len) throws IOException {
+            if (len == 0) {
+                return 0;
+            }
+            int single = read();
+            if (single < 0) {
+                return -1;
+            }
+            b[off] = (byte) single;
+            return 1;
+        }
+
+        @Override
+        public void close() throws IOException {
+            delegate.close();
+        }
+    }
+
+    @Test
+    void decrypt_rawStreamOneByteAtATime_prefixAccumulates() throws IOException {
+        String plaintext = "0123456789abcdef0123456789ab"; // ~30-byte payload
+        byte[] ciphertext = encryptToBytesFast(plaintext);
+
+        try (InputStream in = TransferCrypto.openAuto(new OneByteAtATimeInputStream(ciphertext), PASSWORD)) {
+            assertThat(new String(in.readAllBytes(), StandardCharsets.UTF_8)).isEqualTo(plaintext);
+        }
+    }
+
+    // Intentionally left uncovered (defensive branches, unreachable via the public API —
+    // GCM integrity guarantees a correct prefix): DecryptedInputStream.fillBuffer()
+    // !prefixVerified throw, stripPrefix() mismatch throw, EncryptedOutputStream.close()
+    // GeneralSecurityException catch.
 }

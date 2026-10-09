@@ -1,0 +1,20 @@
+[
+  {
+    "stereoType": "doc-writer",
+    "serverType": "lm-studio",
+    "modelName": "qwen2.5-7b-instruct",
+    "apiKey": "${LM_STUDIO_API_KEY}",
+    "providerUrl": "http://localhost:1234/v1",
+    "timeoutSecs": 180,
+    "temperature": 0.2
+  },
+  {
+    "stereoType": "reader",
+    "serverType": "openai",
+    "modelName": "gpt-4o-mini",
+    "apiKey": "${OPENAI_API_KEY}",
+    "providerUrl": "https://api.openai.com/v1",
+    "timeoutSecs": 60,
+    "temperature": 0.5
+  }
+]
