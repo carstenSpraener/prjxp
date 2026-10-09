@@ -1,0 +1,148 @@
+.projects-page {
+  padding: 1rem;
+}
+
+.page-title {
+  font-size: 2rem;
+  margin-bottom: 1.5rem;
+}
+
+.projects-layout {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  gap: 1.5rem;
+}
+
+/* Left Panel */
+.project-list-panel {
+  padding: 1.25rem;
+  border-radius: 12px;
+  background: rgba(10, 15, 30, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 255, 255, 0.1);
+}
+
+.panel-header {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.search-input {
+  flex: 1;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid rgba(0, 255, 255, 0.15);
+  background: rgba(0, 0, 0, 0.3);
+  color: #e0e0e0;
+  font-size: 0.85rem;
+}
+
+.search-input:focus {
+  outline: none;
+  border-color: rgba(0, 255, 255, 0.4);
+}
+
+.project-list {
+  max-height: calc(100vh - 250px);
+  overflow-y: auto;
+}
+
+.project-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0.75rem;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.2s ease;
+}
+
+.project-item:hover {
+  background: rgba(0, 255, 255, 0.05);
+}
+
+.project-item.selected {
+  background: rgba(0, 255, 255, 0.1);
+  border: 1px solid rgba(0, 255, 255, 0.2);
+}
+
+.project-item-name {
+  font-size: 0.9rem;
+  color: #e0e0e0;
+}
+
+.badge {
+  padding: 0.15rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.65rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.status-ready {
+  background: rgba(0, 255, 128, 0.2);
+  color: #00ff80;
+}
+
+.status-failed {
+  background: rgba(255, 64, 64, 0.2);
+  color: #ff4040;
+}
+
+.status-default {
+  background: rgba(0, 255, 255, 0.1);
+  color: #00ffff;
+}
+
+.empty-state {
+  text-align: center;
+  padding: 2rem;
+}
+
+/* Right Panel */
+.project-detail-panel {
+  min-height: 300px;
+}
+
+.detail-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3rem;
+  border-radius: 12px;
+  background: rgba(10, 15, 30, 0.6);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(0, 255, 255, 0.1);
+}
+
+/* Buttons */
+.btn {
+  padding: 0.5rem 1rem;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  cursor: pointer;
+  border: none;
+  transition: all 0.2s ease;
+}
+
+.btn-primary {
+  background: rgba(0, 255, 255, 0.15);
+  color: #00ffff;
+  border: 1px solid rgba(0, 255, 255, 0.3);
+}
+
+.btn-primary:hover {
+  background: rgba(0, 255, 255, 0.25);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .projects-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .project-list {
+    max-height: 300px;
+  }
+}

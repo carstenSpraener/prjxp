@@ -119,8 +119,8 @@ public class PipelineOrchestrator implements ImportHandler {
         submit(name, token);
     }
 
-    /** Like {@link #enqueue} but supersedes a queued/running pipeline of the same name (tar re-import). */
-    private void enqueueForced(String name) {
+    /** Like {@link #enqueue} but supersedes a queued/running pipeline of the same name (tar re-import, embedded import). */
+    public void enqueueForced(String name) {
         Object token = new Object();
         inFlight.put(name, token);
         submit(name, token);
@@ -150,6 +150,7 @@ public class PipelineOrchestrator implements ImportHandler {
         } catch (Exception e) {
             log.error("Pipeline failed for project '{}': {}", name, e.toString());
             registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
+            registry.setReindexStatus(name, ReindexStatus.FAILED);
         } finally {
             wipeIfDeregistered(name);   // race guard: marker removed mid-run -> the entry is gone, wipe what we wrote
         }
@@ -161,11 +162,17 @@ public class PipelineOrchestrator implements ImportHandler {
 
     private void runStandardPipeline(String name, ProjectDefinition def) throws Exception {
         registry.setStatus(name, ProjectStatus.CHUNKING, null);
+        registry.setReindexStatus(name, ReindexStatus.CHUNKING);
+        registry.setReindexProgress(name, 10);
         chunkProcess.executeForProject(def);
         registry.setStatus(name, ProjectStatus.EMBEDDING, null);
+        registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
+        registry.setReindexProgress(name, 50);
         def.setTibedResetStore(true);   // import = source of truth: scoped reset + re-embed
         embeddingService.executeForProject(def, luceneStore);
         registry.setStatus(name, ProjectStatus.READY, null);
+        registry.setReindexStatus(name, ReindexStatus.COMPLETE);
+        registry.setReindexProgress(name, 100);
     }
 
     /**
@@ -210,9 +217,13 @@ public class PipelineOrchestrator implements ImportHandler {
 
         // Proceed with import: scoped reset + import pre-embedded vectors
         registry.setStatus(name, ProjectStatus.EMBEDDING, null);
+        registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
+        registry.setReindexProgress(name, 50);
         def.setTibedResetStore(true);   // scoped reset before import
         importPreEmbeddedChunks(name, def, embeddingsPath);
         registry.setStatus(name, ProjectStatus.READY, null);
+        registry.setReindexStatus(name, ReindexStatus.COMPLETE);
+        registry.setReindexProgress(name, 100);
     }
 
     /**

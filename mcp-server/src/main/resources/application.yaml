@@ -11,6 +11,12 @@ spring:
         version: "1.0.0"
 
 prjxp:
+  hub:
+    enabled: true
+    import-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/import
+    projects-root: ${PRJXP_ROOT_DIR:.}/.prjxp-data/projects
+    live-jsonl-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/chunks
+
   # Embedding Stores
   embedding-stores:
     - project-name: "prjxp"
@@ -24,12 +30,20 @@ prjxp:
     modelName: mxbai-embed-large
     timeout: 60
 
+  embedding-model:
+    server-type: "openai"
+    provider-url: "${PRJXP_EMBEDDING_API_BASE_URL:http://localhost:1234/v1}"
+    model-name: "${PRJXP_EMBEDDING_MODEL_NAME:mxbai-embed-large-v1}"
+    api-key: "${EMBEDDING_API_KEY}"
+    timeout-secs: 20
+
   # Chat-Schnittstelle
   chat-models:
-    - model-name: "gemma-4-31b"
-      api-url: "http://localhost:1234"
+    - stereo-type: "default"
+      server-type: "lm-studio"
+      model-name: "qwen3.8-27B"
       api-key: "lm-studio"
-      provider-type: "openAI"
+      provider-url: "http://localhost:1234/v1"
 
 server:
   port: ${SERVER_PORT:7007}

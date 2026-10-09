@@ -33,13 +33,13 @@ class GrepSearchControllerTest {
 
     @Test
     void missingQueryReturns400() throws Exception {
-        mvc.perform(get("/prjxp/tools/grep"))
+        mvc.perform(get("/api/tools/grep"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void blankQueryReturns400() throws Exception {
-        mvc.perform(get("/prjxp/tools/grep").param("query", "   "))
+        mvc.perform(get("/api/tools/grep").param("query", "   "))
                 .andExpect(status().isBadRequest());
     }
 
@@ -48,7 +48,7 @@ class GrepSearchControllerTest {
         SearchHit hit = new SearchHit("chunk-1", 2.5, "src/A.java", 10, 20, "snippet text", "grep", Map.of());
         when(service.search(anyString(), anyString(), any(), anyInt())).thenReturn(List.of(hit));
 
-        mvc.perform(get("/prjxp/tools/grep").param("query", "ChunkProcess"))
+        mvc.perform(get("/api/tools/grep").param("query", "ChunkProcess"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$[0].chunkId").value("chunk-1"))
@@ -64,7 +64,7 @@ class GrepSearchControllerTest {
     void limitAboveMaxIsClampedTo100() throws Exception {
         when(service.search(anyString(), anyString(), any(), anyInt())).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/grep").param("query", "x").param("limit", "500"))
+        mvc.perform(get("/api/tools/grep").param("query", "x").param("limit", "500"))
                 .andExpect(status().isOk());
 
         verify(service).search(eq("x"), eq("default"), isNull(), eq(100));
@@ -74,7 +74,7 @@ class GrepSearchControllerTest {
     void limitBelowMinIsClampedTo1() throws Exception {
         when(service.search(anyString(), anyString(), any(), anyInt())).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/grep").param("query", "x").param("limit", "0"))
+        mvc.perform(get("/api/tools/grep").param("query", "x").param("limit", "0"))
                 .andExpect(status().isOk());
 
         verify(service).search(eq("x"), eq("default"), isNull(), eq(1));
@@ -84,7 +84,7 @@ class GrepSearchControllerTest {
     void defaultLimitIs10() throws Exception {
         when(service.search(anyString(), anyString(), any(), anyInt())).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/grep").param("query", "x"))
+        mvc.perform(get("/api/tools/grep").param("query", "x"))
                 .andExpect(status().isOk());
 
         verify(service).search(eq("x"), eq("default"), isNull(), eq(10));
@@ -94,7 +94,7 @@ class GrepSearchControllerTest {
     void parametersArePassedThrough() throws Exception {
         when(service.search(anyString(), anyString(), anyString(), anyInt())).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/grep")
+        mvc.perform(get("/api/tools/grep")
                 .param("query", "ChunkProcess")
                 .param("project", "myproj")
                 .param("language", "java")

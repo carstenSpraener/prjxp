@@ -1,0 +1,9 @@
+<div class="chat-input-wrapper">
+  <textarea
+    [(ngModel)]="messageText"
+    placeholder="Type your message..."
+    (keydown)="onKeydown($event)"
+    rows="2"
+  ></textarea>
+  <button class="btn-send" (click)="sendMessage()">Send</button>
+</div>

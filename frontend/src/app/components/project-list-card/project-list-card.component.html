@@ -1,0 +1,18 @@
+<div class="project-card glass-panel">
+  <div class="card-header">
+    <h3 class="text-cyan">{{ candidate.name }}</h3>
+    <span class="config-badge" *ngIf="candidate.hasConfigFile" title="Has prjxp.yaml">✓</span>
+  </div>
+
+  <div class="card-body">
+    <p class="text-secondary" style="font-size: 0.9rem;">📁 {{ candidate.directory }}</p>
+
+    <div class="languages" style="margin: 0.75rem 0;">
+      <span class="lang-badge" *ngFor="let lang of candidate.languages">{{ lang }}</span>
+    </div>
+
+    <button class="btn btn-primary" (click)="onRegister()">
+      Register Project
+    </button>
+  </div>
+</div>

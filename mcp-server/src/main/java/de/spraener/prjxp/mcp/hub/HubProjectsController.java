@@ -5,8 +5,12 @@ import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import de.spraener.prjxp.mcp.LiveProjectCandidate;
+import de.spraener.prjxp.mcp.ProjectCreateRequest;
 import de.spraener.prjxp.mcp.ProjectInfo;
 import de.spraener.prjxp.mcp.ProjectRegistry;
+import de.spraener.prjxp.mcp.ProjectStats;
+import de.spraener.prjxp.mcp.ProjectUpdateRequest;
 import de.spraener.prjxp.mcp.UnknownProjectException;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import de.spraener.prjxp.tibed.PxChunk2TextSegmentConverter;
@@ -19,29 +23,42 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 
 /**
  * REST endpoints for hub project management (lifecycle overview, deletion and reindex).
  * Active only in hub mode; the registry dependency resolves to {@link HubProjectRegistry}.
  */
 @RestController
-@RequestMapping("/prjxp/projects")
+@RequestMapping("/api/projects")
 @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class HubProjectsController {
@@ -57,6 +74,8 @@ public class HubProjectsController {
     private final LuceneEmbeddingStore luceneStore;
     private final HubProperties hubProps;
     private final ObjectMapper objMapper;
+    private final ProjectConfigFileParser configParser;
+    private final EmbeddedArchiveImporter embeddedImporter;
 
     @GetMapping
     public List<ProjectInfo> list() {
@@ -84,6 +103,18 @@ public class HubProjectsController {
         }
         orchestrator.enqueue(name);
         return ResponseEntity.accepted().build();   // the pipeline runs asynchronously on the single worker
+    }
+
+    /** Returns the current reindex status and progress percentage for a project. */
+    @GetMapping("/{name}/reindex-status")
+    public ResponseEntity<Map<String, Object>> getReindexStatus(@PathVariable("name") String name) {
+        ReindexStatus status = hubRegistry.getReindexStatus(name);
+        int progress = hubRegistry.getReindexProgress(name);
+
+        Map<String, Object> result = new HashMap<>();
+        result.put("status", status.name());
+        result.put("progress", progress);
+        return ResponseEntity.ok(result);
     }
 
     /**
@@ -192,5 +223,235 @@ public class HubProjectsController {
 
         luceneStore.addAll(embeddings, segments);
         return batch.size();
+    }
+
+    /** Creates a new project from request body. */
+    @PostMapping
+    public ProjectInfo createProject(@RequestBody ProjectCreateRequest request) {
+        ProjectEntry.Kind kind = ProjectEntry.Kind.valueOf(request.kind());
+
+        // Create a temporary directory for the project in hub's projects root
+        Path newDir = Path.of(hubProps.getProjectsRoot()).resolve(request.name());
+        try {
+            Files.createDirectories(newDir);
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create project directory", e);
+        }
+
+        // Register the project
+        hubRegistry.registerProject(request.name(), newDir, kind);
+
+        // If rootDir is provided, update the definition
+        if (request.rootDir() != null) {
+            ProjectDefinition def = hubRegistry.definitionOf(request.name());
+            if (def != null) {
+                def.setRootDir(request.rootDir());
+                if (request.chunoWhiteList() != null) def.setChunoWhiteList(request.chunoWhiteList());
+                if (request.tibedBatchSize() != null) def.setTibedBatchSize(request.tibedBatchSize());
+            }
+        }
+
+        // Persist project configuration to YAML file
+        ProjectDefinition newDef = hubRegistry.definitionOf(request.name());
+        if (newDef != null) {
+            configParser.save(newDir, newDef);
+        }
+
+        // Trigger pipeline
+        orchestrator.enqueue(request.name());
+
+        return new ProjectInfo(request.name(), "IMPORTING", kind.name(), null, 0L, 0L, 0,
+            null, null, null, null, null, false, "IDLE", 0, null);
+    }
+
+    /** Updates an existing project's configuration. */
+    @PutMapping("/{name}")
+    public ProjectInfo updateProject(@PathVariable("name") String name, @RequestBody ProjectUpdateRequest updates) {
+        ProjectEntry entry = hubRegistry.entry(name)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found: " + name));
+
+        ProjectDefinition def = entry.getDefinition();
+        String oldRootDir = def.getRootDir();
+
+        if (updates.rootDir() != null) def.setRootDir(updates.rootDir());
+        if (updates.chunoWhiteList() != null) def.setChunoWhiteList(updates.chunoWhiteList());
+        if (updates.tibedBatchSize() != null) def.setTibedBatchSize(updates.tibedBatchSize());
+        if (updates.prompt() != null) def.setPrompt(updates.prompt().isBlank() ? null : updates.prompt());
+
+        // Persist changes to YAML file
+        configParser.save(entry.getRootDir(), def);
+
+        // Reload definition from disk to ensure in-memory state matches persisted state
+        hubRegistry.reloadDefinition(name);
+
+        // Re-index if rootDir changed
+        if (updates.rootDir() != null && !updates.rootDir().equals(oldRootDir)) {
+            orchestrator.enqueue(name);
+        }
+
+        return new ProjectInfo(
+            name, entry.getStatus().name(), entry.getKind().name(),
+            entry.getLastError(), 0L, 0L, 0,
+            def.getRootDir(), def.getJsonlFile(), def.getChunoWhiteList(),
+            def.getTibedBatchSize(), def.getEmbeddingsFile(), def.isTibedResetStore(),
+            hubRegistry.getReindexStatus(name).name(),
+            hubRegistry.getReindexProgress(name),
+            def.getPrompt()
+        );
+    }
+
+    /** Uploads a TAR/ZIP archive for import. */
+    @PostMapping("/upload-archive")
+    public ProjectInfo uploadArchive(@RequestParam("file") MultipartFile file) {
+        String fileName = file.getOriginalFilename();
+        Path target = Path.of(hubProps.getImportDir()).resolve(fileName);
+        try {
+            Files.createDirectories(target.getParent());
+            file.transferTo(target.toFile());
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload file", e);
+        }
+
+        // Trigger immediate scan for new projects
+        // (ImportPoller will discover it on next cycle)
+
+        String projectName = fileName.replaceFirst("\\.[^.]+$", "");
+        return new ProjectInfo(projectName, "IMPORTING", null, null, 0L, 0L, 0,
+            null, null, null, null, null, false, "IDLE", 0, null);
+    }
+
+    /** Uploads a pre-embedded archive (JSONL, GZ, TGZ, ZIP) for import. */
+    @PostMapping("/upload-embedded")
+    public ResponseEntity<ProjectInfo> uploadEmbedded(@RequestParam("file") MultipartFile file) {
+        String fileName = sanitizeFileName(file.getOriginalFilename());
+
+        // The importer derives the project name from the file name, so the original
+        // name must be preserved — a random temp-file prefix would corrupt it.
+        Path tempDir;
+        try {
+            tempDir = Files.createTempDirectory("embedded-upload-");
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to create temp storage", e);
+        }
+        Path tempFile = tempDir.resolve(fileName);
+
+        try {
+            file.transferTo(tempFile.toFile());
+        } catch (IOException e) {
+            try {
+                Files.deleteIfExists(tempDir);
+            } catch (IOException ignored) {
+            }
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to upload file", e);
+        }
+
+        try {
+            // Validate first for immediate 400 feedback
+            embeddedImporter.validate(tempFile);
+        } catch (IllegalArgumentException e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid embedded archive: " + e.getMessage());
+        } catch (Exception e) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Failed to validate embedded archive: " + e.getMessage());
+        }
+
+        try {
+            ProjectInfo result = embeddedImporter.process(tempFile);
+            return ResponseEntity.ok(result);
+        } catch (Exception e) {
+            log.error("Failed to process embedded archive {}: {}", fileName, e.getMessage());
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to process embedded archive: " + e.getMessage());
+        } finally {
+            try {
+                Files.deleteIfExists(tempFile);
+                Files.deleteIfExists(tempDir);
+            } catch (IOException ignored) {
+            }
+        }
+    }
+
+    /** Keeps only the last path segment of a browser-supplied file name (rejects traversal). */
+    private String sanitizeFileName(String original) {
+        if (original == null || original.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "File name is missing");
+        }
+        String base = original.replace('\\', '/');
+        int slash = base.lastIndexOf('/');
+        if (slash >= 0) {
+            base = base.substring(slash + 1);
+        }
+        if (base.isBlank() || base.equals(".") || base.equals("..")) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid file name");
+        }
+        return base;
+    }
+
+    /** Scans import directory for live project candidates. */
+    @GetMapping("/live-scan")
+    public List<LiveProjectCandidate> scanLiveProjects() {
+        Path importDir = Path.of(hubProps.getImportDir());
+        List<LiveProjectCandidate> candidates = new ArrayList<>();
+
+        if (!Files.isDirectory(importDir)) {
+            return candidates; // Return empty if import dir doesn't exist
+        }
+
+        try (java.nio.file.DirectoryStream<Path> stream = Files.newDirectoryStream(importDir)) {
+            for (Path entry : stream) {
+                if (!Files.isDirectory(entry) || entry.getFileName().toString().startsWith(".")) {
+                    continue;
+                }
+
+                String name = entry.getFileName().toString();
+                boolean hasConfig = Files.exists(entry.resolve("prjxp.yaml")) ||
+                                   Files.exists(entry.resolve("prjxp.yml"));
+
+                List<String> languages = detectLanguages(entry);
+                candidates.add(new LiveProjectCandidate(name, entry.toString(), hasConfig, languages));
+            }
+        } catch (IOException e) {
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "Failed to scan directories", e);
+        }
+
+        return candidates;
+    }
+
+    /** Returns detailed statistics for a specific project. */
+    @GetMapping("/{name}/stats")
+    public ProjectStats getProjectStats(@PathVariable("name") String name) {
+        ProjectEntry entry = hubRegistry.entry(name)
+            .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Project not found: " + name));
+
+        long chunkCount = luceneStore.countByProject(name);
+        int fileCount = luceneStore.countFilesByProject(name);
+
+        ProjectDefinition def = entry.getDefinition();
+        String chunoWhiteList = def.getChunoWhiteList() != null ? def.getChunoWhiteList() : "java,ts";
+
+        return new ProjectStats(
+            name,
+            chunkCount,
+            chunkCount, // embeddingCount == chunkCount
+            fileCount,
+            def.getRootDir(),
+            Arrays.asList(chunoWhiteList.split(","))
+        );
+    }
+
+    /** Detects programming languages from file extensions in a directory. */
+    private List<String> detectLanguages(Path dir) {
+        Set<String> extensions = new HashSet<>();
+        try (java.util.stream.Stream<Path> stream = Files.walk(dir)) {
+            stream.filter(Files::isRegularFile)
+                  .map(p -> {
+                      String name = p.getFileName().toString();
+                      int dotIdx = name.lastIndexOf('.');
+                      return dotIdx > 0 ? name.substring(dotIdx + 1) : null;
+                  })
+                  .filter(Objects::nonNull)
+                  .forEach(extensions::add);
+        } catch (IOException ignored) {
+            // Return what we have so far
+        }
+        return new ArrayList<>(extensions);
     }
 }

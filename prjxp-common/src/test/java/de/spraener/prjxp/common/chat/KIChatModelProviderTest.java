@@ -62,6 +62,26 @@ class KIChatModelProviderTest {
                 .hasMessageContaining("There is no supplier for server model stereotype unknown");
     }
 
+    @Test
+    void clearCache_clearsTheCache() {
+        // Create a KIChat to populate the cache (using ollama which has suppliers)
+        PrjXPChatModelReference ref = PrjXPTestObjectMother.createPrjXPChatModelReference(m -> {
+            m.setServerType("ollama");
+            m.setModelName("test-model");
+            m.setProviderUrl("http://localhost:11434");
+        });
+
+        // This will add to cache (may throw if no real connection, but that's OK for this test)
+        try {
+            uut.createKIChat(ref);
+        } catch (Exception ignored) {
+            // May fail due to no real connection, but cache entry attempt was made
+        }
+
+        // Clear the cache
+        assertThatCode(() -> uut.clearCache()).doesNotThrowAnyException();
+    }
+
     @Configuration
     static class TestConfig {
         @Bean

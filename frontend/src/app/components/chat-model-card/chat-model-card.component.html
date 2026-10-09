@@ -1,0 +1,35 @@
+<div class="model-card glass-panel">
+  <div class="card-header">
+    <div class="card-title-row">
+      <span class="model-name text-cyan">{{ model.stereoType }}</span>
+      <span [class]="'server-badge ' + serverTypeBadgeClass">{{ serverTypeLabel }}</span>
+    </div>
+    <div class="card-actions">
+      <button class="btn-icon btn-edit" title="Edit" (click)="onEdit()">✎</button>
+      <button class="btn-icon btn-delete" title="Delete" (click)="onDelete()">🗑</button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    <div class="model-detail">
+      <span class="detail-label text-secondary">Model:</span>
+      <span class="text-primary">{{ model.modelName }}</span>
+    </div>
+    <div class="model-detail">
+      <span class="detail-label text-secondary">Provider:</span>
+      <span class="text-primary">{{ hostFromUrl }}</span>
+    </div>
+    @if (model.timeoutSecs) {
+      <div class="model-detail">
+        <span class="detail-label text-secondary">Timeout:</span>
+        <span class="text-primary">{{ model.timeoutSecs }}s</span>
+      </div>
+    }
+    @if (model.temperature) {
+      <div class="model-detail">
+        <span class="detail-label text-secondary">Temperature:</span>
+        <span class="text-primary">{{ model.temperature }}</span>
+      </div>
+    }
+  </div>
+</div>

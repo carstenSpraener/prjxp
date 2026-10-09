@@ -1,0 +1,75 @@
+<div class="globals-container">
+  <h1 class="text-cyan neon-glow mb-2">Globals</h1>
+
+  <!-- Embedding Model Section (first) -->
+  <section class="globals-section">
+    <div class="section-header">
+      <h2 class="text-cyan mb-0">Embedding Model</h2>
+      <button class="btn-add text-cyan" (click)="openEmbeddingEditor()">Edit Configuration</button>
+    </div>
+    <embedding-model-card [model]="embeddingModel()" (edit)="openEmbeddingEditor()"></embedding-model-card>
+
+    @if (isEditingEmbedding()) {
+      <div class="dialog-overlay" (click)="closeEmbeddingEditor()">
+        <embedding-model-editor-dialog
+          [model]="embeddingModel()"
+          (save)="onEmbeddingSaved($event); closeEmbeddingEditor()"
+          (close)="closeEmbeddingEditor()">
+        </embedding-model-editor-dialog>
+      </div>
+    }
+  </section>
+
+  <!-- Chat Models Section (second) -->
+  <section class="globals-section">
+    <div class="section-header">
+      <h2 class="text-cyan mb-0">Chat Models</h2>
+      <button class="btn-add text-cyan" (click)="openEditor()">+ Add Model</button>
+    </div>
+
+    <!-- Search Filter -->
+    <div class="search-bar mb-2">
+      <input
+        type="text"
+        class="search-input"
+        placeholder="Search models..."
+        [value]="searchFilter()"
+        (input)="onSearchChange($any($event.target).value)"
+      />
+    </div>
+
+    <!-- Model Cards List -->
+    <div class="models-list">
+      @if (filteredModels().length > 0) {
+        @for (model of filteredModels(); track model.stereoType ?? model.modelName) {
+          <chat-model-card
+            [model]="model"
+            (edit)="openEditor(model)"
+            (delete)="handleDelete(model)"
+          ></chat-model-card>
+        }
+      } @else {
+        <div class="empty-state glass-panel">
+          <p class="text-secondary" style="padding: 2rem; text-align: center;">
+            @if (searchFilter()) {
+              No models match your search.
+            } @else {
+              No chat models configured. Click "Add Model" to get started.
+            }
+          </p>
+        </div>
+      }
+    </div>
+  </section>
+
+  <!-- Editor Dialog Overlay -->
+  @if (isEditing()) {
+    <div class="dialog-overlay" (click)="closeEditor()">
+      <chat-model-editor-dialog
+        [model]="editingModel()"
+        (save)="onModelSaved($event)"
+        (close)="closeEditor()"
+      ></chat-model-editor-dialog>
+    </div>
+  }
+</div>

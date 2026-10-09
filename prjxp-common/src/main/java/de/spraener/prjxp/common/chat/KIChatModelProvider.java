@@ -34,4 +34,10 @@ public class KIChatModelProvider {
             return new KIChatModelWrapper(chatModel, cmRef);
         });
     }
+
+    /** Clear the in-memory cache so that updated configurations take effect. */
+    public void clearCache() {
+        cache.clear();
+        log.fine("KIChatModelProvider cache cleared");
+    }
 }

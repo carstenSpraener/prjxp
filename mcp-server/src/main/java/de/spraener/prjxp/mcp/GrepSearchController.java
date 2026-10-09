@@ -12,7 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
-@RequestMapping("/prjxp/tools")
+@RequestMapping("/api/tools")
 @RequiredArgsConstructor
 public class GrepSearchController {
 

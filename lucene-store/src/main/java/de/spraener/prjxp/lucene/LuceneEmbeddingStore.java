@@ -344,6 +344,49 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
         }
     }
 
+    /** Count embeddings for a specific project. */
+    public long countByProject(String projectName) {
+        ensureOpen();
+        try {
+            IndexSearcher searcher = getSearcher();
+            try {
+                Query query = new org.apache.lucene.search.TermQuery(
+                    new org.apache.lucene.index.Term(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_PROJECT, projectName));
+                return searcher.count(query);
+            } finally {
+                releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to count embeddings for project " + projectName, e);
+        }
+    }
+
+    /** Count distinct files for a specific project. */
+    public int countFilesByProject(String projectName) {
+        ensureOpen();
+        try {
+            IndexSearcher searcher = getSearcher();
+            try {
+                Query query = new org.apache.lucene.search.TermQuery(
+                    new org.apache.lucene.index.Term(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_PROJECT, projectName));
+                TopDocs docs = searcher.search(query, 10000);
+                java.util.Set<String> files = new java.util.HashSet<>();
+                int maxDoc = searcher.getIndexReader().maxDoc();
+                for (ScoreDoc doc : docs.scoreDocs) {
+                    if (doc.doc < 0 || doc.doc >= maxDoc) continue;
+                    Document d = searcher.storedFields().document(doc.doc);
+                    String file = d.get(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_FILE);
+                    if (file != null) files.add(file);
+                }
+                return files.size();
+            } finally {
+                releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to count files for project " + projectName, e);
+        }
+    }
+
     public int getVectorDimension() {
         return vectorDimension;
     }

@@ -10,7 +10,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 
 @RestController
-@RequestMapping("/prjxp/tools")
+@RequestMapping("/api/tools")
 @RequiredArgsConstructor
 @Log
 public class McpRestController {

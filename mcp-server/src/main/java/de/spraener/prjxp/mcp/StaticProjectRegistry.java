@@ -72,6 +72,9 @@ public class StaticProjectRegistry implements ProjectRegistry {
     /** All available projects as READY infos (no lifecycle in static mode). */
     @Override
     public List<ProjectInfo> projectInfos() {
-        return availableProjects().stream().map(n -> new ProjectInfo(n, "READY", null)).toList();
+        return availableProjects().stream()
+                .map(n -> new ProjectInfo(n, "READY", null, null, 0L, 0L, 0,
+                    null, null, null, null, null, false, "IDLE", 0, null))
+                .toList();
     }
 }

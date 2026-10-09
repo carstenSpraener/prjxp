@@ -1,6 +1,7 @@
 package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
+import de.spraener.prjxp.common.config.EnvPlaceholderResolver;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.googleai.GoogleAiGeminiChatModel;
 import lombok.ToString;
@@ -20,7 +21,7 @@ import java.time.Duration;
 public class GeminiSupplier implements de.spraener.prjxp.common.chat.ChatModelSupplier {
     @Value("${GOOGLE_AI_API_KEY:NONE-SPECIFIED}")
     @ToString.Exclude
-    private String apiKey;
+    private String defaultApiKey;
     /**
      * Checks if this supplier can provide a chat model for the given reference.
      *
@@ -40,9 +41,13 @@ public class GeminiSupplier implements de.spraener.prjxp.common.chat.ChatModelSu
      */
     @Override
     public ChatModel provide(PrjXPChatModelReference cmRef) {
+        String resolvedApiKey = EnvPlaceholderResolver.resolve(cmRef.getApiKey());
+        if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+            resolvedApiKey = defaultApiKey;
+        }
         return GoogleAiGeminiChatModel.builder()
-                .apiKey(apiKey)
-                .modelName(cmRef.getModelName())
+                .apiKey(resolvedApiKey)
+                .modelName(EnvPlaceholderResolver.resolve(cmRef.getModelName()))
                 .temperature(cmRef.getTemperature())
                 .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
                 .build();

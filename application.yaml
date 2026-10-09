@@ -1,4 +1,6 @@
 prjxp:
+  hub:
+    enabled: true
 
   # Embedding model type: ollama or open_ai
   embeddingStoreLucene:

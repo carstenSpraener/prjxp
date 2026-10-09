@@ -1,0 +1,22 @@
+<div class="shell">
+  <!-- Top Bar -->
+  <header class="top-bar glass-panel">
+    <button class="menu-toggle" (click)="toggleSidebar()" aria-label="Toggle menu">☰</button>
+    <div class="logo">
+      <img src="assets/favicon.svg" alt="prjxp" height="32">
+      <span class="title neon-glow">PRJXP HUB</span>
+    </div>
+    <div class="status-indicator">
+      <span class="dot" [class.online]="isOnline()"></span>
+      {{ isOnline() ? 'Connected' : 'Disconnected' }}
+    </div>
+  </header>
+
+  <!-- Sidebar (extracted component) -->
+  <nav-sidebar [collapsed]="sidebarCollapsed()"></nav-sidebar>
+
+  <!-- Main Content Area -->
+  <main class="main-content" [class.sidebar-collapsed]="sidebarCollapsed()">
+    <router-outlet></router-outlet>
+  </main>
+</div>

@@ -1,0 +1,54 @@
+<div class="message-wrapper" [class.user]="isUser" [class.assistant]="isAssistant" [class.thinking]="isThinking">
+  <div class="message-bubble" [class.user]="isUser" [class.assistant]="isAssistant" [class.thinking]="isThinking">
+
+    <!-- Thinking / Phase Message -->
+    <ng-container *ngIf="isThinking">
+      <div class="thinking-content">
+        <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+        <span class="thinking-text">{{ message.content }}</span>
+      </div>
+      <ng-container *ngIf="hasToolCalls">
+        <div class="tool-calls-list">
+          <div class="tool-call-item" *ngFor="let tc of message.toolCalls">
+            <span class="tool-name">{{ tc.toolName }}</span>
+            <div class="tool-result">{{ tc.result }}</div>
+          </div>
+        </div>
+      </ng-container>
+    </ng-container>
+
+    <!-- User / Assistant Message -->
+    <ng-container *ngIf="!isThinking">
+      <div class="message-role">{{ message.role === 'user' ? 'You' : 'Assistant' }}</div>
+      <pre class="message-content">{{ message.content }}</pre>
+
+      <!-- RAG Context Badges -->
+      <ng-container *ngIf="isAssistant && hasRagContext">
+        <button class="rag-toggle-btn" (click)="toggleRagContext()">
+          {{ showRagContext ? 'Hide' : 'Show' }} RAG Context ({{ message.ragContext?.length }})
+        </button>
+        <div class="rag-context-list" *ngIf="showRagContext">
+          <div class="rag-badge" *ngFor="let ctx of message.ragContext">
+            <span class="rag-project">{{ ctx.projectName }}</span>
+            <span class="rag-chunk">chunk: {{ ctx.chunkId }}</span>
+            <span class="rag-score">score: {{ ctx.score | number:'1.2-2' }}</span>
+            <div class="rag-snippet">{{ ctx.snippet }}</div>
+          </div>
+        </div>
+      </ng-container>
+
+      <!-- Tool Calls -->
+      <ng-container *ngIf="isAssistant && hasToolCalls">
+        <button class="tool-toggle-btn" (click)="toggleToolCalls()">
+          {{ showToolCalls ? 'Hide' : 'Show' }} Tool Calls ({{ message.toolCalls?.length }})
+        </button>
+        <div class="tool-calls-list" *ngIf="showToolCalls">
+          <div class="tool-call-item" *ngFor="let tc of message.toolCalls">
+            <span class="tool-name">{{ tc.toolName }}</span>
+            <div class="tool-result">{{ tc.result }}</div>
+          </div>
+        </div>
+      </ng-container>
+    </ng-container>
+  </div>
+</div>

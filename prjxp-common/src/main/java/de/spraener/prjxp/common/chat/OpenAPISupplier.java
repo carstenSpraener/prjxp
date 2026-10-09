@@ -1,6 +1,7 @@
 package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
+import de.spraener.prjxp.common.config.EnvPlaceholderResolver;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,8 +18,8 @@ import java.time.Duration;
  * </p>
  */
 public class OpenAPISupplier implements de.spraener.prjxp.common.chat.ChatModelSupplier {
-    @Value("${chat.openapi.api-key:UNKNOWN}")
-    private String apiKey;
+    @Value("${chat.openapi.api-key:${OPENAI_API_KEY:UNKNOWN}}")
+    private String defaultApiKey;
 
     /**
      * Checks if this supplier can provide a chat model for the given reference.
@@ -41,13 +42,19 @@ public class OpenAPISupplier implements de.spraener.prjxp.common.chat.ChatModelS
      */
     @Override
     public ChatModel provide(PrjXPChatModelReference cmRef) {
-        String baseUrl = cmRef.getProviderUrl();
+        String baseUrl = EnvPlaceholderResolver.resolve(cmRef.getProviderUrl());
         if (baseUrl != null && !baseUrl.endsWith("/v1") && !baseUrl.endsWith("/v1/")) {
             baseUrl = baseUrl.replaceAll("/$", "") + "/v1";
         }
+
+        String resolvedApiKey = EnvPlaceholderResolver.resolve(cmRef.getApiKey());
+        if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+            resolvedApiKey = defaultApiKey;
+        }
+
         return OpenAiChatModel.builder()
-                .modelName(cmRef.getModelName())
-                .apiKey(apiKey)
+                .modelName(EnvPlaceholderResolver.resolve(cmRef.getModelName()))
+                .apiKey(resolvedApiKey)
                 .temperature(cmRef.getTemperature())
                 .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
                 .baseUrl(baseUrl)

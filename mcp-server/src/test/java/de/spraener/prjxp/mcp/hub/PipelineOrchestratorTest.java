@@ -368,4 +368,57 @@ class PipelineOrchestratorTest {
                 .as("scoped wipe of '%s' did not happen within the deadline", name)
                 .isFalse();
     }
+
+    // ------------------------------------------------------------------ Reindex progress tracking
+
+    @Test
+    void standardPipelineSetsReindexStatusDuringExecution() throws Exception {
+        Path dir = projectDir("alpha");
+        registry.registerProject("alpha", dir);
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+
+        CountDownLatch chunkingDone = new CountDownLatch(1);
+        doAnswer(inv -> {
+            // During chunking, reindex status should be CHUNKING
+            assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.CHUNKING);
+            assertThat(registry.getReindexProgress("alpha")).isEqualTo(10);
+            chunkingDone.countDown();
+            return null;
+        }).when(chunkProcess).executeForProject(any());
+
+        CountDownLatch embeddingDone = new CountDownLatch(1);
+        doAnswer(inv -> {
+            // During embedding, reindex status should be EMBEDDING
+            assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.EMBEDDING);
+            assertThat(registry.getReindexProgress("alpha")).isEqualTo(50);
+            embeddingDone.countDown();
+            return null;
+        }).when(embeddingService).executeForProject(any(), any());
+
+        orchestrator.enqueue("alpha");
+        assertThat(chunkingDone.await(10, TimeUnit.SECONDS)).isTrue();
+        assertThat(embeddingDone.await(10, TimeUnit.SECONDS)).isTrue();
+
+        // After pipeline completes, status should be COMPLETE
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+        assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.COMPLETE);
+        assertThat(registry.getReindexProgress("alpha")).isEqualTo(100);
+    }
+
+    @Test
+    void failedPipelineSetsReindexStatusToFailed() throws Exception {
+        Path dir = projectDir("alpha");
+        registry.registerProject("alpha", dir);
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, embeddingService, embeddingImportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+
+        doThrow(new RuntimeException("chunking failed"))
+                .when(chunkProcess).executeForProject(any());
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.FAILED);
+
+        assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.FAILED);
+    }
 }

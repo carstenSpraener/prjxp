@@ -50,7 +50,7 @@ class MetaSearchParamsControllerTest {
     void returns200WithVersionAndGlobalParams() throws Exception {
         when(registry.byLanguage()).thenReturn(Map.of("java", javaCapability()));
 
-        mvc.perform(get("/prjxp/tools/meta-search-params"))
+        mvc.perform(get("/api/tools/meta-search-params"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.version").value("1.0"))
                 .andExpect(jsonPath("$.globalParams[?(@.name == 'project')]").exists())
@@ -62,7 +62,7 @@ class MetaSearchParamsControllerTest {
     void javaProfileHasExpectedFields() throws Exception {
         when(registry.byLanguage()).thenReturn(Map.of("java", javaCapability()));
 
-        mvc.perform(get("/prjxp/tools/meta-search-params"))
+        mvc.perform(get("/api/tools/meta-search-params"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.languages.java.language").value("java"))
                 .andExpect(jsonPath("$.languages.java.mimeTypes[0]").value("text/x-java-code"))
@@ -77,7 +77,7 @@ class MetaSearchParamsControllerTest {
     void languagesArePassedThroughFromRegistry() throws Exception {
         when(registry.byLanguage()).thenReturn(Map.of("java", javaCapability(), "ts", tsCapability()));
 
-        mvc.perform(get("/prjxp/tools/meta-search-params"))
+        mvc.perform(get("/api/tools/meta-search-params"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.languages.java.language").value("java"))
                 .andExpect(jsonPath("$.languages.ts.language").value("ts"))
@@ -88,7 +88,7 @@ class MetaSearchParamsControllerTest {
     void emptyRegistryYieldsEmptyLanguages() throws Exception {
         when(registry.byLanguage()).thenReturn(Map.of());
 
-        mvc.perform(get("/prjxp/tools/meta-search-params"))
+        mvc.perform(get("/api/tools/meta-search-params"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.languages").isEmpty());
     }

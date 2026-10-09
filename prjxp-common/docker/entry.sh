@@ -6,6 +6,16 @@ EMBEDDING_SERVER_PID=""
 
 trap 'stop_embedding_server' EXIT
 
+load_runtime_env_file() {
+  local env_file_path="${PRJXP_ENV_FILE:-/data/prjxp.env}"
+  if [[ -f "${env_file_path}" ]]; then
+    set -a
+    # shellcheck disable=SC1090
+    . "${env_file_path}"
+    set +a
+  fi
+}
+
 resolve_config_location() {
   if [[ -f /app-source/application.yml || -f /app-source/application.yaml ]]; then
     echo "optional:file:/app-source/,optional:file:/app/"
@@ -68,6 +78,8 @@ run_with_embedding_server() {
   stop_embedding_server
   return "${status}"
 }
+
+load_runtime_env_file
 
 case "${MODE}" in
   chunk)

@@ -57,6 +57,7 @@ public class ProjectConfigFileParser {
             def.setChunoWhiteList(stringOf(map.get("chunoWhiteList"), "java,ts"));
             def.setTibedBatchSize(intOf(map.get("tibedBatchSize"), 32));
             def.setEmbeddingsFile(stringOf(map.get("embeddingsFile"), null));
+            def.setPrompt(normalizePrompt(stringOf(map.get("prompt"), null)));
             return def;
         } catch (Exception e) {
             log.warn("Could not parse {} — falling back to defaults: {}", configFile.get(), e.toString());
@@ -115,5 +116,80 @@ public class ProjectConfigFileParser {
             }
         }
         return fallback;
+    }
+
+    /** Saves a {@link ProjectDefinition} as YAML to the project directory.
+     * Uses existing marker file if present, otherwise creates {@code prjxp.yaml}. */
+    public void save(Path projectDir, ProjectDefinition definition) {
+        Path target = markerFile(projectDir).orElseGet(() -> projectDir.resolve("prjxp.yaml"));
+        try {
+            StringBuilder yaml = new StringBuilder();
+            appendLine(yaml, "name", definition.getName());
+            appendLineIfNotBlank(yaml, "rootDir", definition.getRootDir());
+            appendLineIfNotBlank(yaml, "jsonlFile", definition.getJsonlFile());
+            appendLineIfNotBlank(yaml, "chunoWhiteList", definition.getChunoWhiteList());
+            if (definition.getTibedBatchSize() != 32) {
+                yaml.append("tibedBatchSize: ").append(definition.getTibedBatchSize()).append("\n");
+            }
+            appendLineIfNotBlank(yaml, "embeddingsFile", definition.getEmbeddingsFile());
+            if (definition.isTibedResetStore()) {
+                yaml.append("tibedResetStore: true\n");
+            }
+            appendPrompt(yaml, definition.getPrompt());
+
+            Files.writeString(target, yaml.toString());
+            log.info("Saved project config to {}", target);
+        } catch (Exception e) {
+            log.error("Failed to save project config for {} to {}: {}", definition.getName(), target, e.getMessage());
+        }
+    }
+
+    private void appendLine(StringBuilder sb, String key, String value) {
+        if (value != null) {
+            sb.append(key).append(": ").append(escapeYamlValue(value)).append("\n");
+        }
+    }
+
+    private void appendLineIfNotBlank(StringBuilder sb, String key, String value) {
+        if (value != null && !value.isBlank()) {
+            sb.append(key).append(": ").append(escapeYamlValue(value)).append("\n");
+        }
+    }
+
+    /** Simple YAML value escaping — quotes if the value contains special characters. */
+    private String escapeYamlValue(String value) {
+        if (value == null || value.isBlank()) {
+            return value;
+        }
+        // Quote if it contains characters that could be misinterpreted by YAML parsers
+        if (value.matches(".*[\\: #{}\\[\\]|&*?<>!%@`].*") || value.startsWith("---") || value.equals("true") || value.equals("false")) {
+            return "\"" + value.replace("\\", "\\\\").replace("\"", "\\\"") + "\"";
+        }
+        return value;
+    }
+
+    /** Normalizes a parsed prompt: strips trailing whitespace; blank -> null. */
+    private static String normalizePrompt(String value) {
+        if (value == null) {
+            return null;
+        }
+        String stripped = value.stripTrailing();
+        return stripped.isBlank() ? null : stripped;
+    }
+
+    /** Writes the prompt key: block scalar when multi-line, escaped single line otherwise; omitted when null/blank. */
+    private void appendPrompt(StringBuilder sb, String prompt) {
+        if (prompt == null || prompt.isBlank()) {
+            return;
+        }
+        String value = prompt.stripTrailing();
+        if (value.contains("\n")) {
+            sb.append("prompt: |\n");
+            for (String line : value.split("\n", -1)) {
+                sb.append("  ").append(line).append("\n");
+            }
+        } else {
+            appendLineIfNotBlank(sb, "prompt", value);
+        }
     }
 }

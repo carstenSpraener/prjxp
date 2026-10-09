@@ -27,6 +27,11 @@ subprojects {
 
     apply plugin: 'java'
 
+    // Preserve parameter names for Spring MVC @PathVariable/@RequestParam reflection
+    tasks.withType(JavaCompile).configureEach {
+        options.compilerArgs += ['-parameters']
+    }
+
     repositories {
         mavenCentral()
     }

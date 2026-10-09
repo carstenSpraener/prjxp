@@ -63,6 +63,7 @@ public class EmbeddingService {
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
             // resolvedJsonlFile(): rootDir-relative, mirroring the writer (null/blank -> stdin, as before)
+            log.info("Reading JSONL from " + pd.resolvedJsonlFile() + " for project '" + pd.getName() + "' with batch size " + effectiveBatchSize);
             reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(pd.resolvedJsonlFile()), effectiveBatchSize, this::fromJSONL)
                     .forEach(batch -> {
                         embedChunk(store, pd.getName(), batch);

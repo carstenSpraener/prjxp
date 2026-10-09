@@ -44,14 +44,14 @@ class ByIndexControllerTest {
 
     @Test
     void missingLanguageReturns400() throws Exception {
-        mvc.perform(get("/prjxp/tools/byIndex").param("fqn", "com.example.Foo"))
+        mvc.perform(get("/api/tools/byIndex").param("fqn", "com.example.Foo"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("missingLanguage"));
     }
 
     @Test
     void noSearchParamsReturns400() throws Exception {
-        mvc.perform(get("/prjxp/tools/byIndex").param("language", "java"))
+        mvc.perform(get("/api/tools/byIndex").param("language", "java"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("missingSearchParams"));
     }
@@ -60,7 +60,7 @@ class ByIndexControllerTest {
     void unknownLanguageReturns400() throws Exception {
         when(registry.forLanguage("cobol")).thenReturn(Optional.empty());
 
-        mvc.perform(get("/prjxp/tools/byIndex")
+        mvc.perform(get("/api/tools/byIndex")
                 .param("language", "cobol")
                 .param("fqn", "com.example.Foo"))
                 .andExpect(status().isBadRequest())
@@ -74,7 +74,7 @@ class ByIndexControllerTest {
         SearchHit hit = new SearchHit("chunk-1", 1.0, "src/A.java", 10, 20, "snippet text", "index", Map.of());
         when(service.search(any(ByIndexQuery.class))).thenReturn(List.of(hit));
 
-        mvc.perform(get("/prjxp/tools/byIndex")
+        mvc.perform(get("/api/tools/byIndex")
                 .param("language", "java")
                 .param("fqn", "com.example.Foo"))
                 .andExpect(status().isOk())
@@ -89,7 +89,7 @@ class ByIndexControllerTest {
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
         when(service.search(any(ByIndexQuery.class))).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/byIndex")
+        mvc.perform(get("/api/tools/byIndex")
                 .param("language", "java")
                 .param("fqn", "x")
                 .param("limit", "500"))
@@ -103,7 +103,7 @@ class ByIndexControllerTest {
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
         when(service.search(any(ByIndexQuery.class))).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/byIndex")
+        mvc.perform(get("/api/tools/byIndex")
                 .param("language", "java")
                 .param("fqn", "x"))
                 .andExpect(status().isOk());
@@ -116,7 +116,7 @@ class ByIndexControllerTest {
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
         when(service.search(any(ByIndexQuery.class))).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/byIndex")
+        mvc.perform(get("/api/tools/byIndex")
                 .param("language", "java")
                 .param("fqn", "com.example.Foo#bar")
                 .param("symbolType", "method")

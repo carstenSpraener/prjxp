@@ -1,0 +1,39 @@
+<div class="model-card glass-panel">
+  <div class="card-header">
+    <div class="card-title-row">
+      <span class="model-name text-cyan">Embedding Model</span>
+      @if (model.serverType) {
+        <span [class]="'server-badge ' + serverTypeBadgeClass">{{ serverTypeLabel }}</span>
+      }
+    </div>
+    <div class="card-actions">
+      <button class="btn-icon btn-edit" title="Edit" (click)="onEdit()">✎</button>
+    </div>
+  </div>
+
+  <div class="card-body">
+    @if (model.modelName) {
+      <div class="model-detail">
+        <span class="detail-label text-secondary">Model:</span>
+        <span class="text-primary">{{ model.modelName }}</span>
+      </div>
+    }
+    @if (model.providerUrl) {
+      <div class="model-detail">
+        <span class="detail-label text-secondary">Provider:</span>
+        <span class="text-primary">{{ hostFromUrl }}</span>
+      </div>
+    }
+    @if (model.timeoutSecs) {
+      <div class="model-detail">
+        <span class="detail-label text-secondary">Timeout:</span>
+        <span class="text-primary">{{ model.timeoutSecs }}s</span>
+      </div>
+    }
+    @if (!model.modelName && !model.providerUrl && !model.timeoutSecs) {
+      <div class="empty-hint">
+        <span class="text-secondary">No embedding model configured. Click edit to configure.</span>
+      </div>
+    }
+  </div>
+</div>

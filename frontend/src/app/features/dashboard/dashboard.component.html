@@ -1,0 +1,118 @@
+<div class="dashboard-container">
+  <h1 class="text-cyan neon-glow mb-2">System Dashboard</h1>
+
+  <!-- Section 1: System Health Metric Cards -->
+  <section class="dashboard-section">
+    <h2 class="text-cyan mb-1">System Health</h2>
+    <div class="metrics-grid">
+      @if (health$() | async; as health) {
+        <metric-card
+          label="CPU Usage"
+          [value]="health.cpuUsage ?? null"
+          [maxValue]="1"
+          unit="%"
+          color="cyan">
+        </metric-card>
+
+        <metric-card
+          label="Memory"
+          [value]="health.usedMemory ?? null"
+          [maxValue]="health.totalMemory || null"
+          unit="GB"
+          color="magenta">
+        </metric-card>
+
+        <metric-card
+          label="Disk Space"
+          [value]="(health.totalDiskSpace || 0) - (health.freeDiskSpace || 0)"
+          [maxValue]="health.totalDiskSpace || null"
+          unit="GB"
+          color="green">
+        </metric-card>
+
+        <metric-card
+          label="Active Connections"
+          [value]="health.activeConnections ?? null"
+          color="orange">
+        </metric-card>
+      } @else {
+        <p class="text-secondary" style="grid-column: 1 / -1; text-align: center;">
+          Loading system health data...
+        </p>
+      }
+    </div>
+  </section>
+
+  <!-- Section 2: Query Statistics Chart Panels -->
+  <section class="dashboard-section">
+    <h2 class="text-cyan mb-1">Query Statistics</h2>
+    <div class="charts-grid">
+      <chart-panel title="Response Times (ms)" [data]="queryTimesData()"></chart-panel>
+      <chart-panel title="Cache Performance" [data]="cacheData()"></chart-panel>
+    </div>
+
+    @if (queryStats$() | async; as stats) {
+      @if (stats.totalQueries) {
+        <div class="query-stats-summary glass-panel mt-2">
+          <div class="stat-row">
+            <span class="text-secondary">Total Queries:</span>
+            <span class="text-cyan">{{ stats.totalQueries }}</span>
+          </div>
+          <div class="stat-row">
+            <span class="text-secondary">Avg Response:</span>
+            <span class="text-cyan">{{ stats.avgResponseTimeMs }}ms</span>
+          </div>
+          <div class="stat-row">
+            <span class="text-secondary">P95 Response:</span>
+            <span class="text-cyan">{{ stats.p95ResponseTimeMs }}ms</span>
+          </div>
+        </div>
+      }
+    }
+  </section>
+
+  <!-- Section 3: Projects Table -->
+  <section class="dashboard-section">
+    <h2 class="text-cyan mb-1">Projects</h2>
+    @if (projects$() | async; as projects) {
+      @if (projects.length > 0) {
+        <div class="glass-panel">
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Status</th>
+                <th>Chunks</th>
+                <th>Embeddings</th>
+                <th>Files</th>
+              </tr>
+            </thead>
+            <tbody>
+              @for (project of projects; track project.name) {
+                <tr>
+                  <td class="text-cyan">{{ project.name }}</td>
+                  <td>
+                    <span [class]="'status-badge status-' + project.status.toLowerCase()">
+                      {{ project.status }}
+                    </span>
+                  </td>
+                  <td>{{ project.chunkCount ?? '-' }}</td>
+                  <td>{{ project.embeddingCount ?? '-' }}</td>
+                  <td>{{ project.fileCount ?? '-' }}</td>
+                </tr>
+              }
+            </tbody>
+          </table>
+        </div>
+      } @else {
+        <p class="text-secondary" style="padding: 2rem; text-align: center;">
+          No projects found. Use the Import page to add projects.
+        </p>
+      }
+    } @else {
+      <p class="text-secondary" style="padding: 2rem; text-align: center;">
+        Loading projects...
+      </p>
+    }
+  </section>
+</div>

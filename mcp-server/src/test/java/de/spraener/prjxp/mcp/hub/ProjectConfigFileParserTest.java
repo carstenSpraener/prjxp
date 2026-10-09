@@ -179,4 +179,56 @@ class ProjectConfigFileParserTest {
         assertThat(parser.isExcluded(projectDir)).isTrue();
         assertThat(parser.markerFile(projectDir)).isPresent();   // orthogonal — exclusion wins in the registry
     }
+
+    // ------------------------------------------------------------------ prompt
+
+    @Test
+    void singleLinePromptIsParsed() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: alpha\nprompt: \"Answer in German.\"\n");
+
+        assertThat(parser.parse(projectDir, "alpha").getPrompt()).isEqualTo("Answer in German.");
+    }
+
+    @Test
+    void multiLinePromptRoundTripsViaBlockScalar() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("alpha");
+        def.setPrompt("line1\nline2");
+
+        parser.save(projectDir, def);
+        String file = Files.readString(projectDir.resolve("prjxp.yaml"));
+
+        assertThat(file).contains("prompt: |");
+        assertThat(parser.parse(projectDir, "alpha").getPrompt()).isEqualTo("line1\nline2");
+    }
+
+    @Test
+    void envPlaceholderPromptRoundTrips() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("alpha");
+        def.setPrompt("${MY_PROMPT_VAR}");
+
+        parser.save(projectDir, def);
+        String file = Files.readString(projectDir.resolve("prjxp.yaml"));
+
+        assertThat(file).contains("\"${MY_PROMPT_VAR}\"");
+        assertThat(parser.parse(projectDir, "alpha").getPrompt()).isEqualTo("${MY_PROMPT_VAR}");
+    }
+
+    @Test
+    void nullPromptIsNotWritten() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("alpha");
+
+        parser.save(projectDir, def);
+
+        assertThat(Files.readString(projectDir.resolve("prjxp.yaml"))).doesNotContain("prompt");
+    }
+
+    @Test
+    void trailingNewlinesAreNormalizedOnParse() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: alpha\nprompt: |\n  line1\n  line2\n\n");
+
+        assertThat(parser.parse(projectDir, "alpha").getPrompt()).isEqualTo("line1\nline2");
+    }
 }

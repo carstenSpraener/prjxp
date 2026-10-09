@@ -1,0 +1,36 @@
+<div class="chat-panel">
+  <!-- Top Bar -->
+  <div class="top-bar">
+    <h1 class="neon-glow">Chat</h1>
+    <div class="status-info">
+      <span class="status-item">LLM: {{ selectedModelName() }}</span>
+      <span class="status-item" *ngIf="projectContext()">Project: {{ projectContext() }}</span>
+      <span class="status-item">Tools: {{ useTools() ? 'Enabled' : 'Disabled' }}</span>
+    </div>
+    <button class="btn-icon" (click)="openSettings()" title="Settings">⚙</button>
+    <button class="btn-clear" (click)="clearChat()">Clear Chat</button>
+  </div>
+
+  <!-- Settings Dialog -->
+  <chat-settings-dialog *ngIf="showSettings()" 
+    [currentModel]="selectedModelName()"
+    [currentProjectContext]="projectContext()"
+    [currentUseTools]="useTools()"
+    (close)="onSettingsClosed($event)"></chat-settings-dialog>
+
+  <!-- Message Area -->
+  <div class="message-area" #messageArea [class.loading]="isSending()">
+    <chat-message *ngFor="let msg of messages()" [message]="msg"></chat-message>
+    <div class="empty-state" *ngIf="messages().length === 0">
+      <p>No messages yet. Start a conversation!</p>
+    </div>
+    <div class="typing-indicator" *ngIf="isSending()">
+      <span class="dot"></span><span class="dot"></span><span class="dot"></span>
+    </div>
+  </div>
+
+  <!-- Input Area -->
+  <div class="input-area">
+    <chat-input (send)="onMessageSent($event)"></chat-input>
+  </div>
+</div>

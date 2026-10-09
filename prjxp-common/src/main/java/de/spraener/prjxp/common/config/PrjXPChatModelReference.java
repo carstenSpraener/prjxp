@@ -14,5 +14,7 @@ public class PrjXPChatModelReference {
     private String providerUrl;
     private int timeoutSecs = 60;
     private double temperature = 0.;
+    /** Optional standing instructions for this model, prepended to every conversation. Supports ${ENV} placeholders. */
+    private String prompt;
     private Map<String,String> args = new HashMap<>();
 }

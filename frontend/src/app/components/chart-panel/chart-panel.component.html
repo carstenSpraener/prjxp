@@ -1,0 +1,21 @@
+<div class="chart-panel glass-panel">
+  <h3 class="text-cyan">{{ title }}</h3>
+
+  @if (data.length === 0) {
+    <p class="text-secondary" style="padding: 2rem; text-align: center;">
+      No data available
+    </p>
+  } @else {
+    <div class="chart-bars">
+      @for (dp of data; track dp.label) {
+        <div class="bar-item">
+          <span class="bar-label text-secondary">{{ dp.label }}</span>
+          <div class="bar-track">
+            <div class="bar-fill text-cyan" [style.width.%]="getBarWidth(dp)"></div>
+          </div>
+          <span class="bar-value text-cyan">{{ dp.value }}</span>
+        </div>
+      }
+    </div>
+  }
+</div>

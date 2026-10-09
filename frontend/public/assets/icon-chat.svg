@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Outer Glow (Active) -->
+  <path d="M12 16 C12 10 16 8 24 8 L40 8 C48 8 52 10 52 16 L52 36 C52 42 48 44 40 44 L30 44 L22 52 L22 44 C16 44 12 42 12 36 Z"
+        stroke="#00f5ff" stroke-width="2" filter="url(#glow)" class="icon-glow"/>
+  <!-- Base Shape - Chat Bubble -->
+  <path d="M12 16 C12 10 16 8 24 8 L40 8 C48 8 52 10 52 16 L52 36 C52 42 48 44 40 44 L30 44 L22 52 L22 44 C16 44 12 42 12 36 Z"
+        stroke="#00f5ff" stroke-width="3"/>
+  <!-- Inner Lines (Message Dots) -->
+  <circle cx="24" cy="26" r="3" fill="#00f5ff"/>
+  <circle cx="32" cy="26" r="3" fill="#00f5ff"/>
+  <circle cx="40" cy="26" r="3" fill="#00f5ff"/>
+  <!-- Filter Definition -->
+  <defs>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+</svg>

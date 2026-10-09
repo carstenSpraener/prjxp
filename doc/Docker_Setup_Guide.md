@@ -107,6 +107,13 @@ LUCENE_VECTOR_DIMENSION=1024
 SERVER_PORT=7007
 ```
 
+For `docker compose` hub mode, the same file is used as central `env_file` and mounted read-only into the container as `/data/prjxp.env`.
+You can override the path with `PRJXP_ENV_FILE`:
+
+```bash
+PRJXP_ENV_FILE=./ops/prjxp.env docker compose up -d hub
+```
+
 ---
 
 ## Run the Pipeline with the prjxp Control Script

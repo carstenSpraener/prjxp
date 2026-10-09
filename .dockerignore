@@ -19,6 +19,10 @@ build/
 # Docker artifacts (no longer needed)
 docker-dist/
 
+# Apache deployment configs (bind-mounted into the httpd container, not part of the image).
+# NOTE: docker/application.yaml.docker is NOT excluded — it is baked into the hub image.
+/docker/apache-*.conf
+
 # Lucene dev data
 .lucenedb/
 lucene-index/

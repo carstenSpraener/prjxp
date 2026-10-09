@@ -1,0 +1,11 @@
+<div class="metric-card glass-panel">
+  <div class="card-label text-secondary">{{ label }}</div>
+  <div class="card-value {{ colorClass }}">{{ displayValue }}</div>
+
+  @if (maxValue) {
+    <div class="progress-bar">
+      <div class="progress-fill" [style.width.%]="percentage" [style.backgroundColor]="getColor()"></div>
+    </div>
+    <div class="progress-label text-secondary">{{ percentage }}%</div>
+  }
+</div>

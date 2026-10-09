@@ -15,9 +15,10 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/prjxp/tools/**")
+        // All prjxp REST endpoints (tools, system, projects, etc.)
+        registry.addMapping("/api/**")
                 .allowedOriginPatterns(allowedPatterns.toArray(new String[0]))
-                .allowedMethods("GET", "POST", "OPTIONS")
+                .allowedMethods("GET", "POST", "PUT", "DELETE", "OPTIONS")
                 .allowedHeaders("*")
                 .allowCredentials(true);
 

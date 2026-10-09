@@ -14,13 +14,22 @@ prjxp:
 
 mcp:
   cors:
-    allowed-patterns: "http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*"
+    # Comma-separated, NO spaces after commas. Browsers send an Origin header on
+    # POST/PUT/DELETE — origins not matching these patterns are rejected with 403.
+    # Add your public hostname(s) when deploying behind a reverse proxy with https.
+    allowed-patterns: ${MCP_CORS_ALLOWED_PATTERNS:http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*}
 
 server:
   port: ${SERVER_PORT:7007}
   forward-headers-strategy: framework
 
 spring:
+  servlet:
+    multipart:
+      # Must be >= the hub's import limit (prjxp.hub.max-tar-bytes, default 2 GiB)
+      # — Spring's default is 1MB per file and would reject project archives.
+      max-file-size: 2GB
+      max-request-size: 2GB
   main:
     allow-bean-definition-overriding: true
   devtools:

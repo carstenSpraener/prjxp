@@ -1,0 +1,104 @@
+<div class="editor-dialog glass-panel" (click)="$event.stopPropagation()">
+  <div class="dialog-header">
+    <h2 class="text-cyan mb-0">{{ isEditing ? 'Edit Model' : 'Add New Model' }}</h2>
+    <button class="btn-close" (click)="onClose()">✕</button>
+  </div>
+
+  <form [formGroup]="form" (ngSubmit)="onSave()" class="editor-form">
+    <!-- Stereo Type -->
+    <div class="form-group">
+      <label class="form-label text-secondary">Stereo Type <span class="text-magenta">*</span></label>
+      <input type="text" formControlName="stereoType" class="form-input" placeholder="e.g. default, coder" />
+      @if (form.get('stereoType')?.invalid && form.get('stereoType')?.touched) {
+        <span class="form-error text-magenta">Stereo type is required</span>
+      }
+    </div>
+
+    <!-- Server Type -->
+    <div class="form-group">
+      <label class="form-label text-secondary">Server Type <span class="text-magenta">*</span></label>
+      <select formControlName="serverType" class="form-input">
+        @for (option of serverTypeOptions; track option.value) {
+          <option [value]="option.value">{{ option.label }}</option>
+        }
+      </select>
+    </div>
+
+    <!-- Model Name -->
+    <div class="form-group">
+      <label class="form-label text-secondary">Model Name <span class="text-magenta">*</span></label>
+      <input type="text" formControlName="modelName" class="form-input" placeholder="e.g. llama3, gemma-4-31b" />
+      @if (form.get('modelName')?.invalid && form.get('modelName')?.touched) {
+        <span class="form-error text-magenta">Model name is required</span>
+      }
+    </div>
+
+    <!-- Provider URL -->
+    <div class="form-group">
+      <label class="form-label text-secondary">Provider URL <span class="text-magenta">*</span></label>
+      <input type="text" formControlName="providerUrl" class="form-input" placeholder="http://localhost:11434" />
+      @if (form.get('providerUrl')?.errors?.['required'] && form.get('providerUrl')?.touched) {
+        <span class="form-error text-magenta">Provider URL is required</span>
+      } @if (form.get('providerUrl')?.errors?.['urlOrEnv'] && form.get('providerUrl')?.touched) {
+        <span class="form-error text-magenta">Use http(s)://... or &#36;&#123;ENV_VAR&#125;</span>
+      }
+      <span class="text-secondary">Supports env placeholders like &#36;&#123;MY_PROVIDER_URL&#125; or &#36;&#123;MY_PROVIDER_URL:http://localhost:1234/v1&#125;.</span>
+    </div>
+
+    <!-- API Key (always visible, optional) -->
+    <div class="form-group">
+      <label class="form-label text-secondary">API Key / Token</label>
+      <input type="text" formControlName="apiKey" class="form-input" placeholder="Enter API key or ENV placeholder (optional)" />
+      <span class="text-secondary">Prefer env placeholders (&#36;&#123;MY_API_KEY&#125;) instead of plain secrets; this also works in custom args.</span>
+    </div>
+
+    <!-- Timeout -->
+    <div class="form-group">
+      <label class="form-label text-secondary">Timeout (seconds) <span class="text-magenta">*</span></label>
+      <input type="number" formControlName="timeoutSecs" class="form-input" min="10" />
+      @if (form.get('timeoutSecs')?.errors?.['min'] && form.get('timeoutSecs')?.touched) {
+        <span class="form-error text-magenta">Minimum timeout is 10 seconds</span>
+      }
+    </div>
+
+    <!-- Temperature -->
+    <div class="form-group">
+      <label class="form-label text-secondary">Temperature: {{ form.get('temperature')?.value?.toFixed(1) }}</label>
+      <input type="range" formControlName="temperature" class="form-range" min="0" max="2" step="0.1" />
+      <div class="range-labels">
+        <span class="text-secondary">0.0</span>
+        <span class="text-secondary">2.0</span>
+      </div>
+    </div>
+
+    <!-- Prompt -->
+    <div class="form-group">
+      <label class="form-label text-secondary">Prompt</label>
+      <textarea formControlName="prompt" class="form-input" rows="5"
+                placeholder="Optional standing instructions for this model. Supports ${ENV_VAR} placeholders."></textarea>
+    </div>
+
+    <!-- Extra Args (conditional) -->
+    @if (showExtraArgs()) {
+      <div class="form-group">
+        <label class="form-label text-secondary">Extra Args</label>
+        <div formArrayName="extraArgs" class="extra-args-list">
+          @for (argGroup of extraArgsArray.controls; track $index) {
+            <div [formGroupName]="$index" class="arg-row">
+              <input type="text" formControlName="key" class="form-input arg-key" placeholder="Key" />
+              <input type="text" formControlName="value" class="form-input arg-value" placeholder="Value or ENV placeholder" />
+              <button type="button" class="btn-remove-arg" (click)="removeExtraArg($index)">✕</button>
+            </div>
+          }
+        </div>
+        <button type="button" class="btn-add-arg text-cyan" (click)="addExtraArg()">+ Add Arg</button>
+      </div>
+    }
+
+    <!-- Action Buttons -->
+    <div class="form-actions">
+      <button type="button" class="btn-cancel" (click)="onClose()">Cancel</button>
+      <button type="submit" class="btn-save text-cyan">Save</button>
+    </div>
+  </form>
+</div>

@@ -1,0 +1,19 @@
+<div class="dialog-overlay">
+  <div class="dialog-content glass-panel">
+    <div class="dialog-header">
+      <span class="dialog-icon text-warning">⚠</span>
+      <h3 class="dialog-title text-cyan neon-glow">Confirm Reindex</h3>
+    </div>
+
+    <div class="dialog-body">
+      <p class="warning-message text-secondary">
+        Reindexing can take several minutes. The project will be unavailable for RAG during this time.
+      </p>
+    </div>
+
+    <div class="dialog-actions">
+      <button class="btn btn-secondary" (click)="onCancel()">Cancel</button>
+      <button class="btn btn-primary" (click)="onConfirm()">Start Reindex</button>
+    </div>
+  </div>
+</div>

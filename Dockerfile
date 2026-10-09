@@ -29,10 +29,10 @@ COPY --from=app-builder /app/mcp-server/build/libs/mcp-server-all.jar /app/
 COPY prjxp-common/docker/entry.sh /app/entry.sh
 RUN chmod +x /app/entry.sh
 
-# 4. Docker-Konfiguration ins Image backen (application.yaml.docker -> application.yaml).
+# 4. Docker-Konfiguration ins Image backen (docker/application.yaml.docker -> application.yaml).
 # Fallback-Konfiguration: Wird genutzt, wenn unter /app-source keine eigene
 # application.yml/.yaml vorhanden ist.
-COPY application.yaml.docker /app/application.yaml
+COPY docker/application.yaml.docker /app/application.yaml
 
 # 5. Hub-Modus Verzeichnisse (DockerHub Phase 05) — existieren auch ohne Volume-Mounts
 RUN mkdir -p /import /projects
