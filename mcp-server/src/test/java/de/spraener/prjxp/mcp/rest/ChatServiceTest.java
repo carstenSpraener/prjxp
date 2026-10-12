@@ -6,16 +6,18 @@ import de.spraener.prjxp.common.chat.KIChatProvider;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import de.spraener.prjxp.common.config.ProjectDefinition;
+import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
+import de.spraener.prjxp.common.toolregistry.ToolDefinition;
+import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.mcp.hub.HubProjectRegistry;
 import de.spraener.prjxp.mcp.hub.ProjectEntry;
-import de.spraener.prjxp.mcp.PrjxpMcpTool;
 import de.spraener.prjxp.mcp.rest.dto.ChatRequest;
-import de.spraener.prjxp.mcp.rest.dto.ToolCall;
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.data.message.AiMessage;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -23,21 +25,18 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import dev.langchain4j.model.embedding.EmbeddingModel;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyBoolean;
-import static org.mockito.ArgumentMatchers.anyDouble;
-import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.atLeast;
-import static org.mockito.Mockito.atLeastOnce;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -62,29 +61,44 @@ class ChatServiceTest {
     @Mock
     private SseEmitter sseEmitter;
 
-    @Mock
-    private PrjxpMcpTool mcpTool;
+    private ToolRegistry toolRegistry;
+    private final List<ExecutedTool> executedTools = new ArrayList<>();
 
     private ObjectMapper objectMapper;
     private ChatService chatService;
+
+    /** Records a tool execution so tests can assert on the arguments the service passed in. */
+    private record ExecutedTool(String name, Map<String, Object> arguments) {}
 
     @BeforeEach
     void setUp() {
         lenient().when(prjXPConfig.getProjects()).thenReturn(new ArrayList<>());
         objectMapper = new ObjectMapper();
         chatService = new ChatService(kiChatProvider, embeddingModel, luceneStore, prjXPConfig, objectMapper);
-        // Inject the mocked MCP tool via reflection (since constructor doesn't take it)
-        injectMcpTool();
+        toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        registerRecordingTools();
+        injectField("toolRegistry", toolRegistry);
     }
 
-    /** Inject the mocked PrjxpMcpTool into ChatService via reflection. */
-    private void injectMcpTool() {
+    /** Registers stand-ins for the real prjxp tools that simply record their arguments. */
+    private void registerRecordingTools() {
+        for (String name : List.of("vectorSearch", "grep", "readFile", "readBySignature", "listProjects")) {
+            toolRegistry.register(new ToolDefinition(name, name + " test tool", Map.of(),
+                    params -> {
+                        executedTools.add(new ExecutedTool(name, new HashMap<>(params)));
+                        return "result of " + name;
+                    }));
+        }
+    }
+
+    /** Set a private ChatService field via reflection. */
+    private void injectField(String fieldName, Object value) {
         try {
-            java.lang.reflect.Field field = ChatService.class.getDeclaredField("mcpTool");
+            java.lang.reflect.Field field = ChatService.class.getDeclaredField(fieldName);
             field.setAccessible(true);
-            field.set(chatService, mcpTool);
+            field.set(chatService, value);
         } catch (Exception e) {
-            throw new RuntimeException("Failed to inject mcpTool mock", e);
+            throw new RuntimeException("Failed to inject " + fieldName, e);
         }
     }
 
@@ -95,13 +109,7 @@ class ChatServiceTest {
     }
 
     private void injectHubRegistry(HubProjectRegistry registry) {
-        try {
-            java.lang.reflect.Field field = ChatService.class.getDeclaredField("hubProjectRegistry");
-            field.setAccessible(true);
-            field.set(chatService, registry);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to inject hubProjectRegistry mock", e);
-        }
+        injectField("hubProjectRegistry", registry);
     }
 
     @Test
@@ -516,19 +524,15 @@ class ChatServiceTest {
 
     @Test
     void executeToolCallListProjects() throws Exception {
-        // Given: mcpTool.listProjects() returns a list of projects
-        when(mcpTool.listProjects()).thenReturn(List.of("project-a", "project-b"));
-
-        // When: execute listProjects tool call
         ChatService.ToolCallRequest request = new ChatService.ToolCallRequest("listProjects", java.util.Map.of());
         Method method = getExecuteToolCallMethod();
         method.setAccessible(true);
 
-        String result = (String) method.invoke(chatService, request);
+        String result = (String) method.invoke(chatService, request, null);
 
-        // Then: the result should contain both project names
-        assertThat(result).contains("project-a");
-        assertThat(result).contains("project-b");
+        // Then: the registry tool was executed
+        assertThat(result).isEqualTo("result of listProjects");
+        assertThat(executedTools).extracting(ExecutedTool::name).containsExactly("listProjects");
     }
 
     @Test
@@ -539,9 +543,9 @@ class ChatServiceTest {
         ctor.setAccessible(true);
         Object request = ctor.newInstance("unknownTool", java.util.Map.of());
 
-        Method method = ChatService.class.getDeclaredMethod("executeToolCall", toolCallReqClass);
+        Method method = ChatService.class.getDeclaredMethod("executeToolCall", toolCallReqClass, String.class);
         method.setAccessible(true);
-        String result = (String) method.invoke(chatService, request);
+        String result = (String) method.invoke(chatService, request, null);
 
         // Then: the result should indicate an unknown tool
         assertThat(result).contains("Unknown tool");
@@ -549,15 +553,9 @@ class ChatServiceTest {
     }
 
     @Test
-    void executeToolCallNoMcpToolAvailable() throws Exception {
-        // Given: mcpTool is null (not injected)
-        try {
-            java.lang.reflect.Field field = ChatService.class.getDeclaredField("mcpTool");
-            field.setAccessible(true);
-            field.set(chatService, null);
-        } catch (Exception e) {
-            throw new RuntimeException("Failed to set mcpTool to null", e);
-        }
+    void executeToolCallNoToolRegistryAvailable() throws Exception {
+        // Given: no tool registry is wired
+        injectField("toolRegistry", null);
 
         // When: execute any tool call
         Class<?> toolCallReqClass = getToolCallRequestClass();
@@ -565,12 +563,215 @@ class ChatServiceTest {
         ctor.setAccessible(true);
         Object request = ctor.newInstance("vectorSearch", java.util.Map.of("userQuestion", "test"));
 
-        Method method = ChatService.class.getDeclaredMethod("executeToolCall", toolCallReqClass);
+        Method method = ChatService.class.getDeclaredMethod("executeToolCall", toolCallReqClass, String.class);
         method.setAccessible(true);
-        String result = (String) method.invoke(chatService, request);
+        String result = (String) method.invoke(chatService, request, null);
 
-        // Then: the result should indicate MCP tool is not available
+        // Then: the result should indicate the backend is not available
         assertThat(result).contains("not available");
+    }
+
+    @Test
+    void parseToolCallsGrepQueryWithParenthesesIsNotTruncated() throws Exception {
+        // Given: a grep call whose query contains parentheses and a comma (method signature)
+        String llmResponse = "Let me grep for the signature.\n" +
+                "TOOL_CALL[grep](query=\"public MClass createMClass(String name, int id)\", project=\"cgV19\", limit=20)\n" +
+                "Done.";
+
+        Method method = ChatService.class.getDeclaredMethod("parseToolCalls", String.class);
+        method.setAccessible(true);
+        List<?> calls = (List<?>) method.invoke(chatService, llmResponse);
+
+        assertThat(calls).hasSize(1);
+        Object call = calls.get(0);
+        Method getParams = call.getClass().getDeclaredMethod("getParams");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> params = (java.util.Map<String, String>) getParams.invoke(call);
+
+        assertThat(params).containsEntry("query", "public MClass createMClass(String name, int id)");
+        assertThat(params).containsEntry("project", "cgV19");
+        assertThat(params).containsEntry("limit", "20");
+    }
+
+    @Test
+    void parseToolCallsHandlesEscapedQuotesInValue() throws Exception {
+        String llmResponse = "TOOL_CALL[grep](query=\"log.info(\\\"hello\\\")\", project=\"p1\")";
+
+        Method method = ChatService.class.getDeclaredMethod("parseToolCalls", String.class);
+        method.setAccessible(true);
+        List<?> calls = (List<?>) method.invoke(chatService, llmResponse);
+
+        assertThat(calls).hasSize(1);
+        Object call = calls.get(0);
+        Method getParams = call.getClass().getDeclaredMethod("getParams");
+        @SuppressWarnings("unchecked")
+        java.util.Map<String, String> params = (java.util.Map<String, String>) getParams.invoke(call);
+
+        assertThat(params).containsEntry("query", "log.info(\"hello\")");
+        assertThat(params).containsEntry("project", "p1");
+    }
+
+    @Test
+    void executeGrepFallsBackToChatProjectContext() throws Exception {
+        ChatService.ToolCallRequest request =
+                new ChatService.ToolCallRequest("grep", java.util.Map.of("query", "class Foo"));
+        Method method = getExecuteToolCallMethod();
+        method.setAccessible(true);
+
+        method.invoke(chatService, request, "my-project");
+
+        assertThat(executedTools).hasSize(1);
+        assertThat(executedTools.get(0).arguments())
+                .containsEntry("query", "class Foo")
+                .containsEntry("project", "my-project");
+    }
+
+    @Test
+    void executeReadFileUsesExplicitProjectOverContext() throws Exception {
+        ChatService.ToolCallRequest request = new ChatService.ToolCallRequest(
+                "readFile", java.util.Map.of("file", "X.java", "project", "explicit-project"));
+        Method method = getExecuteToolCallMethod();
+        method.setAccessible(true);
+
+        method.invoke(chatService, request, "context-project");
+
+        assertThat(executedTools).hasSize(1);
+        assertThat(executedTools.get(0).arguments()).containsEntry("project", "explicit-project");
+    }
+
+    @Test
+    void nativeToolLoopExecutesToolsAndReturnsFinalAnswer() {
+        // Given: a tool-capable chat that first requests a tool and then answers
+        KIChat toolChat = mock(KIChat.class);
+        when(toolChat.supportsTools()).thenReturn(true);
+        when(kiChatProvider.getByStereotype("tool-model")).thenReturn(Optional.of(toolChat));
+
+        ToolExecutionRequest toolRequest = ToolExecutionRequest.builder()
+                .id("1")
+                .name("grep")
+                .arguments("{\"query\":\"public void foo(String a)\"}")
+                .build();
+        dev.langchain4j.model.chat.response.ChatResponse withTool =
+                dev.langchain4j.model.chat.response.ChatResponse.builder()
+                        .aiMessage(AiMessage.from(toolRequest))
+                        .build();
+        dev.langchain4j.model.chat.response.ChatResponse finalAnswer =
+                dev.langchain4j.model.chat.response.ChatResponse.builder()
+                        .aiMessage(AiMessage.from("Found it in Foo.java"))
+                        .build();
+        when(toolChat.chat(anyList(), anyList())).thenReturn(withTool, finalAnswer);
+
+        ChatRequest request = new ChatRequest();
+        request.setMessage("Where is foo?");
+        request.setChatModelName("tool-model");
+        request.setProjectContext("my-project");
+        request.setUseTools(true);
+
+        // When
+        de.spraener.prjxp.mcp.rest.dto.ChatResponse response = chatService.send(request);
+
+        // Then: the tool ran with the model's arguments plus the project context
+        assertThat(executedTools).hasSize(1);
+        assertThat(executedTools.get(0).name()).isEqualTo("grep");
+        assertThat(executedTools.get(0).arguments())
+                .containsEntry("query", "public void foo(String a)")
+                .containsEntry("project", "my-project");
+        assertThat(response.getContent()).isEqualTo("Found it in Foo.java");
+        assertThat(response.getToolCalls()).hasSize(1);
+        // The plain text protocol must not be used for a tool-capable model
+        verify(toolChat, never()).chat(anyString());
+    }
+
+    @Test
+    void nativeToolLoopRequestsFinalAnswerAfterLastToolRound() {
+        KIChat toolChat = mock(KIChat.class);
+        when(toolChat.supportsTools()).thenReturn(true);
+        when(kiChatProvider.getByStereotype("limited-model")).thenReturn(Optional.of(toolChat));
+
+        ToolExecutionRequest toolRequest = ToolExecutionRequest.builder()
+                .id("last-tool")
+                .name("grep")
+                .arguments("{\"query\":\"class Foo\"}")
+                .build();
+        dev.langchain4j.model.chat.response.ChatResponse toolResponse =
+                dev.langchain4j.model.chat.response.ChatResponse.builder()
+                        .aiMessage(AiMessage.from(toolRequest))
+                        .build();
+        dev.langchain4j.model.chat.response.ChatResponse finalAnswer =
+                dev.langchain4j.model.chat.response.ChatResponse.builder()
+                        .aiMessage(AiMessage.from("Final answer after the last tool call"))
+                        .build();
+        when(toolChat.chat(anyList(), anyList())).thenReturn(toolResponse, toolResponse, toolResponse, finalAnswer);
+
+        ChatRequest request = new ChatRequest();
+        request.setMessage("Find Foo");
+        request.setChatModelName("limited-model");
+        request.setUseTools(true);
+
+        de.spraener.prjxp.mcp.rest.dto.ChatResponse response = chatService.send(request);
+
+        assertThat(response.getContent()).isEqualTo("Final answer after the last tool call");
+        assertThat(response.getToolCalls()).hasSize(3);
+        verify(toolChat, org.mockito.Mockito.times(4)).chat(anyList(), anyList());
+    }
+
+    @Test
+    void nativeToolLoopFallsBackToTextProtocolOnProviderError() {
+        // Given: a chat that claims tool support but fails when tools are passed
+        KIChat toolChat = mock(KIChat.class);
+        when(toolChat.supportsTools()).thenReturn(true);
+        when(toolChat.chat(anyList(), anyList()))
+                .thenThrow(new UnsupportedOperationException("tools not supported by provider"));
+        when(toolChat.chat(anyString()))
+                .thenReturn("TOOL_CALL[grep](query=\"class Foo\", project=\"p1\")", "Final text answer");
+        when(kiChatProvider.getByStereotype("broken-model")).thenReturn(Optional.of(toolChat));
+
+        ChatRequest request = new ChatRequest();
+        request.setMessage("Find Foo");
+        request.setChatModelName("broken-model");
+        request.setUseTools(true);
+
+        // When
+        de.spraener.prjxp.mcp.rest.dto.ChatResponse response = chatService.send(request);
+
+        // Then: the text protocol took over and the tool still ran
+        assertThat(executedTools).hasSize(1);
+        assertThat(executedTools.get(0).name()).isEqualTo("grep");
+        assertThat(response.getContent()).isEqualTo("Final text answer");
+        assertThat(response.getToolCalls()).hasSize(1);
+    }
+
+    @Test
+    void modelWithoutToolSupportUsesTextProtocolDirectly() {
+        KIChat plainChat = mock(KIChat.class);
+        when(plainChat.supportsTools()).thenReturn(false);
+        when(plainChat.chat(anyString()))
+                .thenReturn("TOOL_CALL[listProjects]()", "Here are the projects");
+        when(kiChatProvider.getByStereotype("plain-model")).thenReturn(Optional.of(plainChat));
+
+        ChatRequest request = new ChatRequest();
+        request.setMessage("Which projects exist?");
+        request.setChatModelName("plain-model");
+        request.setUseTools(true);
+
+        de.spraener.prjxp.mcp.rest.dto.ChatResponse response = chatService.send(request);
+
+        assertThat(executedTools).extracting(ExecutedTool::name).containsExactly("listProjects");
+        assertThat(response.getContent()).isEqualTo("Here are the projects");
+        verify(plainChat, never()).chat(anyList(), anyList());
+    }
+
+    @Test
+    void fallbackPromptListsRegisteredTools() throws Exception {
+        Method method = ChatService.class.getDeclaredMethod("buildFallbackToolPrompt");
+        method.setAccessible(true);
+
+        String prompt = (String) method.invoke(chatService);
+
+        assertThat(prompt).contains("## Available Tools");
+        assertThat(prompt).contains("vectorSearch(");
+        assertThat(prompt).contains("grep(");
+        assertThat(prompt).contains("TOOL_CALL[toolName]");
     }
 
     @Test
@@ -617,16 +818,16 @@ class ChatServiceTest {
 
         // Then: LLM called only once, no tool execution
         verify(mockChat).chat(anyString());
-        verify(mcpTool, never()).vectorSearch(anyString(), any(), anyDouble(), anyInt(), anyBoolean());
+        assertThat(executedTools).isEmpty();
         verify(sseEmitter).complete();
     }
 
     @Test
-    void getAvailableToolsReturnsRealToolNames() {
+    void getAvailableToolsReturnsRegisteredToolNames() {
         // When: get available tools
         List<String> tools = chatService.getAvailableTools();
 
-        // Then: should return the 5 real MCP tool names
+        // Then: the names come from the central registry
         assertThat(tools).containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects");
     }
 
@@ -645,7 +846,7 @@ class ChatServiceTest {
     /** Get the executeToolCall method via reflection. */
     private Method getExecuteToolCallMethod() {
         try {
-            return ChatService.class.getDeclaredMethod("executeToolCall", ChatService.ToolCallRequest.class);
+            return ChatService.class.getDeclaredMethod("executeToolCall", ChatService.ToolCallRequest.class, String.class);
         } catch (NoSuchMethodException e) {
             throw new RuntimeException("executeToolCall method not found", e);
         }

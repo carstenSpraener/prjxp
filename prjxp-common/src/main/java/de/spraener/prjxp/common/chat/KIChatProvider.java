@@ -3,7 +3,6 @@ package de.spraener.prjxp.common.chat;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.EnvPlaceholderResolver;
-import de.spraener.prjxp.common.mcp.McpClientManager;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -16,7 +15,6 @@ import java.util.function.Predicate;
 public class KIChatProvider {
     private final PrjXPConfig config;
     private final KIChatModelProvider modelProvider;
-    private final McpClientManager mcpClientManager;
 
     public Optional<KIChat> getByName(String name) {
         return config.getChatModels().stream()
@@ -27,12 +25,11 @@ public class KIChatProvider {
     }
 
     public Optional<KIChat> getByStereotype(String stereotype) {
-        Optional<KIChat> result = config.getChatModels().stream()
+        return config.getChatModels().stream()
                 .filter(m -> stereotype.equals(EnvPlaceholderResolver.resolve(m.getStereoType())))
                 .findFirst()
                 .map(this::resolveModelReference)
                 .map(modelProvider::createKIChat);
-        return mcpClientManager.decorate(result);
     }
 
     public Optional<KIChat> apply(Predicate<PrjXPChatModelReference> p) {
@@ -53,6 +50,7 @@ public class KIChatProvider {
         resolved.setTimeoutSecs(source.getTimeoutSecs());
         resolved.setTemperature(source.getTemperature());
         resolved.setPrompt(EnvPlaceholderResolver.resolve(source.getPrompt()));
+        resolved.setSupportsTools(source.getSupportsTools());
         if (source.getArgs() != null && !source.getArgs().isEmpty()) {
             resolved.setArgs(new HashMap<>(EnvPlaceholderResolver.resolveMap(source.getArgs())));
         }

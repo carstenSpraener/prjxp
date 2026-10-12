@@ -1,5 +1,7 @@
 package de.spraener.prjxp.common.toolregistry;
 
+import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
@@ -108,6 +110,56 @@ class ToolRegistryTest {
         assertThat(desc).contains("    a: Param A\n");
         assertThat(desc).contains("    b: Param B\n");
         assertThat(desc).contains(") - Multi param tool");
+    }
+
+    @Test
+    void register_duplicateName_firstWinsAndSecondThrows() {
+        registry.register(new ToolDefinition("dup", "First tool", Map.of(), params -> "first"));
+
+        assertThatThrownBy(() -> registry.register(
+                new ToolDefinition("dup", "Second tool", Map.of(), params -> "second")))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("dup")
+                .hasMessageContaining("already registered");
+
+        assertThat(registry.getTools()).hasSize(1);
+        assertThat(registry.execute("dup", Map.of())).isEqualTo("first");
+    }
+
+    @Test
+    void specifications_generatesStringSchemaWhenNoneGiven() {
+        registry.register(new ToolDefinition("simple", "A simple tool",
+                Map.of("input", "The input parameter"), params -> "ok"));
+
+        List<ToolSpecification> specs = registry.specifications();
+
+        assertThat(specs).hasSize(1);
+        ToolSpecification spec = specs.get(0);
+        assertThat(spec.name()).isEqualTo("simple");
+        assertThat(spec.description()).isEqualTo("A simple tool");
+        assertThat(spec.parameters().properties()).containsKey("input");
+    }
+
+    @Test
+    void specifications_keepsExplicitSchema() {
+        ToolSpecification explicit = ToolSpecification.builder()
+                .name("typed")
+                .description("Tool with a typed schema")
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("query", "The query")
+                        .addIntegerProperty("limit", "Max results")
+                        .required("query")
+                        .build())
+                .build();
+
+        registry.register(new ToolDefinition("typed", "Tool with a typed schema",
+                Map.of("query", "The query"), params -> "ok", explicit));
+
+        List<ToolSpecification> specs = registry.specifications();
+
+        assertThat(specs).hasSize(1);
+        assertThat(specs.get(0)).isSameAs(explicit);
+        assertThat(specs.get(0).parameters().required()).containsExactly("query");
     }
 
     @Test

@@ -14,6 +14,15 @@ prjxp:
 #      command: "npx"
 #      args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
 
+#  chatModels:
+#    - stereoType: "coder"
+#      serverType: "OPEN_AI"
+#      modelName: "gpt-4o-mini"
+#      # Native function calling (tool calls via the provider API) is used automatically.
+#      # The chat falls back to the text-based TOOL_CALL protocol when the provider rejects tools.
+#      # Set this to false to force the text protocol right away (e.g. for small local models):
+#      # supportsTools: false
+
   embedding:
     type: "OPEN_AI"
     apiBaseURL: ${PRJXP_EMBEDDING_API_BASE_URL:http://localhost:1234/v1}

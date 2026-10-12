@@ -29,10 +29,14 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 
-import de.spraener.prjxp.mcp.PrjxpMcpTool;
-import de.spraener.prjxp.common.model.SearchHit;
-import de.spraener.prjxp.common.model.FileView;
-import de.spraener.prjxp.common.model.SymbolReadResult;
+import de.spraener.prjxp.common.toolregistry.ToolDefinition;
+import de.spraener.prjxp.common.toolregistry.ToolRegistry;
+
+import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.agent.tool.ToolSpecification;
+import dev.langchain4j.data.message.AiMessage;
+import dev.langchain4j.data.message.ToolExecutionResultMessage;
+import dev.langchain4j.data.message.UserMessage;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -47,78 +51,53 @@ public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
 
-    // System prompt that tells the LLM what tools are available (real prjxp MCP tools)
+    /** Matches the head of a tool call: TOOL_CALL[tool]( - the argument list is scanned manually. */
+    private static final Pattern TOOL_CALL_HEAD = Pattern.compile("TOOL_CALL\\s*\\[\\s*([A-Za-z0-9_]+)\\s*]\\s*\\(");
+
+    // System prompt. Tool schemas are NOT described here: with native function calling they are
+    // negotiated through the provider API. Only the text fallback appends a tool description block.
     private static final String SYSTEM_PROMPT = """
             You are an intelligent assistant with access to the prjxp knowledge management system.
 
-            ## Available Tools (5 total)
-
-            ### 1. vectorSearch
-            CRITICAL PRIMARY SEARCH TOOL (level 1 of 3). Delivers relevant semantic information from the project context.
-            Use for finding classes, understanding behavior, locating implementations, or exploring the codebase.
-
-            Parameters:
-            - userQuestion (required): A targeted search prompt for vector retrieval
-            - projectName (optional): Project name to narrow scope
-            - similarity (optional, 0.0-1.0): Similarity threshold (default 0.85)
-            - maxResults (optional, default 20): Max results to return
-            - skeletonsOnly (optional, boolean): Return class skeletons only vs full method context
-
-            ### 2. grep
-            EXACT FULL-TEXT SEARCH (level 2 of 3). Searches all chunks for exact text patterns.
-            Use after vectorSearch to find specific code, symbols, or text.
-
-            Parameters:
-            - query (required): Exact search string
-            - project (optional): Project name filter
-            - language (optional): Language filter ('java', 'ts', etc.)
-            - limit (optional, default 10, max 100): Max results
-
-            ### 3. readFile
-            READER (level 3 of 3). Returns COMPLETE source view of one file from the project index.
-
-            Parameters:
-            - file (required): File path (absolute, relative, or just filename)
-            - project (optional): Project name
-            - offset (optional): 1-based line number to start from
-            - limit (optional): Max lines to return
-
-            ### 4. readBySignature
-            READER (level 3 of 3). Returns COMPLETE implementation of a symbol including javadoc and full method body.
-
-            Parameters:
-            - method (required): Method name or fully qualified 'com.example.Foo#bar'. Class FQNs return class frame.
-            - container (optional): Containing class FQN to disambiguate bare method names
-            - project (optional): Project name
-
-            ### 5. listProjects
-            DISCOVERY TOOL: Lists all project names with searchable indexes.
-
-            Parameters: None
+            prjxp indexes the source code and documents of whole projects and lets you search them.
 
             ## Recommended Search Strategy (3-Stage)
             1. **vectorSearch**: Get semantic overview of relevant code/documentation
             2. **grep**: Find exact definitions, method names, and specific patterns
             3. **readFile** or **readBySignature**: Read the actual source code for detailed understanding
 
-            ## Tool Call Format
-            When you need to use a tool, include it in your response using this format:
-            TOOL_CALL[toolName](param1=value, param2=value)
-
-            Example:
-            TOOL_CALL[vectorSearch](userQuestion="CodeTarget class and its methods", projectName="cgV19")
-
-            You can include multiple tool calls in one response. After receiving the results, incorporate them into your final answer.
-
             ## Available Projects
-            {project_list} - will be populated dynamically based on the user's context.
+            {project_list}
 
             ## Important Rules
             - Always use vectorSearch first for broad semantic searches
             - Use grep when you need exact text matching or specific method/class names
             - Use readFile for complete file views, readBySignature for specific methods/classes
+            - Always pass the project name (projectName for vectorSearch, project for grep/readFile/readBySignature).
+              Use listProjects if you do not know the valid project names.
             - If a tool returns no results, try alternative search terms or approaches
             - Always cite the source files you reference in your answers
+            """;
+
+    /**
+     * Appended to the prompt only when the model cannot do native function calling.
+     * The concrete tool list is injected dynamically from the {@link ToolRegistry}.
+     */
+    private static final String FALLBACK_TOOL_PROTOCOL = """
+
+            ## Tool Call Format
+            When you need to use a tool, include it in your response using this format:
+            TOOL_CALL[toolName](param1="value", param2="value")
+
+            STRICT SYNTAX RULES (violating them makes the call fail):
+            - ALWAYS wrap every string value in double quotes, even single words.
+            - Values may contain brackets, parentheses, commas and spaces - this is fine as long as they are quoted.
+              Example: TOOL_CALL[grep](query="public MClass createMClass(String name)", project="cgV19")
+            - Escape a double quote inside a value as \\" .
+            - Write each TOOL_CALL on its own line. Do NOT wrap it in markdown code fences or backticks.
+            - Numbers and booleans are written without quotes (limit=20, skeletonsOnly=false).
+
+            You can include multiple tool calls in one response. After receiving the results, incorporate them into your final answer.
             """;
 
     private final KIChatProvider kiChatProvider;
@@ -129,9 +108,9 @@ public class ChatService {
     @Autowired(required = false)
     private HubProjectRegistry hubProjectRegistry;
 
-    // Inject the real MCP tool bean for execution
+    /** Central tool registry: prjxp tools, external MCP tools and Groovy tools. */
     @Autowired(required = false)
-    private PrjxpMcpTool mcpTool;
+    private ToolRegistry toolRegistry;
 
     public ChatService(KIChatProvider kiChatProvider,
                        EmbeddingModel embeddingModel,
@@ -157,33 +136,29 @@ public class ChatService {
         // 2. Build the enriched prompt (with system context + RAG if projectContext is provided)
         String enrichedPrompt = buildEnrichedPrompt(request);
 
-        // 3. Send to LLM (with error handling)
-        String content;
+        ChatResponse response = new ChatResponse();
+        response.setRole("assistant");
+
+        // 3. Run the conversation — with tools (native, text protocol as fallback) or plain
         try {
-            content = chat.chat(enrichedPrompt);
+            if (request.isUseTools()) {
+                AgenticLoopResult loopResult = chatWithTools(chat, enrichedPrompt,
+                        request.getProjectContext(), null);
+                response.setContent(loopResult.finalAnswer);
+                if (!loopResult.toolCalls.isEmpty()) {
+                    response.setToolCalls(loopResult.toolCalls);
+                }
+            } else {
+                response.setContent(chat.chat(enrichedPrompt));
+            }
         } catch (Exception e) {
             log.error("LLM chat failed for model '{}': {}", request.getChatModelName(), e.getMessage());
             throw new RuntimeException("LLM error: " + e.getMessage(), e);
         }
 
-        // 4. Build response
-        ChatResponse response = new ChatResponse();
-        response.setRole("assistant");
-        response.setContent(content);
-
-        // 5. Add RAG context if projectContext was used
+        // 4. Add RAG context if projectContext was used
         if (request.getProjectContext() != null && !request.getProjectContext().isBlank()) {
             response.setRagContext(buildRagContext(request));
-        }
-
-        // 6. Agentic tool loop (if useTools enabled)
-        if (request.isUseTools()) {
-            AgenticLoopResult loopResult = runAgenticLoopWithFinalAnswer(chat, enrichedPrompt, content);
-            if (!loopResult.toolCalls.isEmpty()) {
-                // Use the final response from the agentic loop
-                response.setContent(loopResult.finalAnswer);
-                response.setToolCalls(loopResult.toolCalls);
-            }
         }
 
         return response;
@@ -209,58 +184,34 @@ public class ChatService {
             KIChat chat = chatOpt.get();
 
             String enrichedPrompt = buildEnrichedPrompt(request);
-            String currentResponse = chat.chat(enrichedPrompt);
 
-            // Agentic tool loop (if useTools enabled)
+            // Tool loop (native function calling, text protocol as fallback) or plain answer
+            String answer;
             List<ToolCall> allToolCalls = new ArrayList<>();
             if (request.isUseTools()) {
-                int maxIterations = 3;
-                for (int iter = 0; iter < maxIterations; iter++) {
-                    List<ToolCallRequest> toolCalls = parseToolCalls(currentResponse);
-
-                    if (toolCalls.isEmpty()) {
-                        // No tool calls - this is the final answer
-                        break;
+                ToolCallListener listener = new ToolCallListener() {
+                    @Override
+                    public void onToolCallsRequested(List<PendingCall> calls) throws java.io.IOException {
+                        sendToolPhase(emitter, calls);
                     }
 
-                    // Send tool call phase to SSE
-                    sendToolPhase(emitter, toolCalls);
-
-                    // Execute each tool call and collect results for follow-up prompt
-                    StringBuilder toolResults = new StringBuilder();
-                    for (ToolCallRequest call : toolCalls) {
-                        String result = executeToolCall(call);
-                        ToolCall tc = new ToolCall();
-                        tc.setToolName(call.getToolName());
-                        tc.setArguments(call.getParamsAsMap());
-                        tc.setResult(result);
-                        allToolCalls.add(tc);
-
-                        // Send individual tool result as SSE event
-                        sendToolResult(emitter, call.getToolName(), result);
-
-                        // Collect for follow-up prompt
-                        toolResults.append("### Result from ")
-                                  .append(call.getToolName())
-                                  .append(":\n")
-                                  .append(truncate(result, 4000))
-                                  .append("\n\n");
+                    @Override
+                    public void onToolResult(String toolName, String result) throws java.io.IOException {
+                        sendToolResult(emitter, toolName, result);
                     }
-
-                    // Feed results back to LLM for next iteration
-                    String followUpPrompt = currentResponse + "\n\n" +
-                        "Tool execution results:\n" + toolResults +
-                        "\nBased on these results, provide your final answer. " +
-                        "If you need more information, use additional tool calls.";
-
-                    currentResponse = chat.chat(followUpPrompt);
-                }
+                };
+                AgenticLoopResult loopResult = chatWithTools(chat, enrichedPrompt,
+                        request.getProjectContext(), listener);
+                answer = loopResult.finalAnswer;
+                allToolCalls = loopResult.toolCalls;
+            } else {
+                answer = chat.chat(enrichedPrompt);
             }
 
             // Phase 4: Complete response
             ChatResponse response = new ChatResponse();
             response.setRole("assistant");
-            response.setContent(currentResponse);
+            response.setContent(answer);
             if (!ragContexts.isEmpty()) {
                 response.setRagContext(ragContexts);
             }
@@ -293,13 +244,188 @@ public class ChatService {
 
     // ==================== Agentic Loop & Tool Execution ====================
 
-    /** Run the agentic loop: LLM -> tool calls -> execute -> feed back -> final answer. */
-    private AgenticLoopResult runAgenticLoopWithFinalAnswer(KIChat chat, String initialPrompt, String initialResponse) {
+    private static final int MAX_TOOL_ITERATIONS = 3;
+    private static final int TOOL_RESULT_FEEDBACK_CAP = 4000;
+
+    /**
+     * Whether native function calling should be attempted: the registry must hold tools and the
+     * model must not have tools explicitly disabled via configuration.
+     */
+    private boolean useNativeTools(KIChat chat) {
+        return toolRegistry != null && !toolRegistry.getTools().isEmpty() && chat.supportsTools();
+    }
+
+    /**
+     * Runs the conversation with tools. Native function calling is attempted first; if the model
+     * does not support it (config flag) or the provider rejects the tool request at runtime, the
+     * text-based TOOL_CALL protocol is used instead.
+     */
+    private AgenticLoopResult chatWithTools(KIChat chat, String basePrompt, String defaultProject,
+                                            ToolCallListener listener) {
+        if (useNativeTools(chat)) {
+            try {
+                return runNativeToolLoop(chat, basePrompt, defaultProject, listener);
+            } catch (java.io.IOException e) {
+                throw new RuntimeException(e);
+            } catch (Exception e) {
+                log.warn("Native tool calling failed ({}), falling back to the text protocol",
+                        e.getMessage());
+            }
+        }
+        String prompt = basePrompt + buildFallbackToolPrompt();
+        String initialResponse = chat.chat(prompt);
+        return runTextProtocolLoop(chat, initialResponse, defaultProject, listener);
+    }
+
+    /** Builds the tool description block for the text fallback from the registry. */
+    private String buildFallbackToolPrompt() {
+        StringBuilder sb = new StringBuilder("\n\n## Available Tools\n");
+        if (toolRegistry != null) {
+            for (String description : toolRegistry.getToolDescriptions()) {
+                sb.append("\n").append(description).append("\n");
+            }
+        }
+        sb.append(FALLBACK_TOOL_PROTOCOL);
+        return sb.toString();
+    }
+
+    /**
+     * Runs the tool loop using native function calling: tool schemas are passed to the provider and
+     * the model answers with structured tool execution requests.
+     */
+    private AgenticLoopResult runNativeToolLoop(KIChat chat, String prompt, String defaultProject,
+                                                ToolCallListener listener) throws java.io.IOException {
+        List<ToolCall> allToolCalls = new ArrayList<>();
+        List<dev.langchain4j.data.message.ChatMessage> messages = new ArrayList<>();
+        messages.add(UserMessage.from(prompt));
+        List<ToolSpecification> specifications = toolRegistry.specifications();
+
+        String finalAnswer = "";
+        boolean finalAnswerPending = false;
+        for (int iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
+            dev.langchain4j.model.chat.response.ChatResponse response = chat.chat(messages, specifications);
+            AiMessage aiMessage = response.aiMessage();
+            messages.add(aiMessage);
+            if (aiMessage.text() != null && !aiMessage.text().isBlank()) {
+                finalAnswer = aiMessage.text();
+            }
+
+            if (!aiMessage.hasToolExecutionRequests()) {
+                finalAnswerPending = false;
+                break;
+            }
+            finalAnswerPending = true;
+
+            List<ToolExecutionRequest> requests = aiMessage.toolExecutionRequests();
+            if (listener != null) {
+                listener.onToolCallsRequested(requests.stream()
+                        .map(r -> new PendingCall(r.name(), r.arguments()))
+                        .toList());
+            }
+
+            for (ToolExecutionRequest request : requests) {
+                Map<String, Object> arguments = parseToolArguments(request.arguments());
+                applyProjectContext(arguments, defaultProject);
+                String result = executeRegistryTool(request.name(), arguments);
+
+                ToolCall tc = new ToolCall();
+                tc.setToolName(request.name());
+                tc.setArguments(arguments);
+                tc.setResult(result);
+                allToolCalls.add(tc);
+
+                if (listener != null) {
+                    listener.onToolResult(request.name(), result);
+                }
+                messages.add(ToolExecutionResultMessage.from(request,
+                        truncate(result, TOOL_RESULT_FEEDBACK_CAP)));
+            }
+        }
+
+        // The iteration limit counts tool rounds, not the final answer round. Without this
+        // extra request, a model that uses the last allowed round returns only a tool call and
+        // the UI receives an empty assistant message after the tool marker is removed.
+        if (finalAnswerPending) {
+            dev.langchain4j.model.chat.response.ChatResponse response = chat.chat(messages, List.of());
+            AiMessage aiMessage = response.aiMessage();
+            if (aiMessage.text() != null && !aiMessage.text().isBlank()) {
+                finalAnswer = aiMessage.text();
+            }
+        }
+        return new AgenticLoopResult(finalAnswer, allToolCalls);
+    }
+
+    /** Parses the JSON argument object of a tool call into a plain map. */
+    private Map<String, Object> parseToolArguments(String argumentsJson) {
+        if (argumentsJson == null || argumentsJson.isBlank()) {
+            return new HashMap<>();
+        }
+        try {
+            Map<String, Object> parsed = objectMapper.readValue(argumentsJson, Map.class);
+            return parsed != null ? new HashMap<>(parsed) : new HashMap<>();
+        } catch (Exception e) {
+            log.warn("Could not parse tool arguments '{}': {}", argumentsJson, e.getMessage());
+            return new HashMap<>();
+        }
+    }
+
+    /**
+     * Fills in the chat's project context when the model did not name a project (or used the
+     * literal "default", which usually is not a real project).
+     */
+    private void applyProjectContext(Map<String, Object> arguments, String defaultProject) {
+        if (defaultProject == null || defaultProject.isBlank()) {
+            return;
+        }
+        boolean hasProject = false;
+        for (String key : new String[]{"project", "projectName", "prj"}) {
+            Object value = arguments.get(key);
+            String text = value == null ? null : String.valueOf(value).trim();
+            if (text != null && !text.isEmpty() && !"default".equalsIgnoreCase(text) && !"null".equalsIgnoreCase(text)) {
+                hasProject = true;
+            } else if (text != null) {
+                arguments.remove(key);
+            }
+        }
+        if (!hasProject) {
+            // vectorSearch uses projectName, all other tools use project — set both, unknown keys are ignored
+            arguments.put("project", defaultProject);
+            arguments.put("projectName", defaultProject);
+        }
+    }
+
+    /** Executes a tool through the central registry and converts failures into readable text. */
+    private String executeRegistryTool(String toolName, Map<String, Object> arguments) {
+        if (toolRegistry == null) {
+            return "ERROR: tool backend not available. Tools cannot be executed.";
+        }
+        log.info("executing tool '{}' with arguments {}", toolName, arguments);
+        try {
+            return toolRegistry.execute(toolName, arguments);
+        } catch (IllegalArgumentException e) {
+            return "Unknown tool: " + toolName + ". Available tools: " + String.join(", ", getAvailableTools());
+        } catch (Exception e) {
+            log.error("Tool execution failed for '{}': {}", toolName, e.getMessage());
+            return "ERROR executing " + toolName + ": " + e.getMessage();
+        }
+    }
+
+    /** Receives tool activity so that the SSE path can stream live phase updates. */
+    private interface ToolCallListener {
+        void onToolCallsRequested(List<PendingCall> calls) throws java.io.IOException;
+        void onToolResult(String toolName, String result) throws java.io.IOException;
+    }
+
+    /** A tool call the model asked for, before execution. */
+    private record PendingCall(String name, String arguments) {}
+
+    /** Run the text-protocol fallback loop: LLM -> TOOL_CALL markers -> execute -> feed back. */
+    private AgenticLoopResult runTextProtocolLoop(KIChat chat, String initialResponse,
+                                                  String defaultProject, ToolCallListener listener) {
         List<ToolCall> allToolCalls = new ArrayList<>();
         String currentResponse = initialResponse;
-        int maxIterations = 3;
 
-        for (int iter = 0; iter < maxIterations; iter++) {
+        for (int iter = 0; iter < MAX_TOOL_ITERATIONS; iter++) {
             List<ToolCallRequest> toolCalls = parseToolCalls(currentResponse);
 
             if (toolCalls.isEmpty()) {
@@ -307,30 +433,44 @@ public class ChatService {
                 break;
             }
 
-            // Execute each tool call and collect results
-            StringBuilder toolResults = new StringBuilder();
-            for (ToolCallRequest call : toolCalls) {
-                String result = executeToolCall(call);
-                ToolCall tc = new ToolCall();
-                tc.setToolName(call.getToolName());
-                tc.setArguments(call.getParamsAsMap());
-                tc.setResult(result);
-                allToolCalls.add(tc);
+            try {
+                if (listener != null) {
+                    listener.onToolCallsRequested(toolCalls.stream()
+                            .map(c -> new PendingCall(c.getToolName(), c.getParams().toString()))
+                            .toList());
+                }
 
-                toolResults.append("### Result from ")
-                          .append(call.getToolName())
-                          .append(":\n")
-                          .append(truncate(result, 4000))
-                          .append("\n\n");
+                // Execute each tool call and collect results
+                StringBuilder toolResults = new StringBuilder();
+                for (ToolCallRequest call : toolCalls) {
+                    String result = executeToolCall(call, defaultProject);
+                    ToolCall tc = new ToolCall();
+                    tc.setToolName(call.getToolName());
+                    tc.setArguments(call.getParamsAsMap());
+                    tc.setResult(result);
+                    allToolCalls.add(tc);
+
+                    if (listener != null) {
+                        listener.onToolResult(call.getToolName(), result);
+                    }
+
+                    toolResults.append("### Result from ")
+                              .append(call.getToolName())
+                              .append(":\n")
+                              .append(truncate(result, TOOL_RESULT_FEEDBACK_CAP))
+                              .append("\n\n");
+                }
+
+                // Feed results back to LLM for next iteration
+                String followUpPrompt = currentResponse + "\n\n" +
+                    "Tool execution results:\n" + toolResults +
+                    "\nBased on these results, provide your final answer. " +
+                    "If you need more information, use additional tool calls.";
+
+                currentResponse = chat.chat(followUpPrompt);
+            } catch (java.io.IOException e) {
+                throw new RuntimeException(e);
             }
-
-            // Feed results back to LLM for next iteration
-            String followUpPrompt = currentResponse + "\n\n" +
-                "Tool execution results:\n" + toolResults +
-                "\nBased on these results, provide your final answer. " +
-                "If you need more information, use additional tool calls.";
-
-            currentResponse = chat.chat(followUpPrompt);
         }
 
         // Strip tool call markers from final answer for clean output
@@ -343,23 +483,83 @@ public class ChatService {
         if (toolCalls.isEmpty()) {
             return response;
         }
-        // Remove TOOL_CALL[...](...) markers from the response to get clean text
-        String cleaned = Pattern.compile("TOOL_CALL\\[[^\\]]+\\]\\([^)]*\\)").matcher(response).replaceAll("");
-        return cleaned.trim();
+        // Remove TOOL_CALL[...](...) markers (quote/paren aware) from the response to get clean text
+        StringBuilder sb = new StringBuilder(response);
+        List<ToolCallSpan> spans = scanToolCalls(response);
+        for (int i = spans.size() - 1; i >= 0; i--) {
+            ToolCallSpan span = spans.get(i);
+            sb.delete(span.start, span.end);
+        }
+        return sb.toString().trim();
     }
 
     /** Parse TOOL_CALL[toolName](params) markers from LLM response. */
     private List<ToolCallRequest> parseToolCalls(String llmResponse) {
         List<ToolCallRequest> calls = new ArrayList<>();
-        Pattern pattern = Pattern.compile("TOOL_CALL\\[([^\\]]+)\\]\\(([^)]*)\\)");
-        Matcher matcher = pattern.matcher(llmResponse);
-        while (matcher.find()) {
-            String toolName = matcher.group(1).trim();
-            String paramsStr = matcher.group(2);
-            Map<String, String> params = parseParams(paramsStr);
-            calls.add(new ToolCallRequest(toolName, params));
+        for (ToolCallSpan span : scanToolCalls(llmResponse)) {
+            calls.add(new ToolCallRequest(span.toolName, parseParams(span.paramsStr)));
         }
         return calls;
+    }
+
+    /**
+     * Scans TOOL_CALL[tool](params) markers. Unlike a plain regex this walks the argument list
+     * character by character, so quotes and nested parentheses inside parameter values
+     * (e.g. a grep query containing a method signature) do not terminate the call prematurely.
+     */
+    private List<ToolCallSpan> scanToolCalls(String text) {
+        List<ToolCallSpan> spans = new ArrayList<>();
+        if (text == null || text.isEmpty()) {
+            return spans;
+        }
+        Matcher head = TOOL_CALL_HEAD.matcher(text);
+        int searchFrom = 0;
+        while (searchFrom <= text.length() && head.find(searchFrom)) {
+            String toolName = head.group(1).trim();
+            int openParen = head.end() - 1; // position of '('
+            int close = findMatchingParen(text, openParen);
+            if (close < 0) {
+                // Unbalanced parentheses - treat the rest of the line as the argument list (best effort)
+                int eol = text.indexOf('\n', openParen);
+                int end = (eol < 0) ? text.length() : eol;
+                spans.add(new ToolCallSpan(toolName, text.substring(openParen + 1, end), head.start(), end));
+                searchFrom = end;
+            } else {
+                spans.add(new ToolCallSpan(toolName, text.substring(openParen + 1, close), head.start(), close + 1));
+                searchFrom = close + 1;
+            }
+        }
+        return spans;
+    }
+
+    /** Finds the index of the ')' matching the '(' at openIndex, ignoring parentheses inside quoted strings. */
+    private int findMatchingParen(String text, int openIndex) {
+        int depth = 0;
+        boolean inQuotes = false;
+        char quoteChar = 0;
+        for (int i = openIndex; i < text.length(); i++) {
+            char c = text.charAt(i);
+            if (inQuotes) {
+                if (c == '\\') {
+                    i++; // skip escaped character
+                } else if (c == quoteChar) {
+                    inQuotes = false;
+                }
+                continue;
+            }
+            if (c == '"' || c == '\'') {
+                inQuotes = true;
+                quoteChar = c;
+            } else if (c == '(') {
+                depth++;
+            } else if (c == ')') {
+                depth--;
+                if (depth == 0) {
+                    return i;
+                }
+            }
+        }
+        return -1;
     }
 
     /** Parse "param1=value, param2=value" into a map. Handles quoted strings and various value formats. */
@@ -381,16 +581,37 @@ public class ChatService {
             String key = trimmed.substring(0, eqIndex).trim();
             String value = trimmed.substring(eqIndex + 1).trim();
 
-            // Remove surrounding quotes if present
-            if (value.startsWith("\"") && value.endsWith("\"")) {
-                value = value.substring(1, value.length() - 1);
-            } else if (value.startsWith("'") && value.endsWith("'")) {
-                value = value.substring(1, value.length() - 1);
+            // Remove surrounding quotes if present and unescape the content
+            if (value.length() >= 2 && value.startsWith("\"") && value.endsWith("\"")) {
+                value = unescape(value.substring(1, value.length() - 1));
+            } else if (value.length() >= 2 && value.startsWith("'") && value.endsWith("'")) {
+                value = unescape(value.substring(1, value.length() - 1));
             }
 
             result.put(key, value);
         }
         return result;
+    }
+
+    /** Unescape \" \' and \\ sequences inside a quoted parameter value. */
+    private String unescape(String value) {
+        if (value.indexOf('\\') < 0) {
+            return value;
+        }
+        StringBuilder sb = new StringBuilder(value.length());
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            if (c == '\\' && i + 1 < value.length()) {
+                char next = value.charAt(i + 1);
+                if (next == '"' || next == '\'' || next == '\\') {
+                    sb.append(next);
+                    i++;
+                    continue;
+                }
+            }
+            sb.append(c);
+        }
+        return sb.toString();
     }
 
     /** Split a string by delimiter, respecting quoted substrings. */
@@ -403,7 +624,14 @@ public class ChatService {
         for (int i = 0; i < input.length(); i++) {
             char c = input.charAt(i);
 
-            if ((c == '"' || c == '\'') && (current.length() == 0 || input.charAt(i - 1) != '\\')) {
+            if (inQuotes && c == '\\' && i + 1 < input.length()) {
+                // keep escape sequences intact for later unescaping
+                current.append(c).append(input.charAt(i + 1));
+                i++;
+                continue;
+            }
+
+            if (c == '"' || c == '\'') {
                 if (!inQuotes) {
                     inQuotes = true;
                     quoteChar = c;
@@ -424,190 +652,15 @@ public class ChatService {
         return parts;
     }
 
-    /** Execute a single tool call and return the result as a string. */
-    private String executeToolCall(ToolCallRequest request) {
-        if (mcpTool == null) {
-            return "ERROR: MCP tool backend not available. Tools cannot be executed.";
-        }
-
-        try {
-            switch (request.getToolName()) {
-                case "vectorSearch":
-                    return executeVectorSearch(request.getParams());
-                case "grep":
-                    return executeGrep(request.getParams());
-                case "readFile":
-                    return executeReadFile(request.getParams());
-                case "readBySignature":
-                    return executeReadBySignature(request.getParams());
-                case "listProjects":
-                    List<String> projects = mcpTool.listProjects();
-                    return projects.isEmpty() ? "No searchable projects available." : String.join(", ", projects);
-                default:
-                    return "Unknown tool: " + request.getToolName() + ". Available tools: vectorSearch, grep, readFile, readBySignature, listProjects";
-            }
-        } catch (Exception e) {
-            log.error("Tool execution failed for '{}': {}", request.getToolName(), e.getMessage());
-            return "ERROR executing " + request.getToolName() + ": " + e.getMessage();
-        }
-    }
-
-    private String executeVectorSearch(Map<String, String> params) {
-        String question = params.getOrDefault("userQuestion", "");
-        if (question.isBlank()) {
-            return "ERROR: 'userQuestion' parameter is required for vectorSearch.";
-        }
-
-        String project = getParamOrNull(params, "projectName");
-        Double similarity = parseDoubleOrNull(params.get("similarity"));
-        Integer maxResults = parseIntOrNull(params.get("maxResults"));
-        Boolean skeletonsOnly = parseBooleanOrNull(params.get("skeletonsOnly"));
-
-        String result = mcpTool.vectorSearch(question, project, similarity, maxResults, skeletonsOnly);
-        return truncate(result, 8000); // Limit result size to avoid token overflow
-    }
-
-    private String executeGrep(Map<String, String> params) {
-        String query = params.getOrDefault("query", "");
-        if (query.isBlank()) {
-            return "ERROR: 'query' parameter is required for grep.";
-        }
-
-        String project = getParamOrNull(params, "project");
-        String language = getParamOrNull(params, "language");
-        Integer limit = parseIntOrNull(params.get("limit"));
-
-        List<SearchHit> hits = mcpTool.grep(query, project, language, limit);
-        if (hits == null || hits.isEmpty()) {
-            return "No results found for grep query: \"" + query + "\"";
-        }
-
-        StringBuilder sb = new StringBuilder();
-        sb.append("Found ").append(hits.size()).append(" result(s) for grep query: \"").append(query).append("\"\n\n");
-        for (int i = 0; i < hits.size(); i++) {
-            SearchHit hit = hits.get(i);
-            sb.append("Result ").append(i + 1).append(":\n");
-            if (hit.file() != null) sb.append("  File: ").append(hit.file()).append("\n");
-            if (hit.lineFrom() != null) sb.append("  Lines: ").append(hit.lineFrom()).append("-").append(hit.lineTo() != null ? hit.lineTo() : "?").append("\n");
-            if (hit.snippet() != null) sb.append("  Snippet:\n").append(hit.snippet()).append("\n");
-            if (hit.chunkId() != null) sb.append("  Chunk: ").append(hit.chunkId()).append("\n");
-            sb.append("\n");
-        }
-        return truncate(sb.toString(), 8000);
-    }
-
-    private String executeReadFile(Map<String, String> params) {
-        String file = params.getOrDefault("file", "");
-        if (file.isBlank()) {
-            return "ERROR: 'file' parameter is required for readFile.";
-        }
-
-        String project = getParamOrNull(params, "project");
-        Integer offset = parseIntOrNull(params.get("offset"));
-        Integer limit = parseIntOrNull(params.get("limit"));
-
-        FileView view = mcpTool.readFile(file, project, offset, limit);
-        if (view == null) {
-            return "No file view returned for: \"" + file + "\"";
-        }
-
-        StringBuilder sb = new StringBuilder();
-        if (view.error() != null) {
-            return "ERROR reading file: " + view.error();
-        }
-        if (view.candidates() != null && !view.candidates().isEmpty()) {
-            sb.append("Ambiguous file path. Candidates:\n");
-            for (String cand : view.candidates()) {
-                sb.append("  - ").append(cand).append("\n");
-            }
-            return sb.toString();
-        }
-
-        sb.append("File: ").append(view.file() != null ? view.file() : file).append("\n");
-        if (view.totalLines() != null) sb.append("Total lines: ").append(view.totalLines()).append("\n");
-        if (view.returnedLines() != null) sb.append("Returned lines: ").append(view.returnedLines()).append("\n");
-        if (view.truncated()) sb.append("(Content truncated at 100k char cap)\n");
-        sb.append("\n--- FILE CONTENT ---\n");
-        if (view.content() != null) {
-            sb.append(view.content());
-        } else {
-            sb.append("(No content available)");
-        }
-        return truncate(sb.toString(), 10000);
-    }
-
-    private String executeReadBySignature(Map<String, String> params) {
-        String method = params.getOrDefault("method", "");
-        if (method.isBlank()) {
-            return "ERROR: 'method' parameter is required for readBySignature.";
-        }
-
-        String container = getParamOrNull(params, "container");
-        String project = getParamOrNull(params, "project");
-
-        SymbolReadResult result = mcpTool.readBySignature(method, container, project);
-        if (result == null) {
-            return "No result returned for symbol: \"" + method + "\"";
-        }
-
-        StringBuilder sb = new StringBuilder();
-        if (result.error() != null) {
-            return "ERROR reading symbol: " + result.error();
-        }
-
-        sb.append("Symbol: ").append(method).append("\n");
-        if (result.matches() != null && !result.matches().isEmpty()) {
-            sb.append("Found ").append(result.matches().size()).append(" match(es):\n\n");
-            for (int i = 0; i < result.matches().size(); i++) {
-                var match = result.matches().get(i);
-                sb.append("Match ").append(i + 1).append(":\n");
-                if (match.fqn() != null) sb.append("  FQN: ").append(match.fqn()).append("\n");
-                if (match.file() != null) sb.append("  File: ").append(match.file()).append("\n");
-                if (match.lineFrom() != null) sb.append("  Lines: ").append(match.lineFrom()).append("-").append(match.lineTo() != null ? match.lineTo() : "?").append("\n");
-                if (match.javadoc() != null) sb.append("  Javadoc:\n").append(match.javadoc()).append("\n");
-                if (match.body() != null) sb.append("  Body:\n").append(match.body()).append("\n");
-                sb.append("\n");
-            }
-        } else {
-            sb.append("No matches found for symbol: \"").append(method).append("\"");
-        }
-
-        if (result.remainingFqns() != null && !result.remainingFqns().isEmpty()) {
-            sb.append("\nAdditional matches not shown (call again with one of these FQNs):\n");
-            for (String fqn : result.remainingFqns()) {
-                sb.append("  - ").append(fqn).append("\n");
-            }
-        }
-
-        return truncate(sb.toString(), 10000);
+    /** Execute a single tool call from the text fallback protocol via the central registry. */
+    private String executeToolCall(ToolCallRequest request, String defaultProject) {
+        Map<String, Object> arguments = request.getParamsAsMap();
+        applyProjectContext(arguments, defaultProject);
+        return executeRegistryTool(request.getToolName(), arguments);
     }
 
     // ==================== Helper Methods ====================
 
-    /** Get a param value or null if not present/blank. */
-    private String getParamOrNull(Map<String, String> params, String key) {
-        if (params == null || !params.containsKey(key)) return null;
-        String val = params.get(key);
-        return (val != null && !val.isBlank()) ? val : null;
-    }
-
-    /** Parse a string to Double or return null. */
-    private Double parseDoubleOrNull(String value) {
-        if (value == null || value.isBlank()) return null;
-        try { return Double.parseDouble(value); } catch (NumberFormatException e) { return null; }
-    }
-
-    /** Parse a string to Integer or return null. */
-    private Integer parseIntOrNull(String value) {
-        if (value == null || value.isBlank()) return null;
-        try { return Integer.parseInt(value); } catch (NumberFormatException e) { return null; }
-    }
-
-    /** Parse a string to Boolean or return null. */
-    private Boolean parseBooleanOrNull(String value) {
-        if (value == null || value.isBlank()) return null;
-        return Boolean.parseBoolean(value);
-    }
 
     /** Truncate a string to maxChars, appending "..." if truncated. */
     private String truncate(String text, int maxChars) {
@@ -631,15 +684,15 @@ public class ChatService {
     }
 
     /** Send tool call phase to SSE. */
-    private void sendToolPhase(SseEmitter emitter, List<ToolCallRequest> toolCalls) throws java.io.IOException {
+    private void sendToolPhase(SseEmitter emitter, List<PendingCall> toolCalls) throws java.io.IOException {
         Map<String, Object> data = new HashMap<>();
         data.put("phase", "tools");
         data.put("message", "Executing " + toolCalls.size() + " tool(s)...");
         List<Map<String, String>> calls = new ArrayList<>();
-        for (ToolCallRequest tc : toolCalls) {
+        for (PendingCall tc : toolCalls) {
             Map<String, String> callInfo = new HashMap<>();
-            callInfo.put("tool", tc.getToolName());
-            callInfo.put("params", tc.getParams().toString());
+            callInfo.put("tool", tc.name());
+            callInfo.put("params", tc.arguments());
             calls.add(callInfo);
         }
         data.put("toolCalls", calls);
@@ -837,9 +890,14 @@ public class ChatService {
                 .toList();
     }
 
-    /** Get list of available MCP tool names. */
+    /** Get the names of all tools available to the chat (prjxp, external MCP servers and Groovy). */
     public List<String> getAvailableTools() {
-        return List.of("vectorSearch", "grep", "readFile", "readBySignature", "listProjects");
+        if (toolRegistry == null || toolRegistry.getTools().isEmpty()) {
+            return List.of("vectorSearch", "grep", "readFile", "readBySignature", "listProjects");
+        }
+        return toolRegistry.getTools().stream()
+                .map(ToolDefinition::getName)
+                .toList();
     }
 
     // ==================== Inner Classes ====================
@@ -852,6 +910,21 @@ public class ChatService {
         AgenticLoopResult(String finalAnswer, List<ToolCall> toolCalls) {
             this.finalAnswer = finalAnswer;
             this.toolCalls = toolCalls;
+        }
+    }
+
+    /** A TOOL_CALL marker found in an LLM response, including its position in the text. */
+    private static class ToolCallSpan {
+        final String toolName;
+        final String paramsStr;
+        final int start;
+        final int end;
+
+        ToolCallSpan(String toolName, String paramsStr, int start, int end) {
+            this.toolName = toolName;
+            this.paramsStr = paramsStr;
+            this.start = start;
+            this.end = end;
         }
     }
 

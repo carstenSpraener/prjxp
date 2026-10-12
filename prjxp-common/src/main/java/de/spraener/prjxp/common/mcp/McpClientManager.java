@@ -1,6 +1,5 @@
 package de.spraener.prjxp.common.mcp;
 
-import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.McpServerReference;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
@@ -19,7 +18,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
@@ -102,32 +100,6 @@ public class McpClientManager {
         return activeClients;
     }
 
-    public Optional<KIChat> decorate(Optional<KIChat> optionalChat) {
-        // * Ist das optional gefüllt? Nein -> Optional direkt zurückgeben
-        if (optionalChat.isEmpty()) {
-            return optionalChat;
-        }
-
-        // * Haben wir konfigurierte MCP-Server? Nein -> Optional direkt zurückgeben
-        if (activeClients.isEmpty() && toolRegistry.getTools().isEmpty()) {
-            return optionalChat;
-        }
-
-        // Collect defaultProject from the first MCP server ref that has one
-        String project = cfg.getMcpServers().stream()
-                .filter(ref -> ref.getDefaultProject() != null && !ref.getDefaultProject().isBlank())
-                .map(McpServerReference::getDefaultProject)
-                .findFirst()
-                .orElse(null);
-
-        // * Ansonsten: Verpacke den originalen KIChat in den MCP-Decorator
-        log.info("Verpacke KIChat in McPEnablingKIChatDecorator mit " + activeClients.size()
-                + " MCP-Clients und " + toolRegistry.getTools().size() + " registrierten Tools.");
-        KIChat originalChat = optionalChat.get();
-        KIChat mcpEnabledChat = new McPEnablingKIChatDecorator(originalChat, toolRegistry, project);
-
-        return Optional.of(mcpEnabledChat);
-    }
 
     @PreDestroy
     public void shutdown() {
