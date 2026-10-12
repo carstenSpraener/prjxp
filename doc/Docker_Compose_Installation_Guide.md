@@ -35,7 +35,7 @@ Three containers on a shared bridge network (`prjxp-network`):
  ┌───────────────┐        ┌──────────────────────── Docker: prjxp-network ────────────────────────┐
  │ Browser       │ :80    │                                                                        │
  │ (Web UI)      ├───────►│  apache-proxy ──/prjxp/*──► frontend (nginx + Angular SPA)            │
- └───────────────┘        │  httpd:2.4-alpine              │ API paths                             │
+ └───────────────┘        │  httpd:2.4-alpine              │ /prjxp/api/* → /api/*                 │
  ┌───────────────┐        │                                ▼ (tools|chat|globals|system|projects)  │
  │ MCP client    │ :7007  │                                hub (mcp-server, Spring Boot)           │
  │ (opencode…)   ├───────►│  direct host port              │ embeddings                            │
@@ -162,7 +162,7 @@ Work through these in order; each one should pass before you move on:
       → the Angular dashboard renders, project list is empty.
 - [ ] **Hub health endpoint** (via the proxy)
       ```bash
-      curl -s http://localhost/prjxp/system/health
+      curl -s http://localhost/prjxp/api/system/health
       # expect: JSON health payload, HTTP 200
       ```
 - [ ] **MCP endpoint reachable** (direct host port)
@@ -419,7 +419,7 @@ cp .env.docker .env && $EDITOR .env     # set PROJECTS_HOME + EMBEDDING_API_KEY
 docker compose up -d --build
 
 # Verify
-curl -s http://localhost/prjxp/system/health
+curl -s http://localhost/prjxp/api/system/health
 open  http://localhost/prjxp/
 
 # Add a live project
