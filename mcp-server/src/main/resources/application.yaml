@@ -3,6 +3,11 @@ mcp:
     allowed-patterns: "http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*"
 
 spring:
+  servlet:
+    multipart:
+      # Upload-Limit für Hub-Endpunkte (Archive/JSONL); Docker-Image legt 2GB darüber
+      max-file-size: ${PRJXP_MAX_UPLOAD_SIZE:100MB}
+      max-request-size: ${PRJXP_MAX_UPLOAD_SIZE:100MB}
   ai:
     mcp:
       server:
