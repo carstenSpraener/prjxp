@@ -39,7 +39,9 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.data.message.UserMessage;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -53,6 +55,41 @@ public class ChatService {
 
     /** Matches the head of a tool call: TOOL_CALL[tool]( - the argument list is scanned manually. */
     private static final Pattern TOOL_CALL_HEAD = Pattern.compile("TOOL_CALL\\s*\\[\\s*([A-Za-z0-9_]+)\\s*]\\s*\\(");
+
+    /**
+     * Matches an explicit XML-style tool name emitted by some models (e.g. Qwen) that ignore the
+     * TOOL_CALL protocol: {@code <function=readFile>}, {@code <tool_name>readFile</tool_name>}.
+     * Group 1 = name in attribute form, group 2 = name as element content.
+     */
+    private static final Pattern XML_TOOL_NAME = Pattern.compile(
+            "<(?:function|tool_name|name)\\s*(?:=\\s*[\"']?([A-Za-z0-9_]+)[\"']?)?\\s*>([A-Za-z0-9_]*)</(?:function|tool_name|name)>",
+            Pattern.CASE_INSENSITIVE);
+
+    /** Opening tag of an XML parameter element, built from parts to stay out of tooling. */
+    private static final String XML_PARAM_OPEN = "<" + "parameter";
+
+    /** Closing tag of an XML parameter element, built from parts to stay out of tooling. */
+    private static final String XML_PARAM_CLOSE = "</" + "parameter";
+
+    /**
+     * Matches a single XML parameter block in either common form (a name attribute or a
+     * tag-name attribute). Group 1 = name attribute, group 2 = tag-name attribute,
+     * group 3 = element content.
+     */
+    private static final Pattern XML_PARAM = Pattern.compile(
+            XML_PARAM_OPEN + "\\s*(?:name\\s*=\\s*[\"']([^\"']+)[\"'])?\\s*(?:=\\s*([A-Za-z0-9_]+))?\\s*>(.*?)"
+                    + "(?:</" + "parameter\\s*>|(?=<[A-Za-z][A-Za-z0-9_]*)|\\z)",
+            Pattern.CASE_INSENSITIVE | Pattern.DOTALL);
+
+    /** Matches an opening XML name tag in attribute form, e.g. {@code <function=readFile>}. */
+    private static final Pattern XML_TOOL_NAME_OPEN = Pattern.compile(
+            "<(?:function|tool_name|name)\\s*=\\s*[\"']?([A-Za-z0-9_]+)[\"']?\\s*>",
+            Pattern.CASE_INSENSITIVE);
+
+    /** Matches a closing XML name tag, e.g. {@code </function}>. */
+    private static final Pattern XML_TOOL_NAME_CLOSE = Pattern.compile(
+            "</(?:function|tool_name|name)\\s*>",
+            Pattern.CASE_INSENSITIVE);
 
     // System prompt. Tool schemas are NOT described here: with native function calling they are
     // negotiated through the provider API. Only the text fallback appends a tool description block.
@@ -85,8 +122,8 @@ public class ChatService {
      */
     private static final String FALLBACK_TOOL_PROTOCOL = """
 
-            ## Tool Call Format
-            When you need to use a tool, include it in your response using this format:
+            ## Tool Call Format (CRITICAL)
+            When you need to use a tool, include it in your response using this EXACT format:
             TOOL_CALL[toolName](param1="value", param2="value")
 
             STRICT SYNTAX RULES (violating them makes the call fail):
@@ -97,7 +134,13 @@ public class ChatService {
             - Write each TOOL_CALL on its own line. Do NOT wrap it in markdown code fences or backticks.
             - Numbers and booleans are written without quotes (limit=20, skeletonsOnly=false).
 
-            You can include multiple tool calls in one response. After receiving the results, incorporate them into your final answer.
+            FORBIDDEN FORMATS - do NOT use any of these for tool calls:
+            - XML or HTML tags such as <function=...>, <tool_name>...</tool_name>, <parameter ...>
+            - JSON objects, YAML, or any other structured syntax
+            These will NOT be recognized and your tool call will be silently dropped.
+
+            You can include multiple tool calls in one response (one TOOL_CALL per line).
+            After receiving the results, incorporate them into your final answer.
             """;
 
     private final KIChatProvider kiChatProvider;
@@ -483,21 +526,35 @@ public class ChatService {
         if (toolCalls.isEmpty()) {
             return response;
         }
-        // Remove TOOL_CALL[...](...) markers (quote/paren aware) from the response to get clean text
+        // Remove tool call markers (text protocol and recovered XML calls) to get clean text
         StringBuilder sb = new StringBuilder(response);
-        List<ToolCallSpan> spans = scanToolCalls(response);
-        for (int i = spans.size() - 1; i >= 0; i--) {
-            ToolCallSpan span = spans.get(i);
-            sb.delete(span.start, span.end);
+        List<DetectedCall> calls = detectCalls(response);
+        for (int i = calls.size() - 1; i >= 0; i--) {
+            DetectedCall call = calls.get(i);
+            sb.delete(call.start(), Math.min(call.end(), sb.length()));
         }
         return sb.toString().trim();
     }
 
-    /** Parse TOOL_CALL[toolName](params) markers from LLM response. */
+    /** Parse tool calls from an LLM response: the TOOL_CALL text protocol, with an XML fallback. */
     private List<ToolCallRequest> parseToolCalls(String llmResponse) {
-        List<ToolCallRequest> calls = new ArrayList<>();
-        for (ToolCallSpan span : scanToolCalls(llmResponse)) {
-            calls.add(new ToolCallRequest(span.toolName, parseParams(span.paramsStr)));
+        return detectCalls(llmResponse).stream()
+                .map(call -> new ToolCallRequest(call.toolName(), call.params()))
+                .toList();
+    }
+
+    /**
+     * Detects all tool calls in a response. The primary format is the TOOL_CALL[tool](params)
+     * text protocol; when no such markers are present, falls back to recognizing the XML-style
+     * calls that some models (e.g. Qwen) emit instead of the requested format.
+     */
+    private List<DetectedCall> detectCalls(String text) {
+        if (text == null || text.isEmpty()) {
+            return new ArrayList<>();
+        }
+        List<DetectedCall> calls = scanTextProtocolCalls(text);
+        if (calls.isEmpty()) {
+            calls = scanXmlCalls(text);
         }
         return calls;
     }
@@ -507,11 +564,8 @@ public class ChatService {
      * character by character, so quotes and nested parentheses inside parameter values
      * (e.g. a grep query containing a method signature) do not terminate the call prematurely.
      */
-    private List<ToolCallSpan> scanToolCalls(String text) {
-        List<ToolCallSpan> spans = new ArrayList<>();
-        if (text == null || text.isEmpty()) {
-            return spans;
-        }
+    private List<DetectedCall> scanTextProtocolCalls(String text) {
+        List<DetectedCall> calls = new ArrayList<>();
         Matcher head = TOOL_CALL_HEAD.matcher(text);
         int searchFrom = 0;
         while (searchFrom <= text.length() && head.find(searchFrom)) {
@@ -522,14 +576,191 @@ public class ChatService {
                 // Unbalanced parentheses - treat the rest of the line as the argument list (best effort)
                 int eol = text.indexOf('\n', openParen);
                 int end = (eol < 0) ? text.length() : eol;
-                spans.add(new ToolCallSpan(toolName, text.substring(openParen + 1, end), head.start(), end));
+                calls.add(new DetectedCall(toolName, parseParams(text.substring(openParen + 1, end)), head.start(), end));
                 searchFrom = end;
             } else {
-                spans.add(new ToolCallSpan(toolName, text.substring(openParen + 1, close), head.start(), close + 1));
+                calls.add(new DetectedCall(toolName, parseParams(text.substring(openParen + 1, close)), head.start(), close + 1));
                 searchFrom = close + 1;
             }
         }
-        return spans;
+        return calls;
+    }
+
+    /**
+     * Best-effort recovery of XML-style tool calls: explicit name tags with nested parameter
+     * blocks, or bare parameter blocks whose tool is inferred from the keys. Some models ignore
+     * the TOOL_CALL protocol and emit XML markup instead (sometimes with unclosed tags). Returns
+     * an empty list when nothing plausible is found, so that ordinary answers containing
+     * incidental tags are left alone.
+     */
+    private List<DetectedCall> scanXmlCalls(String text) {
+        // Collect all anchors (name tags and parameter blocks), then group them in document order.
+        List<XmlAnchor> anchors = new ArrayList<>();
+
+        Matcher openName = XML_TOOL_NAME_OPEN.matcher(text);
+        while (openName.find()) {
+            String name = openName.group(1);
+            if (name != null && !name.isEmpty()) {
+                anchors.add(new XmlAnchor(openName.start(), openName.end(), name, Map.of()));
+            }
+        }
+
+        Matcher selfName = XML_TOOL_NAME.matcher(text);
+        while (selfName.find()) {
+            String name = firstNonEmpty(selfName.group(1), selfName.group(2));
+            if (name != null) {
+                anchors.add(new XmlAnchor(selfName.start(), selfName.end(), name, Map.of()));
+            }
+        }
+
+        Matcher param = XML_PARAM.matcher(text);
+        while (param.find()) {
+            String key = firstNonEmpty(param.group(1), param.group(2));
+            if (key == null) {
+                continue;
+            }
+            String value = param.group(3) == null ? "" : param.group(3).trim();
+            anchors.add(new XmlAnchor(param.start(), param.end(), null, Map.of(key, value)));
+        }
+
+        if (anchors.isEmpty()) {
+            return List.of();
+        }
+
+        anchors.sort(Comparator.comparingInt(XmlAnchor::start));
+
+        // A name tag starts a new call; parameter blocks attach to the current (or an inferred) one.
+        List<DetectedCall> calls = new ArrayList<>();
+        String name = null;
+        Map<String, String> params = new LinkedHashMap<>();
+        int groupStart = -1;
+        int groupEnd = -1;
+
+        for (int i = 0; i <= anchors.size(); i++) {
+            boolean newGroup = i < anchors.size() && anchors.get(i).toolName() != null;
+            if (newGroup || i == anchors.size()) {
+                flushXmlGroup(calls, text, name, params, groupStart, groupEnd);
+                if (i == anchors.size()) {
+                    break;
+                }
+                XmlAnchor anchor = anchors.get(i);
+                name = anchor.toolName();
+                params = new LinkedHashMap<>();
+                groupStart = anchor.start();
+                groupEnd = anchor.end();
+            } else {
+                XmlAnchor anchor = anchors.get(i);
+                if (groupStart < 0) {
+                    groupStart = anchor.start();
+                }
+                params.putAll(anchor.params());
+                groupEnd = Math.max(groupEnd, anchor.end());
+            }
+        }
+
+        return calls;
+    }
+
+    /** Adds the accumulated XML group as a call when it resolves to a plausible tool. */
+    private void flushXmlGroup(List<DetectedCall> calls, String text, String name,
+                                Map<String, String> params, int groupStart, int groupEnd) {
+        if (groupStart < 0) {
+            return;
+        }
+        String resolvedName = name != null ? canonicalToolName(name) : inferToolName(params);
+        if (resolvedName == null) {
+            if (!params.isEmpty()) {
+                log.warn("Detected XML tool-call parameters but could not infer the tool: {}", params.keySet());
+            }
+            return; // no resolvable tool name - almost certainly prose, not a call
+        }
+        if (name != null && params.isEmpty() && !isRegisteredTool(resolvedName)) {
+            return; // a name tag without parameters that names no registered tool is prose (e.g. <name>John</name>)
+        }
+        if (name != null) {
+            log.info("Recovered XML-style tool call '{}' - the model ignored the TOOL_CALL protocol", resolvedName);
+        } else {
+            log.info("Recovered XML tool call, inferred tool '{}' from parameter keys {}", resolvedName, params.keySet());
+        }
+        int end = name != null ? extendToClosingTag(text, groupEnd) : groupEnd;
+        calls.add(new DetectedCall(resolvedName, params, groupStart, end));
+    }
+
+    /** Maps a tool name to its registered spelling (case-insensitive), or returns it unchanged. */
+    private String canonicalToolName(String name) {
+        if (toolRegistry != null) {
+            for (ToolDefinition tool : toolRegistry.getTools()) {
+                if (tool.getName().equalsIgnoreCase(name)) {
+                    return tool.getName();
+                }
+            }
+        }
+        return name;
+    }
+
+    /** Whether a tool with the given name (case-insensitive) is registered. */
+    private boolean isRegisteredTool(String name) {
+        if (toolRegistry == null || name == null) {
+            return false;
+        }
+        for (ToolDefinition tool : toolRegistry.getTools()) {
+            if (tool.getName().equalsIgnoreCase(name)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * Infers the most likely tool for a set of parameter keys by matching them against the
+     * parameters declared on registered tools. Returns null when no confident match exists, so
+     * that ambiguous recoveries are not executed blindly.
+     */
+    private String inferToolName(Map<String, String> params) {
+        if (toolRegistry == null || toolRegistry.getTools().isEmpty() || params.isEmpty()) {
+            return null;
+        }
+        String bestName = null;
+        int bestScore = 0;
+        boolean ambiguous = false;
+        for (ToolDefinition tool : toolRegistry.getTools()) {
+            int score = 0;
+            for (String key : params.keySet()) {
+                if (tool.getParameters() != null && tool.getParameters().containsKey(key)) {
+                    score++;
+                }
+            }
+            if (score > bestScore) {
+                bestName = tool.getName();
+                bestScore = score;
+                ambiguous = false;
+            } else if (score == bestScore && score > 0) {
+                ambiguous = true; // two tools match equally well - do not guess
+            }
+        }
+        return (bestScore >= 2 || (bestScore == 1 && !ambiguous)) ? bestName : null;
+    }
+
+    /** Returns the first non-empty value, or null. */
+    private static String firstNonEmpty(String... values) {
+        for (String value : values) {
+            if (value != null && !value.isEmpty()) {
+                return value;
+            }
+        }
+        return null;
+    }
+
+    /** Extends the end of a named XML call to include its closing tag, if one follows nearby. */
+    private int extendToClosingTag(String text, int from) {
+        Matcher close = XML_TOOL_NAME_CLOSE.matcher(text);
+        if (!close.find(from) || close.start() - from > 1000) {
+            return from; // no nearby closing tag - keep the current end
+        }
+        if (XML_TOOL_NAME_OPEN.matcher(text.substring(from, close.start())).find()) {
+            return from; // another call starts in between - the closing tag belongs to it
+        }
+        return close.end();
     }
 
     /** Finds the index of the ')' matching the '(' at openIndex, ignoring parentheses inside quoted strings. */
@@ -913,20 +1144,11 @@ public class ChatService {
         }
     }
 
-    /** A TOOL_CALL marker found in an LLM response, including its position in the text. */
-    private static class ToolCallSpan {
-        final String toolName;
-        final String paramsStr;
-        final int start;
-        final int end;
+    /** A tool call detected in an LLM response (either protocol), with its span for later stripping. */
+    private record DetectedCall(String toolName, Map<String, String> params, int start, int end) {}
 
-        ToolCallSpan(String toolName, String paramsStr, int start, int end) {
-            this.toolName = toolName;
-            this.paramsStr = paramsStr;
-            this.start = start;
-            this.end = end;
-        }
-    }
+    /** A positional anchor in an XML-style tool call: a name tag or a single parameter block. */
+    private record XmlAnchor(int start, int end, String toolName, Map<String, String> params) {}
 
     /** Represents a parsed tool call request from the LLM response. */
     public static class ToolCallRequest {

@@ -13,6 +13,7 @@ import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.mcp.hub.HubProjectRegistry;
 import de.spraener.prjxp.mcp.hub.ProjectEntry;
 import de.spraener.prjxp.mcp.rest.dto.ChatRequest;
+import de.spraener.prjxp.mcp.rest.dto.ToolCall;
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
 import dev.langchain4j.data.message.AiMessage;
 import org.junit.jupiter.api.BeforeEach;
@@ -26,6 +27,7 @@ import java.lang.reflect.Method;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -82,13 +84,41 @@ class ChatServiceTest {
 
     /** Registers stand-ins for the real prjxp tools that simply record their arguments. */
     private void registerRecordingTools() {
-        for (String name : List.of("vectorSearch", "grep", "readFile", "readBySignature", "listProjects")) {
-            toolRegistry.register(new ToolDefinition(name, name + " test tool", Map.of(),
+        for (Map.Entry<String, Map<String, String>> entry : registeredToolParams().entrySet()) {
+            String name = entry.getKey();
+            toolRegistry.register(new ToolDefinition(name, name + " test tool", entry.getValue(),
                     params -> {
                         executedTools.add(new ExecutedTool(name, new HashMap<>(params)));
                         return "result of " + name;
                     }));
         }
+    }
+
+    /** Realistic parameter names (matching the real prjxp tools) so tool-name inference is testable. */
+    private Map<String, Map<String, String>> registeredToolParams() {
+        Map<String, Map<String, String>> params = new LinkedHashMap<>();
+        params.put("vectorSearch", Map.of(
+                "userQuestion", "Semantic search question",
+                "projectName", "Project to search in",
+                "similarity", "Similarity threshold",
+                "maxResults", "Maximum results",
+                "skeletonsOnly", "Return skeletons only"));
+        params.put("grep", Map.of(
+                "query", "Exact search string",
+                "project", "Project name",
+                "language", "Language filter",
+                "limit", "Maximum results"));
+        params.put("readFile", Map.of(
+                "file", "File path",
+                "project", "Project name",
+                "offset", "Start line",
+                "limit", "Maximum lines"));
+        params.put("readBySignature", Map.of(
+                "method", "Method name or FQN",
+                "container", "Containing class",
+                "project", "Project name"));
+        params.put("listProjects", Map.of());
+        return params;
     }
 
     /** Set a private ChatService field via reflection. */
@@ -611,6 +641,145 @@ class ChatServiceTest {
         assertThat(params).containsEntry("project", "p1");
     }
 
+    // --- XML-style tool call recovery (models that ignore the TOOL_CALL protocol) ---
+
+    @Test
+    void parseToolCallsRecoversXmlFunctionCall() throws Exception {
+        // Given: a Qwen-style response with an explicit function tag and nested parameter blocks
+        String llmResponse = "Let me read that file.\n" +
+                "<function=readFile>\n" +
+                param("file", "cgv19-core/src/main/java/de/spraener/nxtgen/target/CodeTarget.java") + "\n" +
+                param("limit", "120") + "\n" +
+                param("offset", "254") + "\n" +
+                param("project", "cgV19") + "\n" +
+                "</function";
+
+        // When: parse tool calls via reflection
+        List<?> calls = invokeParseToolCalls(llmResponse);
+
+        // Then: one recovered call with all parameters
+        assertThat(calls).hasSize(1);
+        Object call = calls.get(0);
+        assertThat(invokeGetToolName(call)).isEqualTo("readFile");
+        Map<String, String> params = invokeGetParams(call);
+        assertThat(params).containsEntry("file", "cgv19-core/src/main/java/de/spraener/nxtgen/target/CodeTarget.java");
+        assertThat(params).containsEntry("limit", "120");
+        assertThat(params).containsEntry("offset", "254");
+        assertThat(params).containsEntry("project", "cgV19");
+    }
+
+    @Test
+    void parseToolCallsInfersToolFromBareXmlParameterBlocks() throws Exception {
+        // Given: bare parameter blocks without an explicit tool name (the reported Qwen scenario)
+        String llmResponse = "Here is the file content.\n" +
+                param("limit", "120") + "\n\n" +
+                param("offset", "254") + "\n\n" +
+                param("project", "cgV19");
+
+        // When: parse tool calls via reflection
+        List<?> calls = invokeParseToolCalls(llmResponse);
+
+        // Then: the tool is inferred from the parameter keys (readFile matches limit+offset+project)
+        assertThat(calls).hasSize(1);
+        Object call = calls.get(0);
+        assertThat(invokeGetToolName(call)).isEqualTo("readFile");
+        Map<String, String> params = invokeGetParams(call);
+        assertThat(params).containsEntry("limit", "120");
+        assertThat(params).containsEntry("offset", "254");
+        assertThat(params).containsEntry("project", "cgV19");
+    }
+
+    @Test
+    void parseToolCallsRecoversUnclosedXmlParameterBlocks() throws Exception {
+        // Given: parameter blocks whose closing tags are missing (malformed Qwen output)
+        String llmResponse = "Here is the file content.\n" +
+                "<" + "parameter=limit>120\n\n" +
+                "<" + "parameter=offset>254\n\n" +
+                "<" + "parameter=project>\ncgV19\n";
+
+        // When: parse tool calls via reflection
+        List<?> calls = invokeParseToolCalls(llmResponse);
+
+        // Then: the values are recovered up to the next tag / end of text and trimmed
+        assertThat(calls).hasSize(1);
+        Object call = calls.get(0);
+        assertThat(invokeGetToolName(call)).isEqualTo("readFile");
+        Map<String, String> params = invokeGetParams(call);
+        assertThat(params).containsEntry("limit", "120");
+        assertThat(params).containsEntry("offset", "254");
+        assertThat(params).containsEntry("project", "cgV19");
+    }
+
+    @Test
+    void parseToolCallsDoesNotGuessForAmbiguousXmlParams() throws Exception {
+        // Given: a single parameter that matches several registered tools equally well (project)
+        String llmResponse = "Some answer.\n" + param("project", "cgV19");
+
+        // When: parse tool calls via reflection
+        List<?> calls = invokeParseToolCalls(llmResponse);
+
+        // Then: no call is executed - the inference would be a blind guess
+        assertThat(calls).isEmpty();
+    }
+
+    @Test
+    void parseToolCallsPrefersTextProtocolOverXml() throws Exception {
+        // Given: a response containing both a proper TOOL_CALL marker and XML markup
+        String llmResponse = "TOOL_CALL[grep](query=\"class Foo\", project=\"p1\")\n" +
+                "<function=readFile>\n" + param("file", "X.java") + "\n</function";
+
+        // When: parse tool calls via reflection
+        List<?> calls = invokeParseToolCalls(llmResponse);
+
+        // Then: only the text-protocol call is used
+        assertThat(calls).hasSize(1);
+        assertThat(invokeGetToolName(calls.get(0))).isEqualTo("grep");
+    }
+
+    @Test
+    void parseToolCallsIgnoresIncidentalXmlInPlainAnswer() throws Exception {
+        // Given: a plain answer that mentions HTML tags in prose
+        String llmResponse = "The page renders a <div> element and a <span> tag.";
+
+        // When: parse tool calls via reflection
+        List<?> calls = invokeParseToolCalls(llmResponse);
+
+        // Then: no tool call is detected
+        assertThat(calls).isEmpty();
+    }
+
+    @Test
+    void parseToolCallsIgnoresNameTagWithoutParamsThatIsNotATool() throws Exception {
+        // Given: a name tag in prose that does not refer to a registered tool
+        String llmResponse = "The author is <name>John</name> and wrote the code.";
+
+        // When: parse tool calls via reflection
+        List<?> calls = invokeParseToolCalls(llmResponse);
+
+        // Then: no tool call is detected
+        assertThat(calls).isEmpty();
+    }
+
+    @Test
+    void extractFinalAnswerStripsXmlToolCalls() throws Exception {
+        // Given: a final answer that still contains the recovered XML call markup
+        String response = "Let me check.\n" +
+                "<function=readFile>\n" + param("file", "X.java") + "\n</function\n" +
+                "The file contains the answer.";
+
+        // (the closing tag is deliberately malformed - stripping must still work)
+
+        ToolCall tc = new ToolCall();
+        tc.setToolName("readFile");
+
+        // When: extract the final answer via reflection
+        String result = invokeExtractFinalAnswer(response, List.of(tc));
+
+        // Then: the XML markup is stripped, the prose remains
+        assertThat(result).doesNotContain("<function");
+        assertThat(result).contains("The file contains the answer.");
+    }
+
     @Test
     void executeGrepFallsBackToChatProjectContext() throws Exception {
         ChatService.ToolCallRequest request =
@@ -850,5 +1019,41 @@ class ChatServiceTest {
         } catch (NoSuchMethodException e) {
             throw new RuntimeException("executeToolCall method not found", e);
         }
+    }
+
+    /** Invokes the private parseToolCalls method via reflection. */
+    @SuppressWarnings("unchecked")
+    private List<?> invokeParseToolCalls(String llmResponse) throws Exception {
+        Method method = ChatService.class.getDeclaredMethod("parseToolCalls", String.class);
+        method.setAccessible(true);
+        return (List<?>) method.invoke(chatService, llmResponse);
+    }
+
+    /** Invokes the private extractFinalAnswer method via reflection. */
+    private String invokeExtractFinalAnswer(String response, List<?> toolCalls) throws Exception {
+        Method method = ChatService.class.getDeclaredMethod("extractFinalAnswer", String.class, List.class);
+        method.setAccessible(true);
+        return (String) method.invoke(chatService, response, toolCalls);
+    }
+
+    /** Reads the tool name of a parsed ToolCallRequest via reflection. */
+    private String invokeGetToolName(Object call) throws Exception {
+        Method getToolName = call.getClass().getDeclaredMethod("getToolName");
+        return (String) getToolName.invoke(call);
+    }
+
+    /** Reads the parameters of a parsed ToolCallRequest via reflection. */
+    @SuppressWarnings("unchecked")
+    private Map<String, String> invokeGetParams(Object call) throws Exception {
+        Method getParams = call.getClass().getDeclaredMethod("getParams");
+        return (Map<String, String>) getParams.invoke(call);
+    }
+
+    /**
+     * Builds a closed XML parameter block for test fixtures. The tag is assembled from parts so
+     * that the literal markup does not appear as a contiguous string in this source file.
+     */
+    private static String param(String key, String value) {
+        return "<" + "parameter=" + key + ">" + value + "</" + "parameter>";
     }
 }

@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { ChatMessageComponent } from './chat-message.component';
 import { ChatMessage } from '../../models/chat-message.model';
+import { provideMarkdown } from 'ngx-markdown';
 import { vi } from 'vitest';
 
 describe('ChatMessageComponent', () => {
@@ -33,7 +34,8 @@ describe('ChatMessageComponent', () => {
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [ChatMessageComponent]
+      imports: [ChatMessageComponent],
+      providers: [provideMarkdown()]
     }).compileComponents();
 
     fixture = TestBed.createComponent(ChatMessageComponent);
@@ -172,5 +174,28 @@ describe('ChatMessageComponent', () => {
     fixture.detectChanges();
     const dots = fixture.nativeElement.querySelectorAll('.dot');
     expect(dots.length).toBe(0);
+  });
+
+  it('should render assistant message with markdown component', () => {
+    component.message = assistantMessage;
+    fixture.detectChanges();
+    const markdownEl = fixture.nativeElement.querySelector('markdown');
+    expect(markdownEl).toBeTruthy();
+  });
+
+  it('should render user message with pre tag (plain text)', () => {
+    component.message = userMessage;
+    fixture.detectChanges();
+    const preEl = fixture.nativeElement.querySelector('pre.message-content');
+    expect(preEl).toBeTruthy();
+    const markdownEl = fixture.nativeElement.querySelector('markdown');
+    expect(markdownEl).toBeFalsy();
+  });
+
+  it('should not render markdown component for thinking messages', () => {
+    component.message = thinkingMessage;
+    fixture.detectChanges();
+    const markdownEl = fixture.nativeElement.querySelector('markdown');
+    expect(markdownEl).toBeFalsy();
   });
 });

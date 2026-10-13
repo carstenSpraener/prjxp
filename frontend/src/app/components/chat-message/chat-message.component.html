@@ -20,7 +20,16 @@
     <!-- User / Assistant Message -->
     <ng-container *ngIf="!isThinking">
       <div class="message-role">{{ message.role === 'user' ? 'You' : 'Assistant' }}</div>
-      <pre class="message-content">{{ message.content }}</pre>
+
+      <!-- User: plain text -->
+      <ng-container *ngIf="isUser">
+        <pre class="message-content">{{ message.content }}</pre>
+      </ng-container>
+
+      <!-- Assistant: Markdown rendering with syntax highlighting -->
+      <ng-container *ngIf="isAssistant">
+        <markdown class="message-content" [data]="message.content"></markdown>
+      </ng-container>
 
       <!-- RAG Context Badges -->
       <ng-container *ngIf="isAssistant && hasRagContext">

@@ -61,6 +61,123 @@
   margin: 0;
 }
 
+/* ── Markdown-rendered content (assistant messages) ── */
+.message-content markdown {
+  display: block;
+}
+
+/* Prose: switch to readable sans-serif for assistant output */
+.message-content markdown p,
+.message-content markdown li,
+.message-content markdown blockquote {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.6;
+  color: #e0e0e0;
+}
+
+.message-content markdown p {
+  margin: 0.6em 0;
+}
+
+/* Headings */
+.message-content markdown h1,
+.message-content markdown h2,
+.message-content markdown h3,
+.message-content markdown h4 {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  color: #ff00ff;
+  margin: 0.8em 0 0.4em;
+}
+
+.message-content markdown h1 { font-size: 1.25rem; }
+.message-content markdown h2 { font-size: 1.15rem; }
+.message-content markdown h3 { font-size: 1.05rem; }
+
+/* Lists */
+.message-content markdown ul,
+.message-content markdown ol {
+  padding-left: 1.5em;
+  margin: 0.6em 0;
+}
+
+.message-content markdown li {
+  margin-bottom: 0.3em;
+}
+
+/* Links */
+.message-content markdown a {
+  color: #00ffff;
+  text-decoration: underline;
+}
+
+.message-content markdown a:hover {
+  color: #ff00ff;
+}
+
+/* Inline code */
+.message-content markdown code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  background: rgba(255, 255, 255, 0.08);
+  padding: 2px 6px;
+  border-radius: 4px;
+  color: #ffcc00;
+}
+
+/* Fenced code blocks (Prism handles the syntax highlighting) */
+.message-content markdown pre {
+  background: rgba(0, 0, 0, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  padding: 12px 16px;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+
+.message-content markdown pre code {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 0.8rem;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  color: inherit;
+}
+
+/* Blockquotes */
+.message-content markdown blockquote {
+  border-left: 3px solid rgba(255, 0, 255, 0.4);
+  margin: 0.6em 0;
+  padding: 0.4em 1em;
+  color: #b0b0b0;
+}
+
+/* Tables */
+.message-content markdown table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 0.8em 0;
+}
+
+.message-content markdown th,
+.message-content markdown td {
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  padding: 6px 10px;
+  font-size: 0.8rem;
+}
+
+.message-content markdown th {
+  background: rgba(255, 0, 255, 0.1);
+  color: #ff00ff;
+}
+
+/* Horizontal rule */
+.message-content markdown hr {
+  border: none;
+  border-top: 1px solid rgba(255, 255, 255, 0.15);
+  margin: 1em 0;
+}
+
 /* Thinking / Phase Styles */
 .thinking-content {
   display: flex;

@@ -1,11 +1,12 @@
 import { Component, Input } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { MarkdownComponent } from 'ngx-markdown';
 import { ChatMessage } from '../../models/chat-message.model';
 
 @Component({
   selector: 'chat-message',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, MarkdownComponent],
   templateUrl: './chat-message.component.html',
   styleUrl: './chat-message.component.css'
 })

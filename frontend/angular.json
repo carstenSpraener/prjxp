@@ -28,7 +28,20 @@
               }
             ],
             "styles": [
-              "src/styles.css"
+              "src/styles.css",
+              "node_modules/prismjs/themes/prism-tomorrow.css",
+              "node_modules/katex/dist/katex.min.css"
+            ],
+            "scripts": [
+              "node_modules/prismjs/prism.js",
+              "node_modules/prismjs/components/prism-java.min.js",
+              "node_modules/prismjs/components/prism-javascript.min.js",
+              "node_modules/prismjs/components/prism-typescript.min.js",
+              "node_modules/prismjs/components/prism-csharp.min.js",
+              "node_modules/prismjs/components/prism-vbnet.min.js",
+              "node_modules/prismjs/components/prism-groovy.min.js",
+              "node_modules/prismjs/components/prism-json.min.js",
+              "node_modules/prismjs/components/prism-bash.min.js"
             ]
           },
           "configurations": {
