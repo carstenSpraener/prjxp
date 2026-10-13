@@ -228,5 +228,57 @@ MCP tools. A system prompt tells the LLM about available tools and the active pr
 The `mcp-project` Handlebars helper injects explicit project context into prompt templates.
 
 ---
+
+## 🌉 MCP Proxy — stdio → streamable-http Bridge
+
+Some AI agents (e.g. **Kiro**) require **HTTPS** for streamable-http transport and
+reject self-signed certificates. The **mcp-proxy** module solves this by running as a
+plain Java process that bridges **stdio** (what the agent expects) to **streamable-http**
+(what the mcp-server provides).
+
+### Architecture
+
+```
+Agent (stdio) ──stdin/stdout──> java -jar mcp-proxy-all.jar ──HTTP──> http://localhost:7007/mcp
+```
+
+The proxy is a **transparent JSON-RPC relay**: it reads newline-delimited messages from
+stdin, forwards them as HTTP POST to the upstream MCP server, and relays responses back
+to stdout. All logs go to stderr only.
+
+### Usage
+
+```bash
+java -jar mcp-proxy/build/libs/mcp-proxy-all.jar \
+  --server-url http://localhost:7007/mcp \
+  [--timeout-seconds 300]
+```
+
+### Agent Configuration (Kiro example)
+
+```json
+{
+  "mcpServers": {
+    "prjxp": {
+      "command": "java",
+      "args": [
+        "-jar", "/path/to/mcp-proxy-all.jar",
+        "--server-url", "http://localhost:7007/mcp"
+      ]
+    }
+  }
+}
+```
+
+### Build
+
+```bash
+./gradlew :mcp-proxy:shadowJar   # produces mcp-proxy-all.jar
+```
+
+The proxy is a **plain Java** application — no Spring Boot, no web server.
+Startup time < 200 ms, JAR size ~2–3 MB.
+
+---
 _This README was generated with Gemini – based on code documented by
 Chunk-Norris._
