@@ -37,6 +37,19 @@ subprojects {
         mavenCentral()
     }
 
+    // Security-Pins auch für ausschließlich transitive Abhängigkeiten durchsetzen.
+    // Dies verhindert, dass Shadow-JARs eine vulnerable Version einbetten.
+    def jacksonVersion = libs.versions.jackson.get()
+    def jlineVersion = libs.versions.jline.get()
+    configurations.configureEach {
+        resolutionStrategy.force(
+                "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}",
+                "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}",
+                "org.jline:jline-builtins:${jlineVersion}",
+                "org.jline:jline-reader:${jlineVersion}"
+        )
+    }
+
     // Zentrale Konfiguration für DevTools (wie besprochen)
     configurations {
         developmentOnly

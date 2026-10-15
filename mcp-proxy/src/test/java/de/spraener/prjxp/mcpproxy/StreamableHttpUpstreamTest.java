@@ -25,6 +25,7 @@ class StreamableHttpUpstreamTest {
         mockServer = HttpServer.create(new InetSocketAddress(0), 0);
         int port = mockServer.getAddress().getPort();
         baseUrl = "http://localhost:" + port;
+        mockServer.start();
 
         upstream = new StreamableHttpUpstream(baseUrl, 10);
     }
@@ -38,13 +39,14 @@ class StreamableHttpUpstreamTest {
 
     @Test
     void shouldSendJsonRpcMessageAndRelayResponse() throws Exception {
+        String[] acceptHeader = new String[1];
         mockServer.createContext("/", exchange -> {
-            // Read request body (not strictly needed for this test)
-            exchange.getRequestBody().transferTo(System.out);
+            exchange.getRequestBody().readAllBytes();
+            acceptHeader[0] = exchange.getRequestHeaders().getFirst("Accept");
 
             String response = "{\"jsonrpc\":\"2.0\",\"result\":{\"foo\":1}}";
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(response.getBytes(StandardCharsets.UTF_8));
             }
@@ -56,6 +58,7 @@ class StreamableHttpUpstreamTest {
         List<String> result = future.get();
         assertThat(result).hasSize(1);
         assertThat(result.get(0)).contains("\"foo\":1");
+        assertThat(acceptHeader[0]).contains("application/json").contains("text/event-stream");
     }
 
     @Test
@@ -64,7 +67,7 @@ class StreamableHttpUpstreamTest {
             String response = "{\"jsonrpc\":\"2.0\",\"result\":{}}";
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.getResponseHeaders().add("Mcp-Session-Id", "test-session-123");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(response.getBytes(StandardCharsets.UTF_8));
             }
@@ -83,7 +86,7 @@ class StreamableHttpUpstreamTest {
                 receivedSessionHeader[0] = true;
             }
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write("{\"ok\":true}".getBytes(StandardCharsets.UTF_8));
             }
@@ -113,7 +116,7 @@ class StreamableHttpUpstreamTest {
         mockServer.createContext("/", exchange -> {
             String sseBody = "data: {\"jsonrpc\":\"2.0\",\"result\":1}\n\n";
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(sseBody.getBytes(StandardCharsets.UTF_8));
             }
@@ -135,7 +138,7 @@ class StreamableHttpUpstreamTest {
                     "data:   \"result\": true\n" +
                     "data: }\n\n";
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(sseBody.getBytes(StandardCharsets.UTF_8));
             }
@@ -180,7 +183,7 @@ class StreamableHttpUpstreamTest {
             String response = "{\"jsonrpc\":\"2.0\",\"result\":{}}";
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.getResponseHeaders().add("Mcp-Session-Id", "session-abc");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(response.getBytes(StandardCharsets.UTF_8));
             }
@@ -202,7 +205,7 @@ class StreamableHttpUpstreamTest {
         mockServer.createContext("/", exchange -> {
             String sseBody = ": ping\ndata: {\"result\":\"ok\"}\n\n";
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(sseBody.getBytes(StandardCharsets.UTF_8));
             }

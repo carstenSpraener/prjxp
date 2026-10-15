@@ -27,6 +27,7 @@ class McpProxyIntegrationTest {
         mockServer = HttpServer.create(new InetSocketAddress(0), 0);
         int port = mockServer.getAddress().getPort();
         baseUrl = "http://localhost:" + port;
+        mockServer.start();
     }
 
     @AfterEach
@@ -46,7 +47,7 @@ class McpProxyIntegrationTest {
 
             String response = "{\"jsonrpc\":\"2.0\",\"result\":{\"foo\":42}}";
             exchange.getResponseHeaders().set("Content-Type", "application/json");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(response.getBytes(StandardCharsets.UTF_8));
             }
@@ -69,7 +70,7 @@ class McpProxyIntegrationTest {
         CountDownLatch requestLatch = new CountDownLatch(1);
 
         mockServer.createContext("/", exchange -> {
-            exchange.getRequestBody().transferTo(System.out); // consume body
+            exchange.getRequestBody().readAllBytes();
             exchange.sendResponseHeaders(202, -1);
             requestLatch.countDown();
         });
@@ -87,7 +88,7 @@ class McpProxyIntegrationTest {
         mockServer.createContext("/", exchange -> {
             String sseBody = "data: {\"jsonrpc\":\"2.0\",\"result\":\"sse-ok\"}\n\n";
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(sseBody.getBytes(StandardCharsets.UTF_8));
             }
@@ -112,7 +113,7 @@ class McpProxyIntegrationTest {
                 String response = "{\"jsonrpc\":\"2.0\",\"result\":{}}";
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
                 exchange.getResponseHeaders().add("Mcp-Session-Id", "test-session-id");
-                exchange.sendResponseHeaders(200, -1);
+                exchange.sendResponseHeaders(200, 0);
                 try (OutputStream os = exchange.getResponseBody()) {
                     os.write(response.getBytes(StandardCharsets.UTF_8));
                 }
@@ -124,7 +125,7 @@ class McpProxyIntegrationTest {
                 }
                 String response = "{\"ok\":true}";
                 exchange.getResponseHeaders().set("Content-Type", "application/json");
-                exchange.sendResponseHeaders(200, -1);
+                exchange.sendResponseHeaders(200, 0);
                 try (OutputStream os = exchange.getResponseBody()) {
                     os.write(response.getBytes(StandardCharsets.UTF_8));
                 }
@@ -156,7 +157,7 @@ class McpProxyIntegrationTest {
         mockServer.createContext("/", exchange -> {
             String sseBody = ": ping\ndata: {\"result\":\"ok\"}\n\n";
             exchange.getResponseHeaders().set("Content-Type", "text/event-stream");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write(sseBody.getBytes(StandardCharsets.UTF_8));
             }
@@ -186,7 +187,7 @@ class McpProxyIntegrationTest {
         mockServer.createContext("/init", exchange -> {
             exchange.getResponseHeaders().set("Content-Type", "application/json");
             exchange.getResponseHeaders().add("Mcp-Session-Id", "sess-123");
-            exchange.sendResponseHeaders(200, -1);
+            exchange.sendResponseHeaders(200, 0);
             try (OutputStream os = exchange.getResponseBody()) {
                 os.write("{}".getBytes(StandardCharsets.UTF_8));
             }

@@ -38,8 +38,11 @@ public class SseParser {
         }
 
         String field = trimmed.substring(0, colonIdx).trim();
-        // SSE spec: value is everything after "field: " (space after colon is optional but common)
-        String value = colonIdx + 1 < trimmed.length() ? trimmed.substring(colonIdx + 1).trim() : "";
+        // SSE removes at most one optional space after the colon; payload whitespace is significant.
+        String value = colonIdx + 1 < trimmed.length() ? trimmed.substring(colonIdx + 1) : "";
+        if (value.startsWith(" ")) {
+            value = value.substring(1);
+        }
 
         switch (field) {
             case "data":

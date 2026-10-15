@@ -60,9 +60,11 @@ public class StdioChannel implements AutoCloseable {
         } catch (IOException e) {
             log.warn("stdin read error: {}", e.getMessage());
         } finally {
-            if (!closed.get()) {
+            if (closed.compareAndSet(false, true)) {
                 log.info("stdin EOF received, signaling shutdown.");
                 handler.onEof();
+                eofFuture.complete(null);
+                executor.shutdown();
             }
         }
     }
@@ -70,8 +72,9 @@ public class StdioChannel implements AutoCloseable {
     /** Write a line to stdout (synchronized to prevent interleaving). */
     public void writeLine(String line) {
         synchronized (stdoutStream) {
-            try (BufferedWriter writer = new BufferedWriter(
-                    new OutputStreamWriter(stdoutStream, StandardCharsets.UTF_8))) {
+            try {
+                BufferedWriter writer = new BufferedWriter(
+                        new OutputStreamWriter(stdoutStream, StandardCharsets.UTF_8));
                 writer.write(line);
                 writer.write("\n");
                 writer.flush();

@@ -6,8 +6,8 @@ langchain4j-beta = "1.21.0-beta31"
 langchain4j-http = "1.13.1"   # langchain4j-http-client-jdk
 shadow = "8.3.0"
 springAi = "1.1.8"
-# Security-Pins (SecurityFindings.csv / Grype-Scan der Shadow-JARs)
-jackson = "2.21.7"       # GHSA: PolymorphicTypeValidator-Bypass, DoS (zuvor 2.21.x via langchain4j/Starter-POMs)
+# Security-Pins (Mcp-Findings.csv / Grype-Scan der Shadow-JARs)
+jackson = "2.22.3"       # GHSA-7hhh-6rmp-j9qf, GHSA-p6pp-m3f8-5c89, GHSA-q4xh-88c3-wmh7, GHSA-wv8q-qhhj-9h54, GHSA-cxp5-3px4-pw24
 log4j = "2.25.5"         # GHSA-qv9r: MapMessage JSON-Encoding (zuvor 2.24.x via Spring Boot)
 logback = "1.5.34"       # GHSA: Objekt-Injection/Deserialisierung (zuvor 1.5.32 via Spring Boot)
 slf4j = "2.0.9"          # Logging API (mcp-proxy, standalone Module)
@@ -116,7 +116,7 @@ conversion=["pdfbox", "xdocreport", "flexmark", "jsoup"]
 test-bundle = ["mockito-core", "mockito-junit-jupiter", "spring-boot-starter-test", "assertj-core"]
 # Ein Bundle für LangChain4j spart Platz im Build-Script
 # opennlp-tools: Version-Pin, da langchain4j 2.5.4 transitiv zieht (Security-CVEs)
-# jackson-core/databind: Version-Pin, da langchain4j/Starter 2.21.x ziehen (Security-CVEs)
+# jackson-core/databind: Version-Pin, da langchain4j/Starter ältere Versionen ziehen (Security-CVEs)
 langchain-stack = ["langchain4j-core", "langchain4j-ollama", "langchain4j-google-ai-gemini", "langchain4j-openai", "langchain4j-mcp", "opennlp-tools", "jackson-core", "jackson-databind"]
 # jsoup: Version-Pin, da Tika 1.21.x transitiv zieht (Security-CVEs)
 langchain-docparser = ["langchain4j-tika-docparser", "langchain4j-pdf-docparser", "jsoup"]

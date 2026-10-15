@@ -9,12 +9,8 @@ class McpProxyTest {
 
     @Test
     void shouldParseServerUrlOption() throws Exception {
-        Options options = new Options();
-        options.addOption("server-url", true, "Upstream URL");
-        options.addOption("timeout-seconds", true, "Timeout in seconds");
-
         CommandLineParser parser = new DefaultParser();
-        CommandLine cmd = parser.parse(options, new String[]{"--server-url", "http://localhost:7007/mcp"});
+        CommandLine cmd = parser.parse(McpProxy.options(), new String[]{"--server-url", "http://localhost:7007/mcp"});
 
         assertThat(cmd.hasOption("server-url")).isTrue();
         assertThat(cmd.getOptionValue("server-url")).isEqualTo("http://localhost:7007/mcp");
@@ -23,12 +19,8 @@ class McpProxyTest {
 
     @Test
     void shouldParseTimeoutOption() throws Exception {
-        Options options = new Options();
-        options.addOption("server-url", true, "Upstream URL");
-        options.addOption("timeout-seconds", true, "Timeout in seconds");
-
         CommandLineParser parser = new DefaultParser();
-        CommandLine cmd = parser.parse(options, new String[]{
+        CommandLine cmd = parser.parse(McpProxy.options(), new String[]{
                 "--server-url", "http://localhost:7007/mcp",
                 "--timeout-seconds", "60"
         });
@@ -38,12 +30,15 @@ class McpProxyTest {
 
     @Test
     void shouldFailWithoutServerUrl() throws Exception {
-        Options options = new Options();
-        options.addOption("server-url", true, "Upstream URL");
-
         CommandLineParser parser = new DefaultParser();
-        CommandLine cmd = parser.parse(options, new String[]{});
+        CommandLine cmd = parser.parse(McpProxy.options(), new String[]{});
 
         assertThat(cmd.hasOption("server-url")).isFalse();
+    }
+
+    @Test
+    void shouldNormalizeSingleDashLongOptionForCompatibility() {
+        assertThat(McpProxy.normalizeArguments(new String[]{"-server-url", "http://localhost:7007/mcp"}))
+                .containsExactly("--server-url", "http://localhost:7007/mcp");
     }
 }

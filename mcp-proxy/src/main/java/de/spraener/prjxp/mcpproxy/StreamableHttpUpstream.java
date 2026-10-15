@@ -4,13 +4,11 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 
-import java.io.BufferedReader;
 import java.io.IOException;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -26,6 +24,7 @@ public class StreamableHttpUpstream {
 
     private final HttpClient httpClient;
     private final URI serverUri;
+    private final Duration requestTimeout;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // Session state: captured from the first response's Mcp-Session-Id header
@@ -33,6 +32,7 @@ public class StreamableHttpUpstream {
 
     public StreamableHttpUpstream(String serverUrl, int timeoutSeconds) {
         this.serverUri = URI.create(serverUrl);
+        this.requestTimeout = Duration.ofSeconds(timeoutSeconds);
         this.httpClient = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(Math.min(timeoutSeconds, 30)))
                 .build();
@@ -54,6 +54,7 @@ public class StreamableHttpUpstream {
 
             HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(serverUri)
+                    .timeout(requestTimeout)
                     .header("Content-Type", "application/json")
                     .header("Accept", "application/json, text/event-stream")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonRpcMessage));
@@ -77,6 +78,7 @@ public class StreamableHttpUpstream {
 
                 int statusCode = response.statusCode();
                 String contentType = response.headers().firstValue("Content-Type").orElse("");
+                log.debug("Upstream response: status={}, contentType={}", statusCode, contentType);
 
                 // 202 Accepted — notification, no body to relay
                 if (statusCode == 202) {
