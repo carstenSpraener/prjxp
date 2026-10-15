@@ -65,13 +65,13 @@ class GlobalsControllerTest {
     }
 
     @Test
-    void getChatModels_keepsEnvPlaceholderForApiKey() throws Exception {
+    void getChatModels_masksEnvPlaceholderForApiKey() throws Exception {
         sampleModel.setApiKey("${OPENAI_API_KEY}");
         when(globalsService.getChatModels()).thenReturn(List.of(sampleModel));
 
         mockMvc.perform(get("/api/globals/chat-models"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].apiKey").value("${OPENAI_API_KEY}"));
+                .andExpect(jsonPath("$[0].apiKey").value("********"));
     }
 
     @Test

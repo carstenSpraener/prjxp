@@ -120,7 +120,9 @@ export class ChatModelEditorDialogComponent implements OnInit {
       stereoType: value.stereoType,
       serverType: value.serverType,
       modelName: value.modelName,
-      apiKey: this.isEditing && value.apiKey === MASKED_SECRET ? null : (value.apiKey || null),
+      apiKey: this.isEditing
+        ? (value.apiKey === MASKED_SECRET ? MASKED_SECRET : (value.apiKey || ''))
+        : (value.apiKey || null),
       providerUrl: value.providerUrl,
       timeoutSecs: value.timeoutSecs,
       temperature: value.temperature,

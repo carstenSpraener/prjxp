@@ -78,7 +78,9 @@ public class GlobalsService {
         if (request.getStereoType() != null) updated.setStereoType(request.getStereoType());
         if (request.getServerType() != null) updated.setServerType(request.getServerType());
         if (request.getModelName() != null) updated.setModelName(request.getModelName());
-        if (request.getApiKey() != null) updated.setApiKey(request.getApiKey());
+        if (request.getApiKey() != null) {
+            updated.setApiKey(resolveUpdatedApiKey(request.getApiKey(), updated.getApiKey()));
+        }
         if (request.getProviderUrl() != null) updated.setProviderUrl(request.getProviderUrl());
         if (request.getTimeoutSecs() != null) updated.setTimeoutSecs(request.getTimeoutSecs());
         if (request.getTemperature() != null) updated.setTemperature(request.getTemperature());
@@ -126,15 +128,24 @@ public class GlobalsService {
     public PrjXPEmbeddingModelReference updateEmbeddingModel(PrjXPEmbeddingModelRequest request) {
         // Copy fields from the DTO to a new Reference object, using defaults for nulls
         PrjXPEmbeddingModelReference ref = new PrjXPEmbeddingModelReference();
+        String existingApiKey = prjXPConfig.getEmbeddingModel() != null
+                ? prjXPConfig.getEmbeddingModel().getApiKey() : null;
         ref.setServerType(request.getServerType() != null ? request.getServerType() : "ollama");
         ref.setProviderUrl(request.getProviderUrl());
         ref.setModelName(request.getModelName());
-        ref.setApiKey(request.getApiKey());
+        ref.setApiKey(resolveUpdatedApiKey(request.getApiKey(), existingApiKey));
         ref.setTimeoutSecs(request.getTimeoutSecs() != null ? request.getTimeoutSecs() : 60);
 
         prjXPConfig.setEmbeddingModel(ref);
         persistToYaml();
         return getEmbeddingModel();
+    }
+
+    private String resolveUpdatedApiKey(String requestedApiKey, String existingApiKey) {
+        if (requestedApiKey == null || "********".equals(requestedApiKey)) {
+            return existingApiKey;
+        }
+        return requestedApiKey;
     }
 
     /** DTO for partial update of the embedding model. */

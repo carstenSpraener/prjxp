@@ -82,7 +82,9 @@ export class EmbeddingModelEditorDialogComponent implements OnInit {
       serverType: value.serverType,
       providerUrl: value.providerUrl,
       modelName: value.modelName,
-      apiKey: this.model && value.apiKey === MASKED_SECRET ? null : (value.apiKey || null),
+      apiKey: this.model
+        ? (value.apiKey === MASKED_SECRET ? MASKED_SECRET : (value.apiKey || ''))
+        : (value.apiKey || null),
       timeoutSecs: value.timeoutSecs
     };
 

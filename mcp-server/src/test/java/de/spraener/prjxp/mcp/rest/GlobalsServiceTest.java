@@ -122,6 +122,21 @@ class GlobalsServiceTest {
     }
 
     @Test
+    void updateChatModel_preservesExistingApiKeyWhenMasked() {
+        PrjXPChatModelReference existing = new PrjXPChatModelReference();
+        existing.setStereoType("default");
+        existing.setApiKey("${OPENAI_API_KEY}");
+        prjXPConfig.getChatModels().add(existing);
+
+        GlobalsService.PrjXPChatModelRequest request = new GlobalsService.PrjXPChatModelRequest();
+        request.setApiKey("********");
+
+        PrjXPChatModelReference result = globalsService.updateChatModel("default", request);
+
+        assertThat(result.getApiKey()).isEqualTo("${OPENAI_API_KEY}");
+    }
+
+    @Test
     void updateChatModel_throwsWhenNotFound() {
         GlobalsService.PrjXPChatModelRequest request = new GlobalsService.PrjXPChatModelRequest();
         request.setModelName("new-model");
@@ -253,6 +268,38 @@ class GlobalsServiceTest {
         PrjXPEmbeddingModelReference result = globalsService.updateEmbeddingModel(request);
 
         assertThat(result.getModelName()).isEqualTo("nomic-embed-text");
+    }
+
+    @Test
+    void updateEmbeddingModel_preservesExistingApiKeyWhenMasked() {
+        PrjXPEmbeddingModelReference existing = new PrjXPEmbeddingModelReference();
+        existing.setServerType("openai");
+        existing.setApiKey("${OPENAI_API_KEY}");
+        existing.setModelName("text-embedding-3-small");
+        prjXPConfig.setEmbeddingModel(existing);
+
+        GlobalsService.PrjXPEmbeddingModelRequest request = new GlobalsService.PrjXPEmbeddingModelRequest();
+        request.setModelName("text-embedding-3-large");
+        request.setApiKey("********");
+
+        PrjXPEmbeddingModelReference result = globalsService.updateEmbeddingModel(request);
+
+        assertThat(result.getApiKey()).isEqualTo("${OPENAI_API_KEY}");
+        assertThat(prjXPConfig.getEmbeddingModel().getApiKey()).isEqualTo("${OPENAI_API_KEY}");
+    }
+
+    @Test
+    void updateEmbeddingModel_clearsExistingApiKeyWhenEmpty() {
+        PrjXPEmbeddingModelReference existing = new PrjXPEmbeddingModelReference();
+        existing.setApiKey("sk-existing");
+        prjXPConfig.setEmbeddingModel(existing);
+
+        GlobalsService.PrjXPEmbeddingModelRequest request = new GlobalsService.PrjXPEmbeddingModelRequest();
+        request.setApiKey("");
+
+        PrjXPEmbeddingModelReference result = globalsService.updateEmbeddingModel(request);
+
+        assertThat(result.getApiKey()).isEmpty();
     }
 
     @Test

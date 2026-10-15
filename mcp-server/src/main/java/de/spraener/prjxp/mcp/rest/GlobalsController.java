@@ -115,9 +115,6 @@ public class GlobalsController {
         if (value == null || value.isBlank()) {
             return value;
         }
-        if (value.startsWith("${") && value.endsWith("}")) {
-            return value;
-        }
         return MASKED_SECRET;
     }
 

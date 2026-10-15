@@ -245,6 +245,6 @@ describe('EmbeddingModelEditorDialogComponent', () => {
     component.onSave();
 
     const savedModel = saveSpy.mock.calls[0][0];
-    expect(savedModel.apiKey).toBeNull();
+    expect(savedModel.apiKey).toBe('********');
   });
 });
