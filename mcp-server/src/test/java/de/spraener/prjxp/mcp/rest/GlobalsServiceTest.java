@@ -137,6 +137,56 @@ class GlobalsServiceTest {
     }
 
     @Test
+    void constructor_restoresRawPlaceholdersThatSpringAlreadyResolved() throws Exception {
+        Path yamlPath = tempDir.resolve("application.yaml");
+        Files.writeString(yamlPath, """
+                prjxp:
+                  chat-models:
+                    - stereo-type: default
+                      api-key: ${OPENAI_API_KEY}
+                      args:
+                        api-key: ${AZURE_API_KEY}
+                  embedding-model:
+                    api-key: ${EMBEDDING_API_KEY}
+                """);
+        PrjXPChatModelReference chatModel = new PrjXPChatModelReference();
+        chatModel.setStereoType("default");
+        chatModel.setApiKey("resolved-openai-key");
+        chatModel.setArgs(Map.of("api-key", "resolved-azure-key"));
+        prjXPConfig.setChatModels(new ArrayList<>(List.of(chatModel)));
+        PrjXPEmbeddingModelReference embeddingModel = new PrjXPEmbeddingModelReference();
+        embeddingModel.setApiKey("resolved-embedding-key");
+        prjXPConfig.setEmbeddingModel(embeddingModel);
+
+        String originalUserDir = System.getProperty("user.dir");
+        System.setProperty("user.dir", tempDir.toString());
+        try {
+            globalsService = new GlobalsService(prjXPConfig, kiChatModelProvider);
+        } finally {
+            System.setProperty("user.dir", originalUserDir);
+        }
+
+        assertThat(prjXPConfig.getChatModels().get(0).getApiKey()).isEqualTo("${OPENAI_API_KEY}");
+        assertThat(prjXPConfig.getChatModels().get(0).getArgs()).containsEntry("api-key", "${AZURE_API_KEY}");
+        assertThat(prjXPConfig.getEmbeddingModel().getApiKey()).isEqualTo("${EMBEDDING_API_KEY}");
+    }
+
+    @Test
+    void updateChatModel_preservesMaskedArgsAndPersistsRawPlaceholders() throws Exception {
+        PrjXPChatModelReference existing = new PrjXPChatModelReference();
+        existing.setStereoType("default");
+        existing.setArgs(Map.of("api-key", "${AZURE_API_KEY}"));
+        prjXPConfig.getChatModels().add(existing);
+        GlobalsService.PrjXPChatModelRequest request = new GlobalsService.PrjXPChatModelRequest();
+        request.setArgs(Map.of("api-key", "********"));
+
+        globalsService.updateChatModel("default", request);
+
+        assertThat(existing.getArgs()).containsEntry("api-key", "${AZURE_API_KEY}");
+        assertThat(Files.readString(tempDir.resolve("application.yaml"))).contains("${AZURE_API_KEY}");
+    }
+
+    @Test
     void updateChatModel_throwsWhenNotFound() {
         GlobalsService.PrjXPChatModelRequest request = new GlobalsService.PrjXPChatModelRequest();
         request.setModelName("new-model");

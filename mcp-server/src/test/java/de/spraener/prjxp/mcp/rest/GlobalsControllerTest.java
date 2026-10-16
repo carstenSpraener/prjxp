@@ -65,13 +65,30 @@ class GlobalsControllerTest {
     }
 
     @Test
-    void getChatModels_masksEnvPlaceholderForApiKey() throws Exception {
+    void getChatModels_returnsEnvPlaceholderForApiKey() throws Exception {
         sampleModel.setApiKey("${OPENAI_API_KEY}");
         when(globalsService.getChatModels()).thenReturn(List.of(sampleModel));
 
         mockMvc.perform(get("/api/globals/chat-models"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].apiKey").value("********"));
+                .andExpect(jsonPath("$[0].apiKey").value("${OPENAI_API_KEY}"));
+    }
+
+    @Test
+    void getChatModels_masksConcreteArgsButReturnsEnvPlaceholders() throws Exception {
+        sampleModel.setArgs(Map.of(
+                "api-key", "azure-secret-value",
+                "Authorization", "Bearer actual-token",
+                "header-token", "${HEADER_TOKEN}",
+                "api-version", "2024-10-21"));
+        when(globalsService.getChatModels()).thenReturn(List.of(sampleModel));
+
+        mockMvc.perform(get("/api/globals/chat-models"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].args.api-key").value("********"))
+                .andExpect(jsonPath("$[0].args.Authorization").value("********"))
+                .andExpect(jsonPath("$[0].args.header-token").value("${HEADER_TOKEN}"))
+                .andExpect(jsonPath("$[0].args.api-version").value("********"));
     }
 
     @Test
@@ -173,7 +190,7 @@ class GlobalsControllerTest {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(body))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.args.header").value("value"));
+                .andExpect(jsonPath("$.args.header").value("********"));
     }
 
     @Test

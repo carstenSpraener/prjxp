@@ -44,6 +44,7 @@ public class GlobalsService {
                 .filter(Files::exists)
                 .findFirst()
                 .orElse(candidates.get(0)); // Use first as fallback (will be created if needed)
+        restoreRawModelValuesFromYaml();
     }
 
     /** Get all configured chat models. */
@@ -85,7 +86,9 @@ public class GlobalsService {
         if (request.getTimeoutSecs() != null) updated.setTimeoutSecs(request.getTimeoutSecs());
         if (request.getTemperature() != null) updated.setTemperature(request.getTemperature());
         if (request.getPrompt() != null) updated.setPrompt(request.getPrompt().isBlank() ? null : request.getPrompt());
-        if (request.getArgs() != null && !request.getArgs().isEmpty()) updated.setArgs(new HashMap<>(request.getArgs()));
+        if (request.getArgs() != null && !request.getArgs().isEmpty()) {
+            updated.setArgs(resolveUpdatedArgs(request.getArgs(), updated.getArgs()));
+        }
 
         persistToYaml();
         kiChatModelProvider.clearCache();
@@ -146,6 +149,65 @@ public class GlobalsService {
             return existingApiKey;
         }
         return requestedApiKey;
+    }
+
+    private Map<String, String> resolveUpdatedArgs(Map<String, String> requestedArgs, Map<String, String> existingArgs) {
+        Map<String, String> resolved = new HashMap<>();
+        requestedArgs.forEach((key, value) -> resolved.put(key,
+                "********".equals(value) && existingArgs != null ? existingArgs.get(key) : value));
+        return resolved;
+    }
+
+    @SuppressWarnings("unchecked")
+    private void restoreRawModelValuesFromYaml() {
+        if (!Files.exists(applicationYamlPath)) {
+            return;
+        }
+        try {
+            Object loaded = new Yaml().load(Files.readString(applicationYamlPath));
+            if (!(loaded instanceof Map<?, ?> root) || !(root.get("prjxp") instanceof Map<?, ?> prjxp)) {
+                return;
+            }
+            Object rawChatModels = prjxp.get("chat-models");
+            if (rawChatModels instanceof List<?> models) {
+                for (int index = 0; index < Math.min(models.size(), prjXPConfig.getChatModels().size()); index++) {
+                    if (models.get(index) instanceof Map<?, ?> rawModel) {
+                        restoreRawChatModelValues(prjXPConfig.getChatModels().get(index), rawModel);
+                    }
+                }
+            }
+            if (prjxp.get("embedding-model") instanceof Map<?, ?> rawEmbedding
+                    && prjXPConfig.getEmbeddingModel() != null) {
+                restoreRawEmbeddingModelValues(prjXPConfig.getEmbeddingModel(), rawEmbedding);
+            }
+        } catch (Exception e) {
+            log.warn("Failed to restore raw model values from {}: {}", applicationYamlPath, e.getMessage());
+        }
+    }
+
+    private void restoreRawChatModelValues(PrjXPChatModelReference target, Map<?, ?> raw) {
+        target.setStereoType(rawString(raw, "stereo-type", target.getStereoType()));
+        target.setServerType(rawString(raw, "server-type", target.getServerType()));
+        target.setModelName(rawString(raw, "model-name", target.getModelName()));
+        target.setApiKey(rawString(raw, "api-key", target.getApiKey()));
+        target.setProviderUrl(rawString(raw, "provider-url", target.getProviderUrl()));
+        target.setPrompt(rawString(raw, "prompt", target.getPrompt()));
+        if (raw.get("args") instanceof Map<?, ?> rawArgs) {
+            Map<String, String> args = new HashMap<>();
+            rawArgs.forEach((key, value) -> args.put(String.valueOf(key), value == null ? null : String.valueOf(value)));
+            target.setArgs(args);
+        }
+    }
+
+    private void restoreRawEmbeddingModelValues(PrjXPEmbeddingModelReference target, Map<?, ?> raw) {
+        target.setServerType(rawString(raw, "server-type", target.getServerType()));
+        target.setProviderUrl(rawString(raw, "provider-url", target.getProviderUrl()));
+        target.setModelName(rawString(raw, "model-name", target.getModelName()));
+        target.setApiKey(rawString(raw, "api-key", target.getApiKey()));
+    }
+
+    private String rawString(Map<?, ?> raw, String key, String fallback) {
+        return raw.containsKey(key) ? Objects.toString(raw.get(key), null) : fallback;
     }
 
     /** DTO for partial update of the embedding model. */

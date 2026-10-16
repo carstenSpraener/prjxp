@@ -8,6 +8,8 @@ import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 import java.util.HashMap;
+import java.util.Map;
+import java.util.regex.Pattern;
 
 @RestController
 @RequestMapping("/api/globals")
@@ -15,6 +17,7 @@ import java.util.HashMap;
 public class GlobalsController {
 
     private static final String MASKED_SECRET = "********";
+    private static final Pattern ENV_PLACEHOLDER = Pattern.compile(".*\\$\\{[A-Za-z0-9_.-]+(?::[^}]*)?}.*");
 
     private final GlobalsService globalsService;
 
@@ -96,7 +99,7 @@ public class GlobalsController {
         masked.setTemperature(source.getTemperature());
         masked.setPrompt(source.getPrompt());
         if (source.getArgs() != null) {
-            masked.setArgs(new HashMap<>(source.getArgs()));
+            masked.setArgs(maskArgumentValues(source.getArgs()));
         }
         return masked;
     }
@@ -115,7 +118,16 @@ public class GlobalsController {
         if (value == null || value.isBlank()) {
             return value;
         }
+        if (ENV_PLACEHOLDER.matcher(value).matches()) {
+            return value;
+        }
         return MASKED_SECRET;
+    }
+
+    private Map<String, String> maskArgumentValues(Map<String, String> args) {
+        Map<String, String> masked = new HashMap<>();
+        args.forEach((key, value) -> masked.put(key, maskSecretValue(value)));
+        return masked;
     }
 
     private void copyToServiceRequest(PrjXPChatModelRequest req, GlobalsService.PrjXPChatModelRequest svc) {
