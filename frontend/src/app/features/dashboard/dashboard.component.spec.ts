@@ -70,6 +70,9 @@ describe('DashboardComponent', () => {
 
   it('queryTimesData should have sample data after ngOnInit', () => {
     component.ngOnInit();
+    // The AsyncPipe subscribes during change detection, which triggers the tap()
+    // that populates the chart data signals.
+    fixture.detectChanges();
 
     expect(component.queryTimesData().length).toBe(2);
     expect(component.queryTimesData()[0].label).toBe('Avg');
@@ -78,6 +81,9 @@ describe('DashboardComponent', () => {
 
   it('cacheData should have sample data after ngOnInit', () => {
     component.ngOnInit();
+    // The AsyncPipe subscribes during change detection, which triggers the tap()
+    // that populates the chart data signals.
+    fixture.detectChanges();
 
     expect(component.cacheData().length).toBe(2);
     expect(component.cacheData()[0].label).toBe('Hits');

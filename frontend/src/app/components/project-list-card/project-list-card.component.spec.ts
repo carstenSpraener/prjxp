@@ -20,7 +20,7 @@ describe('ProjectListCardComponent', () => {
 
     fixture = TestBed.createComponent(ProjectListCardComponent);
     component = fixture.componentInstance;
-    component.candidate = mockCandidate;
+    fixture.componentRef.setInput('candidate', mockCandidate);
     fixture.detectChanges();
   });
 
@@ -44,12 +44,12 @@ describe('ProjectListCardComponent', () => {
   });
 
   it('should not show config badge when hasConfigFile is false', async () => {
-    component.candidate = {
+    fixture.componentRef.setInput('candidate', {
       name: 'test-project',
       directory: '/path/to/test-project',
       hasConfigFile: false,
       languages: ['Java', 'Kotlin']
-    };
+    });
     fixture.detectChanges();
     await fixture.whenStable();
     fixture.detectChanges();

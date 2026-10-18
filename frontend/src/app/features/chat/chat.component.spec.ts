@@ -8,6 +8,7 @@ import { ChatMessageComponent } from '../../components/chat-message/chat-message
 import { ChatInputComponent } from '../../components/chat-input/chat-input.component';
 import { ChatSettingsDialogComponent } from '../../components/chat-settings-dialog/chat-settings-dialog.component';
 import { of, throwError, Observable } from 'rxjs';
+import { provideMarkdown } from 'ngx-markdown';
 import { vi } from 'vitest';
 
 describe('ChatComponent', () => {
@@ -61,6 +62,7 @@ describe('ChatComponent', () => {
     await TestBed.configureTestingModule({
       imports: [ChatComponent],
       providers: [
+        provideMarkdown(),
         { provide: ChatService, useValue: mockChatService },
         { provide: GlobalsService, useValue: mockGlobalsService },
         { provide: ChatSettingsPersistenceService, useValue: mockPersistenceService },

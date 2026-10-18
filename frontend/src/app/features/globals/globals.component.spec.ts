@@ -102,7 +102,10 @@ describe('GlobalsComponent', () => {
 
   it('should render add model button', () => {
     fixture.detectChanges();
-    const addButton = fixture.nativeElement.querySelector('.btn-add');
+    // The Embedding Model section comes first, so the Chat Models
+    // "Add Model" button is the second .btn-add element.
+    const addButtons = fixture.nativeElement.querySelectorAll('.btn-add');
+    const addButton = addButtons[1];
     expect(addButton).toBeTruthy();
     expect(addButton.textContent).toContain('Add Model');
   });
@@ -183,15 +186,15 @@ describe('GlobalsComponent', () => {
   it('should render embedding model section header', () => {
     fixture.detectChanges();
     const headers = fixture.nativeElement.querySelectorAll('.section-header h2');
-    expect(headers.length).toBe(2); // Chat Models + Embedding Model
-    expect(headers[1].textContent).toContain('Embedding Model');
+    expect(headers.length).toBe(2); // Embedding Model + Chat Models
+    expect(headers[0].textContent).toContain('Embedding Model');
   });
 
   it('should render edit configuration button for embedding model', () => {
     fixture.detectChanges();
     const buttons = fixture.nativeElement.querySelectorAll('.btn-add');
-    expect(buttons.length).toBe(2); // Add Model + Edit Configuration
-    expect(buttons[1].textContent).toContain('Edit Configuration');
+    expect(buttons.length).toBe(2); // Edit Configuration + Add Model
+    expect(buttons[0].textContent).toContain('Edit Configuration');
   });
 
   it('should show embedding editor dialog when editing', () => {
