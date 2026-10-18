@@ -73,11 +73,67 @@ public class JavaCodeChunker implements PxChunker {
             for( var problem : ppXC.getProblems() ) {
                 log.warning("Parse-Problem while chunking file " + f.getAbsolutePath() + ": " + problem.getMessage());
             }
-            return Stream.of();
+            try {
+                return rawFallback(f, Files.readAllLines(f.toPath(), StandardCharsets.UTF_8));
+            } catch (Exception readError) {
+                log.warning("Raw fallback failed for " + f.getAbsolutePath() + ": " + readError.getMessage());
+                return Stream.of();
+            }
         } catch (Exception e) {
             log.warning("Exception while chunking file " + f.getAbsolutePath() + ": " + e.getMessage());
-            return Stream.of();
+            try {
+                return rawFallback(f, Files.readAllLines(f.toPath(), StandardCharsets.UTF_8));
+            } catch (Exception readError) {
+                log.warning("Raw fallback failed for " + f.getAbsolutePath() + ": " + readError.getMessage());
+                return Stream.of();
+            }
         }
+    }
+
+    /**
+     * Ganze Datei als Zeilen-Units ohne Semantik — Fallback, wenn der Parse fehlschlägt.
+     * Die Parts sind zeilengleich geschnitten (~10k Zeichen, Brüche nur auf Zeilengrenzen),
+     * damit die '\n'-getrennte Concatenation im Provider-Fallback (frames.isEmpty()) den
+     * Dateitext exakt rekonstruiert — auch bei mehreren Parts.
+     */
+    private Stream<PxChunk> rawFallback(File f, List<String> codeLines) {
+        String content = String.join("\n", codeLines);
+        if (content.isBlank()) { return Stream.of(); }
+        List<PxChunk> parts = new ArrayList<>();
+        StringBuilder part = new StringBuilder();
+        int partStartLine = 1;
+        int lineNo = 0;
+        for (String line : codeLines) {
+            if (part.length() > 0 && part.length() + 1 + line.length() > 10_000) {
+                parts.add(createRawPart(f, part.toString(), partStartLine, lineNo));
+                part.setLength(0);
+                partStartLine = lineNo + 1;
+            }
+            if (part.length() > 0) {
+                part.append('\n');
+            }
+            part.append(line);
+            lineNo++;
+        }
+        if (part.length() > 0) {
+            parts.add(createRawPart(f, part.toString(), partStartLine, lineNo));
+        }
+        for (int i = 0; i < parts.size(); i++) {
+            parts.get(i).setPart(i);
+            parts.get(i).setTotal(parts.size());
+        }
+        return parts.stream();
+    }
+
+    private PxChunk createRawPart(File f, String content, int fromLine, int toLineInclusive) {
+        return PxChunk.create(
+                c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
+                c -> c.setId(f.getAbsolutePath()),
+                c -> c.setFile(f.getAbsolutePath()),
+                c -> c.setContent(content),
+                c -> c.setFromLine("" + fromLine),
+                c -> c.setToLine("" + (toLineInclusive + 1)),
+                c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.RAW_FILE.getName()));
     }
 
     @Override
