@@ -274,32 +274,70 @@ public class JavaCodeChunkerTests {
                 );
     }
 
-    //Ignored @Test()
-    public void testInnerClass() throws Exception {
-        File code = toTmpFile("TestClass",
+    @Test
+    public void testNestedTypes() throws Exception {
+        File code = toTmpFile("OuterClass",
                 """
                         package de.spraener.test;
-                        
-                        import de.spraener.util.*;
-                        
-                        public class TestClass {
-                            public static class InnerClass {
-                               private int anAttr;
-                        
-                               private String aMethod(AType param) {
-                               }
+
+                        public class OuterClass {
+
+                            private String outerField;
+
+                            public void outerMethod() {
+                                System.out.println(outerField);
                             }
-                        
-                            public void testMethod(String s) { 
-                                System.out.println("Hello, World!"); 
-                            } 
+
+                            class InnerClass {
+                                private int innerValue;
+
+                                public void doInnerWork() {
+                                    System.out.println(innerValue);
+                                }
+                            }
+
+                            static enum NestedEnum {
+                                ALPHA, BETA;
+
+                                private NestedEnum() {}
+                            }
                         }
                         """
         );
         List<PxChunk> chunkList = uut.chunk(code).toList();
+
+        // Frame units for all three types: outer, inner, nested enum
         assertThat(chunkList)
-                .isNotEmpty()
-                .anyMatch(c -> c.getId().equals("de.spraener.test.TestClass.InnerClass"))
-        ;
+                .anyMatch(c -> c.getId().equals("de.spraener.test.OuterClass") &&
+                        "classFrame".equals(c.getMetadata().get("java_code_section")) &&
+                        c.getContent().contains("class OuterClass {") &&
+                        c.getContent().contains("String outerField") &&
+                        c.getContent().contains("void outerMethod()"))
+                .anyMatch(c -> c.getId().equals("de.spraener.test.OuterClass.InnerClass") &&
+                        "classFrame".equals(c.getMetadata().get("java_code_section")) &&
+                        c.getContent().contains("class InnerClass {") &&
+                        c.getContent().contains("int innerValue") &&
+                        c.getContent().contains("void doInnerWork()"))
+                .anyMatch(c -> c.getId().equals("de.spraener.test.OuterClass.NestedEnum") &&
+                        "classFrame".equals(c.getMetadata().get("java_code_section")) &&
+                        c.getContent().contains("enum NestedEnum {"));
+
+        // Method unit for inner class method
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.OuterClass.InnerClass.void doInnerWork()") &&
+                        "method".equals(c.getMetadata().get("java_code_section")) &&
+                        c.getContent().contains("System.out.println(innerValue)"));
+
+        // Enum constants unit for nested enum
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.OuterClass.NestedEnum.constants") &&
+                        "enumConstants".equals(c.getMetadata().get("java_code_section")) &&
+                        c.getContent().contains("ALPHA") &&
+                        c.getContent().contains("BETA"));
+
+        // Outer class method still works (regression)
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.OuterClass.void outerMethod()") &&
+                        "method".equals(c.getMetadata().get("java_code_section")));
     }
 }

@@ -4,6 +4,7 @@ import com.github.javaparser.ParseProblemException;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
 import com.github.javaparser.ast.body.EnumConstantDeclaration;
 import com.github.javaparser.ast.body.EnumDeclaration;
@@ -29,7 +30,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -130,11 +133,24 @@ public class JavaCodeChunker implements PxChunker {
         }
     }
 
+    /** Alle Typen der Datei: Top-Level + rekursiv verschachtelt (BFS, Reihenfolge = Quelltext). */
+    private List<TypeDeclaration<?>> collectTypes(CompilationUnit cu) {
+        List<TypeDeclaration<?>> result = new ArrayList<>(cu.getTypes());
+        Deque<TypeDeclaration<?>> queue = new ArrayDeque<>(result);
+        while (!queue.isEmpty()) {
+            TypeDeclaration<?> t = queue.poll();
+            for (Node member : t.getMembers()) {
+                if (member instanceof TypeDeclaration<?> nested) { result.add(nested); queue.add(nested); }
+            }
+        }
+        return result;
+    }
+
     private Collection<? extends PxChunk> createMethodChunks(File f, CompilationUnit cu, List<String> codeLines) {
         List<PxChunk> chunks = new ArrayList<>();
         var primaryType = cu.getPrimaryType();
         primaryType.ifPresent(pt -> createContainedMethodChunks(f, cu, chunks, pt, codeLines));
-        for (var subClazz : cu.getTypes()) {
+        for (var subClazz : collectTypes(cu)) {
             if (primaryType.isEmpty() || !subClazz.equals(primaryType.get())) {
                 createContainedMethodChunks(f, cu, chunks, subClazz, codeLines);
             }
@@ -244,7 +260,7 @@ public class JavaCodeChunker implements PxChunker {
         List<PxChunk> chunks = new ArrayList<>();
         String pkgName = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
 
-        for (TypeDeclaration<?> t : cu.getTypes()) {
+        for (TypeDeclaration<?> t : collectTypes(cu)) {
             if (!(t instanceof EnumDeclaration)) {
                 continue;
             }
@@ -293,7 +309,7 @@ public class JavaCodeChunker implements PxChunker {
 
     private Collection<? extends PxChunk> createClassFrameChunk(File f, CompilationUnit cu, List<String> codeLines) {
         List<PxChunk> chunks = new ArrayList<>();
-        for (var clazz : cu.getTypes()) {
+        for (var clazz : collectTypes(cu)) {
             StringBuilder content = new StringBuilder();
             cu.getPackageDeclaration().ifPresent(pd -> content.append(pd.toString()).append('\n'));
             content.append(getImportsRange(cu, codeLines).toCode());

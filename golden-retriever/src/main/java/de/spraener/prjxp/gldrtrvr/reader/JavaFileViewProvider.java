@@ -73,8 +73,12 @@ public class JavaFileViewProvider implements FileViewProvider {
 
         StringBuilder result = new StringBuilder();
         Set<String> placed = new HashSet<>();
+        Set<String> frameIds = new HashSet<>();
         for (PxChunk frame : frames) {
-            result.append(renderFrame(frame, methods, enumConstants, docs, placed));
+            frameIds.add(frame.getId());
+        }
+        for (PxChunk frame : frames) {
+            result.append(renderFrame(frame, methods, enumConstants, docs, placed, frameIds));
         }
         // orphan methods (parent FQN has no frame unit, e.g. frame was dropped from the index):
         for (PxChunk method : methods) {
@@ -101,14 +105,19 @@ public class JavaFileViewProvider implements FileViewProvider {
         return result;
     }
 
-    private static String renderFrame(PxChunk frame, List<PxChunk> methods, List<PxChunk> enumConstants, Map<String, PxChunk> docs, Set<String> placed) {
+    private static String renderFrame(PxChunk frame, List<PxChunk> methods, List<PxChunk> enumConstants, Map<String, PxChunk> docs, Set<String> placed, Set<String> frameIds) {
         List<String> lines = new ArrayList<>(Arrays.asList(frame.getContent().split("\n", -1)));
         Set<Integer> usedLines = new HashSet<>();
         List<SplicePlan> plans = new ArrayList<>();
         for (PxChunk method : methods) {
+            // The id-prefix fallback only applies to orphan methods (parent frame missing from the
+            // units) — otherwise a nested method (id "FQN.Inner.sig") would also be spliced into
+            // every ancestor frame, since its id starts with "FQN.".
+            boolean parentIsFrame = frameIds.contains(method.getParent());
             boolean ownedByFrame = frame.getId().equals(method.getParent())
-                    || (method.getId().length() > frame.getId().length() + 1
-                        && method.getId().startsWith(frame.getId() + "."));  // parent first, id-prefix fallback
+                    || (!parentIsFrame
+                        && method.getId().length() > frame.getId().length() + 1
+                        && method.getId().startsWith(frame.getId() + "."));  // parent first, id-prefix fallback for orphans
             if (!ownedByFrame) {
                 continue;
             }

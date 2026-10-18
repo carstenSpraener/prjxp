@@ -268,4 +268,67 @@ class JavaFileViewProviderTest {
         assertThat(bluePos).isNotNegative();
         assertThat(bluePos).isLessThan(closePos);
     }
+
+    @Test
+    void rendersNestedTypeFramesInOrder() {
+        // Realistic chunker format: signature lines without modifiers (getDeclarationAsString(false,false,false))
+        String outerFrame = "package de.example;\n"
+                + "\n"
+                + "public class Outer {\n"
+                + "    private String outerField;\n"
+                + "\n"
+                + "    void outerMethod()\n"
+                + "}\n";
+
+        String innerFrame = "package de.example;\n"
+                + "\n"
+                + "class Inner {\n"
+                + "    private int innerValue;\n"
+                + "\n"
+                + "    void doInnerWork()\n"
+                + "}\n";
+
+        String enumFrame = "package de.example;\n"
+                + "\n"
+                + "enum NestedEnum {\n"
+                + "}\n";
+
+        PxChunk outer = unit("de.example.Outer", null, "classFrame", 1, outerFrame);
+        PxChunk inner = unit("de.example.Outer.Inner", null, "classFrame", 6, innerFrame);
+        PxChunk nestedEnum = unit("de.example.Outer.NestedEnum", null, "classFrame", 12, enumFrame);
+
+        // Inner class method — id suffix matches the inner frame's signature line
+        PxChunk innerMethod = unit("de.example.Outer.Inner.void doInnerWork()", "de.example.Outer.Inner", "method", 9,
+                "    public void doInnerWork() {\n        System.out.println(innerValue);\n    }\n");
+
+        // Enum constants
+        PxChunk enumConstants = unit("de.example.Outer.NestedEnum.constants", "de.example.Outer.NestedEnum", "enumConstants", 13,
+                "    ALPHA,\n    BETA;\n");
+
+        // Pass in shuffled order — provider should sort by fromLine
+        String view = provider.render(List.of(nestedEnum, innerMethod, outer, enumConstants, inner));
+
+        // All three frames present as separate ## blocks, in fromLine order: outer (1) < inner (6) < enum (12)
+        int outerStart = view.indexOf("## de.example.Outer\n");
+        int innerStart = view.indexOf("## de.example.Outer.Inner\n");
+        int enumStart = view.indexOf("## de.example.Outer.NestedEnum\n");
+        assertThat(outerStart).isNotNegative();
+        assertThat(innerStart).isGreaterThan(outerStart);
+        assertThat(enumStart).isGreaterThan(innerStart);
+
+        String outerBlock = view.substring(outerStart, innerStart);
+        String innerBlock = view.substring(innerStart, enumStart);
+        String enumBlock = view.substring(enumStart);
+
+        // Inner method body spliced into the INNER frame (bare signature line replaced)
+        assertThat(innerBlock).contains("    public void doInnerWork() {\n        System.out.println(innerValue);\n    }");
+        assertThat(innerBlock).doesNotContain("    void doInnerWork()\n");
+
+        // The inner method must NOT be spliced into the outer (ancestor) frame
+        assertThat(outerBlock).doesNotContain("doInnerWork");
+
+        // Enum constants spliced into the enum frame
+        assertThat(enumBlock).contains("ALPHA,");
+        assertThat(enumBlock).contains("BETA;");
+    }
 }
