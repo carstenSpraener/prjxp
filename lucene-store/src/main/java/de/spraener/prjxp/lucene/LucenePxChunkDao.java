@@ -10,6 +10,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
+import dev.langchain4j.store.embedding.filter.comparison.IsNotEqualTo;
 import dev.langchain4j.store.embedding.filter.logical.And;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
@@ -124,7 +125,7 @@ public class LucenePxChunkDao implements PxChunkDao {
             builder.add(new TermQuery(new Term("content", token)), BooleanClause.Occur.MUST);
         }
         for (Map.Entry<String, String> entry : scopedFilters(filters).entrySet()) {
-            builder.add(new TermQuery(new Term(entry.getKey(), entry.getValue())), BooleanClause.Occur.FILTER);
+            addFilterTerm(builder, entry.getKey(), entry.getValue());
         }
 
         try {
@@ -198,7 +199,10 @@ public class LucenePxChunkDao implements PxChunkDao {
         }
         Filter combinedFilter = null;
         for (Map.Entry<String, String> entry : filters.entrySet()) {
-            Filter currentFilter = new IsEqualTo(PxChunk.metadataFieldKey(entry.getKey()), entry.getValue());
+            String key = PxChunk.metadataFieldKey(entry.getKey());
+            Filter currentFilter = entry.getValue().startsWith("!")
+                    ? new IsNotEqualTo(key, entry.getValue().substring(1))
+                    : new IsEqualTo(key, entry.getValue());
             combinedFilter = (combinedFilter == null) ? currentFilter : new And(combinedFilter, currentFilter);
         }
         return combinedFilter;
@@ -210,11 +214,18 @@ public class LucenePxChunkDao implements PxChunkDao {
         }
         BooleanQuery.Builder builder = new BooleanQuery.Builder();
         for (Map.Entry<String, String> entry : filters.entrySet()) {
-            builder.add(new TermQuery(
-                    new Term(PxChunk.metadataFieldKey(entry.getKey()), entry.getValue())),
-                    BooleanClause.Occur.FILTER);
+            addFilterTerm(builder, PxChunk.metadataFieldKey(entry.getKey()), entry.getValue());
         }
         return builder.build();
+    }
+
+    /** A "!"-prefixed value is a negation (MUST_NOT), otherwise a plain FILTER clause. */
+    private static void addFilterTerm(BooleanQuery.Builder builder, String key, String value) {
+        if (value.startsWith("!")) {
+            builder.add(new TermQuery(new Term(key, value.substring(1))), BooleanClause.Occur.MUST_NOT);
+        } else {
+            builder.add(new TermQuery(new Term(key, value)), BooleanClause.Occur.FILTER);
+        }
     }
 
     private List<String> tokenize(String query) {

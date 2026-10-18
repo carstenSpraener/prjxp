@@ -172,7 +172,7 @@ public class EmbeddedArchiveImporter {
         log.info("Processed embedded archive for project '{}', JSONL: {}", name, jsonlBasename);
 
         return new ProjectInfo(name, "IMPORTING", null, null, 0L, 0L, 0,
-                null, null, null, null, jsonlBasename, false, "IDLE", 0, null);
+                null, null, null, null, jsonlBasename, false, "IDLE", 0, null, null);
     }
 
     // ------------------------------------------------------------------ JSONL validation

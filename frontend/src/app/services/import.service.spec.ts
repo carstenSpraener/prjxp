@@ -25,7 +25,7 @@ describe('ImportService', () => {
   });
 
   describe('uploadArchive', () => {
-    it('should POST file to /api/projects/upload and return ProjectInfo', () => {
+    it('should POST file to /api/projects/upload-archive and return ProjectInfo', () => {
       const file = new File(['content'], 'test.tar.gz');
       const mockResponse: ProjectInfo = { name: 'test', status: 'READY' };
 
@@ -33,7 +33,7 @@ describe('ImportService', () => {
         expect(result).toEqual(mockResponse);
       });
 
-      const req = httpMock.expectOne('/api/projects/upload');
+      const req = httpMock.expectOne('/api/projects/upload-archive');
       expect(req.request.method).toBe('POST');
       expect(req.request.body instanceof FormData).toBe(true);
       req.flush(mockResponse);

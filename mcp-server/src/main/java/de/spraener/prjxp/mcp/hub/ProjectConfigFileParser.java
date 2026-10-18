@@ -56,6 +56,7 @@ public class ProjectConfigFileParser {
             def.setJsonlFile(stringOf(map.get("jsonlFile"), "px-chunks.jsonl"));
             def.setChunoWhiteList(stringOf(map.get("chunoWhiteList"), "java,ts"));
             def.setTibedBatchSize(intOf(map.get("tibedBatchSize"), 32));
+            def.setFulltext(boolOf(map.get("fulltext"), false));
             def.setEmbeddingsFile(stringOf(map.get("embeddingsFile"), null));
             def.setPrompt(normalizePrompt(stringOf(map.get("prompt"), null)));
             return def;
@@ -104,6 +105,19 @@ public class ProjectConfigFileParser {
         return s.isBlank() ? fallback : s;
     }
 
+    private static boolean boolOf(Object value, boolean fallback) {
+        if (value instanceof Boolean b) {
+            return b;
+        }
+        if (value != null) {
+            String s = String.valueOf(value).trim().toLowerCase();
+            if (!s.isEmpty()) {
+                return Boolean.parseBoolean(s);
+            }
+        }
+        return fallback;
+    }
+
     private static int intOf(Object value, int fallback) {
         if (value instanceof Number number) {
             return number.intValue();
@@ -134,6 +148,9 @@ public class ProjectConfigFileParser {
             appendLineIfNotBlank(yaml, "embeddingsFile", definition.getEmbeddingsFile());
             if (definition.isTibedResetStore()) {
                 yaml.append("tibedResetStore: true\n");
+            }
+            if (definition.isFulltext()) {
+                yaml.append("fulltext: true\n");
             }
             appendPrompt(yaml, definition.getPrompt());
 

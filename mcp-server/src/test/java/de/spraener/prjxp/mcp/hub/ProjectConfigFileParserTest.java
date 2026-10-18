@@ -231,4 +231,52 @@ class ProjectConfigFileParserTest {
 
         assertThat(parser.parse(projectDir, "alpha").getPrompt()).isEqualTo("line1\nline2");
     }
+
+    // ------------------------------------------------------------------ fulltext
+
+    @Test
+    void fulltextTrueIsParsed() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: alpha\nfulltext: true\n");
+
+        assertThat(parser.parse(projectDir, "alpha").isFulltext()).isTrue();
+    }
+
+    @Test
+    void missingFulltextKeyDefaultsToFalse() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: alpha\n");
+
+        assertThat(parser.parse(projectDir, "alpha").isFulltext()).isFalse();
+    }
+
+    @Test
+    void saveWritesFulltextTrueOnlyWhenEnabled() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("alpha");
+        def.setFulltext(true);
+
+        parser.save(projectDir, def);
+
+        assertThat(Files.readString(projectDir.resolve("prjxp.yaml"))).contains("fulltext: true");
+    }
+
+    @Test
+    void saveOmitsFulltextWhenDisabled() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("alpha");
+
+        parser.save(projectDir, def);
+
+        assertThat(Files.readString(projectDir.resolve("prjxp.yaml"))).doesNotContain("fulltext");
+    }
+
+    @Test
+    void fulltextRoundTrips() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("alpha");
+        def.setFulltext(true);
+
+        parser.save(projectDir, def);
+
+        assertThat(parser.parse(projectDir, "alpha").isFulltext()).isTrue();
+    }
 }

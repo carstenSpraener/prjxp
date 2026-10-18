@@ -88,7 +88,7 @@ describe('ChatModelCardComponent', () => {
 
   it('should show timeout when set', () => {
     fixture.detectChanges();
-    const details = fixture.querySelectorAll('.model-detail');
+    const details = fixture.nativeElement.querySelectorAll('.model-detail');
     const timeoutDetail = details[2];
     expect(timeoutDetail.textContent).toContain('60s');
   });

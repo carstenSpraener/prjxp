@@ -17,4 +17,5 @@ export interface ProjectInfo {
   reindexStatus?: string;   // "IDLE", "CHUNKING", "EMBEDDING", "COMPLETE", "FAILED"
   reindexProgress?: number; // 0-100
   prompt?: string | null;   // standing instructions (from prjxp.yaml)
+  fulltext?: boolean;       // lossless fulltext copy switch (from prjxp.yaml)
 }

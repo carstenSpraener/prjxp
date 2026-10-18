@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, vi } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { ChatSettingsPersistenceService, ChatSettingsState } from './chat-settings-persistence.service';
 
 const STORAGE_KEY = 'prjxp_chat_settings';
@@ -15,6 +15,10 @@ describe('ChatSettingsPersistenceService', () => {
   beforeEach(() => {
     localStorage.clear();
     service = new ChatSettingsPersistenceService();
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   describe('load', () => {

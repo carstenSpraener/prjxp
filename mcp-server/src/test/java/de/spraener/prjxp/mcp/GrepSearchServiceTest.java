@@ -69,6 +69,10 @@ class GrepSearchServiceTest {
         service = new GrepSearchService(provider, retrieverRegistry, List.of(javaPack), projectRegistry);
     }
 
+    /** The FULLTEXT exclusion filter that every grep search carries (raw Lucene field name). */
+    private static final Map<String, String> FULLTEXT_FILTER =
+            Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER);
+
     @Test
     void passesQueryProjectLanguageAndLimitToDao() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
@@ -78,8 +82,19 @@ class GrepSearchServiceTest {
 
         verify(dao).searchFullText(
                 eq("ChunkProcess"),
-                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code")),
+                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code",
+                        PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
                 eq(10));
+    }
+
+    @Test
+    void fulltextExclusionFilterPresentEvenWithoutLanguage() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        service.search("q", "myproj", null, 10);
+
+        verify(dao).searchFullText(eq("q"), eq(FULLTEXT_FILTER), eq(10));
     }
 
     @Test
@@ -176,7 +191,8 @@ class GrepSearchServiceTest {
 
         verify(dao).searchFullText(
                 eq("q"),
-                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-cobol")),
+                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-cobol",
+                        PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
                 eq(10));
     }
 
@@ -218,7 +234,8 @@ class GrepSearchServiceTest {
 
         verify(dao).searchFullText(
                 eq("q"),
-                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-typescript-code")),
+                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-typescript-code",
+                        PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
                 eq(10));
     }
 
@@ -234,7 +251,8 @@ class GrepSearchServiceTest {
 
         verify(dao).searchFullText(
                 eq("q"),
-                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-cobol")),
+                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-cobol",
+                        PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
                 eq(10));
     }
 }

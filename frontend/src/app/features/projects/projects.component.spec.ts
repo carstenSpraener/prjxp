@@ -147,47 +147,54 @@ describe('ProjectsComponent', () => {
     component.onReindexCancelled();
 
     expect(component.showReindexConfirm()).toBe(false);
-    expect(component.reindexProjectName()).toBe('project-a'); // name is not cleared on cancel
+    expect(component.reindexProjectName()).toBeNull(); // name is cleared on cancel
   });
 
   it('startPolling() should poll for reindex status', () => {
-    let callCount = 0;
-    mockService.getReindexStatus.mockImplementation(() => {
-      callCount++;
-      if (callCount >= 2) {
-        return of({ status: 'COMPLETE', progress: 100 });
-      }
-      return of({ status: 'CHUNKING', progress: 25 });
-    });
+    vi.useFakeTimers();
+    try {
+      let callCount = 0;
+      mockService.getReindexStatus.mockImplementation(() => {
+        callCount++;
+        if (callCount >= 2) {
+          return of({ status: 'COMPLETE', progress: 100 });
+        }
+        return of({ status: 'CHUNKING', progress: 25 });
+      });
 
-    component.startPolling('project-a');
+      component.startPolling('project-a');
 
-    // Allow some time for polling
-    return new Promise(resolve => {
-      setTimeout(() => {
-        expect(mockService.getReindexStatus).toHaveBeenCalled();
-        component.ngOnDestroy(); // stop polling
-        resolve(undefined);
-      }, 5000);
-    });
+      // Advance past two poll intervals (2s each)
+      vi.advanceTimersByTime(2000);
+      vi.advanceTimersByTime(2000);
+
+      expect(mockService.getReindexStatus).toHaveBeenCalledTimes(2);
+      // Second poll returned COMPLETE, so polling should have stopped
+      component.stopPolling();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('stopPolling() should clear the polling interval', () => {
-    mockService.getReindexStatus.mockReturnValue(of({ status: 'CHUNKING', progress: 25 }));
+    vi.useFakeTimers();
+    try {
+      mockService.getReindexStatus.mockReturnValue(of({ status: 'CHUNKING', progress: 25 }));
 
-    component.startPolling('project-a');
-    component.stopPolling();
+      component.startPolling('project-a');
+      vi.advanceTimersByTime(2000); // one poll
 
-    // After stopping, no more calls should be made
-    const callCount = (mockService.getReindexStatus as any).mock.calls.length;
+      const callCount = (mockService.getReindexStatus as any).mock.calls.length;
+      expect(callCount).toBe(1);
 
-    return new Promise(resolve => {
-      setTimeout(() => {
-        const newCallCount = (mockService.getReindexStatus as any).mock.calls.length;
-        expect(newCallCount).toBe(callCount); // no new calls after stop
-        resolve(undefined);
-      }, 5000);
-    });
+      component.stopPolling();
+      vi.advanceTimersByTime(10000); // well past the interval
+
+      const newCallCount = (mockService.getReindexStatus as any).mock.calls.length;
+      expect(newCallCount).toBe(callCount); // no new calls after stop
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // ------------------------------------------------------------------ Editor flow
@@ -230,19 +237,23 @@ describe('ProjectsComponent', () => {
   });
 
   it('ngOnDestroy() should stop polling', () => {
-    mockService.getReindexStatus.mockReturnValue(of({ status: 'CHUNKING', progress: 25 }));
+    vi.useFakeTimers();
+    try {
+      mockService.getReindexStatus.mockReturnValue(of({ status: 'CHUNKING', progress: 25 }));
 
-    component.startPolling('project-a');
-    component.ngOnDestroy();
+      component.startPolling('project-a');
+      vi.advanceTimersByTime(2000); // one poll
 
-    const callCount = (mockService.getReindexStatus as any).mock.calls.length;
+      const callCount = (mockService.getReindexStatus as any).mock.calls.length;
+      expect(callCount).toBe(1);
 
-    return new Promise(resolve => {
-      setTimeout(() => {
-        const newCallCount = (mockService.getReindexStatus as any).mock.calls.length;
-        expect(newCallCount).toBe(callCount); // no new calls after destroy
-        resolve(undefined);
-      }, 5000);
-    });
+      component.ngOnDestroy();
+      vi.advanceTimersByTime(10000); // well past the interval
+
+      const newCallCount = (mockService.getReindexStatus as any).mock.calls.length;
+      expect(newCallCount).toBe(callCount); // no new calls after destroy
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

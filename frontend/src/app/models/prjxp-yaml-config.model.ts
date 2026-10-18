@@ -7,6 +7,7 @@ export interface PrjxpYamlConfig {
   embeddingsFile?: string;     // nullable, for pre-computed embeddings
   tibedResetStore?: boolean;  // default false
   prompt?: string | null;   // optional standing instructions, supports ${ENV} placeholders
+  fulltext?: boolean;       // default false, lossless fulltext copy for readFile
 }
 
 export const DEFAULT_YAML_CONFIG: Omit<PrjxpYamlConfig, 'name'> = {
@@ -16,7 +17,8 @@ export const DEFAULT_YAML_CONFIG: Omit<PrjxpYamlConfig, 'name'> = {
   tibedBatchSize: 32,
   embeddingsFile: undefined,
   tibedResetStore: false,
-  prompt: null
+  prompt: null,
+  fulltext: false
 };
 
 export interface ProjectUpdateRequest {
@@ -24,6 +26,7 @@ export interface ProjectUpdateRequest {
   chunoWhiteList?: string;
   tibedBatchSize?: number;
   prompt?: string | null;
+  fulltext?: boolean;
 }
 
 export interface ProjectStats {
@@ -41,4 +44,5 @@ export interface ProjectCreateRequest {
   rootDir?: string;
   chunoWhiteList?: string;
   tibedBatchSize?: number;
+  fulltext?: boolean;
 }

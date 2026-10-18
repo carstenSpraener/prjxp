@@ -27,9 +27,13 @@ event: complete\ndata: {"id":"resp-1","role":"assistant","content":"Hello there"
 `;
 
       let readCallCount = 0;
+      // The mock reader delivers chunks[0..len-2] and then signals done,
+      // so the final '' entry acts as the done marker. All data chunks must
+      // come before it to cover the entire response.
       const chunks = [
         sseResponse.slice(0, 60),
         sseResponse.slice(60, 120),
+        sseResponse.slice(120),
         ''
       ];
       const mockReader = {

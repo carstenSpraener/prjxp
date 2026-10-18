@@ -155,7 +155,7 @@ describe('ProjectDetailCardComponent', () => {
   });
 
   it('should not show reindex progress when status is IDLE', () => {
-    component.project = { ...mockProject, reindexStatus: 'IDLE', reindexProgress: 0 };
+    fixture.componentRef.setInput('project', { ...mockProject, reindexStatus: 'IDLE', reindexProgress: 0 });
     fixture.detectChanges();
 
     const progressEl = fixture.nativeElement.querySelector('.reindex-progress');
@@ -163,7 +163,7 @@ describe('ProjectDetailCardComponent', () => {
   });
 
   it('should show reindex progress when status is CHUNKING', () => {
-    component.project = { ...mockProject, reindexStatus: 'CHUNKING', reindexProgress: 25 };
+    fixture.componentRef.setInput('project', { ...mockProject, reindexStatus: 'CHUNKING', reindexProgress: 25 });
     fixture.detectChanges();
 
     const progressEl = fixture.nativeElement.querySelector('.reindex-progress');
@@ -171,7 +171,7 @@ describe('ProjectDetailCardComponent', () => {
   });
 
   it('should show reindex progress when status is EMBEDDING', () => {
-    component.project = { ...mockProject, reindexStatus: 'EMBEDDING', reindexProgress: 60 };
+    fixture.componentRef.setInput('project', { ...mockProject, reindexStatus: 'EMBEDDING', reindexProgress: 60 });
     fixture.detectChanges();
 
     const progressEl = fixture.nativeElement.querySelector('.reindex-progress');
@@ -179,7 +179,7 @@ describe('ProjectDetailCardComponent', () => {
   });
 
   it('should not show reindex progress when status is COMPLETE', () => {
-    component.project = { ...mockProject, reindexStatus: 'COMPLETE', reindexProgress: 100 };
+    fixture.componentRef.setInput('project', { ...mockProject, reindexStatus: 'COMPLETE', reindexProgress: 100 });
     fixture.detectChanges();
 
     const progressEl = fixture.nativeElement.querySelector('.reindex-progress');

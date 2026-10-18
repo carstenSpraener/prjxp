@@ -40,27 +40,31 @@ class ChunkerFactoryTest {
     }
 
     @Test
-    void javaFileReturnsExactlyOneJavaCodeChunker() throws Exception {
+    void javaFileReturnsJavaCodeChunkerAndFullTextChunker() throws Exception {
         List<PxChunker> chunkers = createChunkers(".java");
 
-        assertThat(chunkers).hasSize(1);
-        assertThat(chunkers.get(0)).isInstanceOf(JavaCodeChunker.class);
+        // FullTextChunker matches every file (gated later in ChunkProcess via fulltext)
+        assertThat(chunkers).hasSize(2);
+        assertThat(chunkers).anyMatch(c -> c instanceof JavaCodeChunker);
+        assertThat(chunkers).anyMatch(c -> c instanceof FullTextChunker);
     }
 
     @Test
-    void tsFileReturnsTypeScriptCodeChunker() throws Exception {
+    void tsFileReturnsTypeScriptCodeChunkerAndFullTextChunker() throws Exception {
         List<PxChunker> chunkers = createChunkers(".ts");
 
-        assertThat(chunkers).hasSize(1);
-        assertThat(chunkers.get(0)).isInstanceOf(TypeScriptCodeChunker.class);
+        assertThat(chunkers).hasSize(2);
+        assertThat(chunkers).anyMatch(c -> c instanceof TypeScriptCodeChunker);
+        assertThat(chunkers).anyMatch(c -> c instanceof FullTextChunker);
     }
 
     @Test
-    void vbFileReturnsVisualBasicCodeChunker() throws Exception {
+    void vbFileReturnsVisualBasicCodeChunkerAndFullTextChunker() throws Exception {
         List<PxChunker> chunkers = createChunkers(".vb");
 
-        assertThat(chunkers).hasSize(1);
-        assertThat(chunkers.get(0)).isInstanceOf(VisualBasicCodeChunker.class);
+        assertThat(chunkers).hasSize(2);
+        assertThat(chunkers).anyMatch(c -> c instanceof VisualBasicCodeChunker);
+        assertThat(chunkers).anyMatch(c -> c instanceof FullTextChunker);
     }
 
     @Test

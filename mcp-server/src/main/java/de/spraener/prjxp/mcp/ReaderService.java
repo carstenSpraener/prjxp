@@ -12,6 +12,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -62,14 +63,32 @@ public class ReaderService {
         if (located.earlyExit().isPresent()) return located.earlyExit().get();
         List<PxChunk> fileChunks = located.chunks();
 
-        String mime = fileChunks.stream().map(PxChunk::getMimeType)
-                .filter(Objects::nonNull).filter(s -> !s.isBlank()).findFirst().orElse("*/*");
-        FileViewProvider provider = fileViewRegistry.forMime(mime);
-        String content = provider.render(ReaderSupport.combineUnits(fileChunks));
+        List<PxChunk> units = ReaderSupport.combineUnits(fileChunks);
+
+        // FULLTEXT-first: a lossless copy is present -> byte-identical content, without provider splicing
+        List<PxChunk> fulltext = units.stream()
+                .filter(u -> u.getMetadata() != null
+                        && PxChunk.FULLTEXT_MARKER.equals(u.getMetadata().get(PxChunk.PXCHUNK_TYPE)))
+                .sorted(Comparator.comparingInt(u -> ReaderSupport.parseLine(u.getFromLine())))
+                .toList();
+
+        String content;
+        String language;
+        if (!fulltext.isEmpty()) {
+            content = fulltext.stream().map(PxChunk::getContent).filter(Objects::nonNull)
+                    .collect(Collectors.joining("\n"));
+            language = "text";
+        } else {
+            String mime = fileChunks.stream().map(PxChunk::getMimeType)
+                    .filter(Objects::nonNull).filter(s -> !s.isBlank()).findFirst().orElse("*/*");
+            FileViewProvider provider = fileViewRegistry.forMime(mime);
+            content = provider.render(units);
+            language = provider.language();
+        }
 
         List<String> lines = content.lines().toList();
         int off = (offset == null || offset < 1) ? 1 : offset;
-        if (off > lines.size()) return new FileView(requested, provider.language(), fileChunks.size(), "", false, lines.size(), 0, null, null);
+        if (off > lines.size()) return new FileView(requested, language, fileChunks.size(), "", false, lines.size(), 0, null, null);
         int to = (limit == null || limit < 1) ? lines.size() : Math.min(lines.size(), off - 1 + limit);
         String text = String.join("\n", lines.subList(off - 1, to));
 
@@ -77,7 +96,7 @@ public class ReaderService {
         boolean truncated = false;
         if (max > 0 && text.length() > max) { text = text.substring(0, max); truncated = true; }
 
-        return new FileView(requested, provider.language(), fileChunks.size(), text, truncated,
+        return new FileView(requested, language, fileChunks.size(), text, truncated,
                 lines.size(), to - off + 1, null, null);
     }
 

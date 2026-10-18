@@ -61,10 +61,14 @@ describe('NavSidebarComponent', () => {
   it('should have correct nav item icons', () => {
     const fixture = TestBed.createComponent(NavSidebarComponent);
     fixture.detectChanges();
-    const icons = fixture.nativeElement.querySelectorAll('.icon');
-    expect(icons[0].textContent).toBe('📊');
-    expect(icons[1].textContent).toBe('📥');
-    expect(icons[2].textContent).toBe('📁');
+    const icons = fixture.nativeElement.querySelectorAll('img.nav-icon');
+    expect(icons.length).toBe(NAV_ITEMS.length);
+    expect(icons[0].getAttribute('src')).toBe('assets/icon-dashboard.svg');
+    expect(icons[1].getAttribute('src')).toBe('assets/icon-import.svg');
+    expect(icons[2].getAttribute('src')).toBe('assets/icon-projects.svg');
+    expect(icons[0].getAttribute('alt')).toBe('Dashboard');
+    expect(icons[1].getAttribute('alt')).toBe('Import');
+    expect(icons[2].getAttribute('alt')).toBe('Projects');
   });
 
   it('isActive() should compare router.url correctly', () => {

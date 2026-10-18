@@ -248,6 +248,7 @@ public class HubProjectsController {
                 def.setRootDir(request.rootDir());
                 if (request.chunoWhiteList() != null) def.setChunoWhiteList(request.chunoWhiteList());
                 if (request.tibedBatchSize() != null) def.setTibedBatchSize(request.tibedBatchSize());
+                if (request.fulltext() != null) def.setFulltext(request.fulltext());
             }
         }
 
@@ -261,7 +262,7 @@ public class HubProjectsController {
         orchestrator.enqueue(request.name());
 
         return new ProjectInfo(request.name(), "IMPORTING", kind.name(), null, 0L, 0L, 0,
-            null, null, null, null, null, false, "IDLE", 0, null);
+            null, null, null, null, null, false, "IDLE", 0, null, null);
     }
 
     /** Updates an existing project's configuration. */
@@ -277,6 +278,8 @@ public class HubProjectsController {
         if (updates.chunoWhiteList() != null) def.setChunoWhiteList(updates.chunoWhiteList());
         if (updates.tibedBatchSize() != null) def.setTibedBatchSize(updates.tibedBatchSize());
         if (updates.prompt() != null) def.setPrompt(updates.prompt().isBlank() ? null : updates.prompt());
+        // fulltext takes effect on the next reindex — deliberately NO orchestrator.enqueue here
+        if (updates.fulltext() != null) def.setFulltext(updates.fulltext());
 
         // Persist changes to YAML file
         configParser.save(entry.getRootDir(), def);
@@ -296,7 +299,8 @@ public class HubProjectsController {
             def.getTibedBatchSize(), def.getEmbeddingsFile(), def.isTibedResetStore(),
             hubRegistry.getReindexStatus(name).name(),
             hubRegistry.getReindexProgress(name),
-            def.getPrompt()
+            def.getPrompt(),
+            def.isFulltext()
         );
     }
 
@@ -317,7 +321,7 @@ public class HubProjectsController {
 
         String projectName = fileName.replaceFirst("\\.[^.]+$", "");
         return new ProjectInfo(projectName, "IMPORTING", null, null, 0L, 0L, 0,
-            null, null, null, null, null, false, "IDLE", 0, null);
+            null, null, null, null, null, false, "IDLE", 0, null, null);
     }
 
     /** Uploads a pre-embedded archive (JSONL, GZ, TGZ, ZIP) for import. */

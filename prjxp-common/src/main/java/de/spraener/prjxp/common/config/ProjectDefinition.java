@@ -13,6 +13,8 @@ public class ProjectDefinition {
     private String chunoWhiteList = "java,ts";
     private int tibedBatchSize = 32;
     private boolean tibedResetStore = false;
+    /** Optional: parallel full-text copy of every indexed file for lossless readFile (default off). */
+    private boolean fulltext = false;
     /** Optional standing instructions for chat, prepended to every conversation. Supports ${ENV} placeholders. */
     private String prompt;
     /** Optional path to a JSONL file containing pre-computed embeddings (EmbeddedChunkRecord format).

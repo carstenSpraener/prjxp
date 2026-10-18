@@ -53,20 +53,20 @@ describe('ChatSettingsDialogComponent', () => {
   });
 
   it('should have correct initial state', () => {
-    expect(component.selectedModel).toBe('');
-    expect(component.selectedProject).toBe('None');
-    expect(component.useTools).toBe(false);
+    expect(component.selectedModel()).toBe('');
+    expect(component.selectedProject()).toBe('None');
+    expect(component.useTools()).toBe(false);
   });
 
   it('loadChatModels should set selectedModel to first model', () => {
     component.loadChatModels();
-    expect(component.chatModels).toHaveLength(1);
-    expect(component.selectedModel).toBe('default');
+    expect(component.chatModels()).toHaveLength(1);
+    expect(component.selectedModel()).toBe('default');
   });
 
   it('loadProjects should populate availableProjects', () => {
     component.loadProjects();
-    expect(component.availableProjects).toEqual(['prjxp', 'my-project']);
+    expect(component.availableProjects()).toEqual(['prjxp', 'my-project']);
   });
 
   it('onSave with project should emit correct settings', () => {

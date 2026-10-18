@@ -91,6 +91,8 @@ public class GrepSearchService {
             }
             filters.put(PxChunk.PXCHUNK_MIME_TYPE, mimeByLanguage().getOrDefault(normalized, language.trim()));
         }
+        // FULLTEXT copies exist for lossless readFile only — never grep hits (raw Lucene field name)
+        filters.put(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER);
         return filters;
     }
 

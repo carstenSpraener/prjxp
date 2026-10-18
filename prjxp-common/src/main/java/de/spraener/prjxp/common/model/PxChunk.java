@@ -27,6 +27,10 @@ public class PxChunk {
     public static final String PXCHUNK_METADATA = "pxchunk_metadata";
     public static final String PXCHUNK_EMBEDDING_PREFIX = "pxchunk_embedding_prefix";
     public static final String PXCHUNK_PROJECT = "pxchunk_project";
+    /** Metadata key marking the parallel full-text copy of a file (lossless readFile). */
+    public static final String PXCHUNK_TYPE = "pxchunk_type";
+    /** Value of {@link #PXCHUNK_TYPE} for full-text copy chunks. */
+    public static final String FULLTEXT_MARKER = "FULLTEXT";
 
     private String id;
     private String mimeType;
