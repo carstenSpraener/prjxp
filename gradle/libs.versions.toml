@@ -12,8 +12,8 @@ log4j = "2.25.5"         # GHSA-qv9r: MapMessage JSON-Encoding (zuvor 2.24.x via
 logback = "1.5.34"       # GHSA: Objekt-Injection/Deserialisierung (zuvor 1.5.32 via Spring Boot)
 slf4j = "2.0.9"          # Logging API (mcp-proxy, standalone Module)
 jline = "3.30.15"        # GHSA-r2xf: ReDoS in grep-Command (zuvor 3.30.9 via Groovy/MCP-SDK)
-mcpSdk = "1.1.4"         # GHSA-8jxr: DNS-Rebinding, Fix erst in 1.0.0 (zuvor 0.18.x via Spring AI)
-mcpSdkLegacy = "0.18.4"  # letztes 0.x-Release: mcp-spring-webmvc existiert nur bis 0.18.x, und Spring AI referenziert das alte Binding-Package (in 1.x umbenannt) — OSV-clean
+mcpSdk = "0.18.5"        # GHSA-8jxr (CVE-2026-35568, DNS-Rebinding): Fix erst in 1.0.0, aber Advisory stuft Spring AI als NICHT betroffen ein (eingebaute Origin-Validierung) + Hub laeuft hinter Apache-Reverse-Proxy (dokumentierter Workaround). 1.x ist binär INKOMPATIBEL zu mcp-spring-webmvc 0.18.x (McpError(Object) entfernt) → NoSuchMethodError in WebMvcStreamableServerTransportProvider.handlePost.
+mcpSdkLegacy = "0.18.5"  # letztes 0.x-Release: mcp-spring-webmvc existiert nur bis 0.18.x, und Spring AI referenziert das alte Binding-Package (in 1.x umbenannt). 0.18.5 = konsistentes Stack (webmvc 0.18.5 gebaut gegen core 0.18.5) inkl. Hardening (Non-JSON-POSTs rejecten, Session-Sweeping).
 javafx = "21.0.5"
 
 # Libraries
