@@ -226,6 +226,54 @@ public class JavaCodeChunkerTests {
                 );
     }
 
+    @Test
+    public void testEnumConstants() throws Exception {
+        // Note: a constant with BOTH a constructor arg AND a body (e.g. "GREEN(int v) { ... }")
+        // is not parseable by JavaParser, so we use separate constants: one with args, one with body.
+        File code = toTmpFile("Color",
+                """
+                        package de.spraener.test;
+
+                        public enum Color {
+                            RED,
+                            GREEN(42),
+                            BLUE {
+                                public String toString() { return "Blue"; }
+                            };
+
+                            private int value;
+
+                            Color() { this.value = 0; }
+                            Color(int v) { this.value = v; }
+
+                            public int getValue() { return value; }
+                        }
+                        """
+        );
+        List<PxChunk> chunkList = uut.chunk(code).toList();
+
+        // Enum constants unit — all constants + the ';' separator, but NOT the following field
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.Color.constants") &&
+                        "enumConstants".equals(c.getMetadata().get("java_code_section")) &&
+                        "de.spraener.test.Color".equals(c.getParent()) &&
+                        c.getContent().contains("RED,") &&
+                        c.getContent().contains("GREEN(42)") &&
+                        c.getContent().contains("BLUE {") &&
+                        c.getContent().contains(";") &&
+                        !c.getContent().contains("private int value")
+                );
+
+        // Other chunks still present: method, frame, etc.
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.Color") &&
+                        "classFrame".equals(c.getMetadata().get("java_code_section"))
+                )
+                .anyMatch(c -> c.getId().equals("de.spraener.test.Color.int getValue()") &&
+                        "method".equals(c.getMetadata().get("java_code_section"))
+                );
+    }
+
     //Ignored @Test()
     public void testInnerClass() throws Exception {
         File code = toTmpFile("TestClass",

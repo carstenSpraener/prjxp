@@ -217,4 +217,55 @@ class JavaFileViewProviderTest {
         assertThat(provider.mimeType()).isEqualTo("text/x-java-code");
         assertThat(provider.language()).isEqualTo("java");
     }
+
+    @Test
+    void splicesEnumConstantsAfterDeclarationLine() {
+        // Frame: enum declaration line + field (synthetic frame content)
+        String frameContent = "package de.example;\n"
+                + "\n"
+                + "public enum Color {\n"
+                + "    private int value;\n"
+                + "}\n";
+
+        PxChunk frame = unit("de.example.Color", null, "classFrame", 1, frameContent);
+
+        // Enum constants unit — the real source lines for all constants (matches chunker output)
+        PxChunk constants = unit("de.example.Color.constants", "de.example.Color", "enumConstants", 3,
+                "    RED,\n" +
+                "    GREEN(42),\n" +
+                "    BLUE {\n" +
+                "        public String toString() { return \"Blue\"; }\n" +
+                "    };\n");
+
+        String view = provider.render(List.of(frame, constants));
+
+        // Constants should appear after the declaration line and before the field
+        assertThat(view).contains("public enum Color {\n    RED,\n    GREEN(42),");
+        assertThat(view).contains("};");
+
+        // Verify ordering: declaration < constants < field
+        int declPos = view.indexOf("public enum Color {");
+        int redPos = view.indexOf("RED,");
+        int fieldPos = view.indexOf("private int value;");
+        assertThat(declPos).isLessThan(redPos);
+        assertThat(redPos).isLessThan(fieldPos);
+    }
+
+    @Test
+    void enumConstantsFallbackBeforeClosingBrace() {
+        // Frame without a proper "enum ... {" declaration line (malformed)
+        String frameContent = "package de.example;\n" + "\n" + "Color {\n    private int value;\n}\n";
+
+        PxChunk frame = unit("de.example.Color", null, "classFrame", 1, frameContent);
+        PxChunk constants = unit("de.example.Color.constants", "de.example.Color", "enumConstants", 3,
+                "    RED,\n    BLUE;\n");
+
+        String view = provider.render(List.of(frame, constants));
+
+        // Should fall back to inserting before the last "}" (constants present, before the close)
+        int bluePos = view.indexOf("BLUE;");
+        int closePos = view.lastIndexOf("}");
+        assertThat(bluePos).isNotNegative();
+        assertThat(bluePos).isLessThan(closePos);
+    }
 }

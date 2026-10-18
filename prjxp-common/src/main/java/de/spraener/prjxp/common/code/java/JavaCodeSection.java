@@ -6,6 +6,7 @@ public enum JavaCodeSection {
     METHOD_DOC("methodDoc"),
     METHOD("method"),
     CONSTRUCTOR("constructor"),
+    ENUM_CONSTANTS("enumConstants"),
     CLAZZ_FRAME("classFrame"),
     DEPENDENCIE_INFO("dependenciesInfo"),
     ;

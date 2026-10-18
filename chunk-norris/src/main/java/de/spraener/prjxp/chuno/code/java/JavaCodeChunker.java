@@ -5,6 +5,8 @@ import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.body.EnumConstantDeclaration;
+import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
@@ -60,6 +62,7 @@ public class JavaCodeChunker implements PxChunker {
             List<PxChunk> chunks = new ArrayList<>();
             chunks.addAll(createImportChunk(f, cu, codeLines));
             chunks.addAll(createMethodChunks(f, cu, codeLines));
+            chunks.addAll(createEnumConstantChunks(f, cu, codeLines));
             chunks.addAll(createClassFrameChunk(f, cu, codeLines));
             chunks.addAll(createMetaChunk(cu, chunks, codeLines));
             return chunks.stream();
@@ -235,6 +238,57 @@ public class JavaCodeChunker implements PxChunker {
                             )
                     ));
         }
+    }
+
+    private Collection<? extends PxChunk> createEnumConstantChunks(File f, CompilationUnit cu, List<String> codeLines) {
+        List<PxChunk> chunks = new ArrayList<>();
+        String pkgName = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
+
+        for (TypeDeclaration<?> t : cu.getTypes()) {
+            if (!(t instanceof EnumDeclaration)) {
+                continue;
+            }
+            EnumDeclaration e = (EnumDeclaration) t;
+            if (e.getEntries().isEmpty()) {
+                continue;
+            }
+
+            String fqn = t.getFullyQualifiedName().orElse(t.getNameAsString());
+            int fromLine = e.getEntries().get(0).getRange().get().begin.line - 1; // 0-based
+            int toLine = e.getEntries().get(e.getEntries().size() - 1).getRange().get().end.line; // 1-based
+
+            // Only extend toLine if the last constant's line does not already contain the
+            // ';' separator — otherwise we would swallow the following field/method lines.
+            if (!codeLines.get(toLine - 1).contains(";")) {
+                for (int i = 0; i < 5 && toLine + i < codeLines.size(); i++) {
+                    if (codeLines.get(toLine + i).contains(";")) {
+                        toLine = toLine + i + 1; // make it exclusive upper bound for readLines
+                        break;
+                    }
+                }
+            }
+
+            StringBuilder content = new StringBuilder();
+            readLines(codeLines, fromLine, toLine, l -> content.append(l).append('\n'));
+
+            chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap)
+                    .splitContent(
+                            content.toString(),
+                            fromLine,
+                            toLine,
+                            () -> PxChunk.create(
+                                    c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
+                                    c -> c.setParent(fqn),
+                                    c -> c.setId(fqn + ".constants"),
+                                    c -> c.setFile(f.getAbsolutePath()),
+                                    c -> c.setEmbeddingPrefix(pkgName + " " + t.getName().asString()),
+                                    c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.ENUM_CONSTANTS.getName()),
+                                    c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.ENUM_CONSTANTS.getName(),
+                                            fqn, t.getName().asString())
+                            )
+                    ));
+        }
+        return chunks;
     }
 
     private Collection<? extends PxChunk> createClassFrameChunk(File f, CompilationUnit cu, List<String> codeLines) {
