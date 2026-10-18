@@ -5,6 +5,9 @@ public enum JavaCodeSection {
     IMPORTS("imports"),
     METHOD_DOC("methodDoc"),
     METHOD("method"),
+    CONSTRUCTOR("constructor"),
+    ENUM_CONSTANTS("enumConstants"),
+    RAW_FILE("rawFile"),
     CLAZZ_FRAME("classFrame"),
     DEPENDENCIE_INFO("dependenciesInfo"),
     ;

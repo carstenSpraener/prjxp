@@ -4,6 +4,10 @@ import com.github.javaparser.ParseProblemException;
 import com.github.javaparser.ParserConfiguration;
 import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
+import com.github.javaparser.ast.Node;
+import com.github.javaparser.ast.body.ConstructorDeclaration;
+import com.github.javaparser.ast.body.EnumConstantDeclaration;
+import com.github.javaparser.ast.body.EnumDeclaration;
 import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
@@ -26,7 +30,9 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.Deque;
 import java.util.List;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -59,6 +65,7 @@ public class JavaCodeChunker implements PxChunker {
             List<PxChunk> chunks = new ArrayList<>();
             chunks.addAll(createImportChunk(f, cu, codeLines));
             chunks.addAll(createMethodChunks(f, cu, codeLines));
+            chunks.addAll(createEnumConstantChunks(f, cu, codeLines));
             chunks.addAll(createClassFrameChunk(f, cu, codeLines));
             chunks.addAll(createMetaChunk(cu, chunks, codeLines));
             return chunks.stream();
@@ -66,11 +73,67 @@ public class JavaCodeChunker implements PxChunker {
             for( var problem : ppXC.getProblems() ) {
                 log.warning("Parse-Problem while chunking file " + f.getAbsolutePath() + ": " + problem.getMessage());
             }
-            return Stream.of();
+            try {
+                return rawFallback(f, Files.readAllLines(f.toPath(), StandardCharsets.UTF_8));
+            } catch (Exception readError) {
+                log.warning("Raw fallback failed for " + f.getAbsolutePath() + ": " + readError.getMessage());
+                return Stream.of();
+            }
         } catch (Exception e) {
             log.warning("Exception while chunking file " + f.getAbsolutePath() + ": " + e.getMessage());
-            return Stream.of();
+            try {
+                return rawFallback(f, Files.readAllLines(f.toPath(), StandardCharsets.UTF_8));
+            } catch (Exception readError) {
+                log.warning("Raw fallback failed for " + f.getAbsolutePath() + ": " + readError.getMessage());
+                return Stream.of();
+            }
         }
+    }
+
+    /**
+     * Ganze Datei als Zeilen-Units ohne Semantik — Fallback, wenn der Parse fehlschlägt.
+     * Die Parts sind zeilengleich geschnitten (~10k Zeichen, Brüche nur auf Zeilengrenzen),
+     * damit die '\n'-getrennte Concatenation im Provider-Fallback (frames.isEmpty()) den
+     * Dateitext exakt rekonstruiert — auch bei mehreren Parts.
+     */
+    private Stream<PxChunk> rawFallback(File f, List<String> codeLines) {
+        String content = String.join("\n", codeLines);
+        if (content.isBlank()) { return Stream.of(); }
+        List<PxChunk> parts = new ArrayList<>();
+        StringBuilder part = new StringBuilder();
+        int partStartLine = 1;
+        int lineNo = 0;
+        for (String line : codeLines) {
+            if (part.length() > 0 && part.length() + 1 + line.length() > 10_000) {
+                parts.add(createRawPart(f, part.toString(), partStartLine, lineNo));
+                part.setLength(0);
+                partStartLine = lineNo + 1;
+            }
+            if (part.length() > 0) {
+                part.append('\n');
+            }
+            part.append(line);
+            lineNo++;
+        }
+        if (part.length() > 0) {
+            parts.add(createRawPart(f, part.toString(), partStartLine, lineNo));
+        }
+        for (int i = 0; i < parts.size(); i++) {
+            parts.get(i).setPart(i);
+            parts.get(i).setTotal(parts.size());
+        }
+        return parts.stream();
+    }
+
+    private PxChunk createRawPart(File f, String content, int fromLine, int toLineInclusive) {
+        return PxChunk.create(
+                c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
+                c -> c.setId(f.getAbsolutePath()),
+                c -> c.setFile(f.getAbsolutePath()),
+                c -> c.setContent(content),
+                c -> c.setFromLine("" + fromLine),
+                c -> c.setToLine("" + (toLineInclusive + 1)),
+                c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.RAW_FILE.getName()));
     }
 
     @Override
@@ -126,11 +189,24 @@ public class JavaCodeChunker implements PxChunker {
         }
     }
 
+    /** Alle Typen der Datei: Top-Level + rekursiv verschachtelt (BFS, Reihenfolge = Quelltext). */
+    private List<TypeDeclaration<?>> collectTypes(CompilationUnit cu) {
+        List<TypeDeclaration<?>> result = new ArrayList<>(cu.getTypes());
+        Deque<TypeDeclaration<?>> queue = new ArrayDeque<>(result);
+        while (!queue.isEmpty()) {
+            TypeDeclaration<?> t = queue.poll();
+            for (Node member : t.getMembers()) {
+                if (member instanceof TypeDeclaration<?> nested) { result.add(nested); queue.add(nested); }
+            }
+        }
+        return result;
+    }
+
     private Collection<? extends PxChunk> createMethodChunks(File f, CompilationUnit cu, List<String> codeLines) {
         List<PxChunk> chunks = new ArrayList<>();
         var primaryType = cu.getPrimaryType();
         primaryType.ifPresent(pt -> createContainedMethodChunks(f, cu, chunks, pt, codeLines));
-        for (var subClazz : cu.getTypes()) {
+        for (var subClazz : collectTypes(cu)) {
             if (primaryType.isEmpty() || !subClazz.equals(primaryType.get())) {
                 createContainedMethodChunks(f, cu, chunks, subClazz, codeLines);
             }
@@ -139,9 +215,10 @@ public class JavaCodeChunker implements PxChunker {
     }
 
     private void createContainedMethodChunks(File f, CompilationUnit cu, List<PxChunk> chunks, TypeDeclaration<?> type, List<String> codeLines) {
+        String clazzName = type.getFullyQualifiedName().orElse(type.getNameAsString());
+        String pkgName = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
+
         for (var m : type.getMethods()) {
-            String clazzName = type.getFullyQualifiedName().orElse(type.getNameAsString());
-            String pkgName = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
             String methodSig = m.getDeclarationAsString(false, false, false);
             String id = clazzName + "." + methodSig;
             m.getJavadocComment().ifPresent(jc -> {
@@ -163,8 +240,9 @@ public class JavaCodeChunker implements PxChunker {
                             )
                 ));
             });
+            // The range already spans the annotations, so readLines captures them from the
+            // source (with correct indentation) — no separate annotation block is added.
             StringBuilder methodImpl = new StringBuilder();
-            addAnnotationsIfExist(methodImpl, m, "");
             int fromLine = m.getRange().get().begin.line - 1;
             int toLine = m.getRange().get().end.line;
             readLines(codeLines, fromLine, toLine, l -> methodImpl.append(l).append('\n'));
@@ -185,11 +263,109 @@ public class JavaCodeChunker implements PxChunker {
                         )
                 ));
         }
+
+        // Constructor chunks — same structure as methods but with CONSTRUCTOR section
+        for (var ctor : type.getConstructors()) {
+            String ctorSig = ctor.getDeclarationAsString(false, false, false);
+            String id = clazzName + "." + ctorSig;
+            ctor.getJavadocComment().ifPresent(jc -> {
+                StringBuilder content = new StringBuilder();
+                int fromLine = jc.getRange().get().begin.line - 1;
+                int toLine = jc.getRange().get().end.line;
+                readLines(codeLines, fromLine, toLine, l -> content.append(l).append('\n'));
+                chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap)
+                        .splitContent(content, fromLine, toLine, () ->
+                                PxChunk.create(
+                                        c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
+                                        c -> c.setParent(id),
+                                        c -> c.setId(id + ".javadoc"),
+                                        c -> c.setFile(f.getAbsolutePath()),
+                                        c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.METHOD_DOC.getName()),
+                                        c->c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
+                                        c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.METHOD_DOC.getName(),
+                                                clazzName, ctor.getNameAsString(), ctorSig)
+                                )
+                        ));
+            });
+            // The range already spans the annotations, so readLines captures them from the
+            // source (with correct indentation) — no separate annotation block is added.
+            StringBuilder ctorImpl = new StringBuilder();
+            int fromLine = ctor.getRange().get().begin.line - 1;
+            int toLine = ctor.getRange().get().end.line;
+            readLines(codeLines, fromLine, toLine, l -> ctorImpl.append(l).append('\n'));
+            chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap)
+                    .splitContent(
+                            ctorImpl.toString(),
+                            fromLine,
+                            toLine,
+                            () -> PxChunk.create(
+                                    c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
+                                    c -> c.setParent(type.getFullyQualifiedName().orElse(type.getNameAsString())),
+                                    c -> c.setId(id),
+                                    c -> c.setFile(f.getAbsolutePath()),
+                                    c -> c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
+                                    c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.CONSTRUCTOR.getName()),
+                                    c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.CONSTRUCTOR.getName(),
+                                            clazzName, ctor.getNameAsString(), ctorSig)
+                            )
+                    ));
+        }
+    }
+
+    private Collection<? extends PxChunk> createEnumConstantChunks(File f, CompilationUnit cu, List<String> codeLines) {
+        List<PxChunk> chunks = new ArrayList<>();
+        String pkgName = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
+
+        for (TypeDeclaration<?> t : collectTypes(cu)) {
+            if (!(t instanceof EnumDeclaration)) {
+                continue;
+            }
+            EnumDeclaration e = (EnumDeclaration) t;
+            if (e.getEntries().isEmpty()) {
+                continue;
+            }
+
+            String fqn = t.getFullyQualifiedName().orElse(t.getNameAsString());
+            int fromLine = e.getEntries().get(0).getRange().get().begin.line - 1; // 0-based
+            int toLine = e.getEntries().get(e.getEntries().size() - 1).getRange().get().end.line; // 1-based
+
+            // Only extend toLine if the last constant's line does not already contain the
+            // ';' separator — otherwise we would swallow the following field/method lines.
+            if (!codeLines.get(toLine - 1).contains(";")) {
+                for (int i = 0; i < 5 && toLine + i < codeLines.size(); i++) {
+                    if (codeLines.get(toLine + i).contains(";")) {
+                        toLine = toLine + i + 1; // make it exclusive upper bound for readLines
+                        break;
+                    }
+                }
+            }
+
+            StringBuilder content = new StringBuilder();
+            readLines(codeLines, fromLine, toLine, l -> content.append(l).append('\n'));
+
+            chunks.addAll(new ContentSplitter(this.chunkSize, this.overlap)
+                    .splitContent(
+                            content.toString(),
+                            fromLine,
+                            toLine,
+                            () -> PxChunk.create(
+                                    c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
+                                    c -> c.setParent(fqn),
+                                    c -> c.setId(fqn + ".constants"),
+                                    c -> c.setFile(f.getAbsolutePath()),
+                                    c -> c.setEmbeddingPrefix(pkgName + " " + t.getName().asString()),
+                                    c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.ENUM_CONSTANTS.getName()),
+                                    c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.ENUM_CONSTANTS.getName(),
+                                            fqn, t.getName().asString())
+                            )
+                    ));
+        }
+        return chunks;
     }
 
     private Collection<? extends PxChunk> createClassFrameChunk(File f, CompilationUnit cu, List<String> codeLines) {
         List<PxChunk> chunks = new ArrayList<>();
-        for (var clazz : cu.getTypes()) {
+        for (var clazz : collectTypes(cu)) {
             StringBuilder content = new StringBuilder();
             cu.getPackageDeclaration().ifPresent(pd -> content.append(pd.toString()).append('\n'));
             content.append(getImportsRange(cu, codeLines).toCode());
@@ -201,6 +377,10 @@ public class JavaCodeChunker implements PxChunker {
                 content.append("    ").append(attr.toString()).append('\n');
             }
             content.append("\n");
+            for (var ctor : clazz.getConstructors()) {
+                addAnnotationsIfExist(content, ctor, "    ");
+                content.append("    ").append(ctor.getDeclarationAsString(false, false, false)).append('\n');
+            }
             for (var m : clazz.getMethods()) {
                 addAnnotationsIfExist(content, m, "    ");
                 content.append("    ").append(m.getDeclarationAsString(false, false, false)).append('\n');
@@ -230,6 +410,15 @@ public class JavaCodeChunker implements PxChunker {
 
     private void addAnnotationsIfExist(StringBuilder content, MethodDeclaration m, String identation) {
         String annotations = m.getAnnotations().stream()
+                .map(AnnotationExpr::toString)
+                .collect(Collectors.joining("\n" + identation));
+        if (StringUtils.hasText(annotations)) {
+            content.append(identation).append(annotations).append('\n');
+        }
+    }
+
+    private void addAnnotationsIfExist(StringBuilder content, ConstructorDeclaration ctor, String identation) {
+        String annotations = ctor.getAnnotations().stream()
                 .map(AnnotationExpr::toString)
                 .collect(Collectors.joining("\n" + identation));
         if (StringUtils.hasText(annotations)) {
