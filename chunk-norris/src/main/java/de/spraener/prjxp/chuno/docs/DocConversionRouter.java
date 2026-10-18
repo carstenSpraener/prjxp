@@ -15,6 +15,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.io.File;
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.List;
@@ -61,6 +65,9 @@ public class DocConversionRouter {
     }
 
     public List<DocConversionAgent<?, ?>> findBestPath(File f, DocArtifaktType start, DocArtifaktType end, ConversionAccuracy accuracy) {
+        if (start == end) {
+            return Collections.emptyList();
+        }
         List<DocConversionAgent<?, ?>> predefinedAgents = conversionRoutesConfig.findPredefinedRouteAgents(start, end);
         if (!predefinedAgents.isEmpty()) {
             log.fine("Using predefined route for %s to %s.".formatted(start.name(), end.name()));
@@ -103,6 +110,7 @@ public class DocConversionRouter {
         log.fine(() -> listAgentPath(agents));
         DocArtifakt root = DocArtifakt.createRoot(f);
         root.setFormat(start);
+        loadTextContent(root, f, start);
         doConversion(root, agents);
         return DocContentCollector.collectTextContent(root, end);
     }
@@ -126,8 +134,32 @@ public class DocConversionRouter {
     public void doConversion(File f, DocArtifaktType start, DocArtifaktType end, ConversionAccuracy accuracy, Consumer<DocArtifakt> artifaktCollector) {
         List<DocConversionAgent<?, ?>> agents = findBestPath(f, start, end, accuracy);
         DocArtifakt root = DocArtifakt.createRoot(f);
+        root.setFormat(start);
+        loadTextContent(root, f, start);
         doConversion(root, agents);
         DocContentCollector.collectContent(root, end, artifaktCollector);
+    }
+
+    /**
+     * Text-based formats (HTML, TEXT, MARK_DOWN) are represented as String in memory,
+     * while binary formats (PDF, DOC, ...) stay as File on disk. The root artifakt is
+     * created from a File, so for text-based sources the file content must be read into
+     * the artifakt — the first conversion agent (and the content collector) expect a String.
+     */
+    private void loadTextContent(DocArtifakt root, File f, DocArtifaktType start) {
+        if (isTextBasedFormat(start)) {
+            try {
+                root.setData(Files.readString(f.toPath(), StandardCharsets.UTF_8));
+            } catch (IOException e) {
+                throw new UncheckedIOException("Could not read content of " + f.getAbsolutePath(), e);
+            }
+        }
+    }
+
+    private static boolean isTextBasedFormat(DocArtifaktType type) {
+        return type == DocArtifaktType.HTML
+                || type == DocArtifaktType.TEXT
+                || type == DocArtifaktType.MARK_DOWN;
     }
 
     private void doConversion(DocArtifakt artifakt, List<DocConversionAgent<?, ?>> agents) {
