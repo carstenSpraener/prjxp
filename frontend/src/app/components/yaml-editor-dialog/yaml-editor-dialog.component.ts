@@ -25,7 +25,8 @@ export class YamlEditorDialogComponent {
         tibedBatchSize: project.tibedBatchSize ?? DEFAULT_YAML_CONFIG.tibedBatchSize,
         embeddingsFile: project.embeddingsFile || null,
         tibedResetStore: project.tibedResetStore ?? DEFAULT_YAML_CONFIG.tibedResetStore,
-        prompt: project.prompt || ''
+        prompt: project.prompt || '',
+        fulltext: project.fulltext ?? DEFAULT_YAML_CONFIG.fulltext
       });
     } else {
       this.isEditing = false;
@@ -50,7 +51,8 @@ export class YamlEditorDialogComponent {
       tibedBatchSize: [DEFAULT_YAML_CONFIG.tibedBatchSize],
       embeddingsFile: [DEFAULT_YAML_CONFIG.embeddingsFile],
       tibedResetStore: [DEFAULT_YAML_CONFIG.tibedResetStore],
-      prompt: ['']
+      prompt: [''],
+      fulltext: [DEFAULT_YAML_CONFIG.fulltext]
     });
   }
 
@@ -64,7 +66,8 @@ export class YamlEditorDialogComponent {
         tibedBatchSize: this.form.get('tibedBatchSize')!.value || undefined,
         embeddingsFile: this.form.get('embeddingsFile')!.value || undefined,
         tibedResetStore: this.form.get('tibedResetStore')!.value || false,
-        prompt: this.form.get('prompt')!.value || null
+        prompt: this.form.get('prompt')!.value || null,
+        fulltext: this.form.get('fulltext')!.value || false
       };
       this.save.emit(config);
     }

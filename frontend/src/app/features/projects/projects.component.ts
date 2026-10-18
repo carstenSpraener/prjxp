@@ -76,7 +76,8 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         rootDir: config.rootDir,
         chunoWhiteList: config.chunoWhiteList,
         tibedBatchSize: config.tibedBatchSize,
-        prompt: config.prompt ?? null
+        prompt: config.prompt ?? null,
+        fulltext: config.fulltext
       }).subscribe(() => {
         this.loadProjects();
         this.showEditor.set(false);

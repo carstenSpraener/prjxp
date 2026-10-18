@@ -305,7 +305,7 @@ class HubProjectsControllerTest {
 
     @Test
     void createProjectCreatesNewProjectAndReturnsImporting() throws Exception {
-        var request = new de.spraener.prjxp.mcp.ProjectCreateRequest("new-project", "SNAPSHOT", null, null, null);
+        var request = new de.spraener.prjxp.mcp.ProjectCreateRequest("new-project", "SNAPSHOT", null, null, null, null);
 
         var result = controller.createProject(request);
 
@@ -320,7 +320,7 @@ class HubProjectsControllerTest {
         hub.setImportDir(tempRoot.resolve("import").toString());
         Files.createDirectories(tempRoot.resolve("import"));
 
-        var request = new de.spraener.prjxp.mcp.ProjectCreateRequest("live-project", "LIVE", null, null, null);
+        var request = new de.spraener.prjxp.mcp.ProjectCreateRequest("live-project", "LIVE", null, null, null, null);
         var result = controller.createProject(request);
 
         assertThat(result.kind()).isEqualTo("LIVE");
@@ -333,7 +333,7 @@ class HubProjectsControllerTest {
     void updateProjectUpdatesConfig() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));
 
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go,rs", 64, null);
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go,rs", 64, null, null);
         controller.updateProject("alpha", updates);
 
         var def = registry.definitionOf("alpha");
@@ -344,7 +344,7 @@ class HubProjectsControllerTest {
 
     @Test
     void updateProjectOfUnknownThrowsNotFound() {
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go", null, null);
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go", null, null, null);
 
         assertThatThrownBy(() -> controller.updateProject("ghost", updates))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
@@ -442,7 +442,7 @@ class HubProjectsControllerTest {
     void updateProjectPersistsPrompt() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));
 
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, "Focus on payments.");
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, "Focus on payments.", null);
         var result = controller.updateProject("alpha", updates);
 
         assertThat(registry.definitionOf("alpha").getPrompt()).isEqualTo("Focus on payments.");
@@ -455,7 +455,7 @@ class HubProjectsControllerTest {
         Files.writeString(dir.resolve("prjxp.yaml"), "name: alpha\nprompt: \"Focus on payments.\"\n");
         registry.registerProject("alpha", dir);
 
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, "   ");
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, "   ", null);
         controller.updateProject("alpha", updates);
 
         assertThat(registry.definitionOf("alpha").getPrompt()).isNull();
@@ -470,5 +470,43 @@ class HubProjectsControllerTest {
         mockMvc.perform(get("/api/projects"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].prompt").value("Focus on payments."));
+    }
+
+    // ------------------------------------------------------------------ fulltext switch
+
+    @Test
+    void updateProjectPersistsFulltextAndDoesNotEnqueueReindex() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, null, true);
+        var result = controller.updateProject("alpha", updates);
+
+        assertThat(registry.definitionOf("alpha").isFulltext()).isTrue();
+        assertThat(result.fulltext()).isTrue();
+        assertThat(Files.readString(projectDir("alpha").resolve("prjxp.yaml"))).contains("fulltext: true");
+        verify(orchestrator, never()).enqueue(anyString());   // fulltext change never triggers auto-reindex
+    }
+
+    @Test
+    void updateProjectWithoutFulltextLeavesSwitchUntouched() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go", null, null, null);
+        var result = controller.updateProject("alpha", updates);
+
+        assertThat(registry.definitionOf("alpha").isFulltext()).isFalse();
+        assertThat(result.fulltext()).isFalse();
+        verify(orchestrator, never()).enqueue(anyString());
+    }
+
+    @Test
+    void listExposesFulltextFromYaml() throws Exception {
+        Path dir = projectDir("alpha");
+        Files.writeString(dir.resolve("prjxp.yaml"), "name: alpha\nfulltext: true\n");
+        registry.registerProject("alpha", dir);
+
+        mockMvc.perform(get("/api/projects"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].fulltext").value(true));
     }
 }

@@ -6,5 +6,6 @@ public record ProjectUpdateRequest(
     @Nullable String rootDir,
     @Nullable String chunoWhiteList,
     @Nullable Integer tibedBatchSize,
-    @Nullable String prompt
+    @Nullable String prompt,
+    @Nullable Boolean fulltext
 ) {}

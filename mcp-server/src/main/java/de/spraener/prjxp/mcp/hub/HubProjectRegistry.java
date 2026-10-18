@@ -159,6 +159,7 @@ public class HubProjectRegistry implements ProjectRegistry {
             oldDef.setEmbeddingsFile(freshDef.getEmbeddingsFile());
             oldDef.setTibedResetStore(freshDef.isTibedResetStore());
             oldDef.setPrompt(freshDef.getPrompt());
+            oldDef.setFulltext(freshDef.isFulltext());
         }
     }
 
@@ -442,7 +443,8 @@ public class HubProjectRegistry implements ProjectRegistry {
                         def.isTibedResetStore(),
                         reindexStatus,
                         reindexProgress,
-                        def.getPrompt()
+                        def.getPrompt(),
+                        def.isFulltext()
                     );
                 })
                 .toList();

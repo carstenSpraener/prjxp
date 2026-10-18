@@ -178,4 +178,26 @@ describe('YamlEditorDialogComponent', () => {
 
     expect(fixture.nativeElement.querySelector('#prompt')).toBeTruthy();
   });
+
+  it('form should contain fulltext control with default false', () => {
+    expect(component.form.get('fulltext')?.value).toBe(DEFAULT_YAML_CONFIG.fulltext);
+    expect(component.form.get('fulltext')?.value).toBe(false);
+  });
+
+  it('projectToEdit with fulltext=true should patch the control', () => {
+    component.projectToEdit = { ...mockProject, fulltext: true };
+
+    expect(component.form.get('fulltext')?.value).toBe(true);
+  });
+
+  it('onSave() should emit config with fulltext', () => {
+    const saveSpy = vi.fn();
+    component.save.subscribe(saveSpy);
+
+    component.form.patchValue({ name: 'new-project', fulltext: true });
+    component.onSave();
+
+    const emittedConfig: PrjxpYamlConfig = saveSpy.mock.calls[0][0];
+    expect(emittedConfig.fulltext).toBe(true);
+  });
 });

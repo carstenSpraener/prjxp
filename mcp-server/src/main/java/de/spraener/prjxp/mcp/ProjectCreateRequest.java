@@ -7,5 +7,6 @@ public record ProjectCreateRequest(
     String kind,            // "LIVE" or "SNAPSHOT"
     @Nullable String rootDir,
     @Nullable String chunoWhiteList,
-    @Nullable Integer tibedBatchSize
+    @Nullable Integer tibedBatchSize,
+    @Nullable Boolean fulltext
 ) {}

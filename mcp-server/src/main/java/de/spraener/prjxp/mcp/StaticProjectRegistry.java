@@ -74,7 +74,7 @@ public class StaticProjectRegistry implements ProjectRegistry {
     public List<ProjectInfo> projectInfos() {
         return availableProjects().stream()
                 .map(n -> new ProjectInfo(n, "READY", null, null, 0L, 0L, 0,
-                    null, null, null, null, null, false, "IDLE", 0, null))
+                    null, null, null, null, null, false, "IDLE", 0, null, null))
                 .toList();
     }
 }
