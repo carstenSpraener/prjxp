@@ -382,6 +382,56 @@ class LucenePxChunkDaoTest {
         verify(embeddingModel).embed("my question");
     }
 
+    // ------------------------------------------------------------------ FULLTEXT negation filter
+
+    @Test
+    void searchFullTextExcludesFulltextMarkerViaNegation() {
+        addChunk("chunk-a", "alpha beta");
+        addFulltextChunk("chunk-b", "alpha beta");
+
+        List<ScoredChunk> result = dao.searchFullText(
+                "alpha", Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-a");
+    }
+
+    @Test
+    void searchFullTextPositiveMarkerFilterStillWorks() {
+        addChunk("chunk-a", "alpha beta");
+        addFulltextChunk("chunk-b", "alpha beta");
+
+        List<ScoredChunk> result = dao.searchFullText(
+                "alpha", Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, PxChunk.FULLTEXT_MARKER), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-b");
+    }
+
+    @Test
+    void searchByIndexExcludesFulltextMarkerViaNegation() {
+        addChunk("chunk-a", "alpha beta");
+        addFulltextChunk("chunk-b", "alpha beta");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-a");
+    }
+
+    @Test
+    void searchVectorExcludesFulltextMarkerViaNegation() {
+        addChunk("chunk-a", "alpha beta");
+        addFulltextChunk("chunk-b", "alpha beta");   // zero vector, like the embedder stores it
+
+        List<ScoredChunk> result = dao.searchVector(
+                "alpha", Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-a");
+    }
+
     private void addChunk(String id, String content) {
         Metadata meta = new Metadata();
         meta.put("pxchunk_id", id);
@@ -411,5 +461,14 @@ class LucenePxChunkDaoTest {
         meta.put("pxchunk_id", id);
         meta.put(PxChunk.PXCHUNK_PROJECT, project);
         store.add(Embedding.from(new float[]{0.5f, 0.3f, 0.2f}), TextSegment.from(content, meta));
+    }
+
+    /** A full-text copy doc: marker metadata + placeholder vector (as stored by the embedder). */
+    private void addFulltextChunk(String id, String content) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, PxChunk.FULLTEXT_MARKER);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 1f, 1f}), TextSegment.from(content, meta));
     }
 }

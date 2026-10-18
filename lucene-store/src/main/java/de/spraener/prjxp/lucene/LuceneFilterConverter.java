@@ -53,6 +53,7 @@ public class LuceneFilterConverter {
         if (filter instanceof Not) {
             Not not = (Not) filter;
             return new BooleanQuery.Builder()
+                    .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST)
                     .add(convert(not.expression()), BooleanClause.Occur.MUST_NOT)
                     .build();
         }
@@ -65,6 +66,7 @@ public class LuceneFilterConverter {
         if (filter instanceof IsNotEqualTo) {
             IsNotEqualTo neq = (IsNotEqualTo) filter;
             return new BooleanQuery.Builder()
+                    .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST)
                     .add(new TermQuery(new Term(neq.key(), neq.comparisonValue().toString())), BooleanClause.Occur.MUST_NOT)
                     .build();
         }
@@ -109,7 +111,8 @@ public class LuceneFilterConverter {
 
         if (filter instanceof IsNotIn) {
             IsNotIn notIn = (IsNotIn) filter;
-            BooleanQuery.Builder builder = new BooleanQuery.Builder();
+            BooleanQuery.Builder builder = new BooleanQuery.Builder()
+                    .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST);
             for (Object value : notIn.comparisonValues()) {
                 builder.add(new TermQuery(new Term(notIn.key(), value.toString())), BooleanClause.Occur.MUST_NOT);
             }
