@@ -68,9 +68,13 @@ class ChunkProcessTest {
     }
 
     private ChunkProcess uut(PrjXPConfig cfg, String passwordValue) {
+        return uut(cfg, passwordValue, stubFactory());
+    }
+
+    private ChunkProcess uut(PrjXPConfig cfg, String passwordValue, ChunkerFactory factory) {
         return new ChunkProcess(
                 Mockito.mock(PxLogService.class),
-                stubFactory(),
+                factory,
                 Mockito.mock(ApplicationEventPublisher.class),
                 noVeto(),
                 cfg,
@@ -146,7 +150,15 @@ class ChunkProcessTest {
     }
 
     private ChunkerFactory stubFactory() {
-        PxChunker stub = new PxChunker() {
+        ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
+        Mockito.when(factory.createChunker(Mockito.any(File.class)))
+                .thenAnswer(invocation -> Stream.of(stubChunker()));
+        Mockito.when(factory.listPostWalkChunker()).thenReturn(Stream.empty());
+        return factory;
+    }
+
+    private PxChunker stubChunker() {
+        return new PxChunker() {
             @Override
             public Stream<PxChunk> chunk(File f) {
                 return Stream.of(PxChunk.create(c -> {
@@ -162,11 +174,40 @@ class ChunkProcessTest {
                 return true;
             }
         };
+    }
+
+    private ChunkerFactory factoryWithFullTextChunker() {
         ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
         Mockito.when(factory.createChunker(Mockito.any(File.class)))
-                .thenAnswer(invocation -> Stream.of(stub));
+                .thenAnswer(invocation -> Stream.of(stubChunker(), new FullTextChunker()));
         Mockito.when(factory.listPostWalkChunker()).thenReturn(Stream.empty());
         return factory;
+    }
+
+    // ------------------------------------------------------------------ fulltext gating
+
+    @Test
+    void fulltextDisabledFiltersFullTextChunker() throws Exception {
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ");
+
+        uut(cfg, null, factoryWithFullTextChunker()).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        assertThat(content).contains("\"content\":\"hello world content\"");
+        assertThat(content).doesNotContain("FULLTEXT");
+    }
+
+    @Test
+    void fulltextEnabledIncludesFullTextChunker() throws Exception {
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ");
+        cfg.getActiveProject().orElseThrow().setFulltext(true);
+
+        uut(cfg, null, factoryWithFullTextChunker()).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        assertThat(content).contains("\"content\":\"hello world content\"");
+        assertThat(content).contains("FULLTEXT");
+        assertThat(content).contains("some source text");
     }
 
     private VetoRegistry noVeto() {

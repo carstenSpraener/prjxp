@@ -96,6 +96,7 @@ public class ChunkProcess {
     protected void handlePath(PrintStream out, ProjectDefinition pd, Path p) {
         final Path rootPath = Path.of(pd.getRootDir()).toAbsolutePath().normalize();
         factory.createChunker(p.toFile())
+                .filter(c -> !(c instanceof FullTextChunker) || pd.isFulltext())
                 .parallel()
                 .flatMap(c -> c.chunk(p.toFile()))
                 .map( chunk -> {
