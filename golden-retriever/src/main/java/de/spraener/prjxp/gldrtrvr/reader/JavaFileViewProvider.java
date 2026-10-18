@@ -26,6 +26,7 @@ public class JavaFileViewProvider implements FileViewProvider {
     private static final String SECTION_KEY = "java_code_section";
     private static final String SECTION_CLASS_FRAME = "classFrame";
     private static final String SECTION_METHOD = "method";
+    private static final String SECTION_CONSTRUCTOR = "constructor";
     private static final String SECTION_METHOD_DOC = "methodDoc";
 
     /** Splice coordinates (indices into the ORIGINAL lines list) plus the replacement lines.
@@ -46,7 +47,8 @@ public class JavaFileViewProvider implements FileViewProvider {
     @Override
     public String render(List<PxChunk> units) {
         List<PxChunk> frames = sortByFromLine(units, SECTION_CLASS_FRAME);
-        List<PxChunk> methods = sortByFromLine(units, SECTION_METHOD);
+        List<PxChunk> methods = new ArrayList<>(sortByFromLine(units, SECTION_METHOD));
+        methods.addAll(sortByFromLine(units, SECTION_CONSTRUCTOR));
         Map<String, PxChunk> docs = new HashMap<>();
         for (PxChunk unit : units) {
             if (SECTION_METHOD_DOC.equals(unit.getMetadata().get(SECTION_KEY))) {

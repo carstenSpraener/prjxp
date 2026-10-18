@@ -161,6 +161,58 @@ class JavaFileViewProviderTest {
     }
 
     @Test
+    void splicesConstructorBodyAtSignatureLine() {
+        // Frame uses the REAL chunker signature format: getDeclarationAsString(false,false,false)
+        // yields "Foo(int)" / "Foo(String)" — no modifiers, no parameter names (same as methods).
+        String frameContent = "package de.example;\n"
+                + "\n"
+                + "import java.util.List;\n"
+                + "\n"
+                + "public class Foo {\n"
+                + "    private int x;\n"
+                + "\n"
+                + "    Foo(int)\n"
+                + "    @Deprecated\n"
+                + "    Foo(String)\n"
+                + "    void bar(int)\n"
+                + "}\n";
+
+        PxChunk frame = unit("de.example.Foo", null, "classFrame", 1, frameContent);
+
+        // Constructor with body — id suffix matches the frame line; body is the real source
+        PxChunk ctor1 = unit("de.example.Foo.Foo(int)", "de.example.Foo", "constructor", 8,
+                "    public Foo(int a) {\n        x = a;\n    }\n");
+
+        // Constructor with annotation (the annotation comes from the source range, once)
+        PxChunk ctor2 = unit("de.example.Foo.Foo(String)", "de.example.Foo", "constructor", 9,
+                "    @Deprecated\n    public Foo(String s) {\n        this.s = s;\n    }\n");
+
+        // Javadoc for first constructor
+        PxChunk ctor1Doc = unit("de.example.Foo.Foo(int).javadoc", "de.example.Foo.Foo(int)", "methodDoc", 8,
+                "/** Primary constructor. */\n");
+
+        // Method (still works)
+        PxChunk bar = unit("de.example.Foo.void bar(int)", "de.example.Foo", "method", 10,
+                "    public void bar(int a) {\n        x = a;\n    }\n");
+
+        String view = provider.render(List.of(frame, ctor1, ctor2, ctor1Doc, bar));
+
+        // Constructor body should be spliced in
+        assertThat(view).contains("    public Foo(int a) {\n        x = a;\n    }");
+        assertThat(view).contains("/** Primary constructor. */");
+
+        // @Deprecated should appear only once (not duplicated)
+        assertThat(countOccurrences(view, "@Deprecated")).isEqualTo(1);
+
+        // Method body should still be spliced
+        assertThat(view).contains("    public void bar(int a) {\n        x = a;\n    }");
+
+        // Bare signature lines should be replaced (not present as bare)
+        assertThat(view).doesNotContain("    Foo(int)\n");
+        assertThat(view).doesNotContain("    Foo(String)\n");
+    }
+
+    @Test
     void mimeAndLanguage() {
         assertThat(provider.mimeType()).isEqualTo("text/x-java-code");
         assertThat(provider.language()).isEqualTo("java");

@@ -35,6 +35,16 @@ public class JavaCodeChunkerTests {
     @Autowired
     JavaCodeChunker uut;
 
+    private static long countOccurrences(String haystack, String needle) {
+        long count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) >= 0) {
+            count++;
+            idx += needle.length();
+        }
+        return count;
+    }
+
     @Test
     public void testSimpleClass() throws Exception {
         File code = toTmpFile("TestClass",
@@ -149,6 +159,71 @@ public class JavaCodeChunkerTests {
                         "imports".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_TYPE)) &&
                         "de.spraener.test.TestClass".equals(c.getMetadata().get(SymbolMetadata.SYMBOL_FQN)))
         ;
+    }
+
+    @Test
+    public void testConstructors() throws Exception {
+        File code = toTmpFile("ConstructorClass",
+                """
+                        package de.spraener.test;
+
+                        class ConstructorClass {
+                            /**
+                             * Primary constructor with Javadoc
+                             */
+                            public ConstructorClass(int x) {
+                                this.x = x;
+                            }
+
+                            @Deprecated
+                            public ConstructorClass(String s) {
+                                this.s = s;
+                            }
+
+                            private int x;
+                            private String s;
+
+                            public void doSomething() {
+                                System.out.println(x);
+                            }
+                        }
+                        """
+        );
+        List<PxChunk> chunkList = uut.chunk(code).toList();
+
+        // Constructor with Javadoc. Note: getDeclarationAsString(false,false,false) yields
+        // "ConstructorClass(int)" — no modifiers, no parameter names (same convention as methods).
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.ConstructorClass.ConstructorClass(int)") &&
+                        "constructor".equals(c.getMetadata().get("java_code_section")) &&
+                        c.getContent().contains("this.x = x;")
+                )
+                .anyMatch(c -> c.getId().equals("de.spraener.test.ConstructorClass.ConstructorClass(int).javadoc") &&
+                        "methodDoc".equals(c.getMetadata().get("java_code_section")) &&
+                        c.getContent().contains("Primary constructor with Javadoc")
+                );
+
+        // Constructor with annotation — the annotation must appear exactly once (no duplication)
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.ConstructorClass.ConstructorClass(String)") &&
+                        "constructor".equals(c.getMetadata().get("java_code_section")) &&
+                        countOccurrences(c.getContent(), "@Deprecated") == 1 &&
+                        c.getContent().contains("this.s = s;")
+                );
+
+        // Frame unit must contain constructor signature lines
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.ConstructorClass") &&
+                        "classFrame".equals(c.getMetadata().get("java_code_section")) &&
+                        c.getContent().contains("ConstructorClass(int)") &&
+                        c.getContent().contains("ConstructorClass(String)")
+                );
+
+        // Method still works
+        assertThat(chunkList)
+                .anyMatch(c -> c.getId().equals("de.spraener.test.ConstructorClass.void doSomething()") &&
+                        "method".equals(c.getMetadata().get("java_code_section"))
+                );
     }
 
     //Ignored @Test()
