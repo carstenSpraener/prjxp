@@ -9,6 +9,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProjectDefinitionTest {
 
     @Test
+    void fulltextDefaultsToFalse() {
+        assertThat(new ProjectDefinition().isFulltext()).isFalse();
+    }
+
+    @Test
     void resolvedJsonlFile_relativeResolvesAgainstRootDir() {
         ProjectDefinition pd = new ProjectDefinition();
         pd.setName("foo");
