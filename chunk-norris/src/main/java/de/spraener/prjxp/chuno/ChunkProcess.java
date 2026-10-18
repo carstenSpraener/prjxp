@@ -100,7 +100,9 @@ public class ChunkProcess {
                 .parallel()
                 .flatMap(c -> c.chunk(p.toFile()))
                 .map( chunk -> {
-                    chunk.setFile(toProjectRelativePath(rootPath, chunk.getFile()));
+                    String relPath = toProjectRelativePath(rootPath, chunk.getFile());
+                    chunk.setFile(relPath);
+                    rebaseIdToProjectPath(chunk, relPath, p.getFileName().toString());
                     return chunk;
                 })
                 .map(chunk -> toJSONL(chunk))
@@ -126,6 +128,29 @@ public class ChunkProcess {
             relativePath = normalizedPath;
         }
         return relativePath.toString().replace(File.separatorChar, '/');
+    }
+
+    /**
+     * Rebases a basename-based chunk ID onto the project-relative path so that same-named
+     * files in different directories (e.g. {@code README.md} in many sub-projects) don't
+     * collide on the same ID. Without this, tibed's {@code StoreIdChecker} would silently
+     * drop every chunk whose ID already exists in the store.
+     * <p>
+     * Only IDs that start with the file's basename are rebased (e.g. {@code README.md:1:2}
+     * → {@code core/cgv19-cli/README.md:1:2}). IDs that are not basename-based — absolute
+     * paths (FullText/Text chunkers) or FQNs (Java/TS chunkers) — are left untouched.
+     */
+    private void rebaseIdToProjectPath(PxChunk chunk, String relPath, String basename) {
+        String id = chunk.getId();
+        if (id == null || id.isBlank() || relPath == null || relPath.isBlank()
+                || basename == null || basename.isBlank()) {
+            return;
+        }
+        if (id.equals(basename)) {
+            chunk.setId(relPath);
+        } else if (id.startsWith(basename)) {
+            chunk.setId(relPath + id.substring(basename.length()));
+        }
     }
 
     protected void doPostWalk(PrintStream out) {

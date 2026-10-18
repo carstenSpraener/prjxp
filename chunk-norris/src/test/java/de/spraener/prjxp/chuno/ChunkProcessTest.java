@@ -210,6 +210,103 @@ class ChunkProcessTest {
         assertThat(content).contains("some source text");
     }
 
+    // ------------------------------------------------------------------ ID collision (basename vs. path)
+
+    @Test
+    void sameBasenameFilesInDifferentDirs_getUniquePathBasedIds() throws Exception {
+        Path rootDir = tempDir.resolve("src");
+        Files.createDirectories(rootDir.resolve("dir1"));
+        Files.createDirectories(rootDir.resolve("dir2"));
+        Files.writeString(rootDir.resolve("dir1/README.md"), "# one");
+        Files.writeString(rootDir.resolve("dir2/README.md"), "# two");
+
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("cwd");
+        pd.setRootDir(rootDir.toString());
+        pd.setJsonlFile(tempDir.resolve("out.jsonl").toString());
+
+        PrjXPConfig cfg = new PrjXPConfig();
+        cfg.setActiveProject("cwd");
+        cfg.getProjects().add(pd);
+        cfg.getTransfer().setPasswordEnv("PRJXP_TEST_NO_PASSWORD_XYZ");
+
+        // A chunker that sets the ID to the file's basename (like MarkdownChunker) — the collision case
+        ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
+        Mockito.when(factory.createChunker(Mockito.any(File.class)))
+                .thenAnswer(inv -> {
+                    File f = inv.getArgument(0);
+                    return Stream.of(new PxChunker() {
+                        @Override
+                        public Stream<PxChunk> chunk(File file) {
+                            return Stream.of(PxChunk.create(c -> {
+                                c.setId(file.getName());   // basename-based (the bug)
+                                c.setMimeType("text/markdown");
+                                c.setFile(file.getAbsolutePath());
+                                c.setContent("content of " + file.getName());
+                            }));
+                        }
+
+                        @Override
+                        public boolean matches(File file) {
+                            return true;
+                        }
+                    });
+                });
+        Mockito.when(factory.listPostWalkChunker()).thenReturn(Stream.empty());
+
+        uut(cfg, null, factory).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        // The IDs must be path-based (unique per directory), not both "README.md"
+        assertThat(content).contains("\"id\":\"dir1/README.md\"");
+        assertThat(content).contains("\"id\":\"dir2/README.md\"");
+        // And the colliding basename ID must NOT appear
+        assertThat(content).doesNotContain("\"id\":\"README.md\"");
+    }
+
+    @Test
+    void nonBasenameIdsAreLeftUntouched() throws Exception {
+        // FQN-style IDs (Java/TS chunkers) must not be mangled by the rebasing
+        Path rootDir = tempDir.resolve("src");
+        Files.createDirectories(rootDir);
+        Files.writeString(rootDir.resolve("Foo.java"), "class Foo {}");
+
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("cwd");
+        pd.setRootDir(rootDir.toString());
+        pd.setJsonlFile(tempDir.resolve("out.jsonl").toString());
+
+        PrjXPConfig cfg = new PrjXPConfig();
+        cfg.setActiveProject("cwd");
+        cfg.getProjects().add(pd);
+        cfg.getTransfer().setPasswordEnv("PRJXP_TEST_NO_PASSWORD_XYZ");
+
+        ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
+        Mockito.when(factory.createChunker(Mockito.any(File.class)))
+                .thenAnswer(inv -> Stream.of(new PxChunker() {
+                    @Override
+                    public Stream<PxChunk> chunk(File file) {
+                        return Stream.of(PxChunk.create(c -> {
+                            c.setId("com.example.Foo");   // FQN-based, not basename-based
+                            c.setMimeType("text/x-java");
+                            c.setFile(file.getAbsolutePath());
+                            c.setContent("class Foo {}");
+                        }));
+                    }
+
+                    @Override
+                    public boolean matches(File file) {
+                        return true;
+                    }
+                }));
+        Mockito.when(factory.listPostWalkChunker()).thenReturn(Stream.empty());
+
+        uut(cfg, null, factory).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        assertThat(content).contains("\"id\":\"com.example.Foo\"");
+    }
+
     private VetoRegistry noVeto() {
         VetoRegistry vetos = Mockito.mock(VetoRegistry.class);
         Mockito.when(vetos.shouldVeto(Mockito.any(Path.class))).thenReturn(false);
