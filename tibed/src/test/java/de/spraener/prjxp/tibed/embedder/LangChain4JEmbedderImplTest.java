@@ -1,5 +1,6 @@
 package de.spraener.prjxp.tibed.embedder;
 
+import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
@@ -135,5 +136,50 @@ class LangChain4JEmbedderImplTest {
         assertThat(result.matches()).hasSize(1);
         assertThat(result.matches().get(0).embedded().metadata()
                 .getString(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE)).isEqualTo(PxChunk.FULLTEXT_MARKER);
+    }
+
+    @Test
+    void embedReturnsRecordsWithPrefixInVector() {
+        RecordingEmbeddingModel model = new RecordingEmbeddingModel();
+        LangChain4JEmbedderImpl uut = uut(model);
+
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("chunk-prefixed");
+            c.setFile("src/A.java");
+            c.setEmbeddingPrefix("com.example Foo");
+            c.setContent("normal content");
+        });
+
+        List<EmbeddedChunkRecord> records = uut.embed(List.of(chunk));
+
+        assertThat(records).hasSize(1);
+        assertThat(records.get(0).id()).isEqualTo("chunk-prefixed");
+        assertThat(records.get(0).embeddingPrefix()).isEqualTo("com.example Foo");
+        assertThat(records.get(0).vector()).containsExactly(1f, 0f, 0f);
+        // the model received the prefixed content
+        assertThat(model.calls).hasSize(1);
+        assertThat(model.calls.get(0).get(0).text()).contains("com.example Foo").contains("normal content");
+    }
+
+    @Test
+    void embedFulltextGetsPlaceholderVector() {
+        RecordingEmbeddingModel model = new RecordingEmbeddingModel();
+        LangChain4JEmbedderImpl uut = uut(model);
+
+        List<EmbeddedChunkRecord> records = uut.embed(List.of(chunk("chunk-ft", "fulltext content", true)));
+
+        assertThat(records).hasSize(1);
+        assertThat(records.get(0).id()).isEqualTo("chunk-ft");
+        assertThat(records.get(0).vector()).containsExactly(1f, 1f, 1f);   // all-ones placeholder (dim 3)
+        assertThat(model.calls).isEmpty();
+    }
+
+    @Test
+    void embedEmptyListReturnsEmpty() {
+        RecordingEmbeddingModel model = new RecordingEmbeddingModel();
+        LangChain4JEmbedderImpl uut = uut(model);
+
+        assertThat(uut.embed(List.of())).isEmpty();
+        assertThat(model.calls).isEmpty();
     }
 }

@@ -1,7 +1,7 @@
 package de.spraener.prjxp.tibed.embedder;
 
+import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
 import de.spraener.prjxp.common.model.PxChunk;
-import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.PxChunk2TextSegmentConverter;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
@@ -32,16 +32,36 @@ public class LangChain4JEmbedderImpl implements EmbeddingExecutor {
             log.info("Skipping empty batch of chunks");
             return;
         }
+        List<EmbeddedChunkRecord> records = embed(chunks);
+        if (records.isEmpty()) {
+            return;
+        }
+        List<Embedding> embeddings = records.stream().map(r -> Embedding.from(r.vector())).toList();
+        List<TextSegment> segments = records.stream()
+                .map(r -> PxChunk2TextSegmentConverter.convert(r.toPxChunk()))
+                .toList();
+
+        // Nur das Schreiben in die DB synchronisieren
+        synchronized (storeSupplier) {
+            store.addAll(embeddings, segments);
+        }
+    }
+
+    @Override
+    public List<EmbeddedChunkRecord> embed(List<PxChunk> chunks) {
+        if (chunks.isEmpty()) {
+            return List.of();
+        }
         List<PxChunk> valid = chunks.stream()
                 .filter(c -> StringUtils.hasText(c.getContent()))
                 .toList();
 
-        // FULLTEXT parts are stored with a deterministic placeholder vector (no embedding API cost);
+        // FULLTEXT parts get a deterministic placeholder vector (no embedding API cost);
         // the doc still exists in the index for lossless readFile.
         List<PxChunk> fulltext = valid.stream().filter(LangChain4JEmbedderImpl::isFulltext).toList();
         List<PxChunk> normal = valid.stream().filter(c -> !isFulltext(c)).toList();
 
-        int dim = store instanceof LuceneEmbeddingStore l ? l.getVectorDimension() : embeddingModel.dimension();
+        int dim = embeddingModel.dimension();
         List<Embedding> embeddings = new ArrayList<>();
         if (!normal.isEmpty()) {
             embeddings.addAll(embeddingModel.embedAll(
@@ -51,16 +71,15 @@ public class LangChain4JEmbedderImpl implements EmbeddingExecutor {
             embeddings.add(placeholderEmbedding(dim));
         }
 
-        // PxChunks in TextSegments umwandeln (Reihenfolge muss zu den Embeddings passen)
-        List<TextSegment> segmentsForStorage = new ArrayList<>(normal.stream()
-                .map(PxChunk2TextSegmentConverter::convert)
-                .toList());
-        segmentsForStorage.addAll(fulltext.stream().map(PxChunk2TextSegmentConverter::convert).toList());
-
-        // Nur das Schreiben in die DB synchronisieren
-        synchronized (storeSupplier) {
-            store.addAll(embeddings, segmentsForStorage);
+        List<EmbeddedChunkRecord> records = new ArrayList<>(embeddings.size());
+        int i = 0;
+        for (PxChunk c : normal) {
+            records.add(EmbeddedChunkRecord.from(c, embeddings.get(i++).vector()));
         }
+        for (PxChunk c : fulltext) {
+            records.add(EmbeddedChunkRecord.from(c, embeddings.get(i++).vector()));
+        }
+        return records;
     }
 
     private static boolean isFulltext(PxChunk c) {

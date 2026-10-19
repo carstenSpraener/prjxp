@@ -18,7 +18,8 @@ public record EmbeddedChunkRecord(
         int overlap,
         Map<String, String> metadata,
         String content,
-        float[] vector
+        float[] vector,
+        String embeddingPrefix
 ) {
     public EmbeddedChunkRecord {
         metadata = metadata == null ? new HashMap<>() : new HashMap<>(metadata);
@@ -38,7 +39,8 @@ public record EmbeddedChunkRecord(
                 chunk.getOverlap(),
                 new HashMap<>(chunk.getMetadata()),
                 chunk.getContent(),
-                vector
+                vector,
+                chunk.getEmbeddingPrefix()
         );
     }
 
@@ -56,6 +58,9 @@ public record EmbeddedChunkRecord(
             c.setOverlap(overlap);
             c.getMetadata().putAll(metadata);
             c.setContent(content);
+            if (embeddingPrefix != null) {
+                c.setEmbeddingPrefix(embeddingPrefix);
+            }
         });
     }
 
@@ -75,11 +80,12 @@ public record EmbeddedChunkRecord(
                 && Objects.equals(toLine, other.toLine)
                 && Objects.equals(metadata, other.metadata)
                 && Objects.equals(content, other.content)
+                && Objects.equals(embeddingPrefix, other.embeddingPrefix)
                 && Arrays.equals(vector, other.vector);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, mimeType, file, parent, part, total, fromLine, toLine, size, overlap, metadata, content, Arrays.hashCode(vector));
+        return Objects.hash(id, mimeType, file, parent, part, total, fromLine, toLine, size, overlap, metadata, content, Arrays.hashCode(vector), embeddingPrefix);
     }
 }

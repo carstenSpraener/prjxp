@@ -298,7 +298,7 @@ class HubProjectsControllerTest {
 
     private EmbeddedChunkRecord createEmbeddedChunkRecord(String id, String content, float[] vector) {
         return new EmbeddedChunkRecord(id, "text/plain", "/test.java", null, 0, 1,
-                "1", "10", content.length(), 0, java.util.Map.of(), content, vector);
+                "1", "10", content.length(), 0, java.util.Map.of(), content, vector, null);
     }
 
     // ------------------------------------------------------------------ Phase 06: createProject
