@@ -9,13 +9,10 @@ import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker.CheckReport;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker.Verdict;
-import de.spraener.prjxp.tibed.EmbeddingImportService;
-import de.spraener.prjxp.tibed.EmbeddingService;
+import de.spraener.prjxp.tibed.EmbeddingExportService;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
-import dev.langchain4j.store.embedding.EmbeddingStore;
-import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
@@ -37,12 +34,13 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 
-import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metadataKey;
-
 /**
- * Hub pipeline: a single FIFO worker running chunk → scoped reset + embed per project,
- * driving the registry's lifecycle status. Also self-heals on startup: projects whose chunks
- * are already in the shared index go straight to READY, everything else runs the full pipeline.
+ * Hub pipeline: a single FIFO worker running chunk → embed (export) → swap per project,
+ * driving the registry's lifecycle status. The old index stays in place (project stays
+ * searchable) until the new embeddings are fully computed; only the final swap
+ * (scoped removeAll + batched import) is briefly offline. Also self-heals on startup:
+ * projects whose chunks are already in the shared index go straight to READY,
+ * everything else runs the full pipeline.
  */
 @Component
 @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
@@ -53,8 +51,7 @@ public class PipelineOrchestrator implements ImportHandler {
 
     private final HubProjectRegistry registry;
     private final ChunkProcess chunkProcess;          // Phase 01: now a bean in the hub app
-    private final EmbeddingService embeddingService;  // Phase 01: normal (chunk → embed) pipeline
-    private final EmbeddingImportService embeddingImportService;  // pre-embedded import (no chunking)
+    private final EmbeddingExportService exportService;  // chunk JSONL -> EmbeddedChunkRecord JSONL (temp file)
     private final EmbeddingCompatibilityChecker compatibilityChecker;  // cross-platform embedding validation
     private final EmbeddingModel embeddingModel;      // for compatibility checks
     private final LuceneEmbeddingStore luceneStore;   // shared bean
@@ -93,6 +90,10 @@ public class PipelineOrchestrator implements ImportHandler {
             registry.unregisterProject(name);   // re-import: drop stale DAO/entry first
         }
         registry.registerProject(name, projectDir);   // status IMPORTING
+        if (inFlight.containsKey(name)) {
+            enqueueForced(name);   // reindex still in flight -> the index data would be stale; supersede instead of skipping
+            return;
+        }
         if (hasIndexedChunks(name)) {
             registry.setStatus(name, ProjectStatus.READY, null);
             log.info("Imported project '{}' already has index entries — skipping pipeline and marking READY", name);
@@ -110,7 +111,7 @@ public class PipelineOrchestrator implements ImportHandler {
         }
     }
 
-    /** Queues the full pipeline (chunk → scoped reset + embed) for a registered project; idempotent per name. */
+    /** Queues the full pipeline (chunk → embed → swap) for a registered project; idempotent per name. */
     public void enqueue(String name) {
         Object token = new Object();
         if (inFlight.putIfAbsent(name, token) != null) {
@@ -147,10 +148,6 @@ public class PipelineOrchestrator implements ImportHandler {
             } else {
                 runStandardPipeline(name, def);
             }
-        } catch (Exception e) {
-            log.error("Pipeline failed for project '{}': {}", name, e.toString());
-            registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
-            registry.setReindexStatus(name, ReindexStatus.FAILED);
         } finally {
             wipeIfDeregistered(name);   // race guard: marker removed mid-run -> the entry is gone, wipe what we wrote
         }
@@ -160,86 +157,151 @@ public class PipelineOrchestrator implements ImportHandler {
         return def.getEmbeddingsFile() != null && !def.getEmbeddingsFile().isBlank();
     }
 
-    private void runStandardPipeline(String name, ProjectDefinition def) throws Exception {
-        registry.setStatus(name, ProjectStatus.CHUNKING, null);
-        registry.setReindexStatus(name, ReindexStatus.CHUNKING);
-        registry.setReindexProgress(name, 10);
-        chunkProcess.executeForProject(def);
-        registry.setStatus(name, ProjectStatus.EMBEDDING, null);
-        registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
-        registry.setReindexProgress(name, 50);
-        def.setTibedResetStore(true);   // import = source of truth: scoped reset + re-embed
-        embeddingService.executeForProject(def, luceneStore);
-        registry.setStatus(name, ProjectStatus.READY, null);
-        registry.setReindexStatus(name, ReindexStatus.COMPLETE);
-        registry.setReindexProgress(name, 100);
+    /**
+     * Standard pipeline with keep-old-index semantics:
+     * <ol>
+     *   <li>chunking — old index untouched, project stays searchable (READY if it had an index)</li>
+     *   <li>embedding via export — old index untouched, embeddings land in a temp file</li>
+     *   <li>swap — scoped removeAll + batched import (briefly non-searchable)</li>
+     * </ol>
+     * Failure semantics: with an intact old index (failure before the swap) the project stays
+     * READY (old index in use) and only the reindex status is FAILED; otherwise FAILED.
+     */
+    private void runStandardPipeline(String name, ProjectDefinition def) {
+        boolean hadIndex = hasIndexedChunks(name);
+        boolean swapStarted = false;
+        Path embeddedFile = null;
+        try {
+            // 1. Chunking — old index untouched, project stays searchable
+            registry.setStatus(name, hadIndex ? ProjectStatus.READY : ProjectStatus.CHUNKING, null);
+            registry.setReindexStatus(name, ReindexStatus.CHUNKING);
+            registry.setReindexProgress(name, 10);
+            chunkProcess.executeForProject(def);
+
+            // 2. Embedding via export — old index untouched
+            registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
+            registry.setReindexProgress(name, 50);
+            if (!hadIndex) {
+                registry.setStatus(name, ProjectStatus.EMBEDDING, null);   // no old index -> not searchable anyway
+            }
+            embeddedFile = Files.createTempFile("prjxp-" + name + "-", "-embedded.jsonl");
+            exportService.exportForProject(def, embeddedFile);
+
+            // 3. Swap: old index gone, new embeddings in (brief offline window)
+            swapStarted = true;
+            registry.setReindexStatus(name, ReindexStatus.IMPORTING);
+            registry.setReindexProgress(name, 80);
+            if (hadIndex) {
+                registry.setStatus(name, ProjectStatus.EMBEDDING, null);   // briefly non-searchable
+            }
+            luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));
+            importEmbeddedFile(name, def, embeddedFile.toString());
+
+            // 4. Done
+            registry.setStatus(name, ProjectStatus.READY, null);
+            registry.setReindexStatus(name, ReindexStatus.COMPLETE);
+            registry.setReindexProgress(name, 100);
+        } catch (Exception e) {
+            log.error("Pipeline failed for project '{}': {}", name, e.toString());
+            registry.setReindexStatus(name, ReindexStatus.FAILED);
+            if (hadIndex && !swapStarted) {
+                registry.setStatus(name, ProjectStatus.READY,
+                        "Reindex failed (" + e.getMessage() + ") — old index still in use");
+            } else {
+                registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
+            }
+        } finally {
+            if (embeddedFile != null) {
+                try {
+                    Files.deleteIfExists(embeddedFile);
+                } catch (IOException ignored) {
+                    // best effort — the file is in the system temp dir
+                }
+            }
+        }
     }
 
     /**
-     * Pipeline for pre-embedded projects: validate embedding compatibility, then import.
+     * Pipeline for pre-embedded projects: validate embedding compatibility, then swap.
      * Skips chunking entirely since the embeddings are pre-computed externally.
+     * Same keep-old-index semantics as the standard pipeline.
      */
-    private void runPreEmbeddedPipeline(String name, ProjectDefinition def) throws Exception {
-        String embeddingsPath = def.resolvedEmbeddingsFile();
-        if (embeddingsPath == null) {
-            throw new IllegalStateException("Pre-embedded project '" + name + "' has no resolved embeddingsFile");
+    private void runPreEmbeddedPipeline(String name, ProjectDefinition def) {
+        boolean hadIndex = hasIndexedChunks(name);
+        boolean swapStarted = false;
+        try {
+            String embeddingsPath = def.resolvedEmbeddingsFile();
+            if (embeddingsPath == null) {
+                throw new IllegalStateException("Pre-embedded project '" + name + "' has no resolved embeddingsFile");
+            }
+
+            // Compatibility check: compare imported vectors against locally computed ones
+            registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
+            registry.setReindexProgress(name, 50);
+            if (!hadIndex) {
+                registry.setStatus(name, ProjectStatus.EMBEDDING, null);   // no old index -> not searchable anyway
+            }
+            List<EmbeddedChunkRecord> samples = readFirstN(embeddingsPath, hubProps.getCompatibilitySampleSize());
+            if (samples.isEmpty()) {
+                throw new IllegalStateException("No valid embedded chunk records found in " + embeddingsPath);
+            }
+            CheckReport report = compatibilityChecker.check(
+                    samples, embeddingModel,
+                    hubProps.getCompatibilitySampleSize(),
+                    hubProps.getCompatibilityThresholdHigh(),
+                    hubProps.getCompatibilityThresholdLow()
+            );
+
+            if (report.verdict() == Verdict.INCOMPATIBLE) {
+                String msg = "Embedding model incompatible: avg cosine=" + String.format("%.4f", report.avgCosine())
+                        + " (threshold: " + hubProps.getCompatibilityThresholdLow() + "). "
+                        + "The imported embeddings were likely generated with a different model or incompatible hardware. "
+                        + "Re-embed using the local model (tibed --mode store) or adjust thresholds in prjxp.hub.compatibility.*";
+                log.error("Pre-embedded import blocked for project '{}': {}", name, msg);
+                registry.setReindexStatus(name, ReindexStatus.FAILED);
+                registry.setStatus(name, hadIndex ? ProjectStatus.READY : ProjectStatus.FAILED, msg);
+                return;   // do not proceed with import
+            }
+
+            if (report.verdict() == Verdict.PARTIALLY_COMPATIBLE) {
+                log.warn("Pre-embedded import for project '{}' with PARTIAL compatibility (avg cosine={}). "
+                                + "Cross-platform rounding differences detected — search quality may be slightly degraded.",
+                        name, String.format("%.4f", report.avgCosine()));
+            }
+
+            // Swap: old index gone, pre-embedded vectors in (brief offline window)
+            swapStarted = true;
+            registry.setReindexStatus(name, ReindexStatus.IMPORTING);
+            registry.setReindexProgress(name, 80);
+            if (hadIndex) {
+                registry.setStatus(name, ProjectStatus.EMBEDDING, null);   // briefly non-searchable
+            }
+            luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));
+            importEmbeddedFile(name, def, embeddingsPath);
+
+            registry.setStatus(name, ProjectStatus.READY, null);
+            registry.setReindexStatus(name, ReindexStatus.COMPLETE);
+            registry.setReindexProgress(name, 100);
+        } catch (Exception e) {
+            log.error("Pipeline failed for project '{}': {}", name, e.toString());
+            registry.setReindexStatus(name, ReindexStatus.FAILED);
+            if (hadIndex && !swapStarted) {
+                registry.setStatus(name, ProjectStatus.READY,
+                        "Reindex failed (" + e.getMessage() + ") — old index still in use");
+            } else {
+                registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
+            }
         }
-
-        // Read sample chunks for compatibility check
-        List<EmbeddedChunkRecord> samples = readFirstN(embeddingsPath, hubProps.getCompatibilitySampleSize());
-        if (samples.isEmpty()) {
-            throw new IllegalStateException("No valid embedded chunk records found in " + embeddingsPath);
-        }
-
-        // Compatibility check: compare imported vectors against locally computed ones
-        CheckReport report = compatibilityChecker.check(
-                samples, embeddingModel,
-                hubProps.getCompatibilitySampleSize(),
-                hubProps.getCompatibilityThresholdHigh(),
-                hubProps.getCompatibilityThresholdLow()
-        );
-
-        if (report.verdict() == Verdict.INCOMPATIBLE) {
-            String msg = "Embedding model incompatible: avg cosine=" + String.format("%.4f", report.avgCosine())
-                    + " (threshold: " + hubProps.getCompatibilityThresholdLow() + "). "
-                    + "The imported embeddings were likely generated with a different model or incompatible hardware. "
-                    + "Re-embed using the local model (tibed --mode store) or adjust thresholds in prjxp.hub.compatibility.*";
-            log.error("Pre-embedded import blocked for project '{}': {}", name, msg);
-            registry.setStatus(name, ProjectStatus.FAILED, msg);
-            return;   // do not proceed with import
-        }
-
-        if (report.verdict() == Verdict.PARTIALLY_COMPATIBLE) {
-            log.warn("Pre-embedded import for project '{}' with PARTIAL compatibility (avg cosine={:.4f}). "
-                    + "Cross-platform rounding differences detected — search quality may be slightly degraded.",
-                    name, report.avgCosine());
-        }
-
-        // Proceed with import: scoped reset + import pre-embedded vectors
-        registry.setStatus(name, ProjectStatus.EMBEDDING, null);
-        registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
-        registry.setReindexProgress(name, 50);
-        def.setTibedResetStore(true);   // scoped reset before import
-        importPreEmbeddedChunks(name, def, embeddingsPath);
-        registry.setStatus(name, ProjectStatus.READY, null);
-        registry.setReindexStatus(name, ReindexStatus.COMPLETE);
-        registry.setReindexProgress(name, 100);
     }
 
     /**
-     * Imports pre-embedded chunks from a JSONL file into the shared Lucene index.
-     * Handles scoped reset, batched import and project stamping.
+     * Imports EmbeddedChunkRecord JSONL into the shared Lucene index (batched).
+     * The caller performs the scoped reset (removeAll) before calling this.
      */
-    private void importPreEmbeddedChunks(String name, ProjectDefinition def, String jsonlPath) {
+    private void importEmbeddedFile(String name, ProjectDefinition def, String jsonlPath) {
         try (var lines = Files.lines(Path.of(jsonlPath))) {
             List<EmbeddedChunkRecord> batch = new ArrayList<>();
             int batchSize = Math.max(1, def.getTibedBatchSize());
-
-            // Scoped reset if requested
-            if (def.isTibedResetStore()) {
-                Filter resetFilter = new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name);  // shared index: only this project
-                luceneStore.removeAll(resetFilter);
-            }
 
             lines.map(line -> {
                 try {
@@ -262,17 +324,15 @@ public class PipelineOrchestrator implements ImportHandler {
                 flushBatch(name, batch);
             }
 
-            log.info("Imported pre-embedded chunks for project '{}' from {}", name, jsonlPath);
+            log.info("Imported embedded chunks for project '{}' from {}", name, jsonlPath);
         } catch (IOException e) {
             throw new RuntimeException("Failed to read embeddings file " + jsonlPath, e);
         }
     }
 
     private void flushBatch(String projectName, List<EmbeddedChunkRecord> batch) {
-        EmbeddingStore<TextSegment> store = luceneStore;   // shared bean
-
         List<EmbeddedChunkRecord> toImport = batch.stream()
-                .filter(record -> needsImport(store, record))
+                .filter(this::needsImport)
                 .toList();
 
         if (toImport.isEmpty()) {
@@ -292,19 +352,17 @@ public class PipelineOrchestrator implements ImportHandler {
                 })
                 .toList();
 
-        store.addAll(embeddings, segments);
+        luceneStore.addAllBatched(embeddings, segments);
         log.info("Imported {}/{} chunks for project '{}'", toImport.size(), batch.size(), projectName);
+    }
+
+    private boolean needsImport(EmbeddedChunkRecord record) {
+        // The scoped reset (removeAll) already wiped the project's chunks, so every record is imported.
+        return true;
     }
 
     private boolean hasVector(EmbeddedChunkRecord record) {
         return record.vector() != null && record.vector().length > 0;
-    }
-
-    private boolean needsImport(EmbeddingStore<TextSegment> store, EmbeddedChunkRecord record) {
-        // Check if this chunk ID is already in the store (avoid duplicates)
-        // StoreIdChecker logic: if the record's ID is not in the store, it needs import
-        // For simplicity here we use a basic check — StoreIdChecker is project-scoped and more sophisticated
-        return true;   // always import (scoped reset already wiped the project's chunks)
     }
 
     private List<EmbeddedChunkRecord> readFirstN(String jsonlPath, int n) {
