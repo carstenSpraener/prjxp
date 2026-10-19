@@ -13,6 +13,7 @@ import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.common.transfer.TransferSession;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
 import java.io.BufferedWriter;
@@ -30,6 +31,7 @@ import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
+@Log
 public class EmbeddingExportService {
     private final PxLogService logService;
     private final ObjectMapper objMapper;
@@ -52,6 +54,7 @@ public class EmbeddingExportService {
                 cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
         char[] inputPassword = transferPasswordResolver.resolvePassword(cfg.getTransfer().getPasswordEnv());
 
+        log.info("Reading JSONL from " + input + " for project '" + pd.getName() + "' with batch size " + Math.max(1, pd.getTibedBatchSize()));
         try {
             var lines = streamProvider.getTransferJsonlStream(input, inputPassword);
             boolean closeOutput = !"-".equals(output);
@@ -96,6 +99,7 @@ public class EmbeddingExportService {
         }
         char[] inputPassword = transferPasswordResolver.resolvePassword(cfg.getTransfer().getPasswordEnv());
         int total = countInputLines(input, inputPassword);
+        log.info("Reading JSONL from " + input + " for project '" + pd.getName() + "' with batch size " + Math.max(1, pd.getTibedBatchSize()));
         try {
             var lines = streamProvider.getTransferJsonlStream(input, inputPassword);
             Writer writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(output.toFile()), StandardCharsets.UTF_8));
@@ -133,6 +137,7 @@ public class EmbeddingExportService {
                 .forEach(batch -> {
                     exportBatch(writer, batch);
                     embedded.addAndGet(batch.length);
+                    log.info("Embedded batch of " + batch.length + " chunks for project '" + pd.getName() + "'");
                     if (total > 0) {
                         progress.accept(Math.min(embedded.get(), total), total);
                     }

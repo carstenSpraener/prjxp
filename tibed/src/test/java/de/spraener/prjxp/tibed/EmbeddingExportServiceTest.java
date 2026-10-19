@@ -27,6 +27,10 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -243,6 +247,42 @@ class EmbeddingExportServiceTest {
                         (done, total) -> calls.add(new int[]{done, total}));
 
         assertThat(calls).containsExactly(new int[]{2, 3}, new int[]{3, 3});
+    }
+
+    @Test
+    void exportForProject_logsStartAndPerBatchProgress() throws Exception {
+        PrjXPConfig cfg = configWith(tempDir.resolve("in.jsonl").toString(), null);
+        writeInput(cfg, "a", "b", "c");   // 3 chunks, batchSize 2 -> 2 batches
+
+        Logger logger = Logger.getLogger(EmbeddingExportService.class.getName());
+        Level originalLevel = logger.getLevel();
+        List<String> messages = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                messages.add(record.getMessage());
+            }
+
+            @Override
+            public void close() {
+            }
+
+            @Override
+            public void flush() {
+            }
+        };
+        logger.setLevel(Level.INFO);
+        logger.addHandler(handler);
+        try {
+            uut(cfg, new FakeEmbeddingModel(DIMENSION))
+                    .exportForProject(cfg.getActiveProject().orElseThrow(), tempDir.resolve("hub-embedded.jsonl"));
+        } finally {
+            logger.removeHandler(handler);
+            logger.setLevel(originalLevel);
+        }
+
+        assertThat(messages).anySatisfy(m -> assertThat(m).contains("Reading JSONL"));
+        assertThat(messages).filteredOn(m -> m.contains("Embedded batch")).hasSize(2);
     }
 
     @Test
