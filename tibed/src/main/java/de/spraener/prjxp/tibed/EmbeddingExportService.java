@@ -12,12 +12,8 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.common.transfer.TransferSession;
-import dev.langchain4j.data.embedding.Embedding;
-import dev.langchain4j.data.segment.TextSegment;
-import dev.langchain4j.model.embedding.EmbeddingModel;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.util.StringUtils;
 
 import java.io.BufferedWriter;
 import java.io.FileOutputStream;
@@ -26,15 +22,16 @@ import java.io.OutputStream;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.util.Arrays;
-import java.util.List;
+import java.util.stream.Stream;
 
 @Service
 @RequiredArgsConstructor
 public class EmbeddingExportService {
     private final PxLogService logService;
     private final ObjectMapper objMapper;
-    private final EmbeddingModel embeddingModel;
+    private final EmbeddingExecutor embedder;
     private final PrjXPJsonStreamProvider streamProvider;
     private final TransferPasswordResolver transferPasswordResolver;
     private final PrjXPConfig cfg;
@@ -58,9 +55,7 @@ public class EmbeddingExportService {
             boolean closeOutput = !"-".equals(output);
             Writer writer = openWriter(output, session);
             try {
-                new PxChunkFromJsonLReader()
-                        .readChunksFromJsonlStreamBatched(lines, pd.getTibedBatchSize(), this::fromJSONL)
-                        .forEach(batch -> exportBatch(writer, batch));
+                export(lines, writer, pd);
             } finally {
                 if (closeOutput) {
                     writer.close();
@@ -77,36 +72,54 @@ public class EmbeddingExportService {
         }
     }
 
+    /**
+     * Hub in-process use: embeds the project's chunk JSONL and writes EmbeddedChunkRecord
+     * JSONL (plain, unencrypted) to the given output path. Rethrows on failure so the
+     * caller (pipeline orchestrator) can apply its failure semantics.
+     */
+    public void exportForProject(ProjectDefinition pd, Path output) {
+        String input = pd.resolvedJsonlFile();
+        if (input == null) {
+            throw new IllegalStateException("Export for project '" + pd.getName() + "' requires a jsonlFile");
+        }
+        char[] inputPassword = transferPasswordResolver.resolvePassword(cfg.getTransfer().getPasswordEnv());
+        try {
+            var lines = streamProvider.getTransferJsonlStream(input, inputPassword);
+            Writer writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(output.toFile()), StandardCharsets.UTF_8));
+            try {
+                export(lines, writer, pd);
+            } finally {
+                writer.close();
+            }
+        } catch (Exception e) {
+            logService.error(e, "Error during embedding export for project '" + pd.getName() + "': " + e.getMessage(), e);
+            throw new RuntimeException("Embedding export failed for project '" + pd.getName() + "'", e);
+        }
+    }
+
+    private void export(Stream<String> lines, Writer writer, ProjectDefinition pd) {
+        new PxChunkFromJsonLReader()
+                .readChunksFromJsonlStreamBatched(lines, Math.max(1, pd.getTibedBatchSize()), this::fromJSONL)
+                .forEach(batch -> exportBatch(writer, batch));
+    }
+
+    private void exportBatch(Writer writer, PxChunk[] chunks) {
+        for (EmbeddedChunkRecord record : embedder.embed(Arrays.asList(chunks))) {
+            try {
+                writer.write(toJSONL(record));
+                writer.write('\n');
+            } catch (IOException ioXC) {
+                logService.error(ioXC, "Could not write embedded chunk %s", record.id());
+            }
+        }
+    }
+
     private Writer openWriter(String output, TransferSession session) throws IOException {
         OutputStream raw = "-".equals(output) ? System.out : new FileOutputStream(output);
         if (session.encrypt()) {
             raw = TransferCrypto.openEncryptedOutputStream(raw, session.password());
         }
         return new BufferedWriter(new OutputStreamWriter(raw, StandardCharsets.UTF_8));
-    }
-
-    private void exportBatch(Writer writer, PxChunk[] chunks) {
-        List<PxChunk> withText = Arrays.asList(chunks).stream()
-                .filter(c -> StringUtils.hasText(c.getContent()))
-                .toList();
-        if (withText.isEmpty()) {
-            return;
-        }
-        List<TextSegment> segments = withText.stream()
-                .map(PxChunk2TextSegmentConverter::convert)
-                .toList();
-        List<Embedding> embeddings = embeddingModel.embedAll(segments).content();
-
-        for (int i = 0; i < withText.size(); i++) {
-            PxChunk chunk = withText.get(i);
-            EmbeddedChunkRecord record = EmbeddedChunkRecord.from(chunk, embeddings.get(i).vector());
-            try {
-                writer.write(toJSONL(record));
-                writer.write('\n');
-            } catch (IOException ioXC) {
-                logService.error(ioXC, "Could not write embedded chunk %s", chunk.getId());
-            }
-        }
     }
 
     private String toJSONL(EmbeddedChunkRecord record) {

@@ -20,6 +20,11 @@ class FakeEmbeddingModel implements EmbeddingModel {
     }
 
     @Override
+    public int dimension() {
+        return dimension;
+    }
+
+    @Override
     public Response<List<Embedding>> embedAll(List<TextSegment> segments) {
         calls.add(segments);
         List<Embedding> embeddings = segments.stream()

@@ -14,6 +14,7 @@ import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
+import de.spraener.prjxp.tibed.embedder.LangChain4JEmbedderImpl;
 import dev.langchain4j.data.segment.TextSegment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -78,7 +79,7 @@ class TransferPipelineE2ETest {
         new EmbeddingExportService(
                 new PxLogService(),
                 new ObjectMapper(),
-                new FakeEmbeddingModel(DIMENSION),
+                new LangChain4JEmbedderImpl(new FakeEmbeddingModel(DIMENSION), Mockito.mock(EmbeddingStoreSupplier.class)),
                 new PrjXPJsonStreamProvider(cfg),
                 resolver,
                 cfg
