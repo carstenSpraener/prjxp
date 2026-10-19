@@ -15,8 +15,20 @@
           <div class="project-item"
                [class.selected]="selectedProject()?.name === project.name"
                (click)="selectProject(project)">
-            <div class="project-item-name">{{ project.name }}</div>
-            <span class="badge {{ getStatusBadgeClass(project.status) }}">{{ project.status }}</span>
+            <div class="project-item-content">
+              <div class="project-item-row">
+                <span class="project-item-name">{{ project.name }}</span>
+                <span class="badge {{ getStatusBadgeClass(project.status) }}">{{ project.status }}</span>
+              </div>
+              @if (isReindexActive(project)) {
+                <div class="project-item-progress">
+                  <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" [style.width.%]="project.reindexProgress ?? 0"></div>
+                  </div>
+                  <span class="progress-text text-cyan">{{ project.reindexProgress ?? 0 }}%</span>
+                </div>
+              }
+            </div>
           </div>
         } @empty {
           <div class="empty-state text-secondary">No projects found.</div>

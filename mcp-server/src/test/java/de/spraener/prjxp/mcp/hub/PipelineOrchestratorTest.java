@@ -31,11 +31,13 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BiConsumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeastOnce;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -145,7 +147,7 @@ class PipelineOrchestratorTest {
             EmbeddedChunkRecord rec = EmbeddedChunkRecord.from(c, v);
             Files.writeString(out, new ObjectMapper().writeValueAsString(rec) + "\n");
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
     }
 
     /** Pre-populates the shared index with one chunk stamped for the given project. */
@@ -175,7 +177,7 @@ class PipelineOrchestratorTest {
             Files.writeString(out, new ObjectMapper().writeValueAsString(EmbeddedChunkRecord.from(c, v)) + "\n");
             embedded.countDown();
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator.onImported("alpha", projectDir("alpha"));
 
@@ -221,7 +223,7 @@ class PipelineOrchestratorTest {
                 secondEmbedded.countDown();
             }
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator.onImported("alpha", projectDir("alpha"));
         assertThat(firstExportStarted.await(10, TimeUnit.SECONDS)).isTrue();
@@ -278,7 +280,7 @@ class PipelineOrchestratorTest {
             Files.writeString(out, new ObjectMapper().writeValueAsString(EmbeddedChunkRecord.from(c, v)) + "\n");
             embedded.countDown();
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("a");
@@ -334,7 +336,7 @@ class PipelineOrchestratorTest {
             Files.writeString(out, new ObjectMapper().writeValueAsString(EmbeddedChunkRecord.from(c, v)) + "\n");
             embedded.countDown();
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.selfHeal();   // enqueues the pipeline asynchronously
@@ -386,7 +388,7 @@ class PipelineOrchestratorTest {
             registry.unregisterProject("foo");   // e.g. live marker removed by the poller mid-run
             embedded.countDown();
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("foo");
@@ -456,18 +458,18 @@ class PipelineOrchestratorTest {
 
         CountDownLatch chunkingDone = new CountDownLatch(1);
         doAnswer(inv -> {
-            // During chunking, reindex status should be CHUNKING
+            // During chunking, reindex status should be CHUNKING (progress: 0 until the phase ends)
             assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.CHUNKING);
-            assertThat(registry.getReindexProgress("alpha")).isEqualTo(10);
+            assertThat(registry.getReindexProgress("alpha")).isEqualTo(0);
             chunkingDone.countDown();
             return null;
         }).when(chunkProcess).executeForProject(any());
 
         CountDownLatch embeddingDone = new CountDownLatch(1);
         doAnswer(inv -> {
-            // During embedding, reindex status should be EMBEDDING
+            // During embedding, reindex status should be EMBEDDING (progress: 10 until the callback reports)
             assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.EMBEDDING);
-            assertThat(registry.getReindexProgress("alpha")).isEqualTo(50);
+            assertThat(registry.getReindexProgress("alpha")).isEqualTo(10);
             // write enough records that the swap (IMPORTING) is observable from the test thread
             Path out = inv.getArgument(1);
             StringBuilder sb = new StringBuilder();
@@ -485,7 +487,7 @@ class PipelineOrchestratorTest {
             Files.writeString(out, sb.toString());
             embeddingDone.countDown();
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator.enqueue("alpha");
         assertThat(chunkingDone.await(10, TimeUnit.SECONDS)).isTrue();
@@ -511,6 +513,52 @@ class PipelineOrchestratorTest {
         awaitStatus(registry, "alpha", ProjectStatus.READY);
         assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.COMPLETE);
         assertThat(registry.getReindexProgress("alpha")).isEqualTo(100);
+    }
+
+    @Test
+    void standardPipelineReportsMonotonicGranularProgress() throws Exception {
+        HubProjectRegistry spied = spy(registry);
+        Path dir = projectDir("alpha");
+        registry.registerProject("alpha", dir);
+
+        orchestrator = new PipelineOrchestrator(spied, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+
+        // The export stub fires the progress callback like the real service does: (done, total) per record
+        doAnswer(inv -> {
+            BiConsumer<Integer, Integer> progress = inv.getArgument(2);
+            Path out = inv.getArgument(1);
+            ObjectMapper mapper = new ObjectMapper();
+            StringBuilder sb = new StringBuilder();
+            for (int i = 0; i < 10; i++) {
+                final int idx = i;
+                float[] v = new float[8];
+                Arrays.fill(v, 0.1f);
+                PxChunk c = PxChunk.create(cc -> {
+                    cc.setId("chunk-" + idx);
+                    cc.setContent("content " + idx);
+                });
+                sb.append(mapper.writeValueAsString(EmbeddedChunkRecord.from(c, v))).append('\n');
+                progress.accept(i + 1, 10);
+            }
+            Files.writeString(out, sb.toString());
+            return null;
+        }).when(exportService).exportForProject(any(), any(), any());
+
+        orchestrator.enqueue("alpha");
+        awaitReindexStatus(spied, "alpha", ReindexStatus.COMPLETE);
+
+        ArgumentCaptor<Integer> progressCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(spied, atLeastOnce()).setReindexProgress(eq("alpha"), progressCaptor.capture());
+        List<Integer> values = progressCaptor.getAllValues();
+
+        assertThat(values).isNotEmpty();
+        assertThat(values).allSatisfy(v -> assertThat(v).isBetween(0, 100));
+        for (int i = 1; i < values.size(); i++) {
+            assertThat(values.get(i)).as("progress at step %d", i).isGreaterThanOrEqualTo(values.get(i - 1));
+        }
+        // the embedding phase must have produced values inside its reserved 10-80 band
+        assertThat(values).anySatisfy(v -> assertThat(v).isBetween(11, 79));
+        assertThat(values.get(values.size() - 1)).isEqualTo(100);
     }
 
     @Test
@@ -551,7 +599,7 @@ class PipelineOrchestratorTest {
             });
             Files.writeString(out, new ObjectMapper().writeValueAsString(EmbeddedChunkRecord.from(c, v)) + "\n");
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("alpha");
@@ -575,7 +623,7 @@ class PipelineOrchestratorTest {
         doAnswer(inv -> {
             embeddedFile.set(inv.getArgument(1));
             throw new RuntimeException("embed exploded");
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("alpha");
@@ -590,7 +638,7 @@ class PipelineOrchestratorTest {
     void embeddingFailureWithoutOldIndexMarksFailed() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));   // index is empty
 
-        doThrow(new RuntimeException("embed exploded")).when(exportService).exportForProject(any(), any());
+        doThrow(new RuntimeException("embed exploded")).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("alpha");
@@ -631,7 +679,7 @@ class PipelineOrchestratorTest {
             });
             Files.writeString(out, new ObjectMapper().writeValueAsString(EmbeddedChunkRecord.from(c, v)) + "\n");
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("alpha");
@@ -653,7 +701,7 @@ class PipelineOrchestratorTest {
             embedStarted.countDown();
             release.await(10, TimeUnit.SECONDS);   // reindex in flight, blocked in the embedding phase
             return null;
-        }).when(exportService).exportForProject(any(), any());
+        }).when(exportService).exportForProject(any(), any(), any());
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
         orchestrator.enqueue("alpha");

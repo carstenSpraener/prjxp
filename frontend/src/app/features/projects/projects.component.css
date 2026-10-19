@@ -49,9 +49,6 @@
 }
 
 .project-item {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   padding: 0.75rem;
   border-radius: 8px;
   cursor: pointer;
@@ -67,9 +64,49 @@
   border: 1px solid rgba(0, 255, 255, 0.2);
 }
 
+.project-item-content {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.project-item-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
 .project-item-name {
   font-size: 0.9rem;
   color: #e0e0e0;
+}
+
+.project-item-progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.progress-bar-bg {
+  flex: 1;
+  height: 4px;
+  background: rgba(30, 40, 60, 0.8);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #00ffff, #da70d6);
+  border-radius: 2px;
+  transition: width 0.5s ease;
+}
+
+.progress-text {
+  font-size: 0.65rem;
+  min-width: 2.25rem;
+  text-align: right;
 }
 
 .badge {

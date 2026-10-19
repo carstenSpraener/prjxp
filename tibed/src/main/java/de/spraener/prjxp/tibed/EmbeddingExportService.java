@@ -24,6 +24,8 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
 import java.util.stream.Stream;
 
 @Service
@@ -78,16 +80,27 @@ public class EmbeddingExportService {
      * caller (pipeline orchestrator) can apply its failure semantics.
      */
     public void exportForProject(ProjectDefinition pd, Path output) {
+        exportForProject(pd, output, (done, total) -> { });
+    }
+
+    /**
+     * Like {@link #exportForProject(ProjectDefinition, Path)} but reports progress: the callback
+     * is invoked after each batch with (embeddedSoFar, totalChunks). The total is the line count
+     * of the chunk JSONL (the embedding scope, known after chunking); it is -1 when the scope
+     * is unknown (e.g. stdin input) or the file could not be counted.
+     */
+    public void exportForProject(ProjectDefinition pd, Path output, BiConsumer<Integer, Integer> progress) {
         String input = pd.resolvedJsonlFile();
         if (input == null) {
             throw new IllegalStateException("Export for project '" + pd.getName() + "' requires a jsonlFile");
         }
         char[] inputPassword = transferPasswordResolver.resolvePassword(cfg.getTransfer().getPasswordEnv());
+        int total = countInputLines(input, inputPassword);
         try {
             var lines = streamProvider.getTransferJsonlStream(input, inputPassword);
             Writer writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(output.toFile()), StandardCharsets.UTF_8));
             try {
-                export(lines, writer, pd);
+                export(lines, writer, pd, total, progress);
             } finally {
                 writer.close();
             }
@@ -97,10 +110,33 @@ public class EmbeddingExportService {
         }
     }
 
+    /** Line count of the input JSONL (the embedding scope); -1 when unknown (stdin) or unreadable. */
+    private int countInputLines(String input, char[] password) {
+        if (input == null || input.isBlank() || "-".equals(input)) {
+            return -1;
+        }
+        try (Stream<String> lines = streamProvider.getTransferJsonlStream(input, password)) {
+            return (int) lines.count();
+        } catch (IOException e) {
+            return -1;   // best effort — the export itself will fail with a clear error
+        }
+    }
+
     private void export(Stream<String> lines, Writer writer, ProjectDefinition pd) {
+        export(lines, writer, pd, -1, (done, total) -> { });
+    }
+
+    private void export(Stream<String> lines, Writer writer, ProjectDefinition pd, int total, BiConsumer<Integer, Integer> progress) {
+        AtomicInteger embedded = new AtomicInteger();
         new PxChunkFromJsonLReader()
                 .readChunksFromJsonlStreamBatched(lines, Math.max(1, pd.getTibedBatchSize()), this::fromJSONL)
-                .forEach(batch -> exportBatch(writer, batch));
+                .forEach(batch -> {
+                    exportBatch(writer, batch);
+                    embedded.addAndGet(batch.length);
+                    if (total > 0) {
+                        progress.accept(Math.min(embedded.get(), total), total);
+                    }
+                });
     }
 
     private void exportBatch(Writer writer, PxChunk[] chunks) {

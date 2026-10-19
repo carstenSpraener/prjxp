@@ -49,7 +49,14 @@ export class ProjectsComponent implements OnInit, OnDestroy {
   }
 
   loadProjects(): void {
-    this.projectService.getProjects().subscribe(projects => this.projects.set(projects));
+    this.projectService.getProjects().subscribe(projects => {
+      this.projects.set(projects);
+      // Resume polling for a project with an active reindex (e.g. after a page reload)
+      const active = projects.find(p => this.isReindexActive(p));
+      if (active) {
+        this.startPolling(active.name);
+      }
+    });
   }
 
   selectProject(project: ProjectInfo): void {
@@ -137,6 +144,7 @@ export class ProjectsComponent implements OnInit, OnDestroy {
         // Stop polling when complete or failed
         if (status.status === 'COMPLETE' || status.status === 'FAILED') {
           this.stopPolling();
+          this.loadProjects();   // refresh counts/status after the pipeline finished
 
           // Reset status after 5 seconds so the UI shows clean state
           setTimeout(() => {
@@ -190,5 +198,10 @@ export class ProjectsComponent implements OnInit, OnDestroy {
       case 'FAILED': return 'status-failed';
       default: return 'status-default';
     }
+  }
+
+  isReindexActive(project: ProjectInfo): boolean {
+    const status = project.reindexStatus;
+    return status === 'CHUNKING' || status === 'EMBEDDING' || status === 'IMPORTING';
   }
 }

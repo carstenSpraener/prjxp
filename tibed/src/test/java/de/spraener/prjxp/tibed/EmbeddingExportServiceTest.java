@@ -23,6 +23,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -228,6 +229,20 @@ class EmbeddingExportServiceTest {
         assertThat(records.get(0).id()).isEqualTo("chunk-0");
         assertThat(records.get(1).content()).isEqualTo("bravo");
         assertThat(records.get(0).vector()).hasSize(DIMENSION);
+    }
+
+    @Test
+    void exportForProject_reportsProgressPerBatch() throws Exception {
+        PrjXPConfig cfg = configWith(tempDir.resolve("in.jsonl").toString(), null);
+        writeInput(cfg, "a", "b", "c");   // 3 chunks, batchSize 2 -> batches of 2 + 1
+
+        Path output = tempDir.resolve("hub-embedded.jsonl");
+        List<int[]> calls = new ArrayList<>();
+        uut(cfg, new FakeEmbeddingModel(DIMENSION))
+                .exportForProject(cfg.getActiveProject().orElseThrow(), output,
+                        (done, total) -> calls.add(new int[]{done, total}));
+
+        assertThat(calls).containsExactly(new int[]{2, 3}, new int[]{3, 3});
     }
 
     @Test

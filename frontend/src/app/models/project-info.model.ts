@@ -14,8 +14,8 @@ export interface ProjectInfo {
   embeddingsFile?: string | null;
   tibedResetStore?: boolean;
   // Reindex progress tracking
-  reindexStatus?: string;   // "IDLE", "CHUNKING", "EMBEDDING", "COMPLETE", "FAILED"
-  reindexProgress?: number; // 0-100
+  reindexStatus?: string;   // "IDLE", "CHUNKING", "EMBEDDING", "IMPORTING", "COMPLETE", "FAILED"
+  reindexProgress?: number; // 0-100 (10% chunking, 70% embedding, 20% storing)
   prompt?: string | null;   // standing instructions (from prjxp.yaml)
   fulltext?: boolean;       // lossless fulltext copy switch (from prjxp.yaml)
 }

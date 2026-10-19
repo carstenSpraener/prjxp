@@ -95,6 +95,11 @@ describe('ProjectDetailCardComponent', () => {
     expect(component.isReindexing()).toBeTruthy();
   });
 
+  it('isReindexing should return true for IMPORTING status', () => {
+    component.project = { ...mockProject, reindexStatus: 'IMPORTING' };
+    expect(component.isReindexing()).toBeTruthy();
+  });
+
   it('isReindexing should return false for IDLE status', () => {
     component.project = { ...mockProject, reindexStatus: 'IDLE' };
     expect(component.isReindexing()).toBeFalsy();
@@ -172,6 +177,14 @@ describe('ProjectDetailCardComponent', () => {
 
   it('should show reindex progress when status is EMBEDDING', () => {
     fixture.componentRef.setInput('project', { ...mockProject, reindexStatus: 'EMBEDDING', reindexProgress: 60 });
+    fixture.detectChanges();
+
+    const progressEl = fixture.nativeElement.querySelector('.reindex-progress');
+    expect(progressEl).not.toBeNull();
+  });
+
+  it('should show reindex progress when status is IMPORTING', () => {
+    fixture.componentRef.setInput('project', { ...mockProject, reindexStatus: 'IMPORTING', reindexProgress: 90 });
     fixture.detectChanges();
 
     const progressEl = fixture.nativeElement.querySelector('.reindex-progress');

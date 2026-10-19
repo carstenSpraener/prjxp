@@ -33,6 +33,9 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.function.BiConsumer;
+import java.util.stream.Stream;
 
 /**
  * Hub pipeline: a single FIFO worker running chunk → embed (export) → swap per project,
@@ -48,6 +51,15 @@ import java.util.concurrent.TimeUnit;
 public class PipelineOrchestrator implements ImportHandler {
 
     private static final Logger log = LoggerFactory.getLogger(PipelineOrchestrator.class);
+
+    /**
+     * Reindex progress scale on the shared 0-100 axis: 10% for chunking, 70% for embedding,
+     * 20% for storing (the swap import). The scope (chunk count) is known after chunking,
+     * so embedding and storing report granular progress within their reserved bands.
+     */
+    private static final int CHUNKING_END = 10;
+    private static final int EMBEDDING_END = 80;
+    private static final int STORING_END = 100;
 
     private final HubProjectRegistry registry;
     private final ChunkProcess chunkProcess;          // Phase 01: now a bean in the hub app
@@ -175,32 +187,35 @@ public class PipelineOrchestrator implements ImportHandler {
             // 1. Chunking — old index untouched, project stays searchable
             registry.setStatus(name, hadIndex ? ProjectStatus.READY : ProjectStatus.CHUNKING, null);
             registry.setReindexStatus(name, ReindexStatus.CHUNKING);
-            registry.setReindexProgress(name, 10);
+            registry.setReindexProgress(name, 0);
             chunkProcess.executeForProject(def);
+            registry.setReindexProgress(name, CHUNKING_END);
 
-            // 2. Embedding via export — old index untouched
+            // 2. Embedding via export — old index untouched; granular progress within the 10-80 band
             registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
-            registry.setReindexProgress(name, 50);
+            registry.setReindexProgress(name, CHUNKING_END);
             if (!hadIndex) {
                 registry.setStatus(name, ProjectStatus.EMBEDDING, null);   // no old index -> not searchable anyway
             }
             embeddedFile = Files.createTempFile("prjxp-" + name + "-", "-embedded.jsonl");
-            exportService.exportForProject(def, embeddedFile);
+            exportService.exportForProject(def, embeddedFile,
+                    (done, total) -> registry.setReindexProgress(name, mapPhaseProgress(done, total, CHUNKING_END, EMBEDDING_END)));
 
-            // 3. Swap: old index gone, new embeddings in (brief offline window)
+            // 3. Swap: old index gone, new embeddings in (brief offline window); granular progress within the 80-100 band
             swapStarted = true;
             registry.setReindexStatus(name, ReindexStatus.IMPORTING);
-            registry.setReindexProgress(name, 80);
+            registry.setReindexProgress(name, EMBEDDING_END);
             if (hadIndex) {
                 registry.setStatus(name, ProjectStatus.EMBEDDING, null);   // briefly non-searchable
             }
             luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));
-            importEmbeddedFile(name, def, embeddedFile.toString());
+            importEmbeddedFile(name, def, embeddedFile.toString(),
+                    (done, total) -> registry.setReindexProgress(name, mapPhaseProgress(done, total, EMBEDDING_END, STORING_END)));
 
             // 4. Done
             registry.setStatus(name, ProjectStatus.READY, null);
             registry.setReindexStatus(name, ReindexStatus.COMPLETE);
-            registry.setReindexProgress(name, 100);
+            registry.setReindexProgress(name, STORING_END);
         } catch (Exception e) {
             log.error("Pipeline failed for project '{}': {}", name, e.toString());
             registry.setReindexStatus(name, ReindexStatus.FAILED);
@@ -236,6 +251,7 @@ public class PipelineOrchestrator implements ImportHandler {
             }
 
             // Compatibility check: compare imported vectors against locally computed ones
+            // (no granular progress — the check samples a handful of vectors)
             registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
             registry.setReindexProgress(name, 50);
             if (!hadIndex) {
@@ -269,19 +285,20 @@ public class PipelineOrchestrator implements ImportHandler {
                         name, String.format("%.4f", report.avgCosine()));
             }
 
-            // Swap: old index gone, pre-embedded vectors in (brief offline window)
+            // Swap: old index gone, pre-embedded vectors in (brief offline window); granular progress within the 80-100 band
             swapStarted = true;
             registry.setReindexStatus(name, ReindexStatus.IMPORTING);
-            registry.setReindexProgress(name, 80);
+            registry.setReindexProgress(name, EMBEDDING_END);
             if (hadIndex) {
                 registry.setStatus(name, ProjectStatus.EMBEDDING, null);   // briefly non-searchable
             }
             luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));
-            importEmbeddedFile(name, def, embeddingsPath);
+            importEmbeddedFile(name, def, embeddingsPath,
+                    (done, total) -> registry.setReindexProgress(name, mapPhaseProgress(done, total, EMBEDDING_END, STORING_END)));
 
             registry.setStatus(name, ProjectStatus.READY, null);
             registry.setReindexStatus(name, ReindexStatus.COMPLETE);
-            registry.setReindexProgress(name, 100);
+            registry.setReindexProgress(name, STORING_END);
         } catch (Exception e) {
             log.error("Pipeline failed for project '{}': {}", name, e.toString());
             registry.setReindexStatus(name, ReindexStatus.FAILED);
@@ -296,12 +313,22 @@ public class PipelineOrchestrator implements ImportHandler {
 
     /**
      * Imports EmbeddedChunkRecord JSONL into the shared Lucene index (batched).
-     * The caller performs the scoped reset (removeAll) before calling this.
+     * The caller performs the scoped reset (removeAll) before calling this. The progress
+     * callback is invoked after each batch with (importedSoFar, totalLines).
      */
-    private void importEmbeddedFile(String name, ProjectDefinition def, String jsonlPath) {
-        try (var lines = Files.lines(Path.of(jsonlPath))) {
+    private void importEmbeddedFile(String name, ProjectDefinition def, String jsonlPath, BiConsumer<Integer, Integer> progress) {
+        // Count the scope in a first pass — a Stream can only be consumed once
+        int total;
+        try (Stream<String> counting = Files.lines(Path.of(jsonlPath))) {
+            total = (int) counting.filter(line -> !line.isBlank()).count();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to read embeddings file " + jsonlPath, e);
+        }
+
+        try (Stream<String> lines = Files.lines(Path.of(jsonlPath))) {
             List<EmbeddedChunkRecord> batch = new ArrayList<>();
             int batchSize = Math.max(1, def.getTibedBatchSize());
+            AtomicInteger imported = new AtomicInteger();
 
             lines.map(line -> {
                 try {
@@ -314,14 +341,16 @@ public class PipelineOrchestrator implements ImportHandler {
                     .forEach(record -> {
                         batch.add(record);
                         if (batch.size() >= batchSize) {
-                            flushBatch(name, batch);
+                            imported.addAndGet(flushBatch(name, batch));
+                            reportProgress(progress, imported.get(), total);
                             batch.clear();
                         }
                     });
 
             // Flush remaining
             if (!batch.isEmpty()) {
-                flushBatch(name, batch);
+                imported.addAndGet(flushBatch(name, batch));
+                reportProgress(progress, imported.get(), total);
             }
 
             log.info("Imported embedded chunks for project '{}' from {}", name, jsonlPath);
@@ -330,14 +359,30 @@ public class PipelineOrchestrator implements ImportHandler {
         }
     }
 
-    private void flushBatch(String projectName, List<EmbeddedChunkRecord> batch) {
+    /** Invokes the progress callback, clamping done to total; no-op when the scope is unknown (total <= 0). */
+    private void reportProgress(BiConsumer<Integer, Integer> progress, int done, int total) {
+        if (total > 0) {
+            progress.accept(Math.min(done, total), total);
+        }
+    }
+
+    /** Maps a phase-local (done, total) pair onto the global 0-100 scale between phaseStart and phaseEnd. */
+    private int mapPhaseProgress(int done, int total, int phaseStart, int phaseEnd) {
+        if (total <= 0) {
+            return phaseEnd;   // unknown or empty scope: jump to the phase end
+        }
+        return phaseStart + (int) ((long) (phaseEnd - phaseStart) * Math.min(done, total) / total);
+    }
+
+    /** Imports one batch; returns the number of chunks actually written to the store. */
+    private int flushBatch(String projectName, List<EmbeddedChunkRecord> batch) {
         List<EmbeddedChunkRecord> toImport = batch.stream()
                 .filter(this::needsImport)
                 .toList();
 
         if (toImport.isEmpty()) {
             log.debug("Skipping batch of {} chunks (already in store)", batch.size());
-            return;
+            return 0;
         }
 
         List<Embedding> embeddings = toImport.stream()
@@ -354,6 +399,7 @@ public class PipelineOrchestrator implements ImportHandler {
 
         luceneStore.addAllBatched(embeddings, segments);
         log.info("Imported {}/{} chunks for project '{}'", toImport.size(), batch.size(), projectName);
+        return toImport.size();
     }
 
     private boolean needsImport(EmbeddedChunkRecord record) {

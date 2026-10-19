@@ -197,6 +197,51 @@ describe('ProjectsComponent', () => {
     }
   });
 
+  // ------------------------------------------------------------------ Reindex progress in the list
+
+  it('isReindexActive() should return true for active reindex statuses', () => {
+    expect(component.isReindexActive({ name: 'x', status: 'READY', reindexStatus: 'CHUNKING' })).toBe(true);
+    expect(component.isReindexActive({ name: 'x', status: 'READY', reindexStatus: 'EMBEDDING' })).toBe(true);
+    expect(component.isReindexActive({ name: 'x', status: 'READY', reindexStatus: 'IMPORTING' })).toBe(true);
+  });
+
+  it('isReindexActive() should return false for idle/finished statuses', () => {
+    expect(component.isReindexActive({ name: 'x', status: 'READY', reindexStatus: 'IDLE' })).toBe(false);
+    expect(component.isReindexActive({ name: 'x', status: 'READY', reindexStatus: 'COMPLETE' })).toBe(false);
+    expect(component.isReindexActive({ name: 'x', status: 'READY', reindexStatus: 'FAILED' })).toBe(false);
+    expect(component.isReindexActive({ name: 'x', status: 'READY' })).toBe(false);
+  });
+
+  it('should render a progress bar in the list for projects with an active reindex', () => {
+    component.projects.set([{ name: 'project-a', status: 'READY', reindexStatus: 'EMBEDDING', reindexProgress: 42 }]);
+    fixture.detectChanges();
+
+    const fill = fixture.nativeElement.querySelector('.project-item .progress-bar-fill');
+    expect(fill).not.toBeNull();
+    expect(fill.style.width).toBe('42%');
+  });
+
+  it('should not render a progress bar in the list for idle projects', () => {
+    component.projects.set([{ name: 'project-a', status: 'READY', reindexStatus: 'IDLE', reindexProgress: 0 }]);
+    fixture.detectChanges();
+
+    expect(fixture.nativeElement.querySelector('.project-item .progress-bar-fill')).toBeNull();
+  });
+
+  it('loadProjects() should resume polling for projects with an active reindex', () => {
+    vi.useFakeTimers();
+    try {
+      mockService.getProjects.mockReturnValue(of([{ name: 'project-a', status: 'READY', reindexStatus: 'CHUNKING', reindexProgress: 5 }]));
+
+      component.loadProjects();
+      vi.advanceTimersByTime(2000);
+
+      expect(mockService.getReindexStatus).toHaveBeenCalledWith('project-a');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   // ------------------------------------------------------------------ Editor flow
 
   it('onCreateProject() should clear editingProject and show editor', () => {

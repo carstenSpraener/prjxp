@@ -31,7 +31,7 @@ export class ProjectDetailCardComponent {
 
   isReindexing(): boolean {
     const status = this.project?.reindexStatus;
-    return status === 'CHUNKING' || status === 'EMBEDDING';
+    return status === 'CHUNKING' || status === 'EMBEDDING' || status === 'IMPORTING';
   }
 
   getStatusColor(): string {

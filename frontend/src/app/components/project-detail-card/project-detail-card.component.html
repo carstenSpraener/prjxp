@@ -35,6 +35,7 @@
       <div class="progress-label text-secondary">
         @if (project.reindexStatus === 'CHUNKING') { Creating chunks... }
         @if (project.reindexStatus === 'EMBEDDING') { Creating embeddings... }
+        @if (project.reindexStatus === 'IMPORTING') { Importing into index... }
       </div>
       <div class="progress-bar-bg">
         <div class="progress-bar-fill" [style.width.%]="project.reindexProgress"></div>
