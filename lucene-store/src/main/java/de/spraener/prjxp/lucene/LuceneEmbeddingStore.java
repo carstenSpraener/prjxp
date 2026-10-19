@@ -136,6 +136,32 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
         return ids;
     }
 
+    /**
+     * Batched variant of addAll: all documents are added and made visible with a SINGLE
+     * commit + refresh per call (instead of one commit per document). Used by the hub
+     * reindex swap where the whole project is re-written.
+     */
+    public void addAllBatched(List<Embedding> embeddings, List<TextSegment> textSegments) {
+        if (embeddings.size() != textSegments.size()) {
+            throw new IllegalArgumentException("embeddings and textSegments must have the same size");
+        }
+        ensureOpen();
+        lock.writeLock().lock();
+        try {
+            for (int i = 0; i < embeddings.size(); i++) {
+                validateDimension(embeddings.get(i));
+                String id = extractId(textSegments.get(i));
+                writer.addDocument(createDocument(id, embeddings.get(i), textSegments.get(i)));
+            }
+            writer.commit();
+            searcherManager.maybeRefresh();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to add batched documents", e);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     private void validateDimension(Embedding embedding) {
         if (embedding.vector().length != vectorDimension) {
             throw new IllegalArgumentException(
