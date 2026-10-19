@@ -6,6 +6,7 @@ import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
@@ -51,6 +52,9 @@ class EmbeddingServiceForProjectTest {
     PrjXPJsonStreamProvider streamProvider;
 
     @Mock
+    TransferPasswordResolver transferPasswordResolver;
+
+    @Mock
     StoreIdChecker storeIdChecker;
 
     @Mock
@@ -65,7 +69,8 @@ class EmbeddingServiceForProjectTest {
 
     @BeforeEach
     void setUp() {
-        service = new EmbeddingService(logService, objMapper, embedder, storeSupplier, streamProvider, storeIdChecker, cfg);
+        when(cfg.getTransfer()).thenReturn(new PrjXPConfig.TransferConfig());
+        service = new EmbeddingService(logService, objMapper, embedder, storeSupplier, streamProvider, transferPasswordResolver, storeIdChecker, cfg);
     }
 
     private ProjectDefinition projectWithJsonl(String name) throws Exception {
@@ -81,7 +86,7 @@ class EmbeddingServiceForProjectTest {
     @SuppressWarnings("unchecked")
     private EmbeddingStore<TextSegment> stubStreamAndImport(ProjectDefinition pd) throws Exception {
         EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
-        when(streamProvider.getJsonlStream(pd.getJsonlFile()))
+        when(streamProvider.getTransferJsonlStream(pd.getJsonlFile(), null))
                 .thenReturn(java.util.stream.Stream.of("{\"id\":\"chunk-1\",\"content\":\"int x = 42;\"}"));
         when(storeIdChecker.needsImport(eq(store), eq("chunk-1"), eq(pd.getName()))).thenReturn(true);
         return store;
@@ -130,13 +135,13 @@ class EmbeddingServiceForProjectTest {
         pd.setJsonlFile("px-chunks.jsonl");   // relative — must be resolved against rootDir
 
         EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
-        when(streamProvider.getJsonlStream(tempDir.resolve("px-chunks.jsonl").toString()))
+        when(streamProvider.getTransferJsonlStream(tempDir.resolve("px-chunks.jsonl").toString(), null))
                 .thenReturn(java.util.stream.Stream.of("{\"id\":\"chunk-1\",\"content\":\"int x = 42;\"}"));
         when(storeIdChecker.needsImport(eq(store), eq("chunk-1"), eq("projB"))).thenReturn(true);
 
         service.executeForProject(pd, store);
 
-        verify(streamProvider).getJsonlStream(tempDir.resolve("px-chunks.jsonl").toString());
+        verify(streamProvider).getTransferJsonlStream(tempDir.resolve("px-chunks.jsonl").toString(), null);
         verify(embedder).execute(eq(store), anyList());   // the resolved stream was actually consumed
     }
 
@@ -148,13 +153,13 @@ class EmbeddingServiceForProjectTest {
         pd.setJsonlFile(null);   // null/blank -> resolvedJsonlFile() is null -> stdin, as before
 
         EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
-        when(streamProvider.getJsonlStream(null))
+        when(streamProvider.getTransferJsonlStream(null, null))
                 .thenReturn(java.util.stream.Stream.of("{\"id\":\"chunk-1\",\"content\":\"int x = 42;\"}"));
         when(storeIdChecker.needsImport(eq(store), eq("chunk-1"), eq("projC"))).thenReturn(true);
 
         service.executeForProject(pd, store);
 
-        verify(streamProvider).getJsonlStream(null);   // behavior preserved for null/blank
+        verify(streamProvider).getTransferJsonlStream(null, null);   // behavior preserved for null/blank
     }
 
     /**
@@ -178,7 +183,7 @@ class EmbeddingServiceForProjectTest {
         pd.setTibedBatchSize(500);   // above the old hard cap of 32 — must be honored
 
         EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
-        when(streamProvider.getJsonlStream(jsonl.toString()))
+        when(streamProvider.getTransferJsonlStream(jsonl.toString(), null))
                 .thenReturn(Files.readAllLines(jsonl).stream());
         when(storeIdChecker.needsImport(eq(store), anyString(), eq("projD"))).thenReturn(true);
 
@@ -203,7 +208,7 @@ class EmbeddingServiceForProjectTest {
         pd.setTibedBatchSize(0);   // invalid — must fall back to 1, not crash BatchingUtils.pack
 
         EmbeddingStore<TextSegment> store = mock(EmbeddingStore.class);
-        when(streamProvider.getJsonlStream(jsonl.toString()))
+        when(streamProvider.getTransferJsonlStream(jsonl.toString(), null))
                 .thenReturn(Files.readAllLines(jsonl).stream());
         when(storeIdChecker.needsImport(eq(store), anyString(), eq("projE"))).thenReturn(true);
 

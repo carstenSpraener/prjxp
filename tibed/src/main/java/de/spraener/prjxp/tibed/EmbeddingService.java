@@ -8,6 +8,7 @@ import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import dev.langchain4j.data.segment.TextSegment;
@@ -32,6 +33,7 @@ public class EmbeddingService {
     private final EmbeddingExecutor embedder;
     private final EmbeddingStoreSupplier embeddingStoreSupplier;
     private final PrjXPJsonStreamProvider streamProvider;
+    private final TransferPasswordResolver transferPasswordResolver;
     private final StoreIdChecker storeIdChecker;
     private final PrjXPConfig cfg;
 
@@ -63,8 +65,11 @@ public class EmbeddingService {
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
             // resolvedJsonlFile(): rootDir-relative, mirroring the writer (null/blank -> stdin, as before)
+            // getTransferJsonlStream auto-detects the PRJXPENC magic: a chunk JSONL that chunk-norris
+            // encrypted (transfer password available) is decrypted, plaintext files pass through unchanged.
+            char[] password = transferPasswordResolver.resolvePassword(cfg.getTransfer().getPasswordEnv());
             log.info("Reading JSONL from " + pd.resolvedJsonlFile() + " for project '" + pd.getName() + "' with batch size " + effectiveBatchSize);
-            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(pd.resolvedJsonlFile()), effectiveBatchSize, this::fromJSONL)
+            reader.readChunksFromJsonlStreamBatched(streamProvider.getTransferJsonlStream(pd.resolvedJsonlFile(), password), effectiveBatchSize, this::fromJSONL)
                     .forEach(batch -> {
                         embedChunk(store, pd.getName(), batch);
                     });

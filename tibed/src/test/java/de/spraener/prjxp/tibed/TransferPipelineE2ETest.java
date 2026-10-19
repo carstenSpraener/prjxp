@@ -103,6 +103,24 @@ class TransferPipelineE2ETest {
         return logService;
     }
 
+    private PxLogService runStoreStep(PrjXPConfig cfg, TransferPasswordResolver resolver, FakeEmbeddingStore store) {
+        PxLogService logService = new PxLogService();
+        EmbeddingStoreSupplier supplier = Mockito.mock(EmbeddingStoreSupplier.class);
+        Mockito.when(supplier.getStore("cwd")).thenReturn(store);
+
+        new EmbeddingService(
+                logService,
+                new ObjectMapper(),
+                new LangChain4JEmbedderImpl(new FakeEmbeddingModel(DIMENSION), supplier),
+                supplier,
+                new PrjXPJsonStreamProvider(cfg),
+                resolver,
+                new StoreIdChecker(cfg),
+                cfg
+        ).execute();
+        return logService;
+    }
+
     // ---------- Setup-Helfer ----------
 
     private PrjXPConfig config() throws Exception {
@@ -299,6 +317,36 @@ class TransferPipelineE2ETest {
         cfg.getTransfer().setInput(embedding.toString());
         FakeEmbeddingStore store = new FakeEmbeddingStore();
         runImportStep(cfg, resolverWith("env-pw"), store);
+
+        assertStoreHasBothChunks(store);
+    }
+
+    // ---------- Matrixfall 6: Store-Modus (Default) liest verschlüsseltes Chunk-JSONL ----------
+
+    @Test
+    void encryptedChunkJsonl_storeMode_decryptsAndEmbeds() throws Exception {
+        PrjXPConfig cfg = config();
+
+        runChunkStep(cfg, resolverWith("env-pw"), capturingOut());
+        Path pxChunks = tempDir.resolve("px-chunks.jsonl");
+        assertThat(isEncrypted(pxChunks)).isTrue();
+
+        FakeEmbeddingStore store = new FakeEmbeddingStore();
+        runStoreStep(cfg, resolverWith("env-pw"), store);
+
+        assertStoreHasBothChunks(store);
+    }
+
+    @Test
+    void plaintextChunkJsonl_storeMode_stillWorks() throws Exception {
+        PrjXPConfig cfg = config();
+
+        runChunkStep(cfg, resolverWith(null), capturingOut());
+        Path pxChunks = tempDir.resolve("px-chunks.jsonl");
+        assertThat(isEncrypted(pxChunks)).isFalse();
+
+        FakeEmbeddingStore store = new FakeEmbeddingStore();
+        runStoreStep(cfg, resolverWith(null), store);
 
         assertStoreHasBothChunks(store);
     }
