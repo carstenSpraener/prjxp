@@ -1,5 +1,6 @@
 package de.spraener.prjxp.common.mcp;
 
+import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.McpServerReference;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
@@ -100,6 +101,28 @@ public class McpClientManager {
         return activeClients;
     }
 
+    /**
+     * Wraps the given chat in a {@link McPEnablingKIChatDecorator} so the LLM can call the
+     * configured MCP tools. Returns the input unchanged when it is {@code null} or no MCP
+     * client is active, so callers can apply this unconditionally.
+     */
+    public KIChat decorate(KIChat chat) {
+        if (chat == null) {
+            return null;
+        }
+        if (activeClients.isEmpty()) {
+            return chat;
+        }
+
+        String project = cfg.getMcpServers().stream()
+                .filter(ref -> ref.getDefaultProject() != null && !ref.getDefaultProject().isBlank())
+                .map(McpServerReference::getDefaultProject)
+                .findFirst()
+                .orElse(null);
+
+        log.info("Verpacke KIChat in McPEnablingKIChatDecorator mit " + activeClients.size() + " aktiven MCP-Servern.");
+        return new McPEnablingKIChatDecorator(chat, activeClients, project);
+    }
 
     @PreDestroy
     public void shutdown() {

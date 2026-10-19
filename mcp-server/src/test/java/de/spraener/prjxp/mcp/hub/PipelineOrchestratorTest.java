@@ -42,6 +42,7 @@ import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -513,6 +514,36 @@ class PipelineOrchestratorTest {
         awaitStatus(registry, "alpha", ProjectStatus.READY);
         assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.COMPLETE);
         assertThat(registry.getReindexProgress("alpha")).isEqualTo(100);
+    }
+
+    @Test
+    void enqueueDocPipeRunsDocPhaseOnlyWithoutCodePipeline() throws Exception {
+        Path dir = projectDir("alpha");
+        registry.registerProject("alpha", dir);
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+
+        AtomicReference<ReindexStatus> statusAtFinish = new AtomicReference<>();
+        orchestrator.setPipelineListeners(List.of(new PipelineListener() {
+            @Override
+            public void onPipelineStart(PipelineOrchestrator o, String n, PipelineRun r) {
+            }
+
+            @Override
+            public void onPipelineFinished(PipelineOrchestrator o, String n, PipelineRun r) {
+                statusAtFinish.set(registry.getReindexStatus(n));
+            }
+        }));
+
+        orchestrator.enqueueDocPipe("alpha");
+
+        awaitReindexStatus(registry, "alpha", ReindexStatus.COMPLETE);
+
+        // the doc phase was marked during the run, and the code pipeline never ran
+        assertThat(statusAtFinish.get()).isEqualTo(ReindexStatus.DOCPIPE);
+        verify(chunkProcess, never()).executeForProject(any());
+        verify(exportService, never()).exportForProject(any(), any(), any());
+        assertThat(registry.entry("alpha").orElseThrow().getStatus()).isEqualTo(ProjectStatus.READY);
     }
 
     @Test

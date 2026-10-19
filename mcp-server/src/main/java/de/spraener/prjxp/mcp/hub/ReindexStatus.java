@@ -8,6 +8,7 @@ public enum ReindexStatus {
     CHUNKING,   // Running chunk-norris (creating chunks)
     EMBEDDING,  // Computing embeddings (old index still in use)
     IMPORTING,  // Swapping: old index removed, new embeddings imported (briefly non-searchable)
+    DOCPIPE,    // DocPipe documentation generation (code index untouched, project stays searchable)
     COMPLETE,   // Reindex finished successfully
     FAILED      // Reindex failed with error
 }

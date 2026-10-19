@@ -42,6 +42,7 @@
         <project-detail-card [project]="selectedProject()!"
                               (edit)="onEditProject()"
                               (reindexConfirm)="onReindexConfirm($event)"
+                              (docpipe)="onDocPipe()"
                               (delete)="onDeleteProject($event)">
         </project-detail-card>
       } @else {

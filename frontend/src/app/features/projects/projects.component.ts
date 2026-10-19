@@ -124,6 +124,18 @@ export class ProjectsComponent implements OnInit, OnDestroy {
     this.reindexProjectName.set(null);
   }
 
+  // ------------------------------------------------------------------ DocPipe flow
+
+  onDocPipe(): void {
+    const selected = this.selectedProject();
+    if (selected) {
+      this.projectService.docpipeProject(selected.name).subscribe(() => {
+        // Start polling for doc phase status
+        this.startPolling(selected.name);
+      });
+    }
+  }
+
   // ------------------------------------------------------------------ Polling for reindex progress
 
   startPolling(projectName: string): void {
@@ -202,6 +214,6 @@ export class ProjectsComponent implements OnInit, OnDestroy {
 
   isReindexActive(project: ProjectInfo): boolean {
     const status = project.reindexStatus;
-    return status === 'CHUNKING' || status === 'EMBEDDING' || status === 'IMPORTING';
+    return status === 'CHUNKING' || status === 'EMBEDDING' || status === 'IMPORTING' || status === 'DOCPIPE';
   }
 }

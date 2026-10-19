@@ -30,6 +30,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -164,6 +165,33 @@ public class PipelineOrchestrator implements ImportHandler {
         submit(PipelineRun.root(name), token);
     }
 
+    /**
+     * Queues a DocPipe-only chain for a registered project: documentation generation + document
+     * embedding, WITHOUT re-chunking or re-embedding the code (the "DocPipe" button). The code
+     * index stays in place throughout, so the project remains searchable. Idempotent per name
+     * like {@link #enqueue} — a full reindex already in flight is never superseded.
+     */
+    public void enqueueDocPipe(String name) {
+        Object token = new Object();
+        if (inFlight.putIfAbsent(name, token) != null) {
+            return;   // already queued/running — never double-run
+        }
+        submit(docPipeRun(name), token);
+    }
+
+    /**
+     * Phase-1 run of a DocPipe-only chain: a fresh chain (new ledger) whose work only marks the
+     * documentation phase. The actual DocPipe run happens in the pipeline listener (single source
+     * of truth), which then schedules the document-embedding retrigger — exactly like after a root
+     * run, but without the code pipeline.
+     */
+    private PipelineRun docPipeRun(String name) {
+        return new PipelineRun(name, 1, new HashSet<>(), (runName, def) -> {
+            registry.setReindexStatus(runName, ReindexStatus.DOCPIPE);
+            registry.setReindexProgress(runName, 0);
+        });
+    }
+
     private void submit(PipelineRun run, Object token) {
         worker.submit(() -> {
             try {
@@ -211,6 +239,8 @@ public class PipelineOrchestrator implements ImportHandler {
             log.warn("EmbeddingService not available — skipping document embedding for '{}'", name);
             return;
         }
+        registry.setReindexStatus(name, ReindexStatus.EMBEDDING);
+        registry.setReindexProgress(name, 0);
         Path root = Path.of(def.getRootDir()).toAbsolutePath().normalize();
         List<Path> files = source.documentStream()
                 .map(p -> root.resolve(p).normalize())

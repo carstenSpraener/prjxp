@@ -36,6 +36,7 @@
         @if (project.reindexStatus === 'CHUNKING') { Creating chunks... }
         @if (project.reindexStatus === 'EMBEDDING') { Creating embeddings... }
         @if (project.reindexStatus === 'IMPORTING') { Importing into index... }
+        @if (project.reindexStatus === 'DOCPIPE') { Generating documentation... }
       </div>
       <div class="progress-bar-bg">
         <div class="progress-bar-fill" [style.width.%]="project.reindexProgress"></div>
@@ -51,6 +52,13 @@
         <span class="spinner"></span> Reindexing...
       } @else {
         ⟳ Reindex
+      }
+    </button>
+    <button class="btn btn-secondary" (click)="onDocPipe()" [disabled]="isReindexing()">
+      @if (isReindexing()) {
+        <span class="spinner"></span> Running...
+      } @else {
+        📄 DocPipe
       }
     </button>
     <button class="btn btn-danger" (click)="onDelete()">✕ Delete</button>

@@ -1,24 +1,45 @@
-
-
 /**
- * Provides services for interacting with Large Language Models (LLMs) within the documentation pipeline.
- * <p>
- * This package encapsulates the logic required to bridge documentation tasks with AI-driven content generation.
- * The core component, {@link de.spraener.prjxp.docpipe.llm.LLMService}, acts as a facade that abstracts the
- * complexity of model selection and communication. It dynamically resolves the appropriate LLM configuration
- * based on documentation stereotypes defined in {@link de.spraener.prjxp.docpipe.model.DPContentCreation}
- * and delegates the actual inference requests to a provider abstraction.
- * </p>
+ * LLM integration layer for the DocPipe content-creation pipeline.
+ *
+ * <p>This package provides the service-level abstraction for communicating with
+ * Large Language Models (LLMs) in the context of documentation content creation.
+ * Its primary responsibility is to resolve the appropriate LLM model configuration
+ * based on a documentation <em>stereotype</em> and to execute chat interactions
+ * on behalf of {@link de.spraener.prjxp.docpipe.content.ContentCreationTask}
+ * instances.</p>
+ *
+ * <h2>Architecture</h2>
+ * <p>The package contains a single Spring-managed service,
+ * {@link de.spraener.prjxp.docpipe.llm.LLMService}, which orchestrates two
+ * upstream collaborators from the common infrastructure layer:</p>
  * <ul>
- *   <li><b>{@link de.spraener.prjxp.docpipe.llm.LLMService}</b>: The primary Spring-managed service that coordinates LLM interactions. It receives content creation tasks and prompts, extracts the required stereotype, and routes the request.</li>
- *   <li><b>{@link de.spraener.prjxp.common.chat.KIChatProvider}</b>: An abstraction responsible for supplying configured chat model instances. The service queries this provider to obtain the correct LLM client based on the resolved stereotype.</li>
- *   <li><b>{@link de.spraener.prjxp.docpipe.content.ContentCreationTask}</b> & <b>{@link de.spraener.prjxp.docpipe.model.DPContentCreation}</b>: Domain objects that carry the context and stereotype metadata required for model resolution.</li>
+ *   <li><b>{@link de.spraener.prjxp.common.chat.KIChatProvider}</b> –
+ *       Resolves a concrete chat-model instance for a given stereotype.
+ *       The stereotype is extracted from the
+ *       {@link de.spraener.prjxp.docpipe.model.DPContentCreation} domain object
+ *       carried inside the task.</li>
+ *   <li><b>{@link de.spraener.prjxp.common.mcp.McpClientManager}</b> –
+ *       Decorates the resolved chat instance with Model Context Protocol (MCP)
+ *       tooling before the prompt is dispatched, enabling the model to invoke
+ *       external tools during the conversation.</li>
  * </ul>
- * <p>
- * The main entry point for consumers is the {@code chat()} method on {@link de.spraener.prjxp.docpipe.llm.LLMService}.
- * When invoked, it automatically maps the task's stereotype to a specific LLM configuration and executes the prompt.
- * If no matching model is configured for the given stereotype, an {@code IllegalArgumentException} is thrown.
- * </p>
+ *
+ * <p>The resolution chain is: <em>stereotype → chat provider → MCP decoration →
+ * chat call</em>. If no model configuration exists for the requested stereotype,
+ * an {@link IllegalArgumentException} is thrown, signalling a misconfiguration
+ * in the job definition.</p>
+ *
+ * <h2>Primary Use Case</h2>
+ * <p>Callers within the DocPipe pipeline (e.g., content-creation processors)
+ * invoke {@code LLMService.chat(task, prompt)} to obtain a model-generated
+ * response for a specific documentation task. The service is the sole entry
+ * point for LLM interaction in this module, keeping model-selection logic and
+ * MCP wiring encapsulated in one place.</p>
+ *
+ * @see de.spraener.prjxp.docpipe.llm.LLMService
+ * @see de.spraener.prjxp.common.chat.KIChatProvider
+ * @see de.spraener.prjxp.common.mcp.McpClientManager
+ * @see de.spraener.prjxp.docpipe.content.ContentCreationTask
  */
 package de.spraener.prjxp.docpipe.llm;
 

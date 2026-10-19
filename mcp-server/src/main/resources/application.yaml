@@ -49,6 +49,9 @@ prjxp:
       model-name: "qwen3.8-27B"
       api-key: "lm-studio"
       provider-url: "http://localhost:1234/v1"
+      # Lokales 27B-Modell: Doc-Generierung (FAQ, Architektur, ...) dauert >60s.
+      # Default wäre 60s -> Timeout. Über PRJXP_CHAT_TIMEOUT_SECS anpassbar.
+      timeout-secs: ${PRJXP_CHAT_TIMEOUT_SECS:300}
 
 server:
   port: ${SERVER_PORT:7007}

@@ -2,5 +2,5 @@ name: prjxp
 rootDir: /import/prjxp
 jsonlFile: /data/chunks/prjxp.jsonl
 chunoWhiteList: java,ts,html
-tibedBatchSize: 150
-tibedResetStore: true
+tibedBatchSize: 500
+tibedResetStore: false

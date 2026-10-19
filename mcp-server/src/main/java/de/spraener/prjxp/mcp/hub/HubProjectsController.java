@@ -105,6 +105,20 @@ public class HubProjectsController {
         return ResponseEntity.accepted().build();   // the pipeline runs asynchronously on the single worker
     }
 
+    /**
+     * DocPipe-only re-run: regenerates the project's documentation and re-embeds the generated
+     * documents, WITHOUT re-chunking or re-embedding the code (the code index stays in place).
+     * Use to selectively refresh DocPipe results.
+     */
+    @PostMapping("/{name}/docpipe")
+    public ResponseEntity<Void> docpipe(@PathVariable("name") String name) {
+        if ("UNKNOWN".equals(projectRegistry.statusOf(name))) {
+            throw new UnknownProjectException(name, projectRegistry.availableProjects());   // same error behavior as reindex
+        }
+        orchestrator.enqueueDocPipe(name);
+        return ResponseEntity.accepted().build();   // the doc chain runs asynchronously on the single worker
+    }
+
     /** Returns the current reindex status and progress percentage for a project. */
     @GetMapping("/{name}/reindex-status")
     public ResponseEntity<Map<String, Object>> getReindexStatus(@PathVariable("name") String name) {

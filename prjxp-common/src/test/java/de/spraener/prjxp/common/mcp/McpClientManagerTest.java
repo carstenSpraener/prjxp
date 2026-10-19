@@ -1,5 +1,6 @@
 package de.spraener.prjxp.common.mcp;
 
+import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.config.McpServerReference;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
@@ -221,5 +222,50 @@ class McpClientManagerTest {
 
         try { verify(clientA).close(); } catch (Exception ignored) {}
         try { verify(clientB).close(); } catch (Exception ignored) {}
+    }
+
+    @Test
+    void decorate_null_returnsNull() {
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
+
+        assertThat(manager.decorate(null)).isNull();
+    }
+
+    @Test
+    void decorate_noActiveClients_returnsOriginalChat() {
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
+
+        KIChat chat = mock(KIChat.class);
+
+        assertThat(manager.decorate(chat)).isSameAs(chat);
+    }
+
+    @Test
+    void decorate_withActiveClients_wrapsInDecorator() {
+        McpServerReference ref = new McpServerReference();
+        ref.setName("prjxp");
+        ref.setType("http");
+        ref.setUrl("http://localhost:7007/mcp");
+        ref.setDefaultProject("prjxp");
+
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        when(cfg.getMcpServers()).thenReturn(List.of(ref));
+
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
+
+        McpClient client = mock(McpClient.class);
+        ReflectionTestUtils.setField(manager, "activeClients", List.of(client));
+
+        KIChat chat = mock(KIChat.class);
+
+        KIChat result = manager.decorate(chat);
+
+        assertThat(result).isInstanceOf(McPEnablingKIChatDecorator.class);
+        assertThat(result).isNotSameAs(chat);
     }
 }

@@ -10,9 +10,11 @@ import de.spraener.prjxp.docpipe.content.ContentCreationService;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutorService;
@@ -51,6 +53,7 @@ public class DocPipeRunner {
     /** Setter-injected (keeps the 5-arg constructor stable for existing tests). */
     private DocPipeManifestWriter manifestWriter;
 
+    @Autowired(required = false)
     public void setManifestWriter(DocPipeManifestWriter manifestWriter) { this.manifestWriter = manifestWriter; }
 
     /**
@@ -91,8 +94,8 @@ public class DocPipeRunner {
     /**
      * Runs DocPipe for an explicitly given project (hub in-process use). Unlike {@link #run(PrjXPConfig)}
      * this NEVER calls System.exit: failures are reported by throwing {@link DocPipeRunException} after
-     * the run. A manifest of generated documents is written (even on partial failure) so the hub
-     * can embed whatever was produced.
+     * the run. A manifest of generated documents is written in ALL cases (partial failure, timeout,
+     * any exception) so the hub can embed whatever was produced.
      */
     public void runForProject(ProjectDefinition pd) throws Exception {
         List<ContentCreationTask> allTasks = jobCreationService
@@ -116,10 +119,15 @@ public class DocPipeRunner {
             }
         } finally {
             executor.shutdownNow();
-        }
-
-        if (manifestWriter != null) {
-            manifestWriter.write(pd, result.outputs());   // always write (overwrite): the hub reads it after the run
+            // Always write the manifest (even on timeout or failure) so the hub can embed whatever
+            // was produced. A write failure is non-fatal: it must not mask the run's own outcome.
+            if (manifestWriter != null) {
+                try {
+                    manifestWriter.write(pd, result.outputs());
+                } catch (IOException e) {
+                    log.warning("Could not write DocPipe manifest for project '" + pd.getName() + "': " + e.getMessage());
+                }
+            }
         }
 
         if (result.hasFailures()) {

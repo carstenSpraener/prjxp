@@ -38,6 +38,10 @@ export class ProjectManagementService {
     return this.http.post(`${this.baseUrl}/projects/${name}/reindex`, null, { observe: 'events' });
   }
 
+  docpipeProject(name: string): Observable<HttpEvent<any>> {
+    return this.http.post(`${this.baseUrl}/projects/${name}/docpipe`, null, { observe: 'events' });
+  }
+
   getReindexStatus(projectName: string): Observable<{ status: string; progress: number }> {
     return this.http.get<{ status: string; progress: number }>(`${this.baseUrl}/projects/${projectName}/reindex-status`);
   }

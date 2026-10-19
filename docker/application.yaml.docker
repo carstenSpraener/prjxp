@@ -12,6 +12,33 @@ prjxp:
     timeout: ${EMBEDDING_TIMEOUT:180}
     apiKey: ${EMBEDDING_API_KEY:dummy}
 
+  chatModels:
+    - stereotype: detailed
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 600
+      apiKey: ${EMBEDDING_API_KEY}
+
+    - stereotype: documentation
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 600
+      apiKey: ${EMBEDDING_API_KEY}
+
+    - stereotype: javadoc
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 600
+      apiKey: ${EMBEDDING_API_KEY}
+
+  mcp-servers:
+    - name: prjxp
+      type: http
+      url: ${PRJXP_HUB_URL:http://localhost:7007/mcp}
+
 mcp:
   cors:
     # Comma-separated, NO spaces after commas. Browsers send an Origin header on

@@ -11,6 +11,7 @@ export class ProjectDetailCardComponent {
   @Input() project!: ProjectInfo;
   @Output() edit = new EventEmitter<void>();
   @Output() reindexConfirm = new EventEmitter<ProjectInfo>();
+  @Output() docpipe = new EventEmitter<void>();
   @Output() delete = new EventEmitter<string>();
 
   onEdit(): void {
@@ -23,6 +24,12 @@ export class ProjectDetailCardComponent {
     }
   }
 
+  onDocPipe(): void {
+    if (!this.isReindexing()) {
+      this.docpipe.emit();
+    }
+  }
+
   onDelete(): void {
     if (confirm(`Delete project "${this.project.name}"?`)) {
       this.delete.emit(this.project.name);
@@ -31,7 +38,7 @@ export class ProjectDetailCardComponent {
 
   isReindexing(): boolean {
     const status = this.project?.reindexStatus;
-    return status === 'CHUNKING' || status === 'EMBEDDING' || status === 'IMPORTING';
+    return status === 'CHUNKING' || status === 'EMBEDDING' || status === 'IMPORTING' || status === 'DOCPIPE';
   }
 
   getStatusColor(): string {

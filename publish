@@ -1,5 +1,0 @@
-#!/bin/bash
-
-cp chunk-norris/build/libs/*-all.jar ../osb-rag/libs/chunk-norris-all.jar
-cp tibed/build/libs/*-all.jar ../osb-rag/libs/tibed-all.jar
-cp mcp-server/build/libs/*-all.jar ../osb-rag/libs/mcp-server-all.jar

@@ -172,6 +172,29 @@ class HubProjectsControllerTest {
         verify(orchestrator, never()).enqueue(anyString());
     }
 
+    // ------------------------------------------------------------------ DocPipe
+
+    @Test
+    void docpipeOfKnownProjectEnqueuesDocChainAndReturns202() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        mockMvc.perform(post("/api/projects/alpha/docpipe"))
+                .andExpect(status().isAccepted());
+
+        verify(orchestrator).enqueueDocPipe("alpha");
+    }
+
+    @Test
+    void docpipeOfUnknownProjectSurfacesAs500() throws Exception {
+        // same error behavior as reindex: UnknownProjectException propagates unhandled
+        assertThatThrownBy(() -> mockMvc.perform(post("/api/projects/ghost/docpipe")))
+                .isInstanceOf(ServletException.class)
+                .hasRootCauseInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("ghost");
+
+        verify(orchestrator, never()).enqueueDocPipe(anyString());
+    }
+
     // ------------------------------------------------------------------ Reindex status endpoint
 
     @Test

@@ -8,20 +8,32 @@ prjxp:
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
     name: lucene
 
-#  mcp-servers:
-#    - name: "filesystem-mcp"
-#      type: "stdio"
-#      command: "npx"
-#      args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
+  chatModels:
+    - stereotype: detailed
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 240
+      apiKey: ${EMBEDDING_API_KEY}
 
-#  chatModels:
-#    - stereoType: "coder"
-#      serverType: "OPEN_AI"
-#      modelName: "gpt-4o-mini"
-#      # Native function calling (tool calls via the provider API) is used automatically.
-#      # The chat falls back to the text-based TOOL_CALL protocol when the provider rejects tools.
-#      # Set this to false to force the text protocol right away (e.g. for small local models):
-#      # supportsTools: false
+    - stereotype: documentation
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 240
+      apiKey: ${EMBEDDING_API_KEY}
+
+    - stereotype: javadoc
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 240
+      apiKey: ${EMBEDDING_API_KEY}
+
+  mcp-servers:
+    - name: prjxp
+      type: http
+      url: ${PRJXP_HUB_URL:http://localhost:7007/mcp}
 
   embedding:
     type: "OPEN_AI"
