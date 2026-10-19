@@ -20,6 +20,7 @@ import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metadataKey;
 
@@ -91,6 +92,14 @@ public class EmbeddingService {
         } catch (Exception e) {
             logService.error(e, "Embedding of chunk batch failed: %s", e.getMessage());
         }
+    }
+
+    /**
+     * Embeds the given chunks into the store (hub document-embedding runs). Chunks are project-stamped
+     * and deduplicated exactly like in the standard pipeline; batch failures are logged, not thrown.
+     */
+    public void embedChunks(EmbeddingStore<TextSegment> store, String projectName, List<PxChunk> chunks) {
+        embedChunk(store, projectName, chunks.toArray(new PxChunk[0]));
     }
 
     private boolean needsEmbedding(EmbeddingStore<TextSegment> embeddingStore, String projectName, PxChunk chunk) {

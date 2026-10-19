@@ -15,6 +15,8 @@ dependencies {
     // In-Prozess-Pipeline fuer den Hub-Modus (Phase 01 DockerHub)
     implementation project(':chunk-norris')
     implementation project(':tibed')
+    // DocPipe in-process: generates documentation for projects after the pipeline run (DocPipePipelineIntegration)
+    implementation project(':docpipe')
     testFixturesImplementation project(':prjxp-common')
 
     // Spring Boot

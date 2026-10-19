@@ -133,6 +133,14 @@ public class HubProjectRegistry implements ProjectRegistry {
         }
     }
 
+    /** Sets the embedding phase of a known project (drives the EMBEDDING_PHASE_n display); no-op for unknown names. */
+    public void setEmbeddingPhase(String name, int phase) {
+        ProjectEntry entry = projects.get(name);
+        if (entry != null) {
+            entry.setEmbeddingPhase(phase);
+        }
+    }
+
     public Optional<ProjectEntry> entry(String name) {
         return Optional.ofNullable(projects.get(name));
     }
@@ -414,7 +422,13 @@ public class HubProjectRegistry implements ProjectRegistry {
             return "UNKNOWN";
         }
         ProjectEntry entry = projects.get(name);
-        return entry == null ? "UNKNOWN" : entry.getStatus().name();
+        if (entry == null) {
+            return "UNKNOWN";
+        }
+        if (entry.getStatus() == ProjectStatus.EMBEDDING && entry.getEmbeddingPhase() > 1) {
+            return "EMBEDDING_PHASE_" + entry.getEmbeddingPhase();
+        }
+        return entry.getStatus().name();
     }
 
     @Override

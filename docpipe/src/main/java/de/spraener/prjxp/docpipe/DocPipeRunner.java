@@ -1,6 +1,7 @@
 package de.spraener.prjxp.docpipe;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogMessage;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.config.JobCreationService;
@@ -13,8 +14,10 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.function.IntConsumer;
 import java.util.logging.Level;
 import java.util.stream.Collectors;
@@ -44,6 +47,11 @@ public class DocPipeRunner {
 
     /** Test seam: replaces the process-exit callback (defaults to {@code System::exit}). */
     void setExitHandler(IntConsumer exitHandler) { this.exitHandler = exitHandler; }
+
+    /** Setter-injected (keeps the 5-arg constructor stable for existing tests). */
+    private DocPipeManifestWriter manifestWriter;
+
+    public void setManifestWriter(DocPipeManifestWriter manifestWriter) { this.manifestWriter = manifestWriter; }
 
     /**
      * Executes the documentation pipeline for the active project.
@@ -77,6 +85,49 @@ public class DocPipeRunner {
             Stream<PxLogMessage> errorMessages = logService.getMessagesWithLevelMin(Level.SEVERE);
             errorMessages.forEach(msg -> log.severe(msg.getMessage()));
             exitHandler.accept(1);
+        }
+    }
+
+    /**
+     * Runs DocPipe for an explicitly given project (hub in-process use). Unlike {@link #run(PrjXPConfig)}
+     * this NEVER calls System.exit: failures are reported by throwing {@link DocPipeRunException} after
+     * the run. A manifest of generated documents is written (even on partial failure) so the hub
+     * can embed whatever was produced.
+     */
+    public void runForProject(ProjectDefinition pd) throws Exception {
+        List<ContentCreationTask> allTasks = jobCreationService
+                .readJobs(Optional.of(pd))
+                .flatMap(dpj -> dpj.getContentCreationList().stream()
+                        .map(cc -> new ContentCreationTask(dpj, cc)))
+                .collect(Collectors.toList());
+
+        DocPipeRunResult result = new DocPipeRunResult();
+        ExecutorService executor = Executors.newFixedThreadPool(maxThreads);
+        try {
+            for (ContentCreationTask task : allTasks) {
+                executor.submit(() -> contentCreationService.createContent(task, result));
+            }
+            executor.shutdown();
+            // Await completion: the manifest (and the hub's embedding run) must see all recorded
+            // outputs. createContent never throws (it records failures), so this only times out
+            // if a task hangs (e.g. an unresponsive LLM).
+            if (!executor.awaitTermination(1, TimeUnit.HOURS)) {
+                throw new DocPipeRunException("DocPipe run for project '" + pd.getName() + "' did not finish in time");
+            }
+        } finally {
+            executor.shutdownNow();
+        }
+
+        if (manifestWriter != null) {
+            manifestWriter.write(pd, result.outputs());   // always write (overwrite): the hub reads it after the run
+        }
+
+        if (result.hasFailures()) {
+            String summary = result.failures().stream()
+                    .map(f -> f.task() + ": " + f.message())
+                    .collect(Collectors.joining("; "));
+            throw new DocPipeRunException("DocPipe run for project '" + pd.getName() + "' had "
+                    + result.failures().size() + " failure(s): " + summary);
         }
     }
 }

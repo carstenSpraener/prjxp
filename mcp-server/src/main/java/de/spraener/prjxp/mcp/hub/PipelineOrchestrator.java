@@ -10,14 +10,17 @@ import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker.CheckReport;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker.Verdict;
 import de.spraener.prjxp.tibed.EmbeddingExportService;
+import de.spraener.prjxp.tibed.EmbeddingService;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
@@ -83,6 +86,28 @@ public class PipelineOrchestrator implements ImportHandler {
      */
     private final Map<String, Object> inFlight = new ConcurrentHashMap<>();
 
+    /** Pipeline listeners (Spring injects all beans; empty when none). Setter-injected to keep the constructor stable. */
+    private volatile List<PipelineListener> listeners = List.of();
+
+    /** The run currently executing on the pipeline thread (null between runs). */
+    private volatile PipelineRun currentRun;
+
+    @Autowired(required = false)
+    public void setPipelineListeners(List<PipelineListener> listeners) {
+        this.listeners = List.copyOf(listeners);
+    }
+
+    /**
+     * Tibed's in-process embedder (project-stamp + dedup + store write). Setter-injected to keep the
+     * 8-arg constructor stable; a null value (no bean) disables document-embedding runs gracefully.
+     */
+    private EmbeddingService embeddingService;
+
+    @Autowired(required = false)
+    public void setEmbeddingService(EmbeddingService embeddingService) {
+        this.embeddingService = embeddingService;
+    }
+
     @PreDestroy
     public void shutdown() {
         worker.shutdown();
@@ -129,39 +154,191 @@ public class PipelineOrchestrator implements ImportHandler {
         if (inFlight.putIfAbsent(name, token) != null) {
             return;   // already queued/running — never double-run a project's pipeline
         }
-        submit(name, token);
+        submit(PipelineRun.root(name), token);
     }
 
     /** Like {@link #enqueue} but supersedes a queued/running pipeline of the same name (tar re-import, embedded import). */
     public void enqueueForced(String name) {
         Object token = new Object();
         inFlight.put(name, token);
-        submit(name, token);
+        submit(PipelineRun.root(name), token);
     }
 
-    private void submit(String name, Object token) {
+    private void submit(PipelineRun run, Object token) {
         worker.submit(() -> {
             try {
-                runPipeline(name);
+                runPipeline(run);
             } finally {
-                inFlight.remove(name, token);   // only if this task is still the current one for the name
+                inFlight.remove(run.name(), token);   // only if this task is still the current one for the name
             }
         });
     }
 
-    private void runPipeline(String name) {
-        ProjectDefinition def = registry.definitionOf(name);
-        if (def == null) {
+    /**
+     * Schedules a retrigger run for the chain of the currently executing run. Must be called from
+     * within a listener callback (pipeline thread). Returns immediately — the FIFO worker picks it up.
+     * The retrigger inherits the chain's trigger ledger, so listeners that already fired do not fire again.
+     */
+    public void scheduleRetrigger(String name, PipelineWork work) {
+        PipelineRun current = currentRun;
+        if (current == null || !current.name().equals(name)) {
+            log.warn("scheduleRetrigger for '{}' outside of its run — ignoring", name);
             return;
         }
+        PipelineRun next = current.nextPhase(work);
+        current.noteRetriggerScheduled();
+        Object token = new Object();
+        inFlight.put(name, token);   // forced: the current run's token is still present (removed only after its runPipeline returns)
+        submit(next, token);
+    }
+
+    /**
+     * Schedules a retrigger run that chunks the documents from the given source and embeds them as an
+     * ADDITION to the project's index (doc-scoped reset via {@link DocumentSource#DOCPIPE_GENERATED} —
+     * code chunks are never wiped). Called from listener callbacks; returns immediately (FIFO queue).
+     */
+    public void scheduleEmbedding(String name, DocumentSource source) {
+        scheduleRetrigger(name, (runName, def) -> runDocumentEmbedding(runName, def, source));
+    }
+
+    /**
+     * The document-embedding run: resolves the source's (root-relative) paths, chunks them (markdown
+     * whitelisted), performs a doc-scoped reset (only previously generated document chunks — code
+     * chunks are untouched), stamps the new chunks and embeds them additively.
+     */
+    private void runDocumentEmbedding(String name, ProjectDefinition def, DocumentSource source) throws Exception {
+        if (embeddingService == null) {
+            log.warn("EmbeddingService not available — skipping document embedding for '{}'", name);
+            return;
+        }
+        Path root = Path.of(def.getRootDir()).toAbsolutePath().normalize();
+        List<Path> files = source.documentStream()
+                .map(p -> root.resolve(p).normalize())
+                .filter(Files::isRegularFile)
+                .toList();
+        if (files.isEmpty()) {
+            log.info("Document embedding for '{}': no files from source — nothing to do", name);
+            return;
+        }
+
+        List<PxChunk> chunks = chunkProcess.executeForFiles(withMarkdownWhitelisted(def), files);
+        if (chunks.isEmpty()) {
+            log.info("Document embedding for '{}': chunker produced no chunks — nothing to do", name);
+            return;
+        }
+
+        // Doc-scoped reset: remove only previously generated document chunks (never code chunks).
+        // metadataFieldKey() maps the logical key to the indexed field (pxchunk_metadata.* prefix).
+        Filter docReset = new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name)
+                .and(new IsEqualTo(PxChunk.metadataFieldKey(DocumentSource.DOCPIPE_GENERATED), "true"));
+        luceneStore.removeAll(docReset);
+
+        chunks.forEach(c -> {
+            c.getMetadata().put(DocumentSource.DOCPIPE_GENERATED, "true");
+            c.setProject(name);   // stamp (multi-project store separation)
+        });
+
+        embeddingService.embedChunks(luceneStore, name, chunks);
+        registry.setReindexProgress(name, 100);
+    }
+
+    /** Copy of the definition with "md" ensured in the chuno whitelist (the original is registry-owned — never mutate it). */
+    private ProjectDefinition withMarkdownWhitelisted(ProjectDefinition def) {
+        ProjectDefinition copy = new ProjectDefinition();
+        copy.setName(def.getName());
+        copy.setRootDir(def.getRootDir());
+        copy.setJsonlFile(def.getJsonlFile());
+        copy.setChunoWhiteList(appendWhitelistEntry(def.getChunoWhiteList(), "md"));
+        copy.setTibedBatchSize(def.getTibedBatchSize());
+        copy.setTibedResetStore(false);   // never a full reset here — the doc-scoped reset is precise
+        copy.setEmbeddingsFile(def.getEmbeddingsFile());
+        copy.setPrompt(def.getPrompt());
+        copy.setFulltext(def.isFulltext());
+        return copy;
+    }
+
+    /** Appends {@code entry} to a comma-separated whitelist unless it is already present (case-insensitive). */
+    private String appendWhitelistEntry(String whitelist, String entry) {
+        if (whitelist == null || whitelist.isBlank()) { return entry; }
+        for (String part : whitelist.split(",")) {
+            if (part.trim().equalsIgnoreCase(entry)) { return whitelist; }   // already present
+        }
+        return whitelist + "," + entry;
+    }
+
+    private void runPipeline(PipelineRun run) {
+        String name = run.name();
+        currentRun = run;
         try {
-            if (isPreEmbedded(def)) {
-                runPreEmbeddedPipeline(name, def);
+            ProjectDefinition def = registry.definitionOf(name);
+            if (def == null) {
+                return;
+            }
+
+            registry.setEmbeddingPhase(name, run.phase());
+            dispatchStart(run);
+
+            boolean success;
+            try {
+                if (run.work() != null) {
+                    run.work().execute(name, def);          // retrigger work (later phase)
+                    success = true;
+                } else if (isPreEmbedded(def)) {
+                    success = runPreEmbeddedPipeline(name, def);
+                } else {
+                    success = runStandardPipeline(name, def);
+                }
+            } catch (Exception e) {
+                log.error("Pipeline failed for project '{}': {}", name, e.toString());
+                registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
+                registry.setReindexStatus(name, ReindexStatus.FAILED);
+                return;   // no finish dispatch on failure — listeners must not act on a broken run
+            }
+
+            if (!success) {
+                return;   // keep-old-index soft failure: the terminal status was set inside the pipeline; no finish dispatch
+            }
+
+            dispatchFinished(run);
+
+            if (run.retriggersScheduled() == 0) {
+                registry.setStatus(name, ProjectStatus.READY, null);
+                registry.setReindexStatus(name, ReindexStatus.COMPLETE);
+                registry.setReindexProgress(name, STORING_END);
             } else {
-                runStandardPipeline(name, def);
+                log.info("Project '{}' chain continues: {} retrigger run(s) scheduled", name, run.retriggersScheduled());
             }
         } finally {
+            currentRun = null;
             wipeIfDeregistered(name);   // race guard: marker removed mid-run -> the entry is gone, wipe what we wrote
+        }
+    }
+
+    private void dispatchStart(PipelineRun run) {
+        for (PipelineListener listener : listeners) {
+            String id = listener.getClass().getName() + "#start";
+            if (run.isTriggered(id)) { continue; }
+            run.markTriggered(id);   // BEFORE the call: a retrigger scheduled mid-callback inherits this mark (loop breaker)
+            try {
+                listener.onPipelineStart(this, run.name(), run);
+            } catch (Exception e) {
+                log.warn("PipelineListener {} failed in onPipelineStart for '{}': {}", id, run.name(), e.toString());
+            }
+        }
+    }
+
+    private void dispatchFinished(PipelineRun run) {
+        for (PipelineListener listener : listeners) {
+            // Distinct ledger key from onPipelineStart: a listener receives BOTH start and finish in the
+            // root run, but neither again in a retrigger run (the loop breaker).
+            String id = listener.getClass().getName() + "#finish";
+            if (run.isTriggered(id)) { continue; }
+            run.markTriggered(id);
+            try {
+                listener.onPipelineFinished(this, run.name(), run);
+            } catch (Exception e) {
+                log.warn("PipelineListener {} failed in onPipelineFinished for '{}': {}", id, run.name(), e.toString());
+            }
         }
     }
 
@@ -178,8 +355,12 @@ public class PipelineOrchestrator implements ImportHandler {
      * </ol>
      * Failure semantics: with an intact old index (failure before the swap) the project stays
      * READY (old index in use) and only the reindex status is FAILED; otherwise FAILED.
+     *
+     * @return true when the run completed successfully (the terminal READY/COMPLETE/100 status is
+     * then set centrally by {@link #runPipeline}, gated on whether a retrigger was scheduled);
+     * false on a keep-old-index failure (the terminal status is set here, inside the catch).
      */
-    private void runStandardPipeline(String name, ProjectDefinition def) {
+    private boolean runStandardPipeline(String name, ProjectDefinition def) {
         boolean hadIndex = hasIndexedChunks(name);
         boolean swapStarted = false;
         Path embeddedFile = null;
@@ -212,10 +393,9 @@ public class PipelineOrchestrator implements ImportHandler {
             importEmbeddedFile(name, def, embeddedFile.toString(),
                     (done, total) -> registry.setReindexProgress(name, mapPhaseProgress(done, total, EMBEDDING_END, STORING_END)));
 
-            // 4. Done
-            registry.setStatus(name, ProjectStatus.READY, null);
-            registry.setReindexStatus(name, ReindexStatus.COMPLETE);
-            registry.setReindexProgress(name, STORING_END);
+            // 4. Done — the terminal READY/COMPLETE/100 status is set centrally by runPipeline
+            // (gated on whether a listener scheduled a retrigger, so the chain can continue).
+            return true;
         } catch (Exception e) {
             log.error("Pipeline failed for project '{}': {}", name, e.toString());
             registry.setReindexStatus(name, ReindexStatus.FAILED);
@@ -225,6 +405,7 @@ public class PipelineOrchestrator implements ImportHandler {
             } else {
                 registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
             }
+            return false;
         } finally {
             if (embeddedFile != null) {
                 try {
@@ -240,8 +421,11 @@ public class PipelineOrchestrator implements ImportHandler {
      * Pipeline for pre-embedded projects: validate embedding compatibility, then swap.
      * Skips chunking entirely since the embeddings are pre-computed externally.
      * Same keep-old-index semantics as the standard pipeline.
+     *
+     * @return true when the run completed successfully (terminal status set centrally by
+     * {@link #runPipeline}); false on a keep-old-index failure (terminal status set here).
      */
-    private void runPreEmbeddedPipeline(String name, ProjectDefinition def) {
+    private boolean runPreEmbeddedPipeline(String name, ProjectDefinition def) {
         boolean hadIndex = hasIndexedChunks(name);
         boolean swapStarted = false;
         try {
@@ -276,7 +460,7 @@ public class PipelineOrchestrator implements ImportHandler {
                 log.error("Pre-embedded import blocked for project '{}': {}", name, msg);
                 registry.setReindexStatus(name, ReindexStatus.FAILED);
                 registry.setStatus(name, hadIndex ? ProjectStatus.READY : ProjectStatus.FAILED, msg);
-                return;   // do not proceed with import
+                return false;   // do not proceed with import; signal failure to runPipeline (no finish dispatch)
             }
 
             if (report.verdict() == Verdict.PARTIALLY_COMPATIBLE) {
@@ -296,9 +480,8 @@ public class PipelineOrchestrator implements ImportHandler {
             importEmbeddedFile(name, def, embeddingsPath,
                     (done, total) -> registry.setReindexProgress(name, mapPhaseProgress(done, total, EMBEDDING_END, STORING_END)));
 
-            registry.setStatus(name, ProjectStatus.READY, null);
-            registry.setReindexStatus(name, ReindexStatus.COMPLETE);
-            registry.setReindexProgress(name, STORING_END);
+            // Done — the terminal READY/COMPLETE/100 status is set centrally by runPipeline.
+            return true;
         } catch (Exception e) {
             log.error("Pipeline failed for project '{}': {}", name, e.toString());
             registry.setReindexStatus(name, ReindexStatus.FAILED);
@@ -308,6 +491,7 @@ public class PipelineOrchestrator implements ImportHandler {
             } else {
                 registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
             }
+            return false;
         }
     }
 

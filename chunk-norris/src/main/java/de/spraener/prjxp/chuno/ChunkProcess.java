@@ -20,6 +20,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -63,6 +64,29 @@ public class ChunkProcess {
         if (session.generatedPassword()) {
             transferPasswordResolver.printRepeatBanner(session.password());
         }
+    }
+
+    /**
+     * Chunks an explicit list of files (no tree walk, no JSONL output) and returns the chunks in memory.
+     * Used by the hub's document-embedding runs (DocPipe-generated documents). Vetos are evaluated
+     * against the given definition — callers that need markdown must ensure "md" is in its whitelist.
+     * Files that are not regular files or are vetoed are skipped silently.
+     */
+    public List<PxChunk> executeForFiles(ProjectDefinition pd, List<Path> files) {
+        final Path rootPath = Path.of(pd.getRootDir()).toAbsolutePath().normalize();
+        return files.stream()
+                .filter(Files::isRegularFile)
+                .filter(path -> checkVetos(path, pd))
+                .flatMap(path -> factory.createChunker(path.toFile())
+                        .parallel()
+                        .flatMap(chunker -> chunker.chunk(path.toFile())))
+                .map(chunk -> {
+                    if (chunk.getFile() != null) {
+                        chunk.setFile(toProjectRelativePath(rootPath, chunk.getFile()));
+                    }
+                    return chunk;
+                })
+                .toList();
     }
 
     private PrintStream createWriter(ProjectDefinition pd, TransferSession session) {
