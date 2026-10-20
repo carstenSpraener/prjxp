@@ -57,6 +57,16 @@ public class CSharpPack implements LanguagePack {
     public Optional<GoldenRetriever> retriever() {
         return Optional.of(new CSharpRetriever());
     }
+
+    // Optional: the host calls bind() once after loading (before first use)
+    // to hand the retriever access to the embedding store. Without it the
+    // retriever degrades to best-effort (parts/parents only from the chunks
+    // handed in per request); with it, full part reassembly + parent-frame
+    // enrichment work in the host retrieval path.
+    @Override
+    public void bind(PxChunkDaoProvider chunkDaoProvider) {
+        this.retriever = new CSharpRetriever(chunkDaoProvider);
+    }
 }
 ```
 
@@ -65,6 +75,7 @@ public class CSharpPack implements LanguagePack {
 Everything a plugin may use comes from **`prjxp-common`** (plus the JDK):
 `LanguagePack`, `LanguagePackProvider`, `PxChunker`, `PxChunk`,
 `GoldenRetriever`, `ScoredChunk`, `SearchHit`, `SearchParams`, `PxChunkDao`,
+`PxChunkDaoProvider`,
 … These types are loaded from the **host** class loader (see delegation rule),
 so `instanceof` checks, casts and method dispatch across the class loader
 boundary are safe.

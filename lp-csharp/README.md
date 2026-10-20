@@ -5,28 +5,35 @@ C# Language Pack plugin for [prjxp](..). This is a **standalone Gradle project**
 from the local Maven repository and bundles a C# parser generated from an
 ANTLR grammar.
 
-> **Status (WP-2 Phase 01):** this project currently contains the C# **parser**
-> only (grammar + generated parser + smoke tests). The chunker (Phase 02),
-> member metadata (Phase 03) and the loadable plugin / retriever (Phase 04)
-> are added in later phases.
+> **Status (WP-2 Phase 04, complete):** the full C# Language Pack — ANTLR parser,
+> structural chunker (type frames, methods, constructors, fields, properties,
+> events, indexers, XML docs, symbol metadata), `CSharpRetriever`,
+> `CSharpLanguagePack` + `LanguagePackProvider` SPI, and the shadow fat-JAR
+> packaging. The host (mcp-server hub + chunk-norris batch) loads it from
+> `./language-packs` into its own class loader.
 
 ## Layout
 
 ```
 lp-csharp/
-├── build.gradle              # standalone build (java + ANTLR generation)
+├── build.gradle              # standalone build (java + ANTLR + shadow fat-JAR)
 ├── settings.gradle           # its own build root (not in the prjxp root)
 ├── src/
 │   ├── main/
 │   │   ├── antlr/.../grammar/
 │   │   │   ├── CSharpLexer.g4      # MIT-licensed grammar (see below)
 │   │   │   └── CSharpParser.g4
-│   │   └── java/.../grammar/
-│   │       ├── CSharpLexerBase.java  # hand-written base class (preprocessor)
-│   │       └── CSharpParserBase.java # hand-written base class (semantics)
+│   │   ├── java/.../
+│   │   │   ├── grammar/            # hand-written base classes (preprocessor/semantics)
+│   │   │   ├── CSharpCodeChunker.java   # structural chunker (AST → PxChunks)
+│   │   │   ├── CSharpRetriever.java     # retrieval side (part reassembly, enrichment)
+│   │   │   ├── CSharpLanguagePack.java  # the pack (language, MIME, chunker, retriever, bind)
+│   │   │   └── CSharpLanguagePackProvider.java  # SPI factory (no-arg create())
+│   │   └── resources/META-INF/services/
+│   │       └── de.spraener.prjxp.common.language.LanguagePackProvider
 │   └── test/
-│       ├── java/.../CSharpParserTest.java   # parser smoke tests
-│       └── resources/fixtures/*.cs          # test fixtures
+│       ├── java/.../   # parser, chunker, retriever, pack/provider, plugin-JAR tests
+│       └── resources/fixtures/*.cs
 ```
 
 ## The C# grammar — source and license
@@ -96,19 +103,27 @@ This is wired up as the `generateCSharpGrammar` Gradle task (see
 
 ```bash
 cd lp-csharp
-./gradlew build     # generates the parser, compiles, runs tests, builds the jar
+./gradlew build     # generates the parser, compiles, runs tests, builds the plugin JAR
 ./gradlew test      # just the tests
 ```
 
-The parser smoke tests (`CSharpParserTest`) cover a valid file, namespace,
-class, method, and a syntax error. `PrjxpCommonContractTest` verifies the
-`prjxp-common` contract is present.
+Tests: `CSharpParserTest` (parser smoke tests), `CSharpCodeChunkerTest` (units,
+metadata, splitting), `CSharpRetrieverTest` (filtering, part reassembly, parent
+enrichment, budgets), `CSharpLanguagePackProviderTest` (pack contract + `bind()`),
+`PluginJarTest` (fat-JAR contents: SPI + ANTLR in, prjxp-common/slf4j out),
+`PrjxpCommonContractTest` (host API contract present).
 
-## Packaging note (later phases)
+## Packaging
 
-The current `jar` contains only the plugin's own classes. When this becomes the
-loadable plugin (Phase 04), it will be packaged as a **fat jar that bundles the
-ANTLR runtime** (a private dependency, loaded child-first) but **never
-`prjxp-common`** (the shared host API, loaded parent-first). See
+The plugin is a **shadow fat-JAR** (`build/libs/lp-csharp-plugin.jar`) that bundles
+the ANTLR runtime (a private dependency, loaded child-first) but **never
+`prjxp-common`** or `org.slf4j` classes (the shared host API, loaded parent-first —
+a bundled copy would break class identity and the plugin is rejected at load time).
+`PluginJarTest` verifies this on every build. See
 [`doc/LanguagePack_Plugin_Guide.md`](../doc/LanguagePack_Plugin_Guide.md) in the
 prjxp root for the full plugin contract.
+
+The prjxp root build wires the plugin into the host tests: `:buildLpCsharpPlugin`
+builds the JAR (after publishing `prjxp-common` to mavenLocal) and the
+`stageLpCsharpPlugin` tasks of mcp-server/chunk-norris stage it for the
+end-to-end tests.

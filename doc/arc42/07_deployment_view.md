@@ -18,12 +18,14 @@ flowchart TB
             D2[("/data — shared Lucene index<br/>+ live JSONL · volume prjxp-hub-data")]
         end
 
+        LP[("language pack plugins<br/>/app-source/language-packs<br/>(mount, never baked in)")]
         EMB["Embedding provider on host<br/>e.g. LM Studio :1234 (GPU)"]
     end
 
     M1 --- C1
     I1 --- C1
     M2 & P2 & D2 --- C2
+    LP --- C1 & C2
     C1 <-->|"host.docker.internal"| EMB
     C2 <-->|"host.docker.internal"| EMB
 
@@ -47,6 +49,7 @@ takes precedence via `SPRING_CONFIG_LOCATION`).
 | Project source | `/app-source` (bind mount of the project dir) | `/import` (tars / live dirs) + `/projects` (extracted snapshots) |
 | Lucene index | `.prjxp-data/lucene-index` under `/app-source` (volume) | shared: `/data/lucene-index` (named volume), project-stamped chunks |
 | JSONL artifacts | `px-chunks.jsonl` in the project dir | hub-managed: `/data/chunks/<name>.jsonl` (never into live trees) |
+| Language pack plugins | `/app-source/language-packs` (volume; default of `prjxp.language-packs.dir`) | same — plugins are mounted at runtime, **never baked into the image** |
 
 **JVM tuning:** `JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 --add-modules jdk.incubator.vector"`
 (vector incubator module for Lucene KNN performance).
@@ -65,6 +68,7 @@ takes precedence via `SPRING_CONFIG_LOCATION`).
 | `PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES` | `.git,.svn,.hg,node_modules` | Dir names the live scan never enters (add `branches,tags,…`) |
 | `PRJXP_HUB_SCAN_MAX_DEPTH` | `8` | Recursion cap below `/import` (safety net for broad mounts) |
 | `PRJXP_TRANSFER_PASSWORD` | — | Password for encrypted JSONL transfer (AES-256-GCM) |
+| `PRJXP_LANGUAGE_PACKS_DIR` | `./language-packs` (→ `/app-source/language-packs`) | Plugin JAR directory for external LanguagePacks (chunking + retrieval) |
 | `GEMINI_API_KEY` etc. | — (CI secrets / `.env`) | Chat model keys for docpipe/questioner |
 
 > **Tip (broad mounts):** mount `./import` as narrowly as possible. A whole "projects
@@ -81,7 +85,8 @@ flowchart LR
     V1[("bind mount<br/> PROJECTS_HOME:/import")]
     V2[("named volume prjxp-projects<br/> /projects")]
     V3[("named volume prjxp-hub-data<br/> /data")]
-    H --- V1 & V2 & V3
+    V4[("bind mount<br/> ./language-packs:/app-source/language-packs")]
+    H --- V1 & V2 & V3 & V4
 ```
 
 ## 7.5 Local Development (no Docker)

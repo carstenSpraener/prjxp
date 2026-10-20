@@ -8,7 +8,7 @@
 | F2 | **Code is structured** (packages, classes, methods, javadoc). Naive sliding-window chunks destroy that structure and make answers incoherent. | AST-based *structural* chunking: units are imports, methods (+javadoc), class frames — with a **logical identity** (`id`), **hierarchy** (`parent`) and **split parts** (`part`/`total`) so any unit can be reassembled exactly. |
 | F3 | **Deployment must be self-contained** — a project owner should not operate a database service for their code base. | Lucene as the only store: file-based index, single Docker image, no external storage service. |
 | F4 | **One server should serve many projects** (hub), but Lucene allows one writer per index. | One *shared* index with **project-stamped** chunks; all pipeline work serialized on a single FIFO worker. |
-| F5 | **New languages/formats must be addable without touching the core** (Java, TS, VB, Markdown, PDF, … already coexist). | SPI + annotation-based discovery: `ServiceLoader` for brokers, `@Chunker`/`@ChunkNorrisComponent` for chunkers, `@ChunkVeto` for vetoes, `FileViewProvider` beans for readers. |
+| F5 | **New languages/formats must be addable without touching the core** (Java, TS, VB, C#, Markdown, PDF, … already coexist). | **LanguagePacks** as the primary unit: a pack bundles one language's chunker(s) + retriever; built-in packs are Spring beans, external packs are plugin JARs loaded into an isolating class loader (see [09](09_design_decisions.md) D15). Plus the legacy SPI: `ServiceLoader` for brokers, `@Chunker`/`@ChunkNorrisComponent` for chunkers, `@ChunkVeto` for vetoes, `FileViewProvider` beans for readers. |
 | F6 | **The index is built from a snapshot; the source may not exist at query time** (hub extracts tars, live trees move on). | The index is the **single source of truth** — even `readFile` reconstructs from stored chunks, never from disk. |
 | F7 | **Embedding can be slow/expensive** (CPU TEI, shared GPU). | Batched + *incremental* embedding (skip chunks already in the store); optional encrypted export/import to embed on a different machine. |
 
@@ -50,7 +50,7 @@ vectorSearch (semantic discovery, skeletons by design)
 grep (exact full-text; hit chunks include complete method bodies)
       │  "I need the whole file / all overloads"
       ▼
-readFile (complete source view)  ·  readBySignature (javadoc + full method, Java)
+readFile (complete source view)  ·  readBySignature (javadoc + full method, language-agnostic)
 ```
 
 All levels return a **unified hit format** (`SearchHit`: chunkId, score, file,
