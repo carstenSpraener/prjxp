@@ -1,0 +1,103 @@
+/*
+ * lp-csharp — C# Language Pack plugin for prjxp (WP-2).
+ *
+ * Standalone build: consumes prjxp-common from the local Maven repository and
+ * bundles a C# parser generated from the MIT-licensed ANTLR grammar
+ * (antlr/grammars-v4, csharp/v7). See README.md for the license and the
+ * generation steps.
+ */
+plugins {
+    id 'java'
+}
+
+group = 'de.spraener.prjxp'
+version = '0.0.1-SNAPSHOT'
+
+java {
+    toolchain {
+        // Match the host runtime (eclipse-temurin:21).
+        languageVersion = JavaLanguageVersion.of(21)
+    }
+}
+
+repositories {
+    // prjxp-common is resolved from the local Maven repository first, so the
+    // plugin builds against the locally published artifact (not a composite).
+    mavenLocal()
+    mavenCentral()
+}
+
+// The ANTLR tool (parser generator) is isolated in its own configuration so it
+// does not leak onto the compile/runtime classpath.
+configurations {
+    antlrTool
+}
+
+def antlrVersion = '4.13.1'
+
+dependencies {
+    // The shared host API (LanguagePack, LanguagePackProvider, PxChunker,
+    // PxChunk, GoldenRetriever, ...). Pinned to the locally published version.
+    implementation 'de.spraener.prjxp:prjxp-common:0.0.1-SNAPSHOT'
+
+    // ANTLR: the tool (build-time generation) and the runtime (compile + run).
+    antlrTool "org.antlr:antlr4:${antlrVersion}"
+    implementation "org.antlr:antlr4-runtime:${antlrVersion}"
+
+    // Testing
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.12.1'
+    testImplementation 'org.assertj:assertj-core:3.27.7'
+    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+// ---------------------------------------------------------------------------
+// ANTLR grammar generation
+//
+// The C# grammar is a SEPARATED lexer + parser pair (CSharpLexer.g4 /
+// CSharpParser.g4) where the parser references the lexer via `tokenVocab` and
+// uses string literals that must resolve against the lexer's token vocabulary.
+// The built-in `antlr` plugin generates each .g4 in an isolated ANTLR
+// invocation, which breaks that resolution. So we run the ANTLR tool once on
+// BOTH files, with -lib pointing at the grammar directory so the parser can
+// find CSharpLexer.g4 while it is being generated.
+// ---------------------------------------------------------------------------
+def antlrPackage = 'de.spraener.prjxp.lpcsharp.grammar'
+def antlrSourceDir = file("src/main/antlr/${antlrPackage.replace('.', '/')}")
+def antlrOutputDir = file("build/generated-src/antlr/main")
+
+tasks.register('generateCSharpGrammar', JavaExec) {
+    group = 'generation'
+    description = 'Generates the C# lexer and parser from the ANTLR grammar.'
+    classpath = configurations.antlrTool
+    mainClass = 'org.antlr.v4.Tool'
+    inputs.dir antlrSourceDir
+    outputs.dir antlrOutputDir
+    args = [
+            '-o', antlrOutputDir.absolutePath,
+            '-package', antlrPackage,
+            '-visitor',
+            '-lib', antlrSourceDir.absolutePath,
+            "${antlrSourceDir}/CSharpLexer.g4",
+            "${antlrSourceDir}/CSharpParser.g4",
+    ]
+}
+
+sourceSets {
+    main {
+        java {
+            srcDir antlrOutputDir
+        }
+    }
+}
+
+tasks.named('compileJava') {
+    dependsOn 'generateCSharpGrammar'
+}
+
+tasks.withType(JavaCompile).configureEach {
+    options.encoding = 'UTF-8'
+}
+
+test {
+    useJUnitPlatform()
+}
