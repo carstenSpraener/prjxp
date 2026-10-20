@@ -14,6 +14,7 @@ import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
+import de.spraener.prjxp.tibed.embedder.LangChain4JEmbedderImpl;
 import dev.langchain4j.data.segment.TextSegment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -78,7 +79,7 @@ class TransferPipelineE2ETest {
         new EmbeddingExportService(
                 new PxLogService(),
                 new ObjectMapper(),
-                new FakeEmbeddingModel(DIMENSION),
+                new LangChain4JEmbedderImpl(new FakeEmbeddingModel(DIMENSION), Mockito.mock(EmbeddingStoreSupplier.class)),
                 new PrjXPJsonStreamProvider(cfg),
                 resolver,
                 cfg
@@ -93,6 +94,24 @@ class TransferPipelineE2ETest {
         new EmbeddingImportService(
                 logService,
                 new ObjectMapper(),
+                supplier,
+                new PrjXPJsonStreamProvider(cfg),
+                resolver,
+                new StoreIdChecker(cfg),
+                cfg
+        ).execute();
+        return logService;
+    }
+
+    private PxLogService runStoreStep(PrjXPConfig cfg, TransferPasswordResolver resolver, FakeEmbeddingStore store) {
+        PxLogService logService = new PxLogService();
+        EmbeddingStoreSupplier supplier = Mockito.mock(EmbeddingStoreSupplier.class);
+        Mockito.when(supplier.getStore("cwd")).thenReturn(store);
+
+        new EmbeddingService(
+                logService,
+                new ObjectMapper(),
+                new LangChain4JEmbedderImpl(new FakeEmbeddingModel(DIMENSION), supplier),
                 supplier,
                 new PrjXPJsonStreamProvider(cfg),
                 resolver,
@@ -298,6 +317,36 @@ class TransferPipelineE2ETest {
         cfg.getTransfer().setInput(embedding.toString());
         FakeEmbeddingStore store = new FakeEmbeddingStore();
         runImportStep(cfg, resolverWith("env-pw"), store);
+
+        assertStoreHasBothChunks(store);
+    }
+
+    // ---------- Matrixfall 6: Store-Modus (Default) liest verschlüsseltes Chunk-JSONL ----------
+
+    @Test
+    void encryptedChunkJsonl_storeMode_decryptsAndEmbeds() throws Exception {
+        PrjXPConfig cfg = config();
+
+        runChunkStep(cfg, resolverWith("env-pw"), capturingOut());
+        Path pxChunks = tempDir.resolve("px-chunks.jsonl");
+        assertThat(isEncrypted(pxChunks)).isTrue();
+
+        FakeEmbeddingStore store = new FakeEmbeddingStore();
+        runStoreStep(cfg, resolverWith("env-pw"), store);
+
+        assertStoreHasBothChunks(store);
+    }
+
+    @Test
+    void plaintextChunkJsonl_storeMode_stillWorks() throws Exception {
+        PrjXPConfig cfg = config();
+
+        runChunkStep(cfg, resolverWith(null), capturingOut());
+        Path pxChunks = tempDir.resolve("px-chunks.jsonl");
+        assertThat(isEncrypted(pxChunks)).isFalse();
+
+        FakeEmbeddingStore store = new FakeEmbeddingStore();
+        runStoreStep(cfg, resolverWith(null), store);
 
         assertStoreHasBothChunks(store);
     }

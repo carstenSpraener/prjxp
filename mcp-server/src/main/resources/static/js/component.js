@@ -122,7 +122,7 @@ class OragelSearch extends HTMLElement {
         try {
             const scriptUrl = new URL(import.meta.url);
             const basePath = scriptUrl.pathname.replace('/js/component.js', '');
-            const res = await fetch(`${basePath}/prjxp/tools/projects`);
+            const res = await fetch(`${basePath}/api/tools/projects`);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) {
@@ -152,7 +152,7 @@ class OragelSearch extends HTMLElement {
         try {
             const scriptUrl = new URL(import.meta.url);
             const basePath = scriptUrl.pathname.replace('/js/component.js', '');
-            const res = await fetch(`${basePath}/prjxp/tools/projects`);
+            const res = await fetch(`${basePath}/api/tools/projects`);
             if (!res.ok) throw new Error('HTTP ' + res.status);
             const data = await res.json();
             if (Array.isArray(data) && data.length > 0) {
@@ -206,7 +206,7 @@ class OragelSearch extends HTMLElement {
         try {
             const scriptUrl = new URL(import.meta.url);
             const basePath = scriptUrl.pathname.replace('/js/component.js', '');
-            const res = await fetch(`${basePath}/prjxp/projects/${encodeURIComponent(name)}`, { method: 'DELETE' });
+            const res = await fetch(`${basePath}/api/projects/${encodeURIComponent(name)}`, { method: 'DELETE' });
             if (!res.ok) throw new Error('HTTP ' + res.status);
             ok = true;
         } catch (err) {
@@ -245,7 +245,7 @@ class OragelSearch extends HTMLElement {
             params.set('similarity', this.shadowRoot.getElementById('similarity').value);
             params.set('maxResults', this.shadowRoot.getElementById('maxResults').value);
             params.set('skeletonsOnly', String(this.shadowRoot.getElementById('skeletonsOnly').checked));
-            const apiUrl = `${basePath}/prjxp/tools/context?${params.toString()}`;
+            const apiUrl = `${basePath}/api/tools/context?${params.toString()}`;
 
             const response = await fetch(apiUrl);
             this.lastContext = await response.text();

@@ -28,10 +28,19 @@ JSON Lines)** format. This ensures:
 * **Compatibility:** Each line is a valid JSON object (`PxChunk`), making it
   easy to pipe the output into other tools or databases.
 
-#### Extensibility via Java SPI
+#### Extensibility
 
-Chunk-Norris leverages the classic **Java ServiceLoader mechanism**. This allows
-you to integrate custom chunkers by simply adding a JAR to your classpath:
+**Language Packs** are the primary way to add a programming language: a `LanguagePack`
+bundles everything prjxp needs for one language — the chunking side (files → `PxChunk`s)
+and the retrieval side (a `GoldenRetriever`). Built-in packs (Java, TypeScript,
+Visual Basic) are Spring beans inside the engine modules; **external packs are plugin
+JARs** that are loaded at startup from `./language-packs` into isolating class loaders
+and become visible to chunking, retrieval and the grep language filter alike. The
+`lp-csharp` module is the reference implementation: a C# pack shipped as a standalone
+plugin JAR (own class loader, private ANTLR runtime, no host classes bundled).
+
+For finer-grained chunking extensions, Chunk-Norris also leverages the classic
+**Java ServiceLoader mechanism**:
 
 1. **Implement the Broker:** Inherit from `AnnotationBasedChunkerBrokerImpl` to
    define your custom loading logic.
@@ -41,6 +50,8 @@ you to integrate custom chunkers by simply adding a JAR to your classpath:
    configuration file in `META-INF/services/de.spraener.chuno.ChunkerBroker`.
 4. **Automatic Integration:** Once the JAR is present, Chunk-Norris
    automatically discovers and integrates your new capabilities.
+
+👉 Full plugin contract: [doc/LanguagePack_Plugin_Guide.md](doc/LanguagePack_Plugin_Guide.md)
 
 #### Intelligent Selection Logic
 
@@ -77,7 +88,9 @@ enrichment and filtering pipeline to ensure high-quality context for the LLM.
 
 #### Specialized JavaCodeRetriever
 
-At its heart, the module features a specialized `JavaCodeRetriever` designed for
+Retrievers are provided **per language** through Language Packs (Java, TypeScript,
+Visual Basic built-in; C# via the `lp-csharp` plugin). At its heart, the module
+features a specialized `JavaCodeRetriever` designed for
 technical analysis:
 
 * **Context Enrichment:** When a `PxChunk` with the mime-type `text/x-java-code`
@@ -132,6 +145,32 @@ The module includes essential utilities to handle the lifecycle of these chunks:
   `PxChunks` while maintaining their logical links.
 * **Recomposition:** Logic to merge a list of `PxChunks` with the same ID back
   into a coherent, original text block.
+
+### 📦 mcp-server
+
+The runtime: a Spring AI **MCP server** (streamable HTTP) exposing the three-level
+search ladder (`vectorSearch`, `grep`, `readFile`, `readBySignature`, …) plus a REST
+API and a web UI. In **hub mode** it hosts the whole pipeline in-process (chunk-norris
++ tibed as beans) and serves any number of projects from one shared, project-stamped
+Lucene index.
+
+### 📦 lucene-store
+
+The file-based **Lucene** index: vector (KNN) + full-text + index search in one
+place, exposed as a Spring auto-configuration. Single-writer, project-scoped queries.
+
+### 📦 docpipe
+
+The documentation pipeline: `.dp/documents.json` jobs → Handlebars prompt templates
+(resolvers: `gr` enrichment, `source-dump`, `groovy`, `mcp-project`, …) → LLM → output
+files. The LLM can call the prjxp MCP tools over HTTP while generating.
+
+### 📦 lp-csharp *(standalone)*
+
+The **C# Language Pack** plugin: a standalone Gradle project (not part of the root
+build) that bundles a C# parser (ANTLR), a structural chunker and a retriever as a
+loadable plugin JAR. It depends on `prjxp-common` from the local Maven repository and
+is loaded by the host into its own class loader at startup.
 
 ---
 
@@ -226,6 +265,58 @@ Informationen über die Module und ihre Abhängigkeiten zu finden.
 The `McPEnablingKIChatDecorator` wraps the LLM in a LangChain4j `AiServices` agent with
 MCP tools. A system prompt tells the LLM about available tools and the active project name.
 The `mcp-project` Handlebars helper injects explicit project context into prompt templates.
+
+---
+
+## 🌉 MCP Proxy — stdio → streamable-http Bridge
+
+Some AI agents (e.g. **Kiro**) require **HTTPS** for streamable-http transport and
+reject self-signed certificates. The **mcp-proxy** module solves this by running as a
+plain Java process that bridges **stdio** (what the agent expects) to **streamable-http**
+(what the mcp-server provides).
+
+### Architecture
+
+```
+Agent (stdio) ──stdin/stdout──> java -jar mcp-proxy-all.jar ──HTTP──> http://localhost:7007/mcp
+```
+
+The proxy is a **transparent JSON-RPC relay**: it reads newline-delimited messages from
+stdin, forwards them as HTTP POST to the upstream MCP server, and relays responses back
+to stdout. All logs go to stderr only.
+
+### Usage
+
+```bash
+java -jar mcp-proxy/build/libs/mcp-proxy-all.jar \
+  --server-url http://localhost:7007/mcp \
+  [--timeout-seconds 300]
+```
+
+### Agent Configuration (Kiro example)
+
+```json
+{
+  "mcpServers": {
+    "prjxp": {
+      "command": "java",
+      "args": [
+        "-jar", "/path/to/mcp-proxy-all.jar",
+        "--server-url", "http://localhost:7007/mcp"
+      ]
+    }
+  }
+}
+```
+
+### Build
+
+```bash
+./gradlew :mcp-proxy:shadowJar   # produces mcp-proxy-all.jar
+```
+
+The proxy is a **plain Java** application — no Spring Boot, no web server.
+Startup time < 200 ms, JAR size ~2–3 MB.
 
 ---
 _This README was generated with Gemini – based on code documented by

@@ -8,6 +8,7 @@ import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import dev.langchain4j.data.segment.TextSegment;
@@ -19,6 +20,7 @@ import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
 import java.util.Arrays;
+import java.util.List;
 
 import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metadataKey;
 
@@ -32,6 +34,7 @@ public class EmbeddingService {
     private final EmbeddingExecutor embedder;
     private final EmbeddingStoreSupplier embeddingStoreSupplier;
     private final PrjXPJsonStreamProvider streamProvider;
+    private final TransferPasswordResolver transferPasswordResolver;
     private final StoreIdChecker storeIdChecker;
     private final PrjXPConfig cfg;
 
@@ -63,7 +66,11 @@ public class EmbeddingService {
         try {
             PxChunkFromJsonLReader reader = new PxChunkFromJsonLReader();
             // resolvedJsonlFile(): rootDir-relative, mirroring the writer (null/blank -> stdin, as before)
-            reader.readChunksFromJsonlStreamBatched(streamProvider.getJsonlStream(pd.resolvedJsonlFile()), effectiveBatchSize, this::fromJSONL)
+            // getTransferJsonlStream auto-detects the PRJXPENC magic: a chunk JSONL that chunk-norris
+            // encrypted (transfer password available) is decrypted, plaintext files pass through unchanged.
+            char[] password = transferPasswordResolver.resolvePassword(cfg.getTransfer().getPasswordEnv());
+            log.info("Reading JSONL from " + pd.resolvedJsonlFile() + " for project '" + pd.getName() + "' with batch size " + effectiveBatchSize);
+            reader.readChunksFromJsonlStreamBatched(streamProvider.getTransferJsonlStream(pd.resolvedJsonlFile(), password), effectiveBatchSize, this::fromJSONL)
                     .forEach(batch -> {
                         embedChunk(store, pd.getName(), batch);
                     });
@@ -85,6 +92,14 @@ public class EmbeddingService {
         } catch (Exception e) {
             logService.error(e, "Embedding of chunk batch failed: %s", e.getMessage());
         }
+    }
+
+    /**
+     * Embeds the given chunks into the store (hub document-embedding runs). Chunks are project-stamped
+     * and deduplicated exactly like in the standard pipeline; batch failures are logged, not thrown.
+     */
+    public void embedChunks(EmbeddingStore<TextSegment> store, String projectName, List<PxChunk> chunks) {
+        embedChunk(store, projectName, chunks.toArray(new PxChunk[0]));
     }
 
     private boolean needsEmbedding(EmbeddingStore<TextSegment> embeddingStore, String projectName, PxChunk chunk) {

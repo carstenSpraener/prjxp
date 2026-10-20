@@ -1,26 +1,46 @@
-
-
 /**
- * Core data models for the documentation pipeline.
- * <p>
- * This package defines the foundational configuration and task structures used to orchestrate automated documentation generation. It serves as the central domain model for mapping project directories, LLM (Large Language Model) configurations, and granular content creation instructions.
- * </p>
- * <p>
- * The package revolves around two primary classes that work together to define a documentation workflow:
+ * Domain model for the PrjXP documentation pipeline (docpipe) module.
+ *
+ * <p>This package defines the core data structures that represent documentation
+ * generation jobs and the individual content-creation tasks they contain.
+ * It serves as the model layer of the docpipe component, decoupling the
+ * business logic of document generation from the persistence and processing
+ * layers.</p>
+ *
+ * <h2>Architectural Overview</h2>
+ * <p>The package is organized around two primary classes that form a
+ * one-to-many relationship:</p>
  * <ul>
- *   <li>{@link de.spraener.prjxp.docpipe.model.DPJob}: Acts as the top-level container for a documentation job. It holds the root project directory, references to LLM chat models via {@link de.spraener.prjxp.common.config.PrjXPConfig}, and a list of individual content creation tasks.</li>
- *   <li>{@link de.spraener.prjxp.docpipe.model.DPContentCreation}: Represents a single, executable task within the job. It specifies output targets, prompt templates, LLM stereotypes, post-processing scripts, and filtering rules.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.model.DPJob} – the top-level
+ *       container representing a complete documentation job. It aggregates
+ *       a root directory, a {@code PrjXPConfig} (which holds the available
+ *       LLM chat-model references), and an ordered list of content-creation
+ *       tasks. A static {@code EMPTY_JOB} constant is provided as a safe
+ *       fallback to prevent processing halts on misconfiguration.</li>
+ *   <li>{@link de.spraener.prjxp.docpipe.model.DPContentCreation} – a single
+ *       content-creation task within a job. It specifies the target output
+ *       location, the LLM model stereotype to invoke, the prompt template,
+ *       optional post-processing scripts, filter expressions, and arbitrary
+ *       key-value arguments. A Jackson-based {@code clone} method supports
+ *       lightweight duplication of task definitions.</li>
  * </ul>
- * The {@link de.spraener.prjxp.docpipe.model.DPJob} orchestrates the execution by iterating over its {@code contentCreationList}, resolving appropriate LLM models via {@link de.spraener.prjxp.docpipe.model.DPJob#getModelForStereotype(String)}, and passing task-specific parameters to downstream processors.
- * </p>
- * <p>
- * Key entry points and primary use cases include:
+ *
+ * <h2>Primary Use Cases</h2>
  * <ul>
- *   <li><strong>Job Configuration:</strong> Define the scope of documentation generation by setting a root directory and associating LLM models with specific stereotypes.</li>
- *   <li><strong>Task Definition:</strong> Configure granular content generation steps, including prompt templates, output paths, and post-processing filters.</li>
- *   <li><strong>Fallback Handling:</strong> Utilize {@link de.spraener.prjxp.docpipe.model.DPJob#EMPTY_JOB} to gracefully handle misconfigurations without halting the entire pipeline.</li>
+ *   <li>Defining a documentation generation job by composing a
+ *       {@code DPJob} with one or more {@code DPContentCreation} entries.</li>
+ *   <li>Resolving the appropriate LLM model for a given stereotype via
+ *       {@link DPJob#getModelForStereotype(String)}.</li>
+ *   <li>Serializing / deserializing job and task definitions (both classes
+ *       are Lombok-annotated POJOs compatible with Jackson).</li>
  * </ul>
- * </p>
+ *
+ * <h2>Dependencies</h2>
+ * <p>The model depends on {@code de.spraener.prjxp.common.config} for the
+ * project configuration and chat-model reference types, and on
+ * {@code com.fasterxml.jackson.databind} for object cloning. It has no
+ * dependency on the docpipe processing or I/O layers, keeping the model
+ * purely declarative.</p>
  */
 package de.spraener.prjxp.docpipe.model;
 

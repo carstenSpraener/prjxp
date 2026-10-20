@@ -1,0 +1,69 @@
+<div class="projects-page">
+  <h1 class="page-title text-cyan neon-glow">Projects</h1>
+
+  <div class="projects-layout">
+    <!-- Left Column: Project List -->
+    <div class="project-list-panel glass-panel">
+      <div class="panel-header">
+        <input type="text" placeholder="Search projects..." class="search-input"
+               [value]="searchFilter()" (input)="setSearchFilter($event.target!.value)" />
+        <button class="btn btn-primary" (click)="onCreateProject()">+ Create Project</button>
+      </div>
+
+      <div class="project-list">
+        @for (project of filteredProjects(); track project.name) {
+          <div class="project-item"
+               [class.selected]="selectedProject()?.name === project.name"
+               (click)="selectProject(project)">
+            <div class="project-item-content">
+              <div class="project-item-row">
+                <span class="project-item-name">{{ project.name }}</span>
+                <span class="badge {{ getStatusBadgeClass(project.status) }}">{{ project.status }}</span>
+              </div>
+              @if (isReindexActive(project)) {
+                <div class="project-item-progress">
+                  <div class="progress-bar-bg">
+                    <div class="progress-bar-fill" [style.width.%]="project.reindexProgress ?? 0"></div>
+                  </div>
+                  <span class="progress-text text-cyan">{{ project.reindexProgress ?? 0 }}%</span>
+                </div>
+              }
+            </div>
+          </div>
+        } @empty {
+          <div class="empty-state text-secondary">No projects found.</div>
+        }
+      </div>
+    </div>
+
+    <!-- Right Column: Project Detail -->
+    <div class="project-detail-panel">
+      @if (selectedProject()) {
+        <project-detail-card [project]="selectedProject()!"
+                              (edit)="onEditProject()"
+                              (reindexConfirm)="onReindexConfirm($event)"
+                              (docpipe)="onDocPipe()"
+                              (delete)="onDeleteProject($event)">
+        </project-detail-card>
+      } @else {
+        <div class="detail-placeholder glass-panel">
+          <p class="text-secondary">Select a project to view details</p>
+        </div>
+      }
+    </div>
+  </div>
+
+  <!-- YAML Editor Dialog -->
+  @if (showEditor()) {
+    <yaml-editor-dialog [projectToEdit]="editingProject()" (save)="onYamlSave($event)" (close)="onYamlClose()">
+    </yaml-editor-dialog>
+  }
+
+  <!-- Reindex Confirmation Dialog -->
+  @if (showReindexConfirm()) {
+    <reindex-confirmation-dialog
+      (confirmed)="onReindexConfirmed()"
+      (cancelled)="onReindexCancelled()">
+    </reindex-confirmation-dialog>
+  }
+</div>

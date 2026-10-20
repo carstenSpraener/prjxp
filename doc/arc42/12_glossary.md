@@ -5,7 +5,12 @@
 | **PxChunk** | The central data unit of prjxp: a text fragment with logical identity (`id`), MIME type, file coordinates, hierarchy link (`parent`), split position (`part`/`total`), embedding prefix, project stamp and a metadata map. Produced by chunk-norris, stored in Lucene, consumed by retrieval. |
 | **Chunk** / **Chunking** | Decomposition of a file into `PxChunk`s. In prjxp this is *structural* (AST-based for code) rather than a blind sliding window. |
 | **Chunker** | A `PxChunker` implementation (or `@Chunker`-annotated method) that converts one file into a stream of chunks for a given `PxFileType`. |
-| **Broker** (`ChunkerBroker`) | A registry of chunkers; discovered via Java `ServiceLoader` and classpath scanning. `ChunkerFactory` aggregates all brokers for file→chunker selection. |
+| **Broker** (`ChunkerBroker`) | A registry of chunkers; discovered via Java `ServiceLoader` and classpath scanning. `ChunkerFactory` aggregates all brokers (incl. `LanguagePackBroker`) for file→chunker selection. |
+| **LanguagePack** | The unit that bundles everything prjxp needs for one language: a chunking side (`findPxChunkers`/`listPostWalkChunkers`), a retrieval side (`retriever`) and the MIME type. Built-in packs are Spring beans; external packs come from plugin JARs. |
+| **Language pack plugin** | A fat JAR in the plugin directory (`./language-packs`) that provides a `LanguagePack` via the `LanguagePackProvider` SPI. Loaded at startup into its own isolating class loader (parent-first for `de.spraener.prjxp.**` + `org.slf4j.**`, child-first otherwise); never a Spring bean. |
+| **LanguagePackRegistry** | The single resolved view over all packs (built-in + plugin, plugin wins on language conflict) in prjxp-common; consumed by chunking, retrieval and the grep language filter. |
+| **LanguagePackBroker** | The chunk-norris broker that exposes pack chunkers to the `ChunkerFactory` selection logic. |
+| **RetrieverRegistry** | The golden-retriever merged view over all `GoldenRetriever`s: pack-provided retrievers (dedup by language) plus plain retriever beans not owned by any pack. |
 | **Post-walk chunker** | A `@PostWalkChunker` method (no file argument) that runs after the whole tree walk — used for project-wide units such as the Java dependency graph. |
 | **Veto** | A `@ChunkVeto` predicate over a file path that excludes the file from chunking (build artifacts, oversized files, hidden files, images, whitelist misses). |
 | **Unit** | A logical chunking unit (e.g. one method, one class frame). All parts of a split unit share the same `id`; units link to their container via `parent`. |
@@ -17,7 +22,7 @@
 | **Search ladder** | The staged retrieval strategy exposed via MCP: `vectorSearch` (semantic discovery) → `grep` (exact full-text) → `readFile` / `readBySignature` (complete source views). |
 | **Skeleton mode** | `vectorSearch` behavior for *non-hit* methods: only the signature is shown (bodies are replaced by signatures) to keep context small. |
 | **Embedding prefix** | Text (e.g. `package ClassName`) prepended to a chunk's content before embedding, to disambiguate identical methods in different classes. |
-| **Symbol metadata** | Index fields written by the Java chunker (`symbol_fqn`, `symbol_name`, `symbol_type`, `symbol_container_fqn`, `symbol_signature_hash`) enabling deterministic lookup for `readBySignature`. |
+| **Symbol metadata** | Index fields written by code chunkers (Java, C#; `symbol_fqn`, `symbol_name`, `symbol_type`, `symbol_container_fqn`, `symbol_signature_hash`) enabling deterministic lookup for `readBySignature`. |
 | **File view** | A complete source rendering of one file reconstructed from its index chunks by a language-specific `FileViewProvider` (splicing frames, methods and docs at their line coordinates). A *view*, not a byte-identical file. |
 | **JSONL** | JSON Lines — the pipeline transfer format: one `PxChunk` per line, streamable and pipe-able; optionally AES-256-GCM encrypted. |
 | **Transfer (modes)** | Tibed's `STORE` / `EXPORT` / `IMPORT` modes; EXPORT/IMPORT move (optionally encrypted) records between machines for offline embedding. |

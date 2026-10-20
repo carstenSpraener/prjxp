@@ -215,11 +215,47 @@ class StaticProjectRegistryTest {
         ProjectInfo alpha = infos.get(0);
         assertThat(alpha.name()).isEqualTo("alpha");
         assertThat(alpha.status()).isEqualTo("READY");
+        assertThat(alpha.kind()).isNull();
         assertThat(alpha.lastError()).isNull();
+        assertThat(alpha.chunkCount()).isEqualTo(0);
+        assertThat(alpha.embeddingCount()).isEqualTo(0);
+        assertThat(alpha.fileCount()).isEqualTo(0);
 
+        // Backward-compatible constructor still works
         assertThat(infos).containsExactly(
                 new ProjectInfo("alpha", "READY", null),
                 new ProjectInfo("beta", "READY", null),
                 new ProjectInfo("gamma", "READY", null));
+    }
+
+    // ------------------------------------------------------------------ Phase 06: extended ProjectInfo fields
+
+    @Test
+    void projectInfosIncludesAllSevenFields() {
+        StaticProjectRegistry registry = new StaticProjectRegistry(config());
+
+        List<ProjectInfo> infos = registry.projectInfos();
+        ProjectInfo info = infos.get(0);
+
+        assertThat(info.name()).isEqualTo("alpha");
+        assertThat(info.status()).isEqualTo("READY");
+        assertThat(info.kind()).isNull();       // static mode has no kind
+        assertThat(info.lastError()).isNull();
+        assertThat(info.chunkCount()).isEqualTo(0);
+        assertThat(info.embeddingCount()).isEqualTo(0);
+        assertThat(info.fileCount()).isEqualTo(0);
+    }
+
+    @Test
+    void backwardCompatibleConstructorSetsZerosForStats() {
+        ProjectInfo info = new ProjectInfo("test", "READY", null);
+
+        assertThat(info.name()).isEqualTo("test");
+        assertThat(info.status()).isEqualTo("READY");
+        assertThat(info.kind()).isNull();
+        assertThat(info.lastError()).isNull();
+        assertThat(info.chunkCount()).isEqualTo(0);
+        assertThat(info.embeddingCount()).isEqualTo(0);
+        assertThat(info.fileCount()).isEqualTo(0);
     }
 }

@@ -1,10 +1,12 @@
 package de.spraener.prjxp.chuno.docs;
 
 import de.spraener.prjxp.chuno.docs.config.ConversionRoutesConfig;
+import de.spraener.prjxp.chuno.docs.html.Html2MDConversionAgent;
 import de.spraener.prjxp.chuno.docs.model.ConversionAccuracy;
 import de.spraener.prjxp.chuno.docs.model.CostEstimation;
 import de.spraener.prjxp.chuno.docs.model.DocArtifakt;
 import de.spraener.prjxp.chuno.docs.model.DocArtifaktType;
+import de.spraener.prjxp.chuno.docs.txt.Text2MDConversionAgent;
 import de.spraener.prjxp.common.util.BeanNameFinder;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.BeforeEach;
@@ -12,6 +14,7 @@ import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentMatchers;
 
 import java.io.File;
+import java.nio.file.Files;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -91,5 +94,49 @@ public class DocConversionRouterTest {
                     da.getFormat().equals(DocArtifaktType.HTML)
                     ;
         }));
+    }
+
+    // --- Regression tests: real agents + real files (root artifakt holds a File) ---
+
+    @Test
+    public void testHtmlFileConversionWithRealAgent() throws Exception {
+        agents.add(new Html2MDConversionAgent());
+
+        File f = File.createTempFile("prjxp-test", ".html");
+        f.deleteOnExit();
+        Files.writeString(f.toPath(), "<html><body><h1>Hello</h1><p>World content</p></body></html>");
+
+        String md = uut.doConversion(f, DocArtifaktType.HTML, DocArtifaktType.MARK_DOWN, ConversionAccuracy.ANALYTIC);
+
+        Assertions.assertThat(md)
+                .contains("Hello")
+                .contains("World content");
+    }
+
+    @Test
+    public void testTxtFileConversionWithRealAgent() throws Exception {
+        agents.add(new Text2MDConversionAgent());
+
+        File f = File.createTempFile("prjxp-test", ".txt");
+        f.deleteOnExit();
+        Files.writeString(f.toPath(), "Some plain text content");
+
+        String md = uut.doConversion(f, DocArtifaktType.TEXT, DocArtifaktType.MARK_DOWN, ConversionAccuracy.ANALYTIC);
+
+        Assertions.assertThat(md)
+                .contains("Some plain text content");
+    }
+
+    @Test
+    public void testMdFileNeedsNoConversion() throws Exception {
+        // no agents registered: MARK_DOWN -> MARK_DOWN must yield the file content, not the file path
+        File f = File.createTempFile("prjxp-test", ".md");
+        f.deleteOnExit();
+        Files.writeString(f.toPath(), "# Title\n\nSome markdown content");
+
+        String md = uut.doConversion(f, DocArtifaktType.MARK_DOWN, DocArtifaktType.MARK_DOWN, ConversionAccuracy.ANALYTIC);
+
+        Assertions.assertThat(md)
+                .contains("Some markdown content");
     }
 }

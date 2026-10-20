@@ -1,0 +1,53 @@
+server {
+    listen 8080;
+    resolver 127.0.0.11 valid=30s;
+
+    # Relative redirects so browsers keep the proxy's host:port
+    # (nginx would otherwise emit its internal listen port 8080).
+    absolute_redirect off;
+
+    # API proxy to the backend (hub service by default)
+    location /api/ {
+        client_max_body_size 2g;
+        proxy_pass ${PRJXP_HUB_URL}$request_uri;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # For SSE (Server-Sent Events) streaming support
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding on;
+    }
+
+    # API proxy for reverse proxies that only forward the app prefix (/prjxp*).
+    # The production build calls /prjxp/api/*; strip the /prjxp prefix so the
+    # backend (which serves all REST under /api/*) receives /api/*.
+    location /prjxp/api/ {
+        client_max_body_size 2g;
+        rewrite ^/prjxp/api/(.*)$ /api/$1 break;
+        proxy_pass ${PRJXP_HUB_URL};
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # For SSE (Server-Sent Events) streaming support
+        proxy_buffering off;
+        proxy_cache off;
+        chunked_transfer_encoding on;
+    }
+
+    # Normalize /prjxp (no trailing slash) to /prjxp/
+    location = /prjxp {
+        return 301 /prjxp/;
+    }
+
+    # Static files from Angular build
+    location /prjxp/ {
+        root /usr/share/nginx/html;
+        index index.html;
+        location /prjxp/assets/ { expires 1y; add_header Cache-Control "public, immutable"; }
+        # SPA fallback - serve index.html for non-file routes
+        try_files $uri $uri/ /prjxp/index.html;
+    }
+}

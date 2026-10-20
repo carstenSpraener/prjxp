@@ -2,6 +2,7 @@ package de.spraener.prjxp.chuno.veto;
 
 import de.spraener.prjxp.common.annotations.ChunkVeto;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.ProjectDefinition;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -9,6 +10,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
 import java.nio.file.Path;
+import java.util.Set;
 
 @Service()
 @RequiredArgsConstructor
@@ -25,16 +27,14 @@ public class StandardVetos {
 
     @ChunkVeto
     public boolean isBuildArtifact(Path p) {
-        boolean inSourceTree = false;
-        for (int i = 0; i < p.getNameCount(); i++) {
-            String seg = p.getName(i).toString();
-            if ("src".equals(seg)) {
-                inSourceTree = true;
-            } else if (("target".equals(seg) || "build".equals(seg)) && !inSourceTree) {
-                return true;
-            }
+        ProjectDefinition def = vetoContext.get();
+        if (def == null) {
+            def = cfg.getActiveProject().orElse(null);
         }
-        return false;
+        String sourceDirNames = (def != null && StringUtils.hasText(def.getSourceDirNames()))
+                ? def.getSourceDirNames()
+                : ProjectDefinition.DEFAULT_SOURCE_DIR_NAMES;
+        return DirectoryVetos.scan(p, Set.of("target", "build"), DirectoryVetos.toSet(sourceDirNames));
     }
 
     @ChunkVeto

@@ -16,6 +16,7 @@ import de.spraener.prjxp.common.chat.KIChatProvider;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.test.PrjXPTestComponentMother;
 import de.spraener.prjxp.common.test.PrjXPTestObjectMother;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -23,9 +24,11 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.mockito.Mockito.*;
@@ -39,6 +42,20 @@ class KIChatProviderTest {
 
     @Autowired
     private PrjXPConfig prjXPConfig;
+
+    @Autowired
+    private KIChatModelProvider modelProvider;
+
+    @BeforeEach
+    void setUp() {
+        lenient().when(modelProvider.createKIChat(any(PrjXPChatModelReference.class)))
+                .thenAnswer(inv -> {
+                    PrjXPChatModelReference ref = inv.getArgument(0);
+                    KIChat chat = mock(KIChat.class);
+                    when(chat.getChatModelReference()).thenReturn(ref);
+                    return chat;
+                });
+    }
 
     @Test
     void getByName_returnsOptional() {
@@ -71,6 +88,80 @@ class KIChatProviderTest {
         assertThatNoException().isThrownBy(() -> {});
     }
 
+    @Test
+    void getByStereotype_resolvesPromptPlaceholderWithDefault() {
+        PrjXPChatModelReference ref = new PrjXPChatModelReference();
+        ref.setStereoType("prompt-test-1");
+        ref.setServerType("ollama");
+        ref.setProviderUrl("http://localhost:11434");
+        ref.setPrompt("${UNSET_PRJXP_TEST_VAR:fallback-text}");
+        prjXPConfig.getChatModels().add(ref);
+
+        var result = uut.getByStereotype("prompt-test-1");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getChatModelReference().getPrompt()).isEqualTo("fallback-text");
+    }
+
+    @Test
+    void getByStereotype_plainPromptPassesThrough() {
+        PrjXPChatModelReference ref = new PrjXPChatModelReference();
+        ref.setStereoType("prompt-test-2");
+        ref.setServerType("ollama");
+        ref.setProviderUrl("http://localhost:11434");
+        ref.setPrompt("Always answer in German.");
+        prjXPConfig.getChatModels().add(ref);
+
+        var result = uut.getByStereotype("prompt-test-2");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getChatModelReference().getPrompt()).isEqualTo("Always answer in German.");
+    }
+
+    @Test
+    void getByStereotype_nullPromptStaysNull() {
+        PrjXPChatModelReference ref = new PrjXPChatModelReference();
+        ref.setStereoType("prompt-test-3");
+        ref.setServerType("ollama");
+        ref.setProviderUrl("http://localhost:11434");
+        prjXPConfig.getChatModels().add(ref);
+
+        var result = uut.getByStereotype("prompt-test-3");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getChatModelReference().getPrompt()).isNull();
+    }
+
+    @Test
+    void getByStereotype_copiesBodyProperties() {
+        PrjXPChatModelReference ref = new PrjXPChatModelReference();
+        ref.setStereoType("bodyprops-test-1");
+        ref.setServerType("ollama");
+        ref.setProviderUrl("http://localhost:11434");
+        ref.setBodyProperties(Map.of("enable_thinking", false));
+        prjXPConfig.getChatModels().add(ref);
+
+        var result = uut.getByStereotype("bodyprops-test-1");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getChatModelReference().getBodyProperties())
+                .containsEntry("enable_thinking", false);
+    }
+
+    @Test
+    void getByStereotype_withoutBodyProperties_staysEmpty() {
+        PrjXPChatModelReference ref = new PrjXPChatModelReference();
+        ref.setStereoType("bodyprops-test-2");
+        ref.setServerType("ollama");
+        ref.setProviderUrl("http://localhost:11434");
+        prjXPConfig.getChatModels().add(ref);
+
+        var result = uut.getByStereotype("bodyprops-test-2");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getChatModelReference().getBodyProperties()).isEmpty();
+    }
+
     @Configuration
     static class TestConfig {
         @Bean
@@ -96,9 +187,8 @@ class KIChatProviderTest {
         }
 
         @Bean
-        KIChatProvider uut(PrjXPConfig config, KIChatModelProvider modelProvider,
-                           de.spraener.prjxp.common.mcp.McpClientManager mcpClientManager) {
-            return new KIChatProvider(config, modelProvider, mcpClientManager);
+        KIChatProvider uut(PrjXPConfig config, KIChatModelProvider modelProvider) {
+            return new KIChatProvider(config, modelProvider);
         }
     }
 }

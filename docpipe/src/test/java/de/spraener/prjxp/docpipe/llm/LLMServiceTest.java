@@ -3,6 +3,7 @@ package de.spraener.prjxp.docpipe.llm;
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.chat.KIChatProvider;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.mcp.McpClientManager;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import de.spraener.prjxp.docpipe.model.DPJob;
@@ -16,6 +17,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -27,13 +29,17 @@ class LLMServiceTest {
 
     private KIChatProvider chatProvider;
     private KIChat kiChat;
+    private McpClientManager mcpClientManager;
     private LLMService service;
 
     @BeforeEach
     void setUp() {
         chatProvider = mock(KIChatProvider.class);
         kiChat = mock(KIChat.class);
-        service = new LLMService(chatProvider);
+        mcpClientManager = mock(McpClientManager.class);
+        // No MCP servers configured in the test: decorate() is a passthrough.
+        when(mcpClientManager.decorate(any())).thenAnswer(inv -> inv.getArgument(0));
+        service = new LLMService(chatProvider, mcpClientManager);
     }
 
     private ContentCreationTask task(String stereotype) {

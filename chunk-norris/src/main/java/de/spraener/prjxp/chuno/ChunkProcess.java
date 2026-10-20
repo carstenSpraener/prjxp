@@ -20,6 +20,7 @@ import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 
 @Service
@@ -65,6 +66,29 @@ public class ChunkProcess {
         }
     }
 
+    /**
+     * Chunks an explicit list of files (no tree walk, no JSONL output) and returns the chunks in memory.
+     * Used by the hub's document-embedding runs (DocPipe-generated documents). Vetos are evaluated
+     * against the given definition — callers that need markdown must ensure "md" is in its whitelist.
+     * Files that are not regular files or are vetoed are skipped silently.
+     */
+    public List<PxChunk> executeForFiles(ProjectDefinition pd, List<Path> files) {
+        final Path rootPath = Path.of(pd.getRootDir()).toAbsolutePath().normalize();
+        return files.stream()
+                .filter(Files::isRegularFile)
+                .filter(path -> checkVetos(path, pd))
+                .flatMap(path -> factory.createChunker(path.toFile())
+                        .parallel()
+                        .flatMap(chunker -> chunker.chunk(path.toFile())))
+                .map(chunk -> {
+                    if (chunk.getFile() != null) {
+                        chunk.setFile(toProjectRelativePath(rootPath, chunk.getFile()));
+                    }
+                    return chunk;
+                })
+                .toList();
+    }
+
     private PrintStream createWriter(ProjectDefinition pd, TransferSession session) {
         if( pd.resolvedJsonlFile()==null ) {
             return System.out;
@@ -96,10 +120,13 @@ public class ChunkProcess {
     protected void handlePath(PrintStream out, ProjectDefinition pd, Path p) {
         final Path rootPath = Path.of(pd.getRootDir()).toAbsolutePath().normalize();
         factory.createChunker(p.toFile())
+                .filter(c -> !(c instanceof FullTextChunker) || pd.isFulltext())
                 .parallel()
                 .flatMap(c -> c.chunk(p.toFile()))
                 .map( chunk -> {
-                    chunk.setFile(toProjectRelativePath(rootPath, chunk.getFile()));
+                    String relPath = toProjectRelativePath(rootPath, chunk.getFile());
+                    chunk.setFile(relPath);
+                    rebaseIdToProjectPath(chunk, relPath, p.getFileName().toString());
                     return chunk;
                 })
                 .map(chunk -> toJSONL(chunk))
@@ -125,6 +152,29 @@ public class ChunkProcess {
             relativePath = normalizedPath;
         }
         return relativePath.toString().replace(File.separatorChar, '/');
+    }
+
+    /**
+     * Rebases a basename-based chunk ID onto the project-relative path so that same-named
+     * files in different directories (e.g. {@code README.md} in many sub-projects) don't
+     * collide on the same ID. Without this, tibed's {@code StoreIdChecker} would silently
+     * drop every chunk whose ID already exists in the store.
+     * <p>
+     * Only IDs that start with the file's basename are rebased (e.g. {@code README.md:1:2}
+     * → {@code core/cgv19-cli/README.md:1:2}). IDs that are not basename-based — absolute
+     * paths (FullText/Text chunkers) or FQNs (Java/TS chunkers) — are left untouched.
+     */
+    private void rebaseIdToProjectPath(PxChunk chunk, String relPath, String basename) {
+        String id = chunk.getId();
+        if (id == null || id.isBlank() || relPath == null || relPath.isBlank()
+                || basename == null || basename.isBlank()) {
+            return;
+        }
+        if (id.equals(basename)) {
+            chunk.setId(relPath);
+        } else if (id.startsWith(basename)) {
+            chunk.setId(relPath + id.substring(basename.length()));
+        }
     }
 
     protected void doPostWalk(PrintStream out) {

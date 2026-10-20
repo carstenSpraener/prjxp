@@ -1,0 +1,76 @@
+<div class="modal-overlay" (click)="onClose()">
+  <div class="dialog-box glass-panel" (click)="$event.stopPropagation()">
+    <div class="dialog-header">
+      <h2 class="text-cyan neon-glow">
+        {{ isEditing ? 'Edit Project' : 'Create Project' }}
+      </h2>
+      <button class="btn-close" (click)="onClose()">✕</button>
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="onSave()">
+      <div class="form-group">
+        <label for="name">Project Name</label>
+        <input id="name" formControlName="name" type="text" placeholder="my-project"
+               [disabled]="isEditing" />
+        @if (form.get('name')?.invalid && form.get('name')?.touched) {
+          <span class="field-error">Name is required</span>
+        }
+      </div>
+
+      <div class="form-group">
+        <label for="rootDir">Root Directory</label>
+        <input id="rootDir" formControlName="rootDir" type="text" placeholder="./" />
+      </div>
+
+      <div class="form-group">
+        <label for="jsonlFile">JSONL File</label>
+        <input id="jsonlFile" formControlName="jsonlFile" type="text" placeholder="px-chunks.jsonl" />
+      </div>
+
+      <div class="form-group">
+        <label for="chunoWhiteList">Chunker White List</label>
+        <input id="chunoWhiteList" formControlName="chunoWhiteList" type="text" placeholder="java,ts" />
+      </div>
+
+      <div class="form-group">
+        <label for="tibedBatchSize">Batch Size</label>
+        <input id="tibedBatchSize" formControlName="tibedBatchSize" type="number" min="1" />
+      </div>
+
+      <div class="form-group">
+        <label for="embeddingsFile">Embeddings File (optional)</label>
+        <input id="embeddingsFile" formControlName="embeddingsFile" type="text" placeholder="Leave empty for auto-generation" />
+      </div>
+
+      <div class="form-group checkbox-group">
+        <label>
+          <input type="checkbox" formControlName="tibedResetStore" />
+          Reset Embedding Store
+        </label>
+      </div>
+
+      <div class="form-group checkbox-group">
+        <label>
+          <input type="checkbox" formControlName="fulltext" />
+          Fulltext Copy (lossless readFile)
+        </label>
+        <div class="field-hint">Takes effect after the next reindex.</div>
+      </div>
+
+      @if (isEditing) {
+        <div class="form-group">
+          <label for="prompt">Prompt</label>
+          <textarea id="prompt" formControlName="prompt" rows="6"
+                    placeholder="Optional standing instructions for chat. Supports ${ENV_VAR} placeholders."></textarea>
+        </div>
+      }
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" [disabled]="form.invalid">
+          {{ isEditing ? 'Update' : 'Create' }}
+        </button>
+        <button type="button" class="btn btn-secondary" (click)="onClose()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</div>

@@ -136,6 +136,32 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
         return ids;
     }
 
+    /**
+     * Batched variant of addAll: all documents are added and made visible with a SINGLE
+     * commit + refresh per call (instead of one commit per document). Used by the hub
+     * reindex swap where the whole project is re-written.
+     */
+    public void addAllBatched(List<Embedding> embeddings, List<TextSegment> textSegments) {
+        if (embeddings.size() != textSegments.size()) {
+            throw new IllegalArgumentException("embeddings and textSegments must have the same size");
+        }
+        ensureOpen();
+        lock.writeLock().lock();
+        try {
+            for (int i = 0; i < embeddings.size(); i++) {
+                validateDimension(embeddings.get(i));
+                String id = extractId(textSegments.get(i));
+                writer.addDocument(createDocument(id, embeddings.get(i), textSegments.get(i)));
+            }
+            writer.commit();
+            searcherManager.maybeRefresh();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to add batched documents", e);
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
     private void validateDimension(Embedding embedding) {
         if (embedding.vector().length != vectorDimension) {
             throw new IllegalArgumentException(
@@ -341,6 +367,59 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to count documents", e);
+        }
+    }
+
+    /** Count embeddings for a specific project. */
+    public long countByProject(String projectName) {
+        ensureOpen();
+        try {
+            IndexSearcher searcher = getSearcher();
+            try {
+                Query query = new org.apache.lucene.search.TermQuery(
+                    new org.apache.lucene.index.Term(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_PROJECT, projectName));
+                return searcher.count(query);
+            } finally {
+                releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to count embeddings for project " + projectName, e);
+        }
+    }
+
+    /** Count distinct files for a specific project (paged — no arbitrary cap). */
+    public int countFilesByProject(String projectName) {
+        ensureOpen();
+        try {
+            IndexSearcher searcher = getSearcher();
+            try {
+                Query query = new org.apache.lucene.search.TermQuery(
+                    new org.apache.lucene.index.Term(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_PROJECT, projectName));
+                int maxDoc = searcher.getIndexReader().maxDoc();
+                java.util.Set<String> files = new java.util.HashSet<>();
+                int from = 0;
+                final int pageSize = 5000;
+                while (from < maxDoc) {
+                    int size = Math.min(pageSize, maxDoc - from);
+                    TopDocs docs = searcher.search(query, from + size);
+                    int sliceEnd = Math.min(from + size, docs.scoreDocs.length);
+                    for (int i = from; i < sliceEnd; i++) {
+                        Document d = searcher.storedFields().document(docs.scoreDocs[i].doc);
+                        String file = d.get(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_FILE);
+                        if (file != null) files.add(file);
+                    }
+                    if (sliceEnd < docs.totalHits.value) {
+                        from += size;
+                    } else {
+                        break;
+                    }
+                }
+                return files.size();
+            } finally {
+                releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to count files for project " + projectName, e);
         }
     }
 

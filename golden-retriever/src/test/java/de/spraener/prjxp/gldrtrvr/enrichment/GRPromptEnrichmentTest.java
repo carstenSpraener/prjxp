@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.enrichment;
 
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -21,7 +22,7 @@ import static org.assertj.core.data.Offset.offset;
 
 class GRPromptEnrichmentTest {
 
-    private final GRPromptEnrichment enrichment = new GRPromptEnrichment(null, new RetrieverRegistry(List.of(), List.of()));
+    private final GRPromptEnrichment enrichment = new GRPromptEnrichment(null, new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of()));
 
     @Test
     void reIterateSnapsOffGridThresholdToNextLowerGridPoint() {
@@ -83,7 +84,7 @@ class GRPromptEnrichmentTest {
     void totalBudgetSkipsRetrieversThatDoNotFit() {
         var withBudget = new GRPromptEnrichment(
                 new PxChunkDaoProvider(List.of(new FakeChunkDao("test"))),
-                new RetrieverRegistry(List.of(), List.of(
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(
                         new FixedRetriever("A".repeat(40_000)),
                         new FixedRetriever("B".repeat(40_000)))));
 
@@ -100,7 +101,7 @@ class GRPromptEnrichmentTest {
     void totalBudgetKeepsRetrieversThatFit() {
         var withBudget = new GRPromptEnrichment(
                 new PxChunkDaoProvider(List.of(new FakeChunkDao("test"))),
-                new RetrieverRegistry(List.of(), List.of(
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(
                         new FixedRetriever("A".repeat(10_000)),
                         new FixedRetriever("B".repeat(10_000)))));
 

@@ -1,0 +1,17 @@
+<nav class="sidebar" [class.collapsed]="collapsed">
+  <ul>
+    @for (item of navItems; track item.route) {
+      <li>
+        <a [routerLink]="item.route"
+           routerLinkActive="active"
+           [class.active]="isActive(item.route)"
+           class="nav-item">
+          <img [src]="'assets/' + item.icon" [alt]="item.label" class="nav-icon"/>
+          @if (!collapsed) {
+            <span class="label">{{ item.label }}</span>
+          }
+        </a>
+      </li>
+    }
+  </ul>
+</nav>

@@ -1,6 +1,7 @@
 package de.spraener.prjxp.docpipe.llm;
 
 import de.spraener.prjxp.common.chat.KIChatProvider;
+import de.spraener.prjxp.common.mcp.McpClientManager;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import lombok.RequiredArgsConstructor;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Service;
  */
 public class LLMService {
     private final KIChatProvider chatProvider;
+    private final McpClientManager mcpClientManager;
 
     /**
      * Sends a chat request to the LLM for a content creation task.
@@ -37,6 +39,7 @@ public class LLMService {
 
         final String stereotype = dpCC.getStereotype();
         return chatProvider.getByStereotype(stereotype)
+                .map(mcpClientManager::decorate)
                 .map(chat -> chat.chat(prompt))
                 .orElseThrow(
                     () -> new IllegalArgumentException("No Model found for Stereotype " + stereotype)

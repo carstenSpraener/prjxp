@@ -1,0 +1,122 @@
+/* Shell Layout */
+.shell {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--bg-primary);
+}
+
+/* Top Bar */
+.top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.75rem 1.5rem;
+  border-bottom: 1px solid var(--border-color);
+  z-index: 100;
+}
+
+.menu-toggle {
+  background: none;
+  border: none;
+  color: var(--accent-cyan);
+  font-size: 1.5rem;
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.menu-toggle:hover {
+  background: var(--bg-tertiary);
+  box-shadow: 0 0 6px rgba(0, 245, 255, 0.2);
+}
+
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.logo img {
+  height: 32px;
+  width: auto;
+}
+
+.logo .title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 1.25rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  color: var(--accent-cyan);
+}
+
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.status-indicator .dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--accent-orange);
+  transition: all 0.3s ease;
+}
+
+.status-indicator .dot.online {
+  background: var(--accent-green);
+  box-shadow: 0 0 6px rgba(57, 255, 20, 0.2);
+}
+
+/* Main Content */
+.main-content {
+  margin-left: 250px;
+  padding: 2rem;
+  flex: 1;
+  overflow-y: auto;
+  transition: margin-left 0.3s ease;
+  background-color: var(--bg-primary);
+  background-image: url('/assets/bg-main-pattern.svg');
+  background-size: cover;
+}
+
+.main-content.sidebar-collapsed {
+  margin-left: 70px;
+}
+
+/* Scrollbar Styling */
+.main-content::-webkit-scrollbar {
+  width: 8px;
+}
+
+.main-content::-webkit-scrollbar-track {
+  background: var(--bg-primary);
+}
+
+.main-content::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+.main-content::-webkit-scrollbar-thumb:hover {
+  background: var(--accent-cyan);
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .main-content {
+    margin-left: 70px;
+  }
+
+  .top-bar .logo .title {
+    font-size: 1rem;
+  }
+
+  .logo img {
+    height: 24px;
+  }
+}

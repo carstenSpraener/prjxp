@@ -9,6 +9,7 @@ import org.springframework.stereotype.Component;
 
 import java.net.http.HttpClient;
 import java.time.Duration;
+import java.util.Map;
 
 @Component
 /**
@@ -46,13 +47,19 @@ public class LMStudioSupplier implements de.spraener.prjxp.common.chat.ChatModel
         JdkHttpClientBuilder langchainHttpClientBuilder = JdkHttpClient.builder()
                 .httpClientBuilder(javaHttpClientBuilder);
 
-        return OpenAiChatModel.builder()
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
                 .baseUrl(cmRef.getProviderUrl())
                 .modelName(cmRef.getModelName()) // Name des Modells in LM-Studio
                 .apiKey(cmRef.getApiKey())
                 .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
                 // In 1.13 wird die Factory mit dem angepassten Client übergeben
-                .httpClientBuilder(langchainHttpClientBuilder)
-                .build();
+                .httpClientBuilder(langchainHttpClientBuilder);
+
+        // Request-level body properties (e.g. enable_thinking for Qwen3) — merged into the JSON body.
+        Map<String, Object> bodyProperties = BodyPropertyCoercer.coerce(cmRef.getBodyProperties());
+        if (!bodyProperties.isEmpty()) {
+            builder.customParameters(bodyProperties);
+        }
+        return builder.build();
     }
 }

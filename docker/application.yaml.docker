@@ -1,0 +1,79 @@
+prjxp:
+
+  # Embedding model type: ollama or open_ai
+  embeddingStoreLucene:
+    indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
+    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
+
+  embedding:
+    type: "OPEN_AI"
+    apiBaseURL: ${EMBEDDING_API_BASE_URL:http://host.docker.internal:1234/v1}
+    modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
+    timeout: ${EMBEDDING_TIMEOUT:180}
+    apiKey: ${EMBEDDING_API_KEY:dummy}
+
+  chatModels:
+    - stereotype: detailed
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 600
+      apiKey: ${EMBEDDING_API_KEY}
+      # Qwen3: thinking mode breaks tool-calling (the call leaks into content as XML).
+      # DocPipe relies on native function calling, so disable thinking for this stereotype.
+      bodyProperties:
+        enable_thinking: false
+
+    - stereotype: documentation
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 600
+      apiKey: ${EMBEDDING_API_KEY}
+      # Qwen3: thinking mode breaks tool-calling (the call leaks into content as XML).
+      # DocPipe relies on native function calling, so disable thinking for this stereotype.
+      bodyProperties:
+        enable_thinking: false
+
+    - stereotype: javadoc
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 600
+      apiKey: ${EMBEDDING_API_KEY}
+      # Same Qwen3 thinking-mode issue as above (DocPipe javadoc generation).
+      bodyProperties:
+        enable_thinking: false
+
+  mcp-servers:
+    - name: prjxp
+      type: http
+      url: ${PRJXP_HUB_URL:http://localhost:7007/mcp}
+
+mcp:
+  cors:
+    # Comma-separated, NO spaces after commas. Browsers send an Origin header on
+    # POST/PUT/DELETE — origins not matching these patterns are rejected with 403.
+    # Add your public hostname(s) when deploying behind a reverse proxy with https.
+    allowed-patterns: ${MCP_CORS_ALLOWED_PATTERNS:http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*}
+
+server:
+  port: ${SERVER_PORT:7007}
+  forward-headers-strategy: framework
+
+spring:
+  servlet:
+    multipart:
+      # Must be >= the hub's import limit (prjxp.hub.max-tar-bytes, default 2 GiB)
+      # — Spring's default is 1MB per file and would reject project archives.
+      max-file-size: 2GB
+      max-request-size: 2GB
+  main:
+    allow-bean-definition-overriding: true
+  devtools:
+    restart:
+      additional-exclude: "**/package-info.java"
+  ai:
+    mcp:
+      server:
+        protocol: STREAMABLE

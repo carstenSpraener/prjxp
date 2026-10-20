@@ -294,7 +294,7 @@ function Cmd-Mcp() {
     $paths = Get-ProjectDataPaths
     $applicationYaml = Join-Path $ProjectPath "application.yaml"
     $envFile = Join-Path $ProjectPath ".env"
-    $sourceApplicationYaml = Join-Path $ScriptDir "application.yaml.docker"
+    $sourceApplicationYaml = Join-Path (Join-Path $ScriptDir "docker") "application.yaml.docker"
     $sourceEnvExample = Join-Path $ScriptDir ".env.example"
 
     if (-not (Test-Path -LiteralPath $applicationYaml)) {

@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" fill="none">
+  <!-- Outer Glow (Active) -->
+  <path d="M8 16 L24 16 L32 24 L56 24 L56 52 L8 52 Z" stroke="#00f5ff" stroke-width="2" filter="url(#glow)" class="icon-glow"/>
+  <!-- Base Shape: Folder -->
+  <path d="M8 16 L24 16 L32 24 L56 24 L56 52 L8 52 Z" stroke="#161b22" stroke-width="4" fill="none"/>
+  <!-- Network Nodes Inside -->
+  <circle cx="20" cy="36" r="3" fill="#00f5ff"/>
+  <circle cx="44" cy="36" r="3" fill="#00f5ff"/>
+  <circle cx="32" cy="46" r="3" fill="#00f5ff"/>
+  <path d="M20 36 L44 36" stroke="#00f5ff" stroke-width="2"/>
+  <path d="M20 36 L32 46" stroke="#00f5ff" stroke-width="2"/>
+  <path d="M44 36 L32 46" stroke="#00f5ff" stroke-width="2"/>
+  <!-- Filter Definition -->
+  <defs>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+</svg>

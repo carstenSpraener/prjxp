@@ -19,7 +19,6 @@ import java.nio.file.Path;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 @Component
 @RequiredArgsConstructor
@@ -102,31 +101,27 @@ public class McpClientManager {
         return activeClients;
     }
 
-    public Optional<KIChat> decorate(Optional<KIChat> optionalChat) {
-        // * Ist das optional gefüllt? Nein -> Optional direkt zurückgeben
-        if (optionalChat.isEmpty()) {
-            return optionalChat;
+    /**
+     * Wraps the given chat in a {@link McPEnablingKIChatDecorator} so the LLM can call the
+     * configured MCP tools. Returns the input unchanged when it is {@code null} or no MCP
+     * client is active, so callers can apply this unconditionally.
+     */
+    public KIChat decorate(KIChat chat) {
+        if (chat == null) {
+            return null;
+        }
+        if (activeClients.isEmpty()) {
+            return chat;
         }
 
-        // * Haben wir konfigurierte MCP-Server? Nein -> Optional direkt zurückgeben
-        if (activeClients.isEmpty() && toolRegistry.getTools().isEmpty()) {
-            return optionalChat;
-        }
-
-        // Collect defaultProject from the first MCP server ref that has one
         String project = cfg.getMcpServers().stream()
                 .filter(ref -> ref.getDefaultProject() != null && !ref.getDefaultProject().isBlank())
                 .map(McpServerReference::getDefaultProject)
                 .findFirst()
                 .orElse(null);
 
-        // * Ansonsten: Verpacke den originalen KIChat in den MCP-Decorator
-        log.info("Verpacke KIChat in McPEnablingKIChatDecorator mit " + activeClients.size()
-                + " MCP-Clients und " + toolRegistry.getTools().size() + " registrierten Tools.");
-        KIChat originalChat = optionalChat.get();
-        KIChat mcpEnabledChat = new McPEnablingKIChatDecorator(originalChat, toolRegistry, project);
-
-        return Optional.of(mcpEnabledChat);
+        log.info("Verpacke KIChat in McPEnablingKIChatDecorator mit " + activeClients.size() + " aktiven MCP-Servern.");
+        return new McPEnablingKIChatDecorator(chat, activeClients, project);
     }
 
     @PreDestroy

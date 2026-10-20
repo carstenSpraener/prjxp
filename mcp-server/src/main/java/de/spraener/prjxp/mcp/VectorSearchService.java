@@ -33,6 +33,9 @@ public class VectorSearchService {
         registry.forLanguage(language)
                 .filter(cap -> !cap.mimeTypes().isEmpty())
                 .ifPresent(cap -> filters.put(PxChunk.PXCHUNK_MIME_TYPE, cap.mimeTypes().get(0)));
+        // FULLTEXT copies exist for lossless readFile only — never vector hits.
+        // Fully-qualified field name: metadataFieldKey() passes pxchunk_* keys through unchanged.
+        filters.put(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER);
 
         List<ScoredChunk> results;
         try {

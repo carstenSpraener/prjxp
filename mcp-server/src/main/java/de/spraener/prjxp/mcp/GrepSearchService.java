@@ -1,7 +1,6 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.language.LanguagePack;
-import de.spraener.prjxp.common.language.LanguagePacks;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -24,7 +23,7 @@ public class GrepSearchService {
 
     private final PxChunkDaoProvider chunkDaoProvider;
     private final RetrieverRegistry retrieverRegistry;
-    private final List<LanguagePack> languagePacks;
+    private final LanguagePackRegistry languagePackRegistry;
     private final ProjectRegistry projectRegistry;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
@@ -91,16 +90,14 @@ public class GrepSearchService {
             }
             filters.put(PxChunk.PXCHUNK_MIME_TYPE, mimeByLanguage().getOrDefault(normalized, language.trim()));
         }
+        // FULLTEXT copies exist for lossless readFile only — never grep hits (raw Lucene field name)
+        filters.put(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER);
         return filters;
     }
 
-    /** Sprache -> MIME aus allen Packs (Spring-Beans + externe ServiceLoader-Packs). */
+    /** Sprache -> MIME aus der gemeinsamen LanguagePackRegistry (Built-in-Packs + Plugins). */
     private Map<String, String> mimeByLanguage() {
-        Map<String, String> map = new HashMap<>();
-        for (LanguagePack pack : LanguagePacks.merge(languagePacks)) {
-            map.put(pack.language().toLowerCase(Locale.ROOT), pack.mimeType());
-        }
-        return map;
+        return languagePackRegistry.mimeByLanguage();
     }
 
     private String extractSnippet(String content, String query) {

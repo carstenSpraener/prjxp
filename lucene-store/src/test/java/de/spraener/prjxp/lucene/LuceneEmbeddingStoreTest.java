@@ -274,6 +274,72 @@ class LuceneEmbeddingStoreTest {
         assertThat(store.count()).isEqualTo(50);
     }
 
+    @Test
+    void addAllBatchedMakesDocumentsSearchable() {
+        List<Embedding> embeddings = new ArrayList<>();
+        List<TextSegment> segments = new ArrayList<>();
+        for (int i = 0; i < 5; i++) {
+            embeddings.add(Embedding.from(new float[]{1f, 0f, 0f}));
+            Metadata m = new Metadata();
+            m.put("pxchunk_id", "batch-" + i);
+            segments.add(TextSegment.from("content-" + i, m));
+        }
+
+        store.addAllBatched(embeddings, segments);
+
+        assertThat(store.count()).isEqualTo(5);
+        assertThat(store.hasMatch(new IsEqualTo("pxchunk_id", "batch-3"))).isTrue();
+        EmbeddingSearchResult<TextSegment> result = store.search(EmbeddingSearchRequest.builder()
+                .queryEmbedding(Embedding.from(new float[]{1f, 0f, 0f}))
+                .maxResults(10)
+                .build());
+        assertThat(result.matches()).hasSize(5);
+    }
+
+    @Test
+    void addAllBatchedSizeMismatchThrows() {
+        assertThatThrownBy(() -> store.addAllBatched(
+                Collections.singletonList(Embedding.from(new float[]{1f, 0f, 0f})),
+                new ArrayList<>()
+        )).isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void addAllBatchedDimensionMismatchThrows() {
+        assertThatThrownBy(() -> store.addAllBatched(
+                Collections.singletonList(Embedding.from(new float[]{1f, 0f})),
+                Collections.singletonList(TextSegment.from("x"))
+        )).isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("dimension mismatch");
+    }
+
+    @Test
+    void addAllBatchedEmptyListsIsNoOp() {
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}));
+
+        store.addAllBatched(List.of(), List.of());
+
+        assertThat(store.count()).isEqualTo(1);
+    }
+
+    @Test
+    void addAllBatchedPersistsAfterReopen() {
+        List<Embedding> embeddings = new ArrayList<>();
+        List<TextSegment> segments = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            embeddings.add(Embedding.from(new float[]{1f, 0f, 0f}));
+            Metadata m = new Metadata();
+            m.put("pxchunk_id", "persist-" + i);
+            segments.add(TextSegment.from("content-" + i, m));
+        }
+        store.addAllBatched(embeddings, segments);
+        store.close();
+
+        LuceneEmbeddingStore reopened = new LuceneEmbeddingStore(tempDir.resolve("index"), 3);
+        assertThat(reopened.count()).isEqualTo(3);
+        assertThat(reopened.hasMatch(new IsEqualTo("pxchunk_id", "persist-2"))).isTrue();
+    }
+
     private void addWithContent(String id, float[] vector) {
         Metadata m = new Metadata();
         m.put("_name", id);

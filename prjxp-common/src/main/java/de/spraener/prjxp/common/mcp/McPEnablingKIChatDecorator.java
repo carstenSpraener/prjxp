@@ -2,39 +2,55 @@ package de.spraener.prjxp.common.mcp;
 
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
-import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.mcp.McpToolProvider;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.AiServices;
-import dev.langchain4j.service.UserMessage;
 
 import java.awt.image.BufferedImage;
-import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Decorates a {@link KIChat} so the underlying LLM can autonomously call MCP tools
+ * (e.g. the prjxp search tools) through a LangChain4j {@link AiServices} agent.
+ * <p>
+ * The decorator bridges the agent to the delegate chat: the full message history and the
+ * tool specifications are forwarded to the delegate, so the model can emit tool calls that
+ * the agent then executes through the {@link McpToolProvider} (which talks to the configured
+ * MCP servers). For models without native function calling it falls back to a plain
+ * single-shot chat.
+ * <p>
+ * DocPipe applies this decoration in its {@code LLMService}; the mcp-server's live chat
+ * keeps its own tool loop and is intentionally left undecorated.
+ */
 public class McPEnablingKIChatDecorator implements KIChat {
     interface McpAgent {
         String chat(String prompt);
     }
 
     private final KIChat delegate;
-    private final ToolRegistry toolRegistry;
-    private final String defaultProject;
+    private final List<McpClient> mcpClients;
+    private final String defaultProject; // may be null
 
-    public McPEnablingKIChatDecorator(KIChat delegate, ToolRegistry toolRegistry, String defaultProject) {
+    public McPEnablingKIChatDecorator(KIChat delegate, List<McpClient> mcpClients, String defaultProject) {
         this.delegate = delegate;
-        this.toolRegistry = toolRegistry;
-        this.defaultProject = defaultProject; // may be null
+        this.mcpClients = mcpClients;
+        this.defaultProject = defaultProject;
     }
 
     @Override
     public PrjXPChatModelReference getChatModelReference() {
         return delegate.getChatModelReference();
+    }
+
+    @Override
+    public boolean supportsTools() {
+        return delegate.supportsTools();
     }
 
     @Override
@@ -48,62 +64,40 @@ public class McPEnablingKIChatDecorator implements KIChat {
         ChatModel bridgeModel = new ChatModel() {
             @Override
             public ChatResponse doChat(ChatRequest chatRequest) {
-                List<ChatMessage> messages = chatRequest.messages();
-                String activePrompt = prompt; // Initialer Fallback
-
-                if (messages != null && !messages.isEmpty()) {
-                    ChatMessage lastMessage = messages.get(messages.size() - 1);
-
-                    // Prüfen, ob die letzte Nachricht eine UserMessage ist
-                    if (lastMessage instanceof UserMessage userMessage) {
-                        activePrompt = extractTextFromUserMessage(userMessage, prompt);
-                    } else {
-                        // Falls LangChain4j den Tool-Loop aufbaut und eine andere Nachricht am Ende steht,
-                        // suchen wir rückwärts nach der letzten User-Frage
-                        for (int i = messages.size() - 1; i >= 0; i--) {
-                            if (messages.get(i) instanceof UserMessage um) {
-                                activePrompt = extractTextFromUserMessage(um, prompt);
-                                break;
-                            }
-                        }
-                    }
+                // Forward the full history + tool specs so the model can return tool calls
+                // that the AiServices agent executes via the McpToolProvider.
+                if (delegate.supportsTools()) {
+                    return delegate.chat(chatRequest.messages(), chatRequest.toolSpecifications());
                 }
-
-                // Aufruf an deine tatsächliche KIChat-Implementierung tunneln
-                String responseText = delegate.chat(activePrompt);
-
-                // Als standardkonforme ChatResponse zurückgeben
+                // Fallback for models without native function calling: plain single-shot chat.
+                String activePrompt = extractLastUserMessage(chatRequest.messages(), prompt);
                 return ChatResponse.builder()
-                        .aiMessage(AiMessage.from(responseText))
+                        .aiMessage(AiMessage.from(delegate.chat(activePrompt)))
                         .build();
             }
 
-            // Hilfsmethode, um das String-Array aus .value() sicher zu verarbeiten
-            private String extractTextFromUserMessage(UserMessage userMessage, String fallback) {
-                String[] values = userMessage.value();
-                if (values != null && values.length > 0) {
-                    // Wenn mehrere Text-Inhalte vorliegen, fügen wir sie zusammen
-                    return String.join("\n", values);
+            private String extractLastUserMessage(List<ChatMessage> messages, String fallback) {
+                if (messages == null || messages.isEmpty()) {
+                    return fallback;
+                }
+                for (int i = messages.size() - 1; i >= 0; i--) {
+                    if (messages.get(i) instanceof UserMessage um && um.hasSingleText()) {
+                        return um.singleText();
+                    }
                 }
                 return fallback;
             }
         };
 
-        // Collect MCP clients from ToolRegistry for McpToolProvider (McpToolProvider needs raw McpClients)
-        // ToolRegistry wraps MCP clients, but McpToolProvider still needs the raw list for tool execution
-        // For now we keep backward compatibility: McpToolProvider still uses raw MCP clients for execution
-        // The ToolRegistry is used for prompt injection (system message) and direct tool execution
-
         McpToolProvider mcpToolProvider = McpToolProvider.builder()
-                .mcpClients(new ArrayList<>()) // Empty: tools are handled via ToolRegistry in system prompt
-                .failIfOneServerFails(false)
+                .mcpClients(mcpClients)
+                .failIfOneServerFails(false) // keep going even if a server is offline
                 .build();
 
-        // AiServices-Builder für v1.13.0 konfigurieren
         McpAgent agent = AiServices.builder(McpAgent.class)
                 .chatModel(bridgeModel)
                 .systemMessageProvider(context -> buildSystemPrompt())
-                .toolProvider(mcpToolProvider) // Registriert den Provider direkt
+                .toolProvider(mcpToolProvider)
                 .build();
         return agent;
     }
@@ -111,23 +105,15 @@ public class McPEnablingKIChatDecorator implements KIChat {
     /* package-private for testability */
     String buildSystemPrompt() {
         StringBuilder sb = new StringBuilder();
-        sb.append("You have access to tools for searching embedded project code.");
+        sb.append("You have access to MCP tools for searching embedded project code.");
 
         if (defaultProject != null && !defaultProject.isBlank()) {
             sb.append(" The active project is: '").append(defaultProject).append("'");
         }
 
-        // Dynamically add tool descriptions from ToolRegistry
-        List<String> toolDescriptions = toolRegistry.getToolDescriptions();
-        if (!toolDescriptions.isEmpty()) {
-            sb.append(". Available tools:\n");
-            for (String desc : toolDescriptions) {
-                sb.append("- ").append(desc).append("\n");
-            }
-        } else {
-            sb.append(". No tools are currently available.");
-        }
-
+        sb.append(". Available tools include: vectorSearch (semantic search over code chunks), ");
+        sb.append("grep (exact text search), readFile (full file content), ");
+        sb.append("readBySignature (lookup method by name).");
         sb.append(" Use these tools to gather information before answering the user's question.");
 
         return sb.toString();

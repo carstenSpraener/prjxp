@@ -55,6 +55,11 @@ public class HubProjectRegistry implements ProjectRegistry {
     /** Throttles the "import dir missing" warning to once per outage instead of once per 5s poll. */
     private final AtomicBoolean importDirMissingWarned = new AtomicBoolean(false);
 
+    /** Tracks reindex progress per project. */
+    private final Map<String, ReindexStatus> reindexStatuses = new ConcurrentHashMap<>();
+    /** Percentage progress 0-100 per project. */
+    private final Map<String, Integer> reindexProgress = new ConcurrentHashMap<>();
+
     /** Registers a snapshot project directory (tar import flow). */
     public void registerProject(String name, Path dir) {
         registerProject(name, dir, ProjectEntry.Kind.SNAPSHOT);
@@ -128,6 +133,14 @@ public class HubProjectRegistry implements ProjectRegistry {
         }
     }
 
+    /** Sets the embedding phase of a known project (drives the EMBEDDING_PHASE_n display); no-op for unknown names. */
+    public void setEmbeddingPhase(String name, int phase) {
+        ProjectEntry entry = projects.get(name);
+        if (entry != null) {
+            entry.setEmbeddingPhase(phase);
+        }
+    }
+
     public Optional<ProjectEntry> entry(String name) {
         return Optional.ofNullable(projects.get(name));
     }
@@ -136,6 +149,51 @@ public class HubProjectRegistry implements ProjectRegistry {
     public ProjectDefinition definitionOf(String name) {
         ProjectEntry entry = projects.get(name);
         return entry == null ? null : entry.getDefinition();
+    }
+
+    /** Reloads a project's definition from its YAML file on disk. */
+    public void reloadDefinition(String name) {
+        ProjectEntry entry = projects.get(name);
+        if (entry != null) {
+            ProjectDefinition freshDef = configParser.parse(entry.getRootDir(), name);
+            // Replace the definition in the entry (ProjectEntry uses mutable reference via setter from Lombok @Data)
+            // Since ProjectEntry.definition is final, we need to update the fields in place
+            ProjectDefinition oldDef = entry.getDefinition();
+            oldDef.setName(freshDef.getName());
+            oldDef.setRootDir(freshDef.getRootDir());
+            oldDef.setJsonlFile(freshDef.getJsonlFile());
+            oldDef.setChunoWhiteList(freshDef.getChunoWhiteList());
+            oldDef.setExcludeDirNames(freshDef.getExcludeDirNames());
+            oldDef.setSourceDirNames(freshDef.getSourceDirNames());
+            oldDef.setTibedBatchSize(freshDef.getTibedBatchSize());
+            oldDef.setEmbeddingsFile(freshDef.getEmbeddingsFile());
+            oldDef.setTibedResetStore(freshDef.isTibedResetStore());
+            oldDef.setPrompt(freshDef.getPrompt());
+            oldDef.setFulltext(freshDef.isFulltext());
+        }
+    }
+
+    // ------------------------------------------------------------------ Reindex progress tracking
+
+    public ReindexStatus getReindexStatus(String projectName) {
+        return reindexStatuses.getOrDefault(projectName, ReindexStatus.IDLE);
+    }
+
+    public int getReindexProgress(String projectName) {
+        return reindexProgress.getOrDefault(projectName, 0);
+    }
+
+    public void setReindexStatus(String projectName, ReindexStatus status) {
+        reindexStatuses.put(projectName, status);
+    }
+
+    public void setReindexProgress(String projectName, int progress) {
+        reindexProgress.put(projectName, progress);
+    }
+
+    public void resetReindexStatus(String projectName) {
+        reindexStatuses.remove(projectName);
+        reindexProgress.remove(projectName);
     }
 
     /**
@@ -366,14 +424,45 @@ public class HubProjectRegistry implements ProjectRegistry {
             return "UNKNOWN";
         }
         ProjectEntry entry = projects.get(name);
-        return entry == null ? "UNKNOWN" : entry.getStatus().name();
+        if (entry == null) {
+            return "UNKNOWN";
+        }
+        if (entry.getStatus() == ProjectStatus.EMBEDDING && entry.getEmbeddingPhase() > 1) {
+            return "EMBEDDING_PHASE_" + entry.getEmbeddingPhase();
+        }
+        return entry.getStatus().name();
     }
 
     @Override
     public List<ProjectInfo> projectInfos() {
         return projects.values().stream()
                 .sorted(Comparator.comparing(ProjectEntry::getName))
-                .map(e -> new ProjectInfo(e.getName(), e.getStatus().name(), e.getLastError()))
+                .map(e -> {
+                    long chunkCount = luceneStore.countByProject(e.getName());
+                    int fileCount = luceneStore.countFilesByProject(e.getName());
+                    de.spraener.prjxp.common.config.ProjectDefinition def = e.getDefinition();
+                    String reindexStatus = getReindexStatus(e.getName()).name();
+                    int reindexProgress = getReindexProgress(e.getName());
+                    return new ProjectInfo(
+                        e.getName(),
+                        e.getStatus().name(),
+                        e.getKind().name(),
+                        e.getLastError(),
+                        chunkCount,
+                        chunkCount, // embeddingCount == chunkCount (1:1)
+                        fileCount,
+                        def.getRootDir(),
+                        def.getJsonlFile(),
+                        def.getChunoWhiteList(),
+                        def.getTibedBatchSize(),
+                        def.getEmbeddingsFile(),
+                        def.isTibedResetStore(),
+                        reindexStatus,
+                        reindexProgress,
+                        def.getPrompt(),
+                        def.isFulltext()
+                    );
+                })
                 .toList();
     }
 }

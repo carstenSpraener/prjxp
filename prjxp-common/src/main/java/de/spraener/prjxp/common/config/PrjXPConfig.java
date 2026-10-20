@@ -32,6 +32,8 @@ public class PrjXPConfig {
     /** Maximum characters returned by the readFile MCP tool (0 = uncapped). Property: prjxp.reader-max-output-chars */
     private int readerMaxOutputChars = 100_000;
     private EmbeddingConfig embedding = new EmbeddingConfig();
+    // User-configurable single embedding model (Globals panel)
+    private PrjXPEmbeddingModelReference embeddingModel;
 
     @lombok.Data
     public static class LuceneEmbeddingStoreConfig {

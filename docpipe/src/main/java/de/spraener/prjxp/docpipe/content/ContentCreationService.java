@@ -1,6 +1,7 @@
 package de.spraener.prjxp.docpipe.content;
 
 import de.spraener.prjxp.common.errorlog.PxLogMessage;
+import de.spraener.prjxp.docpipe.DocPipeRunResult;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.io.OutputSink;
 import de.spraener.prjxp.docpipe.io.OutputSinkFactory;
@@ -49,6 +50,15 @@ public class ContentCreationService {
      * @param ccTask the task containing the job and content creation configuration
      */
     public void createContent(ContentCreationTask ccTask) {
+        createContent(ccTask, null);   // backward compatible: CLI mode collects no run state
+    }
+
+    /**
+     * Like {@link #createContent(ContentCreationTask)} but additionally records the run outcome in
+     * {@code result} (outputs written / failures) — used by the in-process hub run. A {@code null}
+     * result disables recording (CLI mode).
+     */
+    public void createContent(ContentCreationTask ccTask, DocPipeRunResult result) {
         try {
             DPContentCreation dpcc = ccTask.getDpContentCreation();
 
@@ -65,17 +75,21 @@ public class ContentCreationService {
                 }
                 try (OutputSink sink = outputSinkFactory.createSink(Path.of(outputFile))) {
                     sink.println(content);
+                    if (result != null) { result.recordOutput(outputFile); }
                 } catch (IOException e) {
                     logService.error(e, "Error while trying to create content for %s: %s",
                             ccTask.getDpJob().getRootDir().getAbsolutePath(),  e.getMessage());
+                    if (result != null) { result.recordFailure(ccTask.getDpContentCreation().getOutputFile(), e.getMessage()); }
                 }
             });
         } catch (TemplateException | IOException e) {
             logService.error(e, "Error while trying to create prompt for %s: %s",
                     ccTask.getDpJob().getRootDir().getAbsolutePath(), e.getMessage());
+            if (result != null) { result.recordFailure(ccTask.getDpContentCreation().getOutputFile(), e.getMessage()); }
         } catch( Throwable t ) {
             logService.error(t, "Unexpected throwable while creating content %s: %s",
                     ccTask.getDpJob().getRootDir().getAbsolutePath()+"/"+ccTask.getDpContentCreation().getOutputFile(), t.getMessage());
+            if (result != null) { result.recordFailure(ccTask.getDpContentCreation().getOutputFile(), t.getMessage()); }
         }
     }
 

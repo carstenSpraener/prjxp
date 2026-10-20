@@ -33,13 +33,13 @@ class VectorSearchControllerTest {
 
     @Test
     void missingQueryReturns400() throws Exception {
-        mvc.perform(get("/prjxp/tools/vectorSearch"))
+        mvc.perform(get("/api/tools/vectorSearch"))
                 .andExpect(status().isBadRequest());
     }
 
     @Test
     void blankQueryReturns400() throws Exception {
-        mvc.perform(get("/prjxp/tools/vectorSearch").param("query", "   "))
+        mvc.perform(get("/api/tools/vectorSearch").param("query", "   "))
                 .andExpect(status().isBadRequest());
     }
 
@@ -48,7 +48,7 @@ class VectorSearchControllerTest {
         SearchHit hit = new SearchHit("chunk-1", 0.87, "src/A.java", 10, 20, "snippet text", "vector", Map.of());
         when(service.search(anyString(), anyString(), any(), anyInt())).thenReturn(List.of(hit));
 
-        mvc.perform(get("/prjxp/tools/vectorSearch").param("query", "How does chunking work?"))
+        mvc.perform(get("/api/tools/vectorSearch").param("query", "How does chunking work?"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$[0].chunkId").value("chunk-1"))
@@ -64,7 +64,7 @@ class VectorSearchControllerTest {
     void limitAboveMaxIsClampedTo100() throws Exception {
         when(service.search(anyString(), anyString(), any(), anyInt())).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/vectorSearch").param("query", "x").param("limit", "500"))
+        mvc.perform(get("/api/tools/vectorSearch").param("query", "x").param("limit", "500"))
                 .andExpect(status().isOk());
 
         verify(service).search(eq("x"), eq("default"), isNull(), eq(100));
@@ -74,7 +74,7 @@ class VectorSearchControllerTest {
     void defaultLimitIs10() throws Exception {
         when(service.search(anyString(), anyString(), any(), anyInt())).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/vectorSearch").param("query", "x"))
+        mvc.perform(get("/api/tools/vectorSearch").param("query", "x"))
                 .andExpect(status().isOk());
 
         verify(service).search(eq("x"), eq("default"), isNull(), eq(10));
@@ -84,7 +84,7 @@ class VectorSearchControllerTest {
     void parametersArePassedThrough() throws Exception {
         when(service.search(anyString(), anyString(), anyString(), anyInt())).thenReturn(List.of());
 
-        mvc.perform(get("/prjxp/tools/vectorSearch")
+        mvc.perform(get("/api/tools/vectorSearch")
                 .param("query", "How does chunking work?")
                 .param("project", "myproj")
                 .param("language", "java")

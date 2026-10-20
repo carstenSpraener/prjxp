@@ -16,10 +16,11 @@ sequenceDiagram
     participant MS as mcp-server
 
     U->>CN: run (mode chunk)
+    Note over CN: language pack plugins loaded at startup<br/>(./language-packs, own class loaders)
     CN->>FS: walk project tree
     loop per file
         CN->>CN: vetoes (build/size/hidden/image/whitelist)
-        CN->>CN: select chunker(s) via SPI, chunk (parallel)
+        CN->>CN: select chunker(s) via SPI + pack brokers, chunk (parallel)
     end
     CN->>FS: write px-chunks.jsonl (± encrypted)
 
@@ -74,7 +75,7 @@ sequenceDiagram
     MS->>MS: JavaFileViewProvider.render (frame + splice methods/docs by line coords)<br/>page (offset/limit) · cap 100k chars
     MS-->>AI: FileView (content, truncated, totalLines, chunkCount, …)
 
-    AI->>MS: readBySignature("shouldVeto", container?, project)   % Java only
+    AI->>MS: readBySignature("shouldVeto", container?, project)   % language-agnostic (Java, C#, …)
     MS->>DAO: searchByIndex(symbol_name=…, symbol_type=…)
     DAO-->>AI: up to 10 full MethodViews (javadoc + body) + remainingFqns
 ```

@@ -67,6 +67,8 @@ public class DocPipeCliApp {
      */
     @Bean
     @Profile(("!test"))
+    @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
+            name = "prjxp.cli.enabled", havingValue = "true", matchIfMissing = true)
     public CommandLineRunner commandLineRunner(
             PrjXPConfig pxCfg,
             DocPipeArgsParser argsParser,

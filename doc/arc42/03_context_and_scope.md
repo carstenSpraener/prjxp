@@ -64,6 +64,7 @@ flowchart LR
         V1[("Volume: project source<br/>/app-source")]
         V2[("Volume: Lucene index<br/>.prjxp-data/lucene-index")]
         V3[("Hub volumes:<br/>/import /projects /data")]
+        V4[("Language pack plugins<br/>/app-source/language-packs")]
         HOSTEMB["External embedding server<br/>on host, e.g. LM Studio :1234"]
     end
 
@@ -71,6 +72,7 @@ flowchart LR
     V1 --- CN
     V2 --- TIB & MS
     V3 --- MS
+    V4 --- CN & MS
     MS <-->|"HTTP host.docker.internal"| HOSTEMB
 ```
 
@@ -81,7 +83,7 @@ flowchart LR
 | MCP endpoint `POST /mcp` | Streamable HTTP (Spring AI MCP server WebMVC, protocol `streamable`, name `prjxp-mcp` v1.0.0) | CORS restricted to LAN/localhost patterns; a compatibility filter rewrites legacy protocol version `2025-06-18` requests. |
 | REST endpoints | Spring MVC + springdoc OpenAPI (Swagger UI) | `/prjxp/tools/ping|context|vectorSearch|grep|byIndex|meta-search-params`, `/prjxp/projects[/{name}[/reindex]]`. |
 | Embedding provider | HTTP (OpenAI-compatible or Ollama) | Configured via `prjxp.embedding.*`; in Docker typically `http://host.docker.internal:1234/v1`. |
-| File system | Bind mounts / named volumes | Project source, Lucene index directory, hub import/projects/data areas. |
+| File system | Bind mounts / named volumes | Project source, Lucene index directory, hub import/projects/data areas, language pack plugin directory (`/app-source/language-packs`). |
 | JSONL files | Plain files / stdout | `px-chunks.jsonl` (chunk output) and optional encrypted transfer files. |
 
 **Mapping functional → technical interfaces:**
@@ -99,7 +101,9 @@ flowchart LR
 ### In scope
 
 - **Code languages:** Java (full: methods, javadoc, class frames, symbol metadata),
-  TypeScript, Visual Basic (code sections + file views; no `symbol_*` metadata yet).
+  TypeScript, Visual Basic (code sections + file views; no `symbol_*` metadata yet),
+  C# (via the external `lp-csharp` plugin pack: type frames, methods, XML docs,
+  symbol metadata — loaded from a plugin JAR, not compiled into the host).
 - **Document formats:** Markdown, plain text, PDF (chapter chunking + Tika conversion),
   DOCX/DOC, HTML, RTF — via the doc-conversion router (agents per format).
 - **Interfaces:** MCP streamable HTTP, REST API, CLI (`chunk`/`embed` modes), hub web UI.

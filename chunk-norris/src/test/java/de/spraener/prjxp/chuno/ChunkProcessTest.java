@@ -68,9 +68,13 @@ class ChunkProcessTest {
     }
 
     private ChunkProcess uut(PrjXPConfig cfg, String passwordValue) {
+        return uut(cfg, passwordValue, stubFactory());
+    }
+
+    private ChunkProcess uut(PrjXPConfig cfg, String passwordValue, ChunkerFactory factory) {
         return new ChunkProcess(
                 Mockito.mock(PxLogService.class),
-                stubFactory(),
+                factory,
                 Mockito.mock(ApplicationEventPublisher.class),
                 noVeto(),
                 cfg,
@@ -146,7 +150,15 @@ class ChunkProcessTest {
     }
 
     private ChunkerFactory stubFactory() {
-        PxChunker stub = new PxChunker() {
+        ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
+        Mockito.when(factory.createChunker(Mockito.any(File.class)))
+                .thenAnswer(invocation -> Stream.of(stubChunker()));
+        Mockito.when(factory.listPostWalkChunker()).thenReturn(Stream.empty());
+        return factory;
+    }
+
+    private PxChunker stubChunker() {
+        return new PxChunker() {
             @Override
             public Stream<PxChunk> chunk(File f) {
                 return Stream.of(PxChunk.create(c -> {
@@ -162,11 +174,137 @@ class ChunkProcessTest {
                 return true;
             }
         };
+    }
+
+    private ChunkerFactory factoryWithFullTextChunker() {
         ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
         Mockito.when(factory.createChunker(Mockito.any(File.class)))
-                .thenAnswer(invocation -> Stream.of(stub));
+                .thenAnswer(invocation -> Stream.of(stubChunker(), new FullTextChunker()));
         Mockito.when(factory.listPostWalkChunker()).thenReturn(Stream.empty());
         return factory;
+    }
+
+    // ------------------------------------------------------------------ fulltext gating
+
+    @Test
+    void fulltextDisabledFiltersFullTextChunker() throws Exception {
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ");
+
+        uut(cfg, null, factoryWithFullTextChunker()).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        assertThat(content).contains("\"content\":\"hello world content\"");
+        assertThat(content).doesNotContain("FULLTEXT");
+    }
+
+    @Test
+    void fulltextEnabledIncludesFullTextChunker() throws Exception {
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ");
+        cfg.getActiveProject().orElseThrow().setFulltext(true);
+
+        uut(cfg, null, factoryWithFullTextChunker()).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        assertThat(content).contains("\"content\":\"hello world content\"");
+        assertThat(content).contains("FULLTEXT");
+        assertThat(content).contains("some source text");
+    }
+
+    // ------------------------------------------------------------------ ID collision (basename vs. path)
+
+    @Test
+    void sameBasenameFilesInDifferentDirs_getUniquePathBasedIds() throws Exception {
+        Path rootDir = tempDir.resolve("src");
+        Files.createDirectories(rootDir.resolve("dir1"));
+        Files.createDirectories(rootDir.resolve("dir2"));
+        Files.writeString(rootDir.resolve("dir1/README.md"), "# one");
+        Files.writeString(rootDir.resolve("dir2/README.md"), "# two");
+
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("cwd");
+        pd.setRootDir(rootDir.toString());
+        pd.setJsonlFile(tempDir.resolve("out.jsonl").toString());
+
+        PrjXPConfig cfg = new PrjXPConfig();
+        cfg.setActiveProject("cwd");
+        cfg.getProjects().add(pd);
+        cfg.getTransfer().setPasswordEnv("PRJXP_TEST_NO_PASSWORD_XYZ");
+
+        // A chunker that sets the ID to the file's basename (like MarkdownChunker) — the collision case
+        ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
+        Mockito.when(factory.createChunker(Mockito.any(File.class)))
+                .thenAnswer(inv -> {
+                    File f = inv.getArgument(0);
+                    return Stream.of(new PxChunker() {
+                        @Override
+                        public Stream<PxChunk> chunk(File file) {
+                            return Stream.of(PxChunk.create(c -> {
+                                c.setId(file.getName());   // basename-based (the bug)
+                                c.setMimeType("text/markdown");
+                                c.setFile(file.getAbsolutePath());
+                                c.setContent("content of " + file.getName());
+                            }));
+                        }
+
+                        @Override
+                        public boolean matches(File file) {
+                            return true;
+                        }
+                    });
+                });
+        Mockito.when(factory.listPostWalkChunker()).thenReturn(Stream.empty());
+
+        uut(cfg, null, factory).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        // The IDs must be path-based (unique per directory), not both "README.md"
+        assertThat(content).contains("\"id\":\"dir1/README.md\"");
+        assertThat(content).contains("\"id\":\"dir2/README.md\"");
+        // And the colliding basename ID must NOT appear
+        assertThat(content).doesNotContain("\"id\":\"README.md\"");
+    }
+
+    @Test
+    void nonBasenameIdsAreLeftUntouched() throws Exception {
+        // FQN-style IDs (Java/TS chunkers) must not be mangled by the rebasing
+        Path rootDir = tempDir.resolve("src");
+        Files.createDirectories(rootDir);
+        Files.writeString(rootDir.resolve("Foo.java"), "class Foo {}");
+
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setName("cwd");
+        pd.setRootDir(rootDir.toString());
+        pd.setJsonlFile(tempDir.resolve("out.jsonl").toString());
+
+        PrjXPConfig cfg = new PrjXPConfig();
+        cfg.setActiveProject("cwd");
+        cfg.getProjects().add(pd);
+        cfg.getTransfer().setPasswordEnv("PRJXP_TEST_NO_PASSWORD_XYZ");
+
+        ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
+        Mockito.when(factory.createChunker(Mockito.any(File.class)))
+                .thenAnswer(inv -> Stream.of(new PxChunker() {
+                    @Override
+                    public Stream<PxChunk> chunk(File file) {
+                        return Stream.of(PxChunk.create(c -> {
+                            c.setId("com.example.Foo");   // FQN-based, not basename-based
+                            c.setMimeType("text/x-java");
+                            c.setFile(file.getAbsolutePath());
+                            c.setContent("class Foo {}");
+                        }));
+                    }
+
+                    @Override
+                    public boolean matches(File file) {
+                        return true;
+                    }
+                }));
+        Mockito.when(factory.listPostWalkChunker()).thenReturn(Stream.empty());
+
+        uut(cfg, null, factory).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        assertThat(content).contains("\"id\":\"com.example.Foo\"");
     }
 
     private VetoRegistry noVeto() {

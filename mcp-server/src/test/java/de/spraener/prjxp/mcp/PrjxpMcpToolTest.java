@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp;
 
+import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import org.junit.jupiter.api.BeforeEach;
@@ -30,12 +31,14 @@ class PrjxpMcpToolTest {
     private SymbolReaderService symbolReaderService;
     @Mock
     private ProjectRegistry projectRegistry;
+    @Mock
+    private FileListService fileListService;
 
     private PrjxpMcpTool tool;
 
     @BeforeEach
     void setUp() {
-        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService, projectRegistry);
+        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService, projectRegistry, fileListService);
     }
 
     @Test
@@ -96,5 +99,24 @@ class PrjxpMcpToolTest {
         when(projectRegistry.isSearchable("beta")).thenReturn(false);
 
         assertThat(tool.listProjects()).containsExactly("alpha");
+    }
+
+    @Test
+    void listFilesDefaultsProjectAndLimit() {
+        when(fileListService.list(null, "default", 50)).thenReturn(new FileListResult(List.of("a.java"), false));
+
+        FileListResult result = tool.listFiles(null, null, null);
+
+        assertThat(result.files()).containsExactly("a.java");
+        verify(fileListService).list(null, "default", 50);
+    }
+
+    @Test
+    void listFilesClampsLimitToMax() {
+        when(fileListService.list("src", "default", 500)).thenReturn(new FileListResult(List.of(), false));
+
+        tool.listFiles("src", null, 10000);
+
+        verify(fileListService).list("src", "default", 500);
     }
 }

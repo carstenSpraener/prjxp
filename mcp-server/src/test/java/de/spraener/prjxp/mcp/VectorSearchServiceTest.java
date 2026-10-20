@@ -56,6 +56,10 @@ class VectorSearchServiceTest {
                 new IdentifierRules("[A-Za-z_$][A-Za-z0-9_$]*", true));
     }
 
+    /** The FULLTEXT exclusion filter that every vector search carries (fully-qualified field name). */
+    private static final Map<String, String> FULLTEXT_FILTER =
+            Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER);
+
     @Test
     void passesQueryProjectLanguageAndLimitToDao() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
@@ -65,7 +69,7 @@ class VectorSearchServiceTest {
 
         verify(dao).searchVector(
                 eq("How does chunking work?"),
-                eq(Map.of()),
+                eq(FULLTEXT_FILTER),
                 eq(10));
     }
 
@@ -79,12 +83,13 @@ class VectorSearchServiceTest {
 
         verify(dao).searchVector(
                 eq("q"),
-                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code")),
+                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code",
+                        PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
                 eq(10));
     }
 
     @Test
-    void unknownLanguageAddsNoFilter() {
+    void unknownLanguageStillCarriesFulltextFilter() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
 
@@ -92,7 +97,7 @@ class VectorSearchServiceTest {
 
         verify(dao).searchVector(
                 eq("q"),
-                eq(Map.of()),
+                eq(FULLTEXT_FILTER),
                 eq(10));
     }
 

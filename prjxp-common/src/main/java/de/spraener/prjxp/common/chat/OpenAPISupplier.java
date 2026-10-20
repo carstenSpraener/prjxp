@@ -1,12 +1,14 @@
 package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
+import de.spraener.prjxp.common.config.EnvPlaceholderResolver;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Map;
 
 @Component
 /**
@@ -17,8 +19,8 @@ import java.time.Duration;
  * </p>
  */
 public class OpenAPISupplier implements de.spraener.prjxp.common.chat.ChatModelSupplier {
-    @Value("${chat.openapi.api-key:UNKNOWN}")
-    private String apiKey;
+    @Value("${chat.openapi.api-key:${OPENAI_API_KEY:UNKNOWN}}")
+    private String defaultApiKey;
 
     /**
      * Checks if this supplier can provide a chat model for the given reference.
@@ -41,16 +43,28 @@ public class OpenAPISupplier implements de.spraener.prjxp.common.chat.ChatModelS
      */
     @Override
     public ChatModel provide(PrjXPChatModelReference cmRef) {
-        String baseUrl = cmRef.getProviderUrl();
+        String baseUrl = EnvPlaceholderResolver.resolve(cmRef.getProviderUrl());
         if (baseUrl != null && !baseUrl.endsWith("/v1") && !baseUrl.endsWith("/v1/")) {
             baseUrl = baseUrl.replaceAll("/$", "") + "/v1";
         }
-        return OpenAiChatModel.builder()
-                .modelName(cmRef.getModelName())
-                .apiKey(apiKey)
+
+        String resolvedApiKey = EnvPlaceholderResolver.resolve(cmRef.getApiKey());
+        if (resolvedApiKey == null || resolvedApiKey.isBlank()) {
+            resolvedApiKey = defaultApiKey;
+        }
+
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
+                .modelName(EnvPlaceholderResolver.resolve(cmRef.getModelName()))
+                .apiKey(resolvedApiKey)
                 .temperature(cmRef.getTemperature())
                 .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
-                .baseUrl(baseUrl)
-                .build();
+                .baseUrl(baseUrl);
+
+        // Request-level body properties (e.g. enable_thinking for Qwen3) — merged into the JSON body.
+        Map<String, Object> bodyProperties = BodyPropertyCoercer.coerce(cmRef.getBodyProperties());
+        if (!bodyProperties.isEmpty()) {
+            builder.customParameters(bodyProperties);
+        }
+        return builder.build();
     }
 }

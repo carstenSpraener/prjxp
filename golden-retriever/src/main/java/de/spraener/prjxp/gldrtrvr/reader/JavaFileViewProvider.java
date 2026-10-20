@@ -26,7 +26,9 @@ public class JavaFileViewProvider implements FileViewProvider {
     private static final String SECTION_KEY = "java_code_section";
     private static final String SECTION_CLASS_FRAME = "classFrame";
     private static final String SECTION_METHOD = "method";
+    private static final String SECTION_CONSTRUCTOR = "constructor";
     private static final String SECTION_METHOD_DOC = "methodDoc";
+    private static final String SECTION_ENUM_CONSTANTS = "enumConstants";
 
     /** Splice coordinates (indices into the ORIGINAL lines list) plus the replacement lines.
      *  topLine &lt;= sigLine; both -1 when no target was found. */
@@ -46,7 +48,9 @@ public class JavaFileViewProvider implements FileViewProvider {
     @Override
     public String render(List<PxChunk> units) {
         List<PxChunk> frames = sortByFromLine(units, SECTION_CLASS_FRAME);
-        List<PxChunk> methods = sortByFromLine(units, SECTION_METHOD);
+        List<PxChunk> methods = new ArrayList<>(sortByFromLine(units, SECTION_METHOD));
+        methods.addAll(sortByFromLine(units, SECTION_CONSTRUCTOR));
+        List<PxChunk> enumConstants = sortByFromLine(units, SECTION_ENUM_CONSTANTS);
         Map<String, PxChunk> docs = new HashMap<>();
         for (PxChunk unit : units) {
             if (SECTION_METHOD_DOC.equals(unit.getMetadata().get(SECTION_KEY))) {
@@ -69,8 +73,12 @@ public class JavaFileViewProvider implements FileViewProvider {
 
         StringBuilder result = new StringBuilder();
         Set<String> placed = new HashSet<>();
+        Set<String> frameIds = new HashSet<>();
         for (PxChunk frame : frames) {
-            result.append(renderFrame(frame, methods, docs, placed));
+            frameIds.add(frame.getId());
+        }
+        for (PxChunk frame : frames) {
+            result.append(renderFrame(frame, methods, enumConstants, docs, placed, frameIds));
         }
         // orphan methods (parent FQN has no frame unit, e.g. frame was dropped from the index):
         for (PxChunk method : methods) {
@@ -97,14 +105,19 @@ public class JavaFileViewProvider implements FileViewProvider {
         return result;
     }
 
-    private static String renderFrame(PxChunk frame, List<PxChunk> methods, Map<String, PxChunk> docs, Set<String> placed) {
+    private static String renderFrame(PxChunk frame, List<PxChunk> methods, List<PxChunk> enumConstants, Map<String, PxChunk> docs, Set<String> placed, Set<String> frameIds) {
         List<String> lines = new ArrayList<>(Arrays.asList(frame.getContent().split("\n", -1)));
         Set<Integer> usedLines = new HashSet<>();
         List<SplicePlan> plans = new ArrayList<>();
         for (PxChunk method : methods) {
+            // The id-prefix fallback only applies to orphan methods (parent frame missing from the
+            // units) — otherwise a nested method (id "FQN.Inner.sig") would also be spliced into
+            // every ancestor frame, since its id starts with "FQN.".
+            boolean parentIsFrame = frameIds.contains(method.getParent());
             boolean ownedByFrame = frame.getId().equals(method.getParent())
-                    || (method.getId().length() > frame.getId().length() + 1
-                        && method.getId().startsWith(frame.getId() + "."));  // parent first, id-prefix fallback
+                    || (!parentIsFrame
+                        && method.getId().length() > frame.getId().length() + 1
+                        && method.getId().startsWith(frame.getId() + "."));  // parent first, id-prefix fallback for orphans
             if (!ownedByFrame) {
                 continue;
             }
@@ -113,6 +126,40 @@ public class JavaFileViewProvider implements FileViewProvider {
             plans.add(planSig(lines, usedLines, sig, docs.get(method.getId() + ".javadoc"), method.getContent()));
         }
         applyInDescendingIndexOrder(lines, plans);
+
+        // Splice enum constants after the declaration line (e.g. "public enum Color {")
+        for (PxChunk ec : enumConstants) {
+            if (!frame.getId().equals(ec.getParent())) {
+                continue;
+            }
+            placed.add(ec.getId());
+            List<String> constLines = Arrays.asList(ec.getContent().split("\n", -1));
+
+            // Find the enum declaration line (contains "enum <Name> ... {")
+            int declIdx = -1;
+            for (int i = 0; i < lines.size(); i++) {
+                if (lines.get(i).matches("\\s*(public\\s+|abstract\\s+)*enum\\s+\\w+.*\\{")) {
+                    declIdx = i;
+                    break;
+                }
+            }
+
+            if (declIdx >= 0) {
+                // Insert after the declaration line
+                lines.addAll(declIdx + 1, constLines);
+            } else {
+                // Fallback: insert before the last "}" line (same as planSig fallback)
+                int close = -1;
+                for (int i = lines.size() - 1; i >= 0; i--) {
+                    if (lines.get(i).strip().equals("}")) {
+                        close = i;
+                        break;
+                    }
+                }
+                lines.addAll(close >= 0 ? close : lines.size(), constLines);
+            }
+        }
+
         return "\n## " + frame.getId() + "\n\n```java\n" + String.join("\n", lines) + "\n```\n";
     }
 

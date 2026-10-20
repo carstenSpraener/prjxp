@@ -1,0 +1,26 @@
+<div class="upload-zone glass-panel"
+     [class.drag-over]="isDragOver"
+     (dragover)="onDragOver($event)"
+     (dragleave)="onDragLeave()"
+     (drop)="onDrop($event)">
+
+  @if (!selectedFile) {
+    <div class="upload-prompt">
+      <span class="icon" style="font-size: 3rem;">📥</span>
+      <p class="text-cyan" style="font-size: 1.2rem; margin: 0.5rem 0;">Drop your archive here</p>
+      <p class="text-secondary">Supports: {{ accept }}</p>
+      <label class="btn btn-secondary" style="margin-top: 1rem; display: inline-block;">
+        Browse Files
+        <input type="file" hidden [accept]="accept" (change)="onFileInput($event)">
+      </label>
+    </div>
+  } @else {
+    <div class="file-info">
+      <span class="icon" style="font-size: 2rem;">📦</span>
+      <p class="text-cyan" style="font-size: 1.1rem;">{{ selectedFile.name }}</p>
+      <p class="text-secondary">{{ formatFileSize(selectedFile.size) }}</p>
+      <button class="btn btn-primary" (click)="fileSelected.emit(selectedFile)">Upload & Import</button>
+      <button class="btn btn-secondary" (click)="selectedFile = null">Cancel</button>
+    </div>
+  }
+</div>

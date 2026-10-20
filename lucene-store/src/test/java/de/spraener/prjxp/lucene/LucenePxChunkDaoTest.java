@@ -7,6 +7,7 @@ import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
+import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import org.junit.jupiter.api.BeforeEach;
@@ -382,11 +383,156 @@ class LucenePxChunkDaoTest {
         verify(embeddingModel).embed("my question");
     }
 
+    // ------------------------------------------------------------------ FULLTEXT negation filter
+
+    @Test
+    void searchFullTextExcludesFulltextMarkerViaNegation() {
+        addChunk("chunk-a", "alpha beta");
+        addFulltextChunk("chunk-b", "alpha beta");
+
+        List<ScoredChunk> result = dao.searchFullText(
+                "alpha", Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-a");
+    }
+
+    @Test
+    void searchFullTextPositiveMarkerFilterStillWorks() {
+        addChunk("chunk-a", "alpha beta");
+        addFulltextChunk("chunk-b", "alpha beta");
+
+        List<ScoredChunk> result = dao.searchFullText(
+                "alpha", Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, PxChunk.FULLTEXT_MARKER), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-b");
+    }
+
+    @Test
+    void searchByIndexExcludesFulltextMarkerViaNegation() {
+        addChunk("chunk-a", "alpha beta");
+        addFulltextChunk("chunk-b", "alpha beta");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-a");
+    }
+
+    @Test
+    void searchVectorExcludesFulltextMarkerViaNegation() {
+        addChunk("chunk-a", "alpha beta");
+        addFulltextChunk("chunk-b", "alpha beta");   // zero vector, like the embedder stores it
+
+        List<ScoredChunk> result = dao.searchVector(
+                "alpha", Map.of(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER), 10);
+
+        assertThat(result).hasSize(1);
+        assertThat(result.get(0).chunk().getId()).isEqualTo("chunk-a");
+    }
+
+    // ------------------------------------------------------------------ listFiles
+
+    @Test
+    void listFilesDeduplicatesChunksOfSameFile() {
+        addFileChunk("c1", "src/a/Foo.java");
+        addFileChunk("c2", "src/a/Foo.java");   // 2nd part of the same file
+        addFileChunk("c3", "src/b/Bar.java");
+
+        FileListResult result = dao.listFiles(null, 10);
+
+        assertThat(result.files()).containsExactly("src/a/Foo.java", "src/b/Bar.java");
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
+    void listFilesPrefixMatchesRecursively() {
+        addFileChunk("c1", "src/a/Foo.java");
+        addFileChunk("c2", "src/a/deep/nested/Bar.java");
+        addFileChunk("c3", "lib/Baz.java");
+
+        FileListResult result = dao.listFiles("src", 10);
+
+        assertThat(result.files()).containsExactly("src/a/Foo.java", "src/a/deep/nested/Bar.java");
+    }
+
+    @Test
+    void listFilesGlobMatchesAnywhere() {
+        addFileChunk("c1", "src/a/FooController.java");
+        addFileChunk("c2", "src/b/BarService.java");
+        addFileChunk("c3", "lib/BazController.java");
+
+        FileListResult result = dao.listFiles("*Controller.java", 10);
+
+        assertThat(result.files()).containsExactly("lib/BazController.java", "src/a/FooController.java");
+    }
+
+    @Test
+    void listFilesRespectsLimitAndTruncation() {
+        addFileChunk("c1", "src/a1.java");
+        addFileChunk("c2", "src/a2.java");
+        addFileChunk("c3", "src/a3.java");
+
+        FileListResult result = dao.listFiles("src", 2);
+
+        assertThat(result.files()).hasSize(2);
+        assertThat(result.truncated()).isTrue();
+    }
+
+    @Test
+    void listFilesNotTruncatedWhenLimitExceedsMatches() {
+        addFileChunk("c1", "src/a1.java");
+        addFileChunk("c2", "src/a2.java");
+
+        FileListResult result = dao.listFiles("src", 10);
+
+        assertThat(result.files()).hasSize(2);
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
+    void listFilesScopedToProject() {
+        addFileChunkWithProject("c1", "src/a/Foo.java", "test-project");
+        addFileChunkWithProject("c2", "src/a/Other.java", "other-project");
+
+        FileListResult result = dao.listFiles(null, 10);
+
+        assertThat(result.files()).containsExactly("src/a/Foo.java");
+    }
+
+    @Test
+    void listFilesNoMatchReturnsEmpty() {
+        addFileChunk("c1", "src/a/Foo.java");
+
+        FileListResult result = dao.listFiles("does/not/exist", 10);
+
+        assertThat(result.files()).isEmpty();
+        assertThat(result.truncated()).isFalse();
+    }
+
     private void addChunk(String id, String content) {
         Metadata meta = new Metadata();
         meta.put("pxchunk_id", id);
         meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
+    }
+
+    private void addFileChunk(String id, String file) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_FILE, file);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content of " + id, meta));
+    }
+
+    private void addFileChunkWithProject(String id, String file, String project) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_FILE, file);
+        meta.put(PxChunk.PXCHUNK_PROJECT, project);
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content of " + id, meta));
     }
 
     private void addSymbolChunk(String id, String symbolFqn) {
@@ -411,5 +557,14 @@ class LucenePxChunkDaoTest {
         meta.put("pxchunk_id", id);
         meta.put(PxChunk.PXCHUNK_PROJECT, project);
         store.add(Embedding.from(new float[]{0.5f, 0.3f, 0.2f}), TextSegment.from(content, meta));
+    }
+
+    /** A full-text copy doc: marker metadata + placeholder vector (as stored by the embedder). */
+    private void addFulltextChunk(String id, String content) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, PxChunk.FULLTEXT_MARKER);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
+        store.add(Embedding.from(new float[]{1f, 1f, 1f}), TextSegment.from(content, meta));
     }
 }

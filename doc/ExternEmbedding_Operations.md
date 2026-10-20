@@ -136,3 +136,76 @@ Die fünf Betriebs-Szenarien sind als End-to-End-Tests in
 abgedeckt (Klartext, verschlüsselt mit env-Passwort, generiertes Passwort,
 falsches Passwort, `--no-encrypt` trotz Passwort) und laufen mit
 `./gradlew :tibed:test`.
+
+## Import into the Hub
+
+After generating embeddings offline with `tibed --mode export`, you can import
+the resulting JSONL file into the hub (mcp-server) via two channels:
+
+### 1. REST endpoint `POST /prjxp/projects/upload-embedded`
+
+Upload a file with the field name `file`. The hub extracts, validates and
+enqueues the pre-embedded pipeline automatically.
+
+```bash
+curl -X POST http://localhost:8080/prjxp/projects/upload-embedded \
+  -F "file=@my-project-embedded.jsonl"
+```
+
+### 2. Drop into `/import` directory (Jenkins / CI workflow)
+
+Place the file directly into the hub's import directory. The `ImportPoller`
+picks it up on its next cycle (default: every 5 seconds).
+
+```bash
+cp my-project-embedded.jsonl /import/
+```
+
+### Naming scheme
+
+The filename must follow the pattern:
+
+```
+<ProjectName>-embedded.<ext>
+```
+
+Where `<ProjectName>` is the project name (e.g. `my-project`, `backend-api`)
+and `<ext>` is one of:
+
+| Extension | Format | Notes |
+|---|---|---|
+| `.jsonl` | Plain JSONL file | One `EmbeddedChunkRecord` per line. Lands as-is in project dir. |
+| `.gz` | Gzip-compressed JSONL | Gunzipped to `<ProjectName>-embedded.jsonl`. |
+| `.tgz` / `.tar.gz` | Tar archive (gzipped) | Must contain **exactly one** file entry, which must be `.jsonl`. A common top-level directory is stripped automatically. |
+| `.zip` | ZIP archive | Must contain **exactly one** file entry, which must be `.jsonl`. A common top-level directory is stripped automatically. |
+
+The extension matching is case-insensitive (`-EMBEDDED.JSONL` works).
+
+### Merge behavior
+
+If `/projects/<ProjectName>` already exists:
+- **All existing files are preserved** (source tree, previous JSONL, etc.)
+- Only the new JSONL file is added/overwritten
+- `prjxp.yaml` is updated with the new `embeddingsFile` value; all other fields are preserved
+- A `.ready` marker file is written to signal readiness for import
+
+This differs from the normal tar extraction (which wipes the target directory).
+
+### Compatibility check warning
+
+The hub validates embedding compatibility by re-embedding a 4-chunk sample with its
+**local model** and comparing cosine similarity:
+
+- **Compatible**: avg cosine ≥ 0.995
+- **Partially compatible**: avg cosine ≥ 0.975 (warning logged, import proceeds)
+- **Incompatible**: avg cosine < 0.975 (import blocked, project marked FAILED)
+
+**Important**: The export must have been generated with the **same embedding model** as
+the hub uses. If you used a different model on machine B, the compatibility check will fail.
+
+### Plaintext only
+
+The hub's pre-embedded pipeline accepts **plaintext JSONL only** (no `PRJXPENC` encryption).
+If your `tibed --mode export` output is encrypted, decrypt it first or use `--no-encrypt`
+during export.
+

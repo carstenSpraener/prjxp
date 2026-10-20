@@ -15,7 +15,11 @@ dependencies {
     // In-Prozess-Pipeline fuer den Hub-Modus (Phase 01 DockerHub)
     implementation project(':chunk-norris')
     implementation project(':tibed')
+    // DocPipe in-process: generates documentation for projects after the pipeline run (DocPipePipelineIntegration)
+    implementation project(':docpipe')
     testFixturesImplementation project(':prjxp-common')
+    // WP-1 Phase 02: PluginJarBuilder + plugin fixtures for the bootstrap tests
+    testImplementation testFixtures(project(':prjxp-common'))
 
     // Spring Boot
     implementation libs.spring.boot.starter.json
@@ -23,11 +27,15 @@ dependencies {
     implementation libs.spring.boot.openapi.starter.webmvc.ui
     implementation libs.bundles.spring.ai
 
-    // Security-Pins (SecurityFindings.csv): mcp-core auf 1.x pinnen — DNS-Rebinding-Fix erst in 1.0.0.
-    // mcp-spring-webmvc + mcp-json-jackson2 bleiben auf 0.18.x: es existiert kein 1.x-Release von
-    // mcp-spring-webmvc, und Spring AI referenziert das alte Binding-Package
-    // (io.modelcontextprotocol.json.jackson), das in 1.x umbenannt wurde. Die McpJsonMapper-Interfaces
-    // sind zwischen 0.18 und 1.x identisch, d.h. binär-kompatibel (per mcp-server-Tests verifiziert).
+    // MCP-SDK: konsistentes 0.18.5-Stack (mcp-core + mcp-spring-webmvc + mcp-json-jackson2).
+    // 1.x ist nicht moeglich: es existiert kein 1.x-Release von mcp-spring-webmvc, und Spring AI 1.1.8
+    // ist gegen das 0.18.x-Binding-Package kompiliert. Der 06.10. gesetzte Pin von mcp-core auf 1.x
+    // (GHSA-8jxr) hat die binäre Kompatibilität gebrochen: McpError(Object) wurde in 1.x entfernt →
+    // NoSuchMethodError in WebMvcStreamableServerTransportProvider.handlePost (404-Pfad, von den
+    // Tests nicht abgedeckt — die "binär-kompatibel"-Annahme galt nur fuer McpJsonMapper).
+    // GHSA-8jxr (CVE-2026-35568, DNS-Rebinding): Advisory stuft Spring AI als NICHT betroffen ein
+    // (eingebaute Origin-Validierung), und der Hub laeuft hinter Apache-Reverse-Proxy
+    // (dokumentierter Workaround des Advisories).
     implementation libs.mcp.core
     implementation libs.mcp.json.jackson2
     implementation libs.mcp.spring.webmvc
@@ -47,10 +55,28 @@ dependencies {
     // Testing
     testImplementation libs.bundles.test.bundle
 }
+// ---------------------------------------------------------------------------
+// C# Language Pack E2E (WP-2 Phase 04): stage the lp-csharp plugin fat JAR
+// (built by the root-level :buildLpCsharpPlugin task) so the host tests can
+// load it via prjxp.language-packs.dir.
+// ---------------------------------------------------------------------------
+def lpCsharpJar = new File(rootProject.projectDir, 'lp-csharp/build/libs/lp-csharp-plugin.jar')
+def lpCsharpStageDir = layout.buildDirectory.dir('language-packs')
+
+tasks.register('stageLpCsharpPlugin', Copy) {
+    dependsOn ':buildLpCsharpPlugin'
+    from lpCsharpJar
+    into lpCsharpStageDir
+}
+
 test {
     // Phase 01 (DockerHub): chunk-norris/tibed sind jetzt auf der Classpath — ihre CLI-Runner
     // duerfen in Hub-Tests nicht feuern (matchIfMissing=true wuerde sie sonst starten lassen).
     systemProperty 'prjxp.cli.enabled', 'false'
+    // WP-2 Phase 04: the C# E2E test loads the staged lp-csharp plugin JAR
+    // (the property is only consumed by that test, via @DynamicPropertySource).
+    dependsOn 'stageLpCsharpPlugin'
+    systemProperty 'prjxp.csharp.e2e.pluginDir', lpCsharpStageDir.get().asFile.absolutePath
 }
 
 jar {

@@ -1,3 +1,7 @@
+plugins {
+    id 'maven-publish'
+}
+
 dependencies {
     implementation libs.spring.boot.starter
     implementation libs.bundles.langchain.stack
@@ -12,6 +16,21 @@ dependencies {
 
     testImplementation libs.bundles.test.bundle
     testFixturesImplementation libs.bundles.test.bundle
+}
+
+// Publishes prjxp-common to the local Maven repository so that standalone
+// Language Pack plugins (e.g. lp-csharp) can consume the shared contract
+// (LanguagePack, LanguagePackProvider, PxChunker, PxChunk, GoldenRetriever)
+// as a regular Maven artifact instead of a composite build.
+//
+// The contract closure is self-contained (prjxp-common types + JDK), so a
+// consumer only needs this jar to compile against the plugin API.
+publishing {
+    publications {
+        mavenJava(MavenPublication) {
+            from components.java
+        }
+    }
 }
 
 test {

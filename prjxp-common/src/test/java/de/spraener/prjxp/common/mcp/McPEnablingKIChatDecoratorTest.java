@@ -2,25 +2,17 @@ package de.spraener.prjxp.common.mcp;
 
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
-import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
-import de.spraener.prjxp.common.toolregistry.ToolDefinition;
-import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import dev.langchain4j.data.message.AiMessage;
-import dev.langchain4j.mcp.McpToolProvider;
-import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.service.AiServices;
 
 import org.junit.jupiter.api.Test;
 
 import java.awt.image.BufferedImage;
-import java.util.Collections;
 import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -33,8 +25,7 @@ class McPEnablingKIChatDecoratorTest {
         PrjXPChatModelReference ref = mock(PrjXPChatModelReference.class);
         when(delegate.getChatModelReference()).thenReturn(ref);
 
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, toolRegistry, null);
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
 
         assertThat(decorator.getChatModelReference()).isSameAs(ref);
     }
@@ -44,8 +35,7 @@ class McPEnablingKIChatDecoratorTest {
         KIChat delegate = mock(KIChat.class);
         when(delegate.analyzeImage(any(BufferedImage.class))).thenReturn("image-result");
 
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, toolRegistry, null);
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
         BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
 
         String result = decorator.analyzeImage(image);
@@ -55,68 +45,43 @@ class McPEnablingKIChatDecoratorTest {
     }
 
     @Test
-    void chat_delegatesThroughAiServicesPipeline() {
+    void supportsTools_delegates() {
         KIChat delegate = mock(KIChat.class);
-        when(delegate.chat("hello")).thenReturn("answer");
+        when(delegate.supportsTools()).thenReturn(true);
 
-        // Build a real AiServices agent with a bridge model and empty tool provider
-        interface TestAgent {
-            String chat(String prompt);
-        }
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
 
-        ChatModel bridgeModel = new ChatModel() {
-            @Override
-            public ChatResponse doChat(ChatRequest request) {
-                // Extract the last user message text, or use original prompt
-                String prompt = request.messages().get(request.messages().size() - 1)
-                        .toString(); // Simplified: just get some text
-                return ChatResponse.builder()
-                        .aiMessage(AiMessage.from(delegate.chat("hello")))
-                        .build();
-            }
-        };
+        assertThat(decorator.supportsTools()).isTrue();
+    }
 
-        McpToolProvider emptyTools = McpToolProvider.builder()
-                .mcpClients(Collections.emptyList())
-                .failIfOneServerFails(false)
+    @Test
+    void chat_nativeToolsSupported_forwardsMessagesAndToolsToDelegate() {
+        KIChat delegate = mock(KIChat.class);
+        when(delegate.supportsTools()).thenReturn(true);
+        ChatResponse response = ChatResponse.builder()
+                .aiMessage(AiMessage.from("native answer"))
                 .build();
+        when(delegate.chat(anyList(), anyList())).thenReturn(response);
 
-        TestAgent agent = AiServices.builder(TestAgent.class)
-                .chatModel(bridgeModel)
-                .toolProvider(emptyTools)
-                .build();
-
-        // Now test the decorator with real AiServices by creating a subclass
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, toolRegistry, null) {
-            @Override
-            McpAgent createMcpAgent(String prompt) {
-                // Build real agent with bridge model tunneling to delegate
-                ChatModel bm = new ChatModel() {
-                    @Override
-                    public ChatResponse doChat(ChatRequest request) {
-                        String responseText = delegate.chat("hello");
-                        return ChatResponse.builder()
-                                .aiMessage(AiMessage.from(responseText))
-                                .build();
-                    }
-                };
-
-                McpToolProvider tp = McpToolProvider.builder()
-                        .mcpClients(Collections.emptyList())
-                        .failIfOneServerFails(false)
-                        .build();
-
-                return AiServices.builder(McpAgent.class)
-                        .chatModel(bm)
-                        .toolProvider(tp)
-                        .build();
-            }
-        };
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
 
         String result = decorator.chat("hello");
 
-        assertThat(result).isEqualTo("answer");
+        assertThat(result).isEqualTo("native answer");
+        verify(delegate).chat(anyList(), anyList());
+    }
+
+    @Test
+    void chat_toolsNotSupported_fallsBackToPlainChat() {
+        KIChat delegate = mock(KIChat.class);
+        when(delegate.supportsTools()).thenReturn(false);
+        when(delegate.chat("hello")).thenReturn("plain answer");
+
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
+
+        String result = decorator.chat("hello");
+
+        assertThat(result).isEqualTo("plain answer");
         verify(delegate).chat("hello");
     }
 
@@ -124,20 +89,18 @@ class McPEnablingKIChatDecoratorTest {
     void buildSystemPrompt_withoutDefaultProject_excludesProjectName() {
         KIChat delegate = mock(KIChat.class);
 
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, toolRegistry, null);
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), null);
         String prompt = decorator.buildSystemPrompt();
 
-        assertThat(prompt).contains("You have access to tools for searching embedded project code");
+        assertThat(prompt).contains("You have access to MCP tools for searching embedded project code");
         assertThat(prompt).doesNotContain("The active project is:");
     }
 
     @Test
-    void chat_withDefaultProject_includesProjectInSystemPrompt() {
+    void buildSystemPrompt_withDefaultProject_includesProjectName() {
         KIChat delegate = mock(KIChat.class);
 
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, toolRegistry, "my-project");
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), "my-project");
         String prompt = decorator.buildSystemPrompt();
 
         assertThat(prompt).contains("The active project is: 'my-project'");
@@ -147,36 +110,9 @@ class McPEnablingKIChatDecoratorTest {
     void buildSystemPrompt_withBlankProject_excludesProjectName() {
         KIChat delegate = mock(KIChat.class);
 
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, toolRegistry, "   ");
+        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, List.of(), "   ");
         String prompt = decorator.buildSystemPrompt();
 
         assertThat(prompt).doesNotContain("The active project is:");
-    }
-
-    @Test
-    void buildSystemPrompt_withTools_includesToolDescriptions() {
-        KIChat delegate = mock(KIChat.class);
-
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        toolRegistry.register(new ToolDefinition("test-tool", "A test tool for searching",
-                Map.of("query", "Search query"), params -> "result"));
-
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, toolRegistry, null);
-        String prompt = decorator.buildSystemPrompt();
-
-        assertThat(prompt).contains("Available tools:");
-        assertThat(prompt).contains("- test-tool");
-    }
-
-    @Test
-    void buildSystemPrompt_withoutTools_showsNoToolsMessage() {
-        KIChat delegate = mock(KIChat.class);
-
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McPEnablingKIChatDecorator decorator = new McPEnablingKIChatDecorator(delegate, toolRegistry, null);
-        String prompt = decorator.buildSystemPrompt();
-
-        assertThat(prompt).contains("No tools are currently available.");
     }
 }

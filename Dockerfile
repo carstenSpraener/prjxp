@@ -29,10 +29,10 @@ COPY --from=app-builder /app/mcp-server/build/libs/mcp-server-all.jar /app/
 COPY prjxp-common/docker/entry.sh /app/entry.sh
 RUN chmod +x /app/entry.sh
 
-# 4. Docker-Konfiguration ins Image backen (application.yaml.docker -> application.yaml).
+# 4. Docker-Konfiguration ins Image backen (docker/application.yaml.docker -> application.yaml).
 # Fallback-Konfiguration: Wird genutzt, wenn unter /app-source keine eigene
 # application.yml/.yaml vorhanden ist.
-COPY application.yaml.docker /app/application.yaml
+COPY docker/application.yaml.docker /app/application.yaml
 
 # 5. Hub-Modus Verzeichnisse (DockerHub Phase 05) — existieren auch ohne Volume-Mounts
 RUN mkdir -p /import /projects
@@ -40,6 +40,13 @@ RUN mkdir -p /import /projects
 # Data-Volumes (werden zur Laufzeit gemountet)
 VOLUME /app-source
 VOLUME /app-source/.prjxp-data/lucene-index
+
+# Language Pack Plugins (WP-1): werden zur Laufzeit gemountet, nie ins Image
+# gebacken. Die Apps laufen mit WORKDIR /app-source, daher loest der
+# Default-Plugin-Ordner (prjxp.language-packs.dir, Default ./language-packs)
+# auf /app-source/language-packs auf. Override: PRJXP_LANGUAGE_PACKS_DIR.
+RUN mkdir -p /app-source/language-packs
+VOLUME /app-source/language-packs
 
 # Default-Fallback, wird zur Laufzeit im ENTRYPOINT ueberschrieben wenn
 # /app-source/application.yml oder /app-source/application.yaml existiert.

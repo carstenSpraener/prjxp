@@ -1,0 +1,90 @@
+<div class="import-page">
+  <h1 class="text-cyan" style="margin-bottom: 2rem;">Import Project</h1>
+
+  <div class="tab-bar">
+    <button class="tab-btn" [class.active]="activeTab() === 'upload'" (click)="activeTab.set('upload')">
+      Upload Archive
+    </button>
+    <button class="tab-btn" [class.active]="activeTab() === 'embedded'" (click)="activeTab.set('embedded')">
+      Pre-Embedded
+    </button>
+    <button class="tab-btn" [class.active]="activeTab() === 'live'" (click)="activeTab.set('live')">
+      Live Projects
+    </button>
+  </div>
+
+  @if (activeTab() === 'upload') {
+    <div class="tab-content">
+      <file-upload-zone (fileSelected)="onFileSelected($event)"></file-upload-zone>
+
+      @if (uploadedProjects().length > 0) {
+        <div class="results-section">
+          <h2 class="text-cyan" style="margin-bottom: 1rem;">Imported Projects</h2>
+          <div class="project-grid">
+            @for (project of uploadedProjects(); track project.name) {
+              <div class="result-card glass-panel">
+                <h3 class="text-cyan">{{ project.name }}</h3>
+                <p class="text-secondary">Status: {{ project.status }}</p>
+              </div>
+            } @empty {
+              <p class="text-secondary">No projects imported yet.</p>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+
+  @if (activeTab() === 'live') {
+    <div class="tab-content">
+      <div class="scan-actions" style="margin-bottom: 1.5rem;">
+        <button class="btn btn-primary" (click)="scanForLiveProjects()" [disabled]="isScanning()">
+          @if (isScanning()) {
+            Scanning...
+          } @else {
+            Scan for Live Projects
+          }
+        </button>
+      </div>
+
+      @if (liveCandidates().length > 0) {
+        <div class="project-grid">
+          @for (candidate of liveCandidates(); track candidate.name) {
+            <project-list-card [candidate]="candidate" (register)="registerProject($event)"></project-list-card>
+          } @empty {
+            <p class="text-secondary">No live projects found.</p>
+          }
+        </div>
+      } @else if (!isScanning()) {
+        <p class="text-secondary" style="text-align: center; margin-top: 3rem;">
+          Click "Scan for Live Projects" to discover projects on your system.
+        </p>
+      }
+    </div>
+  }
+
+  @if (activeTab() === 'embedded') {
+    <div class="tab-content">
+      <p class="text-secondary" style="margin-bottom: 1rem;">
+        File must be named &lt;ProjectName&gt;-embedded.(jsonl|gz|tgz|zip), e.g. <code>my-project-embedded.tgz</code>
+      </p>
+      <file-upload-zone accept=".jsonl,.gz,.tgz,.zip" (fileSelected)="onEmbeddedFileSelected($event)"></file-upload-zone>
+
+      @if (embeddedProjects().length > 0) {
+        <div class="results-section">
+          <h2 class="text-cyan" style="margin-bottom: 1rem;">Import Started</h2>
+          <div class="project-grid">
+            @for (project of embeddedProjects(); track project.name) {
+              <div class="result-card glass-panel">
+                <h3 class="text-cyan">{{ project.name }}</h3>
+                <p class="text-secondary">Status: {{ project.status }}</p>
+              </div>
+            } @empty {
+              <p class="text-secondary">No projects imported yet.</p>
+            }
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

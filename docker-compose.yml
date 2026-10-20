@@ -1,40 +1,84 @@
 services:
-   hub:
-    image: prjxp
+  apache-proxy:
+    image: httpd:2.4-alpine
+    container_name: prjxp-apache-proxy
+    ports:
+      - "${APACHE_PORT:-80}:80"
+    volumes:
+      - ./docker/apache-httpd.conf:/usr/local/apache2/conf/httpd.conf
+      - ./docker/apache-proxy.conf:/usr/local/apache2/conf/extra/prjxp-proxy.conf
+    command: ["/usr/local/apache2/bin/apachectl", "-D", "FOREGROUND"]
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    depends_on:
+      - frontend
+    networks:
+      - prjxp-network
+
+  frontend:
+    image: prjxp-frontend
+    container_name: prjxp-frontend
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      # API proxy upstream (scheme + service name + port). Override in .env
+      # if your backend runs under a different name/port, e.g. http://osb-mcp:8080
+      PRJXP_HUB_URL: ${PRJXP_HUB_URL:-http://hub:7007}
+    expose:
+      - "8080"
+    depends_on:
+      - hub
+    networks:
+      - prjxp-network
+
+  hub:
+    image: prjxp-hub
+    container_name: prjxp-hub
     build:
       context: .
+      dockerfile: Dockerfile
     command: ["hub"]
+    env_file:
+      - ${PRJXP_ENV_FILE:-./.env}
     ports:
-      - "7007:7007"
+      - "${HUB_PORT:-7007}:7007"   # MCP endpoint for clients on the host (http://localhost:7007/mcp)
+    expose:
+      - "7007"
     volumes:
-      # IMPORTANT: mount the narrowest directory possible here — only the project(s) you actually
-      # want scanned (or a folder of symlinks/junctions to just those). Pointing this at a whole
-      # "projects" drive with many unrelated repos forces the recursive prjxp.yaml scan to walk
-      # ALL of them on every poll and can mean the first scan never finishes. See
-      # doc/Docker_Setup_Guide.md#excluding-directories-from-the-live-scan for mitigations if a
-      # broad mount is unavoidable.
-      - ${PROJECTS_HOME}:/import     # drop tar archives here (e.g. foo.tar)
+      - ${PROJECTS_HOME:-./import}:/import
       - prjxp-projects:/projects
       - prjxp-hub-data:/data
+      - ${PRJXP_ENV_FILE:-./.env}:/data/prjxp.env:ro
     environment:
+      PRJXP_ENV_FILE: /data/prjxp.env
       LUCENE_INDEX_PATH: /data/lucene-index
-      LUCENE_VECTOR_DIMENSION: "1024"
+      LUCENE_VECTOR_DIMENSION: ${LUCENE_VECTOR_DIMENSION:-1024}
       PRJXP_HUB_IMPORT_DIR: /import
       PRJXP_HUB_PROJECTS_ROOT: /projects
-      # Directory names (case-insensitive) the live-scan never walks into. Defaults already cover
-      # .git,.svn,.hg,node_modules.
       PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES: .git,.svn,.hg,node_modules,branches,tags,.idea,.vs
-      # Safety net for a broad PROJECTS_HOME mount (see comment above): caps recursion depth below
-      # /import so unrelated, marker-less sibling repos can't force an unbounded full-tree walk.
       PRJXP_HUB_SCAN_MAX_DEPTH: "8"
       SERVER_PORT: "7007"
-      # External embedding provider (LM Studio on the host) instead of in-container TEI:
-      PRJXP_EMBEDDING_API_BASE_URL: http://host.docker.internal:1234/v1
-      PRJXP_EMBEDDING_MODEL_NAME: mxbai-embed-large-v1   # must match LUCENE_VECTOR_DIMENSION (1024)
+      # External embedding provider (e.g. LM Studio on the host).
+      # NOTE: names must match application.yaml.docker (baked into the image) — no PRJXP_ prefix.
+      EMBEDDING_API_BASE_URL: ${EMBEDDING_API_BASE_URL:-http://host.docker.internal:1234/v1}
+      EMBEDDING_MODEL_NAME: ${EMBEDDING_MODEL_NAME:-mxbai-embed-large-v1}
       SKIP_EMBEDDING_SERVER: "true"
-      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY}
+      EMBEDDING_API_KEY: ${EMBEDDING_API_KEY:-dummy}
+      # CORS origins for the REST API (comma-separated, NO spaces). Browsers send an
+      # Origin header on POST/PUT/DELETE — non-matching origins are rejected with 403.
+      # Add your public hostname when deploying behind a reverse proxy, e.g.
+      # MCP_CORS_ALLOWED_PATTERNS="http://localhost:*,https://my-host.example.com"
+      MCP_CORS_ALLOWED_PATTERNS: ${MCP_CORS_ALLOWED_PATTERNS:-http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*}
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    networks:
+      - prjxp-network
 
 volumes:
-  prjxp-data:
   prjxp-projects:
   prjxp-hub-data:
+
+networks:
+  prjxp-network:
+    driver: bridge

@@ -1,0 +1,3 @@
+# The CRLF fixture must keep its CRLF line endings (it tests CRLF handling).
+# Mark it as non-text so Git does not normalize the line endings.
+src/test/resources/fixtures/CrlfClass.cs -text

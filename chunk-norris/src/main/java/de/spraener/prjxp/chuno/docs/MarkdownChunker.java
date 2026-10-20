@@ -97,6 +97,16 @@ public class MarkdownChunker {
             for ( String line = scanner.getCurrentLine(); scanner.getCurrentLine()!=LineScanner.EOF; line = scanner.nextLine()) {
                 line = preprocessLine(scanner);
                 if (line.startsWith("#")) {
+                    // Flush the content accumulated so far to the *previous* section before
+                    // switching the hierarchy. '#'-style headers never trigger isEndOfParagraph
+                    // (it only matches numbered headers like "1.2 Foo"), so without this flush
+                    // the whole document would accumulate in one buffer and end up attributed
+                    // to the last section.
+                    if ( !paragraphContent.isEmpty() ) {
+                        processSection(originalFile, chunkList, paragraphContent, currentHeaders, paragraphCount, sectionCounters, sectionStartLine, scanner.getGlobalLineIndex());
+                        paragraphContent = new StringBuilder();
+                    }
+                    sectionStartLine = skipToNextNonEmptyLine(scanner);
                     int level = 0;
                     while (level < line.length() && line.charAt(level) == '#') level++;
                     String headerText = line.substring(level).trim();

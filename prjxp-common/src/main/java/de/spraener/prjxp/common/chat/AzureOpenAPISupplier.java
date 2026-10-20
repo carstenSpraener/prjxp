@@ -1,6 +1,7 @@
 package de.spraener.prjxp.common.chat;
 
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
+import de.spraener.prjxp.common.config.EnvPlaceholderResolver;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.openai.OpenAiChatModel;
@@ -59,15 +60,28 @@ public class AzureOpenAPISupplier implements ChatModelSupplier {
             enableInsecureSSL();
         }
         String apiKey = readArg(cmRef,"api-key");
-        String baseUrl = cmRef.getProviderUrl()+"/"+cmRef.getModelName()+"/";
+        String providerUrl = EnvPlaceholderResolver.resolve(cmRef.getProviderUrl());
+        String modelName = EnvPlaceholderResolver.resolve(cmRef.getModelName());
+        String apiVersion = readArg(cmRef,"api-version");
+        String baseUrl = providerUrl+"/"+modelName+"/";
         log.info("Providing Azure Open API Chat Model with baseUrl: "+baseUrl);
-        return OpenAiChatModel.builder()
+        Map<String, String> customQueryParams = new java.util.HashMap<>();
+        if (apiVersion != null && !apiVersion.isBlank()) {
+            customQueryParams.put("api-version", apiVersion);
+        }
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
                 .customHeaders(Map.of("api-key",apiKey))
-                .customQueryParams(Map.of("api-version", cmRef.getArgs().get("api-version")))
-                .timeout(Duration.of(15, ChronoUnit.MINUTES))
-                .build();
+                .customQueryParams(customQueryParams)
+                .timeout(Duration.of(15, ChronoUnit.MINUTES));
+
+        // Request-level body properties (e.g. enable_thinking for Qwen3) — merged into the JSON body.
+        Map<String, Object> bodyProperties = BodyPropertyCoercer.coerce(cmRef.getBodyProperties());
+        if (!bodyProperties.isEmpty()) {
+            builder.customParameters(bodyProperties);
+        }
+        return builder.build();
     }
 
     // TODO: Move this to a more global application initializer
@@ -97,12 +111,6 @@ public class AzureOpenAPISupplier implements ChatModelSupplier {
     }
 
     private String readArg(PrjXPChatModelReference cmRef, String key) {
-        String value = cmRef.getArgs().get(key);
-        if (value != null && value.startsWith("${") && value.endsWith("}")) {
-            String propertyName = value.substring(2, value.length() - 1);
-            value = System.getProperty(propertyName);
-            return value;
-        }
-        return value;
+        return EnvPlaceholderResolver.resolve(cmRef.getArgs().get(key));
     }
 }

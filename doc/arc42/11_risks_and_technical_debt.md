@@ -17,7 +17,7 @@
 | # | Item | Evidence | Priority |
 |---|---|---|---|
 | TD-1 | **Low coverage ratchets** in `golden-retriever` (0.35) and `docpipe` (0.30) — the most heuristic-heavy modules are the least tested. | root `build.gradle` ratchets table | Medium — raise as tests land (ratchet only moves up). |
-| TD-2 | **`readBySignature` is Java-only.** TS/VB chunkers do not write `symbol_*` metadata, so deterministic symbol lookup doesn't work for them (stated in the tool description). | `PrjxpMcpTool.readBySignature` docs; `SymbolMetadata` usage in Java chunker only | Medium. |
+| TD-2 | **`readBySignature` coverage is language-dependent.** The service is language-agnostic (Java, C# via plugin, …), but only languages whose chunkers write `symbol_*` metadata support it — TS/VB still don't. | `SymbolReaderService` (language-agnostic section keys/doc suffixes); `SymbolMetadata` usage in Java + C# chunkers only | Medium (TS/VB symbol metadata). |
 | TD-3 | **German strings in user-facing output** (e.g. `"[weitere %d Klassen wegen Groessenlimit nicht enthalten]"`, fallback messages, some prompts). | `JavaPromptSession.buildPrompt`, `GRPromptEnrichment` abort message, `GldRtrvrQuestioner` prompt | Low–Medium (i18n pass). |
 | TD-4 | **`prjxp-launcher`** is included in `settings.gradle` but empty — a dangling placeholder. | `settings.gradle` line 20; empty directory | Low (fill or remove). |
 | TD-5 | **oragel incubator** is not part of the default build — its drift from `gldrtrvr` APIs goes unnoticed. | `encubator/oragel`, absent from `settings.gradle` includes | Low (gate with a profile or CI job). |

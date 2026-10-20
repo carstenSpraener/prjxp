@@ -38,6 +38,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * Phase 02 (DockerHub): the import poller. Uses a REAL {@link TarExtractor}, a mocked
@@ -59,6 +60,7 @@ class ImportPollerTest {
     private LuceneEmbeddingStore luceneStore;
     private HubProjectRegistry registry;
     private PipelineOrchestrator orchestrator;   // mocked — enqueues are captured, no real pipeline
+    private EmbeddedArchiveImporter embeddedImporter;   // mocked for poller tests
 
     private ImportPoller poller;
 
@@ -87,7 +89,9 @@ class ImportPollerTest {
 
         orchestrator = mock(PipelineOrchestrator.class);
 
-        poller = new ImportPoller(props, new TarExtractor(props), handlerProvider, registry, orchestrator, luceneStore, new ProjectConfigFileParser());
+        embeddedImporter = mock(EmbeddedArchiveImporter.class);
+
+        poller = new ImportPoller(props, new TarExtractor(props), embeddedImporter, handlerProvider, registry, orchestrator, luceneStore, new ProjectConfigFileParser());
     }
 
     @AfterEach
@@ -382,5 +386,78 @@ class ImportPollerTest {
         verify(handler).onImported(eq("snap"), eq(projectsRoot.resolve("snap")));   // tar branch unchanged
         assertThat(registry.entry("foo").orElseThrow().getKind()).isEqualTo(ProjectEntry.Kind.LIVE);
         verify(orchestrator).enqueue("foo");   // live branch enqueues; tar goes through the handler
+    }
+
+    // ------------------------------------------------------------------ embedded import tests
+
+    @Test
+    void embeddedJsonlFileIsProcessedByImporter() throws IOException {
+        Path embedded = importDir.resolve("myproj-embedded.jsonl");
+        Files.writeString(embedded, "{}\n"); // content doesn't matter for mock test
+
+        when(embeddedImporter.process(any(Path.class))).thenReturn(null);
+
+        poller.poll();
+
+        verify(embeddedImporter).process(any(Path.class));
+        assertThat(embedded).doesNotExist(); // source file removed after success
+    }
+
+    @Test
+    void embeddedGzFileIsProcessedByImporter() throws IOException {
+        Path embedded = importDir.resolve("myproj-embedded.gz");
+        Files.writeString(embedded, "gzipped content");
+
+        when(embeddedImporter.process(any(Path.class))).thenReturn(null);
+
+        poller.poll();
+
+        verify(embeddedImporter).process(any(Path.class));
+    }
+
+    @Test
+    void embeddedTgzFileIsProcessedByImporter() throws IOException {
+        Path embedded = importDir.resolve("myproj-embedded.tgz");
+        Files.writeString(embedded, "tgz content");
+
+        when(embeddedImporter.process(any(Path.class))).thenReturn(null);
+
+        poller.poll();
+
+        verify(embeddedImporter).process(any(Path.class));
+    }
+
+    @Test
+    void embeddedZipFileIsProcessedByImporter() throws IOException {
+        Path embedded = importDir.resolve("myproj-embedded.zip");
+        Files.writeString(embedded, "zip content");
+
+        when(embeddedImporter.process(any(Path.class))).thenReturn(null);
+
+        poller.poll();
+
+        verify(embeddedImporter).process(any(Path.class));
+    }
+
+    @Test
+    void embeddedFileQuarantinedOnFailure() throws IOException {
+        Path embedded = importDir.resolve("badproj-embedded.jsonl");
+        Files.writeString(embedded, "bad content\n");
+
+        when(embeddedImporter.process(any(Path.class))).thenThrow(new RuntimeException("parse error"));
+
+        poller.poll();
+
+        assertThat(embedded).doesNotExist(); // original gone
+        assertThat(importDir.resolve("badproj-embedded.failed")).exists(); // quarantined
+    }
+
+    @Test
+    void failedEmbeddedFilesAreIgnoredOnNextPoll() throws IOException {
+        Files.writeString(importDir.resolve("old-embedded.failed"), "quarantined");
+
+        assertThatCode(() -> poller.poll()).doesNotThrowAnyException();
+
+        verifyNoInteractions(embeddedImporter);
     }
 }

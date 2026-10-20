@@ -15,7 +15,8 @@ def coverageRatchets = [
         'golden-retriever' : 0.35,
         'lucene-store'     : 0.75,
         'docpipe'          : 0.80,   // >80% LOC-Ziel erreicht (gemessen 94.8%)
-        'mcp-server'       : 0.80   // strikt: hier landet der DockerHub-Code
+        'mcp-server'       : 0.80,  // strikt: hier landet der DockerHub-Code
+        'mcp-proxy'        : 0.80   // stdio -> streamable-http Bridge, kein Spring
 ]
 
 subprojects {
@@ -23,12 +24,30 @@ subprojects {
     apply plugin: 'jacoco'
 
     group = 'de.spraener.prjxp'
-    version = '0.0.1-SNAPSHOT'
+    version = '0.8.0-rc1'
 
     apply plugin: 'java'
 
+    // Preserve parameter names for Spring MVC @PathVariable/@RequestParam reflection
+    tasks.withType(JavaCompile).configureEach {
+        options.compilerArgs += ['-parameters']
+    }
+
     repositories {
         mavenCentral()
+    }
+
+    // Security-Pins auch für ausschließlich transitive Abhängigkeiten durchsetzen.
+    // Dies verhindert, dass Shadow-JARs eine vulnerable Version einbetten.
+    def jacksonVersion = libs.versions.jackson.get()
+    def jlineVersion = libs.versions.jline.get()
+    configurations.configureEach {
+        resolutionStrategy.force(
+                "com.fasterxml.jackson.core:jackson-core:${jacksonVersion}",
+                "com.fasterxml.jackson.core:jackson-databind:${jacksonVersion}",
+                "org.jline:jline-builtins:${jlineVersion}",
+                "org.jline:jline-reader:${jlineVersion}"
+        )
     }
 
     // Zentrale Konfiguration für DevTools (wie besprochen)
@@ -37,27 +56,45 @@ subprojects {
         runtimeClasspath.extendsFrom developmentOnly
     }
 
+    // mcp-proxy ist ein reines Plain-Java Modul (kein Spring Boot, kein Webserver)
+    def isMcpProxy = project.name == 'mcp-proxy'
+
     dependencies {
-        // Spring Boot Starter aus dem Version Catalog
-        implementation libs.spring.boot.starter
-        implementation libs.spring.boot.starter.validation
+        if (!isMcpProxy) {
+            // Spring Boot Starter aus dem Version Catalog
+            implementation libs.spring.boot.starter
+            implementation libs.spring.boot.starter.validation
 
-        // Security-Pins (SecurityFindings.csv): log4j/logback werden transitiv via starter-logging gezogen
-        implementation libs.log4j.api
-        implementation libs.log4j.to.slf4j
-        implementation libs.logback.core
-        implementation libs.logback.classic
+            // Security-Pins (SecurityFindings.csv): log4j/logback werden transitiv via starter-logging gezogen
+            implementation libs.log4j.api
+            implementation libs.log4j.to.slf4j
+            implementation libs.logback.core
+            implementation libs.logback.classic
 
-        developmentOnly libs.spring.boot.devtools
+            developmentOnly libs.spring.boot.devtools
+        } else {
+            // mcp-proxy: Logback direkt (ohne Spring-Boot-Starter-Logging)
+            implementation libs.logback.core
+            implementation libs.logback.classic
+        }
 
-        // Lombok (Katalog)
+        // Lombok (Katalog) — auch fuer mcp-proxy
         compileOnly libs.lombok
         annotationProcessor libs.lombok
         testCompileOnly libs.lombok
         testAnnotationProcessor libs.lombok
 
         // Testing (Nutzt das Bundle)
-        testImplementation libs.bundles.test.bundle
+        if (!isMcpProxy) {
+            testImplementation libs.bundles.test.bundle
+        } else {
+            // mcp-proxy: Mockito + AssertJ + JUnit 5 ohne Spring-Boot-Starter-Test
+            testImplementation libs.mockito.core
+            testImplementation libs.mockito.junit.jupiter
+            testImplementation libs.assertj.core
+            testImplementation libs.junit5.api
+            testRuntimeOnly  libs.junit5.engine
+        }
         testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
     }
 
@@ -92,4 +129,27 @@ subprojects {
     check {
         dependsOn jacocoTestCoverageVerification
     }
+}
+
+// ---------------------------------------------------------------------------
+// C# Language Pack E2E (WP-2 Phase 04): build the standalone lp-csharp plugin.
+// lp-csharp is a SEPARATE Gradle build (not in settings.gradle) that consumes
+// prjxp-common from mavenLocal, so it is driven via an Exec task. Shared by
+// mcp-server and chunk-norris, whose E2E tests load the staged JAR via
+// prjxp.language-packs.dir.
+// ---------------------------------------------------------------------------
+def lpCsharpDir = new File(rootDir, 'lp-csharp')
+def lpCsharpJar = new File(lpCsharpDir, 'build/libs/lp-csharp-plugin.jar')
+
+tasks.register('buildLpCsharpPlugin', Exec) {
+    dependsOn ':prjxp-common:publishToMavenLocal'
+    workingDir = lpCsharpDir
+    commandLine './gradlew', 'shadowJar', '--console=plain'
+    // Rebuild when the plugin sources, its build scripts, or the host API it
+    // compiles against change (the inner build is up-to-date-checked itself).
+    inputs.dir(new File(lpCsharpDir, 'src'))
+    inputs.file(new File(lpCsharpDir, 'build.gradle'))
+    inputs.file(new File(lpCsharpDir, 'settings.gradle'))
+    inputs.dir(new File(rootDir, 'prjxp-common/src'))
+    outputs.file(lpCsharpJar)
 }

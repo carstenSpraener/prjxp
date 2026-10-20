@@ -24,6 +24,10 @@ public class ProjectEntry {
     @Getter(lombok.AccessLevel.NONE)
     private volatile String lastError;
 
+    /** 1-based depth of the embedding run within the current run chain (drives the EMBEDDING_PHASE_n display). */
+    @Getter(lombok.AccessLevel.NONE)
+    private volatile int embeddingPhase = 1;
+
     public ProjectEntry(String name, Path rootDir, Kind kind, ProjectDefinition definition, PrjXPEmbeddingStoreReference storeRef) {
         this.name = name;
         this.rootDir = rootDir;
@@ -44,4 +48,7 @@ public class ProjectEntry {
         this.status = newStatus;
         this.lastError = error;
     }
+
+    public int getEmbeddingPhase() { return embeddingPhase; }
+    public synchronized void setEmbeddingPhase(int phase) { this.embeddingPhase = Math.max(1, phase); }
 }

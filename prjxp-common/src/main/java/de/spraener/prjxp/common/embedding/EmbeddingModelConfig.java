@@ -1,6 +1,7 @@
 package de.spraener.prjxp.common.embedding;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.config.EnvPlaceholderResolver;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
@@ -17,21 +18,24 @@ public class EmbeddingModelConfig {
     @Bean
     public EmbeddingModel embeddingModel(PrjXPConfig cfg) {
         PrjXPConfig.EmbeddingConfig ebCfg = cfg.getEmbedding();
+        String apiBaseUrl = EnvPlaceholderResolver.resolve(ebCfg.getApiBaseURL());
+        String apiKey = EnvPlaceholderResolver.resolve(ebCfg.getApiKey());
+        String modelName = EnvPlaceholderResolver.resolve(ebCfg.getModelName());
 
         if (ebCfg.getType() == PrjXPConfig.EmbeddingModelType.OPEN_AI) {
-            log.info("Using Open-AI compatible embedding provider " + ebCfg.getApiBaseURL() + " with model " + ebCfg.getModelName());
+            log.info("Using Open-AI compatible embedding provider " + apiBaseUrl + " with model " + modelName);
             return OpenAiEmbeddingModel.builder()
-                    .apiKey(ebCfg.getApiKey())
-                    .baseUrl(ebCfg.getApiBaseURL())
-                    .modelName(ebCfg.getModelName())
+                    .apiKey(apiKey)
+                    .baseUrl(apiBaseUrl)
+                    .modelName(modelName)
                     .timeout(Duration.ofSeconds(ebCfg.getTimeout()))
                     .build();
         }
 
-        log.info("Using Ollama embedding model at " + ebCfg.getApiBaseURL() + " with model " + ebCfg.getModelName());
+        log.info("Using Ollama embedding model at " + apiBaseUrl + " with model " + modelName);
         return OllamaEmbeddingModel.builder()
-                .baseUrl(ebCfg.getApiBaseURL())
-                .modelName(ebCfg.getModelName())
+                .baseUrl(apiBaseUrl)
+                .modelName(modelName)
                 .timeout(Duration.ofSeconds(ebCfg.getTimeout()))
                 .build();
     }

@@ -1,5 +1,6 @@
 package de.spraener.prjxp.tibed.embedder;
 
+import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.PxChunk2TextSegmentConverter;
@@ -14,6 +15,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Service;
 import org.springframework.util.StringUtils;
 
+import java.util.ArrayList;
 import java.util.List;
 
 @Service
@@ -30,23 +32,71 @@ public class LangChain4JEmbedderImpl implements EmbeddingExecutor {
             log.info("Skipping empty batch of chunks");
             return;
         }
+        List<EmbeddedChunkRecord> records = embed(chunks);
+        if (records.isEmpty()) {
+            return;
+        }
+        List<Embedding> embeddings = records.stream().map(r -> Embedding.from(r.vector())).toList();
+        List<TextSegment> segments = records.stream()
+                .map(r -> PxChunk2TextSegmentConverter.convert(r.toPxChunk()))
+                .toList();
+
+        // Nur das Schreiben in die DB synchronisieren
+        synchronized (storeSupplier) {
+            store.addAll(embeddings, segments);
+        }
+    }
+
+    @Override
+    public List<EmbeddedChunkRecord> embed(List<PxChunk> chunks) {
+        if (chunks.isEmpty()) {
+            return List.of();
+        }
         List<PxChunk> valid = chunks.stream()
                 .filter(c -> StringUtils.hasText(c.getContent()))
                 .toList();
 
-        // PxChunks in TextSegments umwandeln
-        List<TextSegment> segmentsForStorage = valid.stream()
-                .map(PxChunk2TextSegmentConverter::convert)
-                .toList();
-        List<TextSegment> segmentsForEmbedding = valid.stream()
-                .map(PxChunk2TextSegmentConverter::convertWithEmbeddingPrefix)
-                .toList();
-        // Embeddings berechnen
-        List<Embedding> embeddings = embeddingModel.embedAll(segmentsForEmbedding).content();
+        // FULLTEXT parts get a deterministic placeholder vector (no embedding API cost);
+        // the doc still exists in the index for lossless readFile.
+        List<PxChunk> fulltext = valid.stream().filter(LangChain4JEmbedderImpl::isFulltext).toList();
+        List<PxChunk> normal = valid.stream().filter(c -> !isFulltext(c)).toList();
 
-        // Nur das Schreiben in die DB synchronisieren
-        synchronized (storeSupplier) {
-            store.addAll(embeddings, segmentsForStorage);
+        int dim = embeddingModel.dimension();
+        List<Embedding> embeddings = new ArrayList<>();
+        if (!normal.isEmpty()) {
+            embeddings.addAll(embeddingModel.embedAll(
+                    normal.stream().map(PxChunk2TextSegmentConverter::convertWithEmbeddingPrefix).toList()).content());
         }
+        for (int i = 0; i < fulltext.size(); i++) {
+            embeddings.add(placeholderEmbedding(dim));
+        }
+
+        List<EmbeddedChunkRecord> records = new ArrayList<>(embeddings.size());
+        int i = 0;
+        for (PxChunk c : normal) {
+            records.add(EmbeddedChunkRecord.from(c, embeddings.get(i++).vector()));
+        }
+        for (PxChunk c : fulltext) {
+            records.add(EmbeddedChunkRecord.from(c, embeddings.get(i++).vector()));
+        }
+        return records;
+    }
+
+    private static boolean isFulltext(PxChunk c) {
+        return c.getMetadata() != null
+                && PxChunk.FULLTEXT_MARKER.equals(c.getMetadata().get(PxChunk.PXCHUNK_TYPE));
+    }
+
+    /**
+     * Deterministic placeholder vector for FULLTEXT parts (no embedding API cost).
+     * All ones — a zero vector is NOT usable: Lucene's COSINE KNN would produce NaN
+     * (VectorUtil.cosine asserts finiteness). A fixed unit vector scores ~0.5 against
+     * any real query, i.e. it never outranks genuinely similar chunks; FULLTEXT docs
+     * are excluded from vector results via the pxchunk_type marker filter anyway.
+     */
+    private static Embedding placeholderEmbedding(int dim) {
+        float[] vector = new float[dim];
+        java.util.Arrays.fill(vector, 1f);
+        return Embedding.from(vector);
     }
 }

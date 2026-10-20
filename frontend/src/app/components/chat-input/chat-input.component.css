@@ -1,0 +1,43 @@
+.chat-input-wrapper {
+  display: flex;
+  gap: 8px;
+  padding: 12px 0;
+}
+
+textarea {
+  flex: 1;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(0, 255, 255, 0.3);
+  border-radius: 8px;
+  color: #e0e0e0;
+  padding: 10px 14px;
+  font-size: 0.9rem;
+  resize: none;
+  outline: none;
+}
+
+textarea:focus {
+  border-color: #00ffff;
+  box-shadow: 0 0 8px rgba(0, 255, 255, 0.3);
+}
+
+textarea::placeholder {
+  color: #666;
+}
+
+.btn-send {
+  background: rgba(0, 255, 255, 0.15);
+  border: 1px solid #00ffff;
+  color: #00ffff;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  font-weight: bold;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.btn-send:hover {
+  background: rgba(0, 255, 255, 0.3);
+  box-shadow: 0 0 12px rgba(0, 255, 255, 0.5);
+}

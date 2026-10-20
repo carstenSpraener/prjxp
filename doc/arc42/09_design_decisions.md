@@ -143,3 +143,31 @@ reflected in code and the phase documents under `doc/Tasks/` and `docs/`).
   information; (−) requires mcp-server to be running and reachable at the configured URL;
   (−) LangChain4j beta version carries inherent instability risk (mitigated by comprehensive
   test coverage and the fact that MCP API is stable since `1.19.x`).
+
+## D15 — LanguagePacks as the language extension unit (built-in beans + plugin JARs)
+
+- **Context:** D5's SPI/annotation discovery works, but a *language* needs more than a
+  chunker: a retriever, a MIME type, symbol metadata conventions and (for readers) a
+  file-view provider. Scattering these across four extension points made "add a language"
+  a multi-module change, and third parties could not add languages without forking.
+- **Decision:** introduce `LanguagePack` (prjxp-common) as the single unit bundling one
+  language's chunker side + retriever side + MIME. Built-in packs (Java, TS, VB) are
+  Spring beans in the engine modules; **external packs are plugin JARs** in
+  `./language-packs`, each loaded into its own isolating class loader
+  (`LanguagePackPluginLoader`, registered pre-Bean via `ApplicationContextInitializer`
+  from `spring.factories`). Delegation rule: **parent-first** for `de.spraener.prjxp.**`
+  and `org.slf4j.**` (one host class identity), **child-first** for everything else
+  (private plugin libraries stay isolated). Providers are no-arg factories
+  (`LanguagePackProvider` SPI); every pack is validated at load time (contract +
+  identity check) and a broken plugin is rejected without blocking the others. The
+  `LanguagePackRegistry` is the single resolved view (plugin wins over built-in on
+  language conflict) consumed by chunking (`LanguagePackBroker`), retrieval
+  (`RetrieverRegistry`) and the grep language filter alike. Plugins are mounted at
+  runtime in Docker, never baked into the image; no hot reload (restart picks up
+  changes); the host closes the class loaders on shutdown.
+- **Consequences:** (+) "add a language" = one pack, or one JAR drop for third parties —
+  zero core changes, zero host rebuild; (+) version-isolated private dependencies
+  (two plugins may bundle different ANTLR versions); (+) host API identity is stable
+  even if a plugin accidentally bundles API copies (rejected at load with a clear
+  diagnostic); (−) one more class loader per plugin (accepted: few plugins, closed on
+  shutdown); (−) no hot reload (accepted: restart is cheap in Docker).

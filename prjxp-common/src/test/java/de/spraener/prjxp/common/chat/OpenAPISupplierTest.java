@@ -18,6 +18,8 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import java.util.Map;
+
 import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -82,6 +84,22 @@ class OpenAPISupplierTest {
         ChatModel result = uut.provide(ref);
 
         assertThatNoException().isThrownBy(() -> {});
+    }
+
+    @Test
+    void provide_withBodyProperties_setsCustomParameters() {
+        PrjXPChatModelReference ref = PrjXPTestObjectMother.createPrjXPChatModelReference(m -> {
+            m.setServerType("openapi");
+            m.setModelName("qwen3.8-27b-splash");
+            m.setProviderUrl("http://localhost:1234");
+            m.setBodyProperties(Map.of("enable_thinking", false));
+        });
+
+        ChatModel result = uut.provide(ref);
+
+        assertThat(result).isInstanceOf(OpenAiChatModel.class);
+        Map<String, Object> custom = ((OpenAiChatModel) result).defaultRequestParameters().customParameters();
+        assertThat(custom).containsEntry("enable_thinking", false);
     }
 
     @Configuration

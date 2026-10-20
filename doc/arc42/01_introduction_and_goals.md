@@ -12,7 +12,7 @@ prjxp solves this with a pipeline of five cooperating modules:
 
 | Module | Role in the task |
 |---|---|
-| **chunk-norris** | Decomposes source code and documents into structured `PxChunk`s (AST-based for Java/TS/VB, conversion agents for PDF/DOCX/HTML/RTF/TXT) and writes them as **JSONL**. |
+| **chunk-norris** | Decomposes source code and documents into structured `PxChunk`s (AST-based for Java/TS/VB, C# via the `lp-csharp` plugin pack, conversion agents for PDF/DOCX/HTML/RTF/TXT) and writes them as **JSONL**. |
 | **lucene-store** | Self-contained, file-based vector + full-text index (Lucene 9.12) implementing the LangChain4j `EmbeddingStore` and the prjxp `PxChunkDao`. |
 | **tibed** | Batch embedding engine: reads the JSONL, calls an external embedding model (OpenAI-compatible or Ollama), writes vectors + metadata into the Lucene index. Supports incremental re-embedding and an encrypted export/import mode for offline embedding on another machine. |
 | **golden-retriever** | The RAG engine: turns raw search hits into high-quality LLM context via structural reconstruction ("Forest of Trees"), ranking, veto/validator filters and content budgets. Also provides per-language *file view* readers that reconstruct complete source files from the index. |
@@ -38,7 +38,7 @@ claiming completeness.
 |---|---|---|
 | QG-1 | **Retrieval precision** — the context handed to an LLM must be relevant and structurally coherent | Forest-of-trees reconstruction, veto system, similarity thresholds with fallback iteration, global content budgets (`prjxp.gldrtrvr.*`) |
 | QG-2 | **Self-contained deployment** — no external database service required | Lucene as the *only* store (ChromaDB/MySQL removed); single Docker image; index is a directory on disk |
-| QG-3 | **Extensibility** — new languages/formats without core changes | Java SPI (`ServiceLoader`) + annotation-based discovery for chunkers, vetoes, file-view providers, chat suppliers |
+| QG-3 | **Extensibility** — new languages/formats without core changes | **LanguagePacks** (built-in Spring beans + external plugin JARs in isolating class loaders) plus Java SPI (`ServiceLoader`) + annotation-based discovery for chunkers, vetoes, file-view providers, chat suppliers |
 | QG-4 | **Performance** — indexing and re-indexing must scale to large projects | Parallel file processing, batched embedding (`tibedBatchSize`), incremental embed (skip already-embedded chunks), hub scan pruning |
 | QG-5 | **Security** — project code may be sensitive | Optional AES-256-GCM encryption of the JSONL transfer; tar-import limits (size/entry count, zip-slip rejection); CORS allow-list |
 | QG-6 | **Maintainability** — the code base must stay testable and navigable (also for AI agents) | Strict module layering, version catalog only, per-module JaCoCo coverage ratchets (never lowered), zero manual Javadoc + generated docs |

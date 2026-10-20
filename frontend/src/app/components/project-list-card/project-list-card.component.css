@@ -1,0 +1,54 @@
+.project-card {
+  padding: 1.5rem;
+  border-radius: 1rem;
+  transition: all 0.3s ease;
+}
+
+.project-card:hover {
+  box-shadow: 0 0 12px rgba(0, 255, 255, 0.08);
+}
+
+.card-header {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.card-header h3 {
+  margin: 0;
+}
+
+.config-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.5rem;
+  height: 1.5rem;
+  border-radius: 50%;
+  background-color: #22c55e;
+  color: white;
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
+.card-body {
+  display: flex;
+  flex-direction: column;
+}
+
+.languages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.lang-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 9999px;
+  background-color: rgba(0, 255, 255, 0.15);
+  color: #00ffff;
+  font-size: 0.8rem;
+  font-weight: 500;
+}

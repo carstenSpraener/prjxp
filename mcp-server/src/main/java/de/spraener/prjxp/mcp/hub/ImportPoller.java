@@ -37,6 +37,7 @@ public class ImportPoller {
 
     private final HubProperties props;
     private final TarExtractor extractor;
+    private final EmbeddedArchiveImporter embeddedImporter;
     private final ObjectProvider<ImportHandler> handlerProvider;
     private final HubProjectRegistry registry;
     private final PipelineOrchestrator orchestrator;
@@ -62,7 +63,11 @@ public class ImportPoller {
         try (var stream = Files.list(importDir)) {
             tarFiles = stream
                     .filter(Files::isRegularFile)
-                    .filter(file -> isTarName(file.getFileName().toString()))
+                    .filter(file -> {
+                        String n = file.getFileName().toString();
+                        // "-embedded.tgz" also matches isTarName — the embedded branch owns those files
+                        return isTarName(n) && !isEmbeddedName(n);
+                    })
                     .sorted(Comparator.comparing(file -> file.getFileName().toString()))
                     .toList();
         } catch (IOException e) {
@@ -74,6 +79,22 @@ public class ImportPoller {
             process(tarFile); // per-file isolation: one bad tar must not break the others
         }
 
+        // Process embedded archive files (Jenkins drop-in workflow)
+        List<Path> embeddedFiles;
+        try (var stream = Files.list(importDir)) {
+            embeddedFiles = stream
+                    .filter(Files::isRegularFile)
+                    .filter(file -> isEmbeddedName(file.getFileName().toString()))
+                    .sorted(Comparator.comparing(file -> file.getFileName().toString()))
+                    .toList();
+        } catch (IOException e) {
+            embeddedFiles = List.of(); // already warned above for unlistable dir
+        }
+
+        for (Path embeddedFile : embeddedFiles) {
+            processEmbedded(embeddedFile);
+        }
+
         syncLiveProjects();
     }
 
@@ -81,7 +102,7 @@ public class ImportPoller {
      * Discovers live projects (marker files) and enqueues the freshly discovered ones.
      * Entries known before this poll are never re-enqueued (no double pipeline runs);
      * FAILED projects stay failed until an explicit reindex. The marker file is the source of truth:
-     * a live project removed via DELETE /prjxp/projects/{name} is re-discovered and re-enqueued here
+     * a live project removed via DELETE /api/projects/{name} is re-discovered and re-enqueued here
      * (the deletion never touches the marker) — documented, intended behavior.
      *
      * Pre-embedded projects (embeddingsFile set in prjxp.yaml) require a {@value ProjectConfigFileParser#READY_MARKER_FILE_NAME}
@@ -149,6 +170,26 @@ public class ImportPoller {
         }
     }
 
+    private void processEmbedded(Path embeddedFile) {
+        String name = baseName(embeddedFile);
+        try {
+            embeddedImporter.process(embeddedFile);
+            Files.delete(embeddedFile); // success: remove source file
+        } catch (Exception e) {
+            log.error("Embedded import of {} failed: {}", embeddedFile.getFileName(), e.getMessage());
+            quarantineEmbedded(embeddedFile, name);
+        }
+    }
+
+    private void quarantineEmbedded(Path file, String name) {
+        Path failed = file.resolveSibling(name + "-embedded.failed");
+        try {
+            Files.move(file, failed, StandardCopyOption.REPLACE_EXISTING);
+        } catch (IOException e) {
+            log.error("Cannot quarantine {}: {}", file, e.getMessage());
+        }
+    }
+
     private boolean isTarName(String fileName) {
         if (fileName.endsWith(".failed")) {
             return false; // quarantined imports are not reprocessed
@@ -157,9 +198,36 @@ public class ImportPoller {
         return lower.endsWith(".tar") || lower.endsWith(".tgz") || lower.endsWith(".tar.gz");
     }
 
-    private String baseName(Path tarFile) {
-        String fileName = tarFile.getFileName().toString();
+    /** True when the filename matches the embedded import naming scheme: <ProjectName>-embedded.(jsonl|gz|tgz|zip). */
+    private boolean isEmbeddedName(String fileName) {
+        if (fileName.endsWith(".failed")) {
+            return false; // quarantined imports are not reprocessed
+        }
         String lower = fileName.toLowerCase(Locale.ROOT);
+        return lower.endsWith("-embedded.jsonl") || lower.endsWith("-embedded.gz")
+                || lower.endsWith("-embedded.tgz") || lower.endsWith("-embedded.zip");
+    }
+
+    /** Strips the extension (and "-embedded" suffix for embedded files) to derive the project name. */
+    private String baseName(Path file) {
+        String fileName = file.getFileName().toString();
+        String lower = fileName.toLowerCase(Locale.ROOT);
+
+        // Embedded files: strip "-embedded" suffix + extension
+        if (lower.endsWith("-embedded.jsonl")) {
+            return fileName.substring(0, fileName.length() - "-embedded.jsonl".length());
+        }
+        if (lower.endsWith("-embedded.gz")) {
+            return fileName.substring(0, fileName.length() - "-embedded.gz".length());
+        }
+        if (lower.endsWith("-embedded.tgz")) {
+            return fileName.substring(0, fileName.length() - "-embedded.tgz".length());
+        }
+        if (lower.endsWith("-embedded.zip")) {
+            return fileName.substring(0, fileName.length() - "-embedded.zip".length());
+        }
+
+        // Tar files: strip extension only
         if (lower.endsWith(".tar.gz")) {
             return fileName.substring(0, fileName.length() - ".tar.gz".length());
         }
@@ -169,6 +237,6 @@ public class ImportPoller {
         if (lower.endsWith(".tar")) {
             return fileName.substring(0, fileName.length() - ".tar".length());
         }
-        return fileName; // defensive: only tar names reach this point
+        return fileName; // defensive: only known names reach this point
     }
 }

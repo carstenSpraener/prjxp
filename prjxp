@@ -147,7 +147,7 @@ ensure_image() {
 ensure_config_files() {
     if [[ ! -f "$PROJECT_PATH/application.yaml" ]]; then
         log_info "Copying application.yaml.docker (Docker config) to project directory as application.yaml..."
-        cp "$SCRIPT_DIR/application.yaml.docker" "$PROJECT_PATH/application.yaml"
+        cp "$SCRIPT_DIR/docker/application.yaml.docker" "$PROJECT_PATH/application.yaml"
     fi
 
     if [[ ! -f "$PROJECT_PATH/.env" ]]; then

@@ -63,6 +63,24 @@ class ReaderServiceTest {
         return new ScoredChunk(chunk, 1.0);
     }
 
+    /** A part of the lossless full-text copy (mime file/text, marker pxchunk_type=FULLTEXT). */
+    private static PxChunk fulltextPart(String id, int part, int total, String file,
+                                        String fromLine, String toLine, String content) {
+        return PxChunk.create(c -> {
+            c.setId(id);
+            c.setPart(part);
+            c.setTotal(total);
+            c.setFile(file);
+            c.setMimeType(de.spraener.prjxp.chuno.FullTextChunker.MIME);
+            c.setFromLine(fromLine);
+            c.setToLine(toLine);
+            c.setOverlap(0);
+            c.setSize(content.length());
+            c.setContent(content);
+            c.getMetadata().put(PxChunk.PXCHUNK_TYPE, PxChunk.FULLTEXT_MARKER);
+        });
+    }
+
     /** Deterministic stand-in for the Java reader: joins the combined unit contents with newlines. */
     private static FileViewProvider javaProvider() {
         return new FileViewProvider() {
@@ -261,6 +279,62 @@ class ReaderServiceTest {
 
         // 10 chars of "L1\nL2\nL3\nL4\nL5..." = "L1\nL2\nL3\nL"
         assertThat(view.content()).hasSizeLessThanOrEqualTo(10);
+        assertThat(view.content()).isEqualTo("L1\nL2\nL3\nL");
+        assertThat(view.truncated()).isTrue();
+    }
+
+    // ------------------------------------------------------------------ FULLTEXT-first
+
+    @Test
+    void fulltextUnitsTakePrecedenceOverProvider() {
+        routeToDao();
+        // semantic java unit — the provider would render this (synthesized view)
+        PxChunk semantic = part("u-java", 0, 1, "/src/Foo.java", JAVA_MIME, "1", "3", "SYNTHETIC-RENDER");
+        // lossless full-text copy: 2 parts, overlap 0, together the exact file text
+        // (the split falls between "line two" and "line three" — the newline belongs to part 1)
+        PxChunk f0 = fulltextPart("u-ft", 0, 2, "/src/Foo.java", "1", "2", "line one\nline two");
+        PxChunk f1 = fulltextPart("u-ft", 1, 2, "/src/Foo.java", "2", "3", "\nline three");
+        stubIndex(Map.of(PxChunk.PXCHUNK_FILE, "/src/Foo.java"),
+                List.of(scored(semantic), scored(f0), scored(f1)), List.of());
+
+        FileView view = service().read("src/Foo.java", null, null, null);
+
+        assertThat(view.error()).isNull();
+        assertThat(view.language()).isEqualTo("text");
+        assertThat(view.content()).isEqualTo("line one\nline two\nline three");
+        assertThat(view.truncated()).isFalse();
+        assertThat(view.totalLines()).isEqualTo(3);
+        assertThat(view.returnedLines()).isEqualTo(3);
+        assertThat(view.chunkCount()).isEqualTo(3);
+    }
+
+    @Test
+    void fulltextUnitsSupportOffsetAndLimit() {
+        routeToDao();
+        String tenLines = "L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10";
+        PxChunk f0 = fulltextPart("u-ft", 0, 1, "/src/Foo.java", "1", "10", tenLines);
+        stubIndex(Map.of(PxChunk.PXCHUNK_FILE, "/src/Foo.java"),
+                List.of(scored(f0)), List.of());
+
+        FileView view = service().read("src/Foo.java", null, 3, 4);
+
+        assertThat(view.language()).isEqualTo("text");
+        assertThat(view.totalLines()).isEqualTo(10);
+        assertThat(view.returnedLines()).isEqualTo(4);
+        assertThat(view.content()).isEqualTo("L3\nL4\nL5\nL6");
+        assertThat(view.truncated()).isFalse();
+    }
+
+    @Test
+    void fulltextUnitsRespectOutputCap() {
+        routeToDao();
+        String tenLines = "L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10";
+        PxChunk f0 = fulltextPart("u-ft", 0, 1, "/src/Foo.java", "1", "10", tenLines);
+        stubIndex(Map.of(PxChunk.PXCHUNK_FILE, "/src/Foo.java"),
+                List.of(scored(f0)), List.of());
+
+        FileView view = service(10).read("src/Foo.java", null, null, null);
+
         assertThat(view.content()).isEqualTo("L1\nL2\nL3\nL");
         assertThat(view.truncated()).isTrue();
     }

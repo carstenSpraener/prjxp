@@ -1,0 +1,45 @@
+<div class="modal-overlay" (click)="onCancel()">
+  <div class="modal-content" (click)="$event.stopPropagation()">
+    <h2 class="neon-glow">Chat Settings</h2>
+
+    <!-- Chat Model -->
+    <div class="form-group">
+      <label for="chatModel">Chat Model</label>
+      <select id="chatModel" [ngModel]="selectedModel()" (ngModelChange)="selectedModel.set($event)">
+        @for (model of chatModels(); track model.stereoType ?? $index) {
+          <option [value]="model.stereoType">
+            {{ model.stereoType }} ({{ model.serverType }}: {{ model.modelName }})
+          </option>
+        } @empty {
+          <option value="">No models available</option>
+        }
+      </select>
+    </div>
+
+    <!-- Project Context -->
+    <div class="form-group">
+      <label for="projectContext">Project Context</label>
+      <select id="projectContext" [ngModel]="selectedProject()" (ngModelChange)="selectedProject.set($event)">
+        <option value="None">None</option>
+        @for (project of availableProjects(); track project) {
+          <option [value]="project">{{ project }}</option>
+        }
+      </select>
+    </div>
+
+    <!-- Enable Tools Toggle -->
+    <div class="form-group toggle-row">
+      <label for="useTools">Enable Tools</label>
+      <label class="toggle-switch">
+        <input type="checkbox" id="useTools" [ngModel]="useTools()" (ngModelChange)="useTools.set($event)" />
+        <span class="slider"></span>
+      </label>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="button-row">
+      <button class="btn-save" (click)="onSave()">Save</button>
+      <button class="btn-cancel" (click)="onCancel()">Cancel</button>
+    </div>
+  </div>
+</div>

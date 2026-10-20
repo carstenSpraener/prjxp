@@ -16,7 +16,6 @@ import org.springframework.test.util.ReflectionTestUtils;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.Test;
 import org.mockito.MockedConstruction;
@@ -205,75 +204,6 @@ class McpClientManagerTest {
         assertThat(manager.getActiveClients()).isEmpty();
     }
 
-    @Test
-    void decorate_emptyOptional_returnsSame() {
-        PrjXPConfig cfg = mock(PrjXPConfig.class);
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
-
-        Optional<KIChat> empty = Optional.empty();
-        Optional<KIChat> result = manager.decorate(empty);
-
-        assertThat(result).isEmpty();
-        assertThat(result).isSameAs(empty);
-    }
-
-    @Test
-    void decorate_chatWithoutClients_returnsOriginal() {
-        PrjXPConfig cfg = mock(PrjXPConfig.class);
-        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
-        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
-
-        KIChat chatMock = mock(KIChat.class);
-        Optional<KIChat> input = Optional.of(chatMock);
-
-        Optional<KIChat> result = manager.decorate(input);
-
-        assertThat(result).contains(chatMock);
-    }
-
-    @Test
-    void decorate_chatWithClients_wrapsInDecorator() {
-        StdioMcpTransport transportMock = mock(StdioMcpTransport.class);
-        DefaultMcpClient clientMock = mock(DefaultMcpClient.class);
-
-        McpServerReference ref = new McpServerReference();
-        ref.setName("fs");
-        ref.setType("stdio");
-        ref.setCommand("npx");
-        ref.setArgs(List.of("-y", "x"));
-
-        PrjXPConfig cfg = mock(PrjXPConfig.class);
-        when(cfg.getMcpServers()).thenReturn(List.of(ref));
-
-        ToolRegistry toolRegistry = mock(ToolRegistry.class);
-        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
-
-        try (MockedConstruction<StdioMcpTransport.Builder> t = Mockito.mockConstruction(
-                StdioMcpTransport.Builder.class,
-                (m, c) -> {
-                    when(m.command(anyList())).thenReturn(m);
-                    when(m.logEvents(anyBoolean())).thenReturn(m);
-                    when(m.build()).thenReturn(transportMock);
-                })) {
-            try (MockedConstruction<DefaultMcpClient.Builder> d = Mockito.mockConstruction(
-                    DefaultMcpClient.Builder.class,
-                    (m, c) -> {
-                        when(m.key(anyString())).thenReturn(m);
-                        when(m.transport(any(McpTransport.class))).thenReturn(m);
-                        when(m.toolExecutionTimeout(any(Duration.class))).thenReturn(m);
-                        when(m.build()).thenReturn(clientMock);
-                    })) {
-                manager.init();
-            }
-        }
-
-        KIChat chatMock = mock(KIChat.class);
-        Optional<KIChat> result = manager.decorate(Optional.of(chatMock));
-
-        assertThat(result).isNotEmpty();
-        assertThat(result.get()).isInstanceOf(McPEnablingKIChatDecorator.class);
-    }
 
     @Test
     void shutdown_closesAllClients_andSwallowsExceptions() {
@@ -292,5 +222,50 @@ class McpClientManagerTest {
 
         try { verify(clientA).close(); } catch (Exception ignored) {}
         try { verify(clientB).close(); } catch (Exception ignored) {}
+    }
+
+    @Test
+    void decorate_null_returnsNull() {
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
+
+        assertThat(manager.decorate(null)).isNull();
+    }
+
+    @Test
+    void decorate_noActiveClients_returnsOriginalChat() {
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
+
+        KIChat chat = mock(KIChat.class);
+
+        assertThat(manager.decorate(chat)).isSameAs(chat);
+    }
+
+    @Test
+    void decorate_withActiveClients_wrapsInDecorator() {
+        McpServerReference ref = new McpServerReference();
+        ref.setName("prjxp");
+        ref.setType("http");
+        ref.setUrl("http://localhost:7007/mcp");
+        ref.setDefaultProject("prjxp");
+
+        PrjXPConfig cfg = mock(PrjXPConfig.class);
+        when(cfg.getMcpServers()).thenReturn(List.of(ref));
+
+        ToolRegistry toolRegistry = new ToolRegistry(new GroovyToolExecutor());
+        McpClientManager manager = new McpClientManager(cfg, toolRegistry);
+
+        McpClient client = mock(McpClient.class);
+        ReflectionTestUtils.setField(manager, "activeClients", List.of(client));
+
+        KIChat chat = mock(KIChat.class);
+
+        KIChat result = manager.decorate(chat);
+
+        assertThat(result).isInstanceOf(McPEnablingKIChatDecorator.class);
+        assertThat(result).isNotSameAs(chat);
     }
 }

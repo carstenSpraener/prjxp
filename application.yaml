@@ -1,4 +1,6 @@
 prjxp:
+  hub:
+    enabled: true
 
   # Embedding model type: ollama or open_ai
   embeddingStoreLucene:
@@ -6,11 +8,39 @@ prjxp:
     vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
     name: lucene
 
-#  mcp-servers:
-#    - name: "filesystem-mcp"
-#      type: "stdio"
-#      command: "npx"
-#      args: ["-y", "@modelcontextprotocol/server-filesystem", "/Users/casi/Projekte"]
+  chatModels:
+    - stereotype: detailed
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 240
+      apiKey: ${EMBEDDING_API_KEY}
+
+    - stereotype: documentation
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 240
+      apiKey: ${EMBEDDING_API_KEY}
+      # Qwen3: thinking mode breaks tool-calling (the call leaks into content as XML).
+      # DocPipe relies on native function calling, so disable thinking for this stereotype.
+      bodyProperties:
+        enable_thinking: false
+
+    - stereotype: javadoc
+      serverType: lm-studio
+      providerUrl: http://host.docker.internal:1234/v1
+      modelName: qwen3.8-27b-splash
+      timeoutSecs: 240
+      apiKey: ${EMBEDDING_API_KEY}
+      # Same Qwen3 thinking-mode issue as above (DocPipe javadoc generation).
+      bodyProperties:
+        enable_thinking: false
+
+  mcp-servers:
+    - name: prjxp
+      type: http
+      url: ${PRJXP_HUB_URL:http://localhost:7007/mcp}
 
   embedding:
     type: "OPEN_AI"

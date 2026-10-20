@@ -617,4 +617,152 @@ class HubProjectRegistryTest {
         List<ProjectInfo> infos = registry.projectInfos();
         assertThat(infos).extracting(ProjectInfo::name).containsExactly("alpha", "zeta");
     }
+
+    // ------------------------------------------------------------------ Phase 06: extended ProjectInfo fields
+
+    @Test
+    void projectInfosIncludesKindAndStats() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        List<ProjectInfo> infos = registry.projectInfos();
+        ProjectInfo info = infos.get(0);
+
+        assertThat(info.name()).isEqualTo("alpha");
+        assertThat(info.kind()).isEqualTo("SNAPSHOT");   // default kind for projectDir
+        assertThat(info.chunkCount()).isGreaterThanOrEqualTo(0);
+        assertThat(info.embeddingCount()).isEqualTo(info.chunkCount()); // 1:1 mapping
+        assertThat(info.fileCount()).isGreaterThanOrEqualTo(0);
+    }
+
+    @Test
+    void projectInfosForLiveProjectShowsLiveKind() throws Exception {
+        Path liveDir = importDir.resolve("my-live");
+        Files.createDirectories(liveDir);
+        Files.writeString(liveDir.resolve("prjxp.yaml"), "name: my-live\n");
+
+        registry.discoverProjects();   // discovers live project from import dir
+        List<ProjectInfo> infos = registry.projectInfos();
+
+        assertThat(infos).hasSize(1);
+        assertThat(infos.get(0).kind()).isEqualTo("LIVE");
+    }
+
+    @Test
+    void countByProjectReturnsCorrectCount() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        // Add some embeddings to the lucene store for "alpha"
+        addEmbeddingForProject("alpha", "/test.java");
+        addEmbeddingForProject("alpha", "/other.java");
+
+        long count = luceneStore.countByProject("alpha");
+        assertThat(count).isEqualTo(2);
+    }
+
+    @Test
+    void countFilesByProjectReturnsDistinctFileCount() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        // Add 3 embeddings, but only 2 distinct files
+        addEmbeddingForProject("alpha", "/test.java");
+        addEmbeddingForProject("alpha", "/test.java");   // same file, should not count twice
+        addEmbeddingForProject("alpha", "/other.java");
+
+        int fileCount = luceneStore.countFilesByProject("alpha");
+        assertThat(fileCount).isEqualTo(2);
+    }
+
+    @Test
+    void countByProjectReturnsZeroForUnknownProject() {
+        long count = luceneStore.countByProject("nonexistent");
+        assertThat(count).isEqualTo(0);
+    }
+
+    /** Helper: add an embedding with project and file metadata to the lucene store. */
+    private void addEmbeddingForProject(String project, String file) {
+        Metadata metadata = new Metadata();
+        metadata.put(PxChunk.PXCHUNK_PROJECT, project);
+        metadata.put(PxChunk.PXCHUNK_FILE, file);
+        metadata.put(PxChunk.PXCHUNK_ID, "test-id-" + System.currentTimeMillis());
+
+        TextSegment segment = new TextSegment("test content", metadata);
+        Embedding embedding = new Embedding(new float[8]); // matches vectorDimension=8 in setUp
+
+        luceneStore.add(embedding, segment);
+    }
+
+    // ------------------------------------------------------------------ Reindex progress tracking
+
+    @Test
+    void reindexStatusDefaultsToIdle() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.IDLE);
+        assertThat(registry.getReindexProgress("alpha")).isZero();
+    }
+
+    @Test
+    void reindexStatusUnknownProjectReturnsIdle() {
+        assertThat(registry.getReindexStatus("nonexistent")).isEqualTo(ReindexStatus.IDLE);
+        assertThat(registry.getReindexProgress("nonexistent")).isZero();
+    }
+
+    @Test
+    void setReindexStatusAndProgress() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        registry.setReindexStatus("alpha", ReindexStatus.CHUNKING);
+        registry.setReindexProgress("alpha", 25);
+
+        assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.CHUNKING);
+        assertThat(registry.getReindexProgress("alpha")).isEqualTo(25);
+    }
+
+    @Test
+    void resetReindexStatusClearsBothMaps() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.setReindexStatus("alpha", ReindexStatus.EMBEDDING);
+        registry.setReindexProgress("alpha", 60);
+
+        registry.resetReindexStatus("alpha");
+
+        assertThat(registry.getReindexStatus("alpha")).isEqualTo(ReindexStatus.IDLE);
+        assertThat(registry.getReindexProgress("alpha")).isZero();
+    }
+
+    @Test
+    void projectInfosIncludesReindexStatus() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.setReindexStatus("alpha", ReindexStatus.CHUNKING);
+        registry.setReindexProgress("alpha", 30);
+
+        List<ProjectInfo> infos = registry.projectInfos();
+        ProjectInfo info = infos.get(0);
+
+        assertThat(info.reindexStatus()).isEqualTo("CHUNKING");
+        assertThat(info.reindexProgress()).isEqualTo(30);
+    }
+
+    @Test
+    void projectInfosReindexStatusDefaultsToIdle() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        List<ProjectInfo> infos = registry.projectInfos();
+        ProjectInfo info = infos.get(0);
+
+        assertThat(info.reindexStatus()).isEqualTo("IDLE");
+        assertThat(info.reindexProgress()).isZero();
+    }
+
+    @Test
+    void reindexStatusPerProjectIsIndependent() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.registerProject("beta", projectDir("beta"));
+
+        registry.setReindexStatus("alpha", ReindexStatus.CHUNKING);
+        registry.setReindexProgress("alpha", 40);
+
+        assertThat(registry.getReindexStatus("beta")).isEqualTo(ReindexStatus.IDLE);
+        assertThat(registry.getReindexProgress("beta")).isZero();
+    }
 }
