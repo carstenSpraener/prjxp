@@ -184,6 +184,10 @@ class StdioChannelTest {
         pipedOut.close();
 
         assertThat(eofLatch.await(5, TimeUnit.SECONDS)).isTrue();
+        // onEof() (above) and eofFuture.complete() run in sequence on the reader
+        // thread; asserting isDone() right after the latch races with that and
+        // flakes across platforms. Wait for the future instead.
+        channel.eofFuture().get(5, TimeUnit.SECONDS);
         assertThat(channel.eofFuture().isDone()).isTrue();
 
         channel.close();
@@ -195,7 +199,9 @@ class StdioChannelTest {
         PipedOutputStream pipedOut = new PipedOutputStream(pipedIn);
 
         List<String> receivedLines = new ArrayList<>();
-        CountDownLatch latch = new CountDownLatch(2);
+        // "hello\n\nworld\n" yields THREE lines ("hello", "", "world") — wait
+        // for all of them, not just two, so the assertion below is deterministic.
+        CountDownLatch latch = new CountDownLatch(3);
 
         StdioChannel channel = new StdioChannel(pipedIn, System.out, new StdioChannel.LineHandler() {
             @Override
@@ -215,8 +221,8 @@ class StdioChannelTest {
         pipedOut.flush();
 
         assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
-        // We expect: "hello", "", "world" — but latch only waits for 2
-        assertThat(receivedLines).contains("hello", "world");
+        // All three lines are dispatched, in order — including the empty one.
+        assertThat(receivedLines).containsExactly("hello", "", "world");
 
         pipedOut.close();
         channel.close();
