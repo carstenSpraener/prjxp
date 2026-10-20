@@ -207,7 +207,7 @@ prjxp's configuration is layered. From most to least specific:
 | Variable | Default | Required | Description | Example |
 |---|---|---|---|---|
 | `APACHE_PORT` | `80` | No | Host port of the Apache reverse proxy — the Web UI entry point. | `APACHE_PORT=8080` → Web UI at `http://localhost:8080/prjxp/` |
-| `PROJECTS_HOME` | `./import` | **Yes** (set a real path) | Host directory bind-mounted to `/import`. The hub scans it for live projects (`prjxp.yaml` markers) and picks up tar archives dropped in. Must be a directory that exists (compose creates it if missing). | `PROJECTS_HOME=/Users/me/Projekte` |
+| `PROJECTS_HOME` | `./` (in `.env.docker`) · `./import` (compose fallback, no `.env`) | **Yes** (set a real path) | Host directory bind-mounted to `/import`. The hub scans it for live projects (`prjxp.yaml` markers) and picks up tar archives dropped in. Must be a directory that exists (compose creates it if missing). `./` resolves to the compose file's directory — your cwd when you run `docker compose` from there. Docker Compose does not expand `$(pwd)` in `.env` files. | `PROJECTS_HOME=/Users/me/Projekte` |
 | `EMBEDDING_API_KEY` | `dummy` | **Yes** (for real providers) | API key sent to the embedding endpoint. LM Studio accepts any non-empty value; OpenAI needs a real `sk-…` key. | `EMBEDDING_API_KEY=lm-studio` |
 | `EMBEDDING_API_BASE_URL` | `http://host.docker.internal:1234/v1` | No | OpenAI-compatible base URL of the embedding endpoint, **as seen from inside the containers**. For a provider on the host use `host.docker.internal`; for one in another container use its service name. | `http://host.docker.internal:1234/v1` (LM Studio) · `https://api.openai.com/v1` |
 | `EMBEDDING_MODEL_NAME` | `mxbai-embed-large-v1` | No | Model name/ID of the embedding model. Must match what your provider serves, and its dimension must equal `LUCENE_VECTOR_DIMENSION`. | `mxbai-embed-large-v1` (1024) · `text-embedding-3-small` (OpenAI, 1536 — then set the dimension too) |
@@ -401,7 +401,7 @@ provider and trigger a reindex.
 
 | Symptom | Likely cause / fix |
 |---|---|
-| No projects found, `./import` next to the compose file is empty | You skipped `.env`, so `PROJECTS_HOME` fell back to its default (`./import`). Create it (`cp .env.docker .env`) and point `PROJECTS_HOME` at your real projects directory, then `docker compose up -d`. |
+| No projects found (empty project list) | `PROJECTS_HOME` points at a directory with no `prjxp.yaml` marker and no dropped tar. If you skipped `.env` it fell back to `./import`; if you copied `.env.docker` it ships `./` (the compose dir). Set `PROJECTS_HOME` to a directory that actually contains a project, then `docker compose up -d`. |
 | Web UI loads but project list stays empty | The hub scans `PROJECTS_HOME` (mounted at `/import`). Check the directory exists and contains a `prjxp.yaml` marker or tar archive; check `docker compose logs hub` for poller warnings. |
 | Project stuck in `embedding`, errors mention the model | Model name/dimension mismatch: `EMBEDDING_MODEL_NAME` must be a model actually loaded in your provider, and `LUCENE_VECTOR_DIMENSION` must equal its output dimension. |
 | Embedding errors: `Connection refused` / `No route to host` | The provider is not running on the expected address. Verify with `docker compose exec hub curl -s http://host.docker.internal:1234/v1/models`. On a non-Desktop Linux setup, check that `host.docker.internal` resolves (`docker compose exec hub getent hosts host.docker.internal`). |
