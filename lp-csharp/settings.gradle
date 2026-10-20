@@ -1,0 +1,14 @@
+/*
+ * lp-csharp — standalone C# Language Pack plugin for prjxp.
+ *
+ * This is an INDEPENDENT Gradle build: it is NOT included in the prjxp root
+ * settings.gradle. It consumes prjxp-common from the local Maven repository
+ * (published via `:prjxp-common:publishToMavenLocal`), never via a composite
+ * build, so the plugin JAR can be built and deployed on its own.
+ */
+plugins {
+    // Allow automatic download of the JDK toolchain if the local JDK differs.
+    id 'org.gradle.toolchains.foojay-resolver-convention' version '0.10.0'
+}
+
+rootProject.name = 'lp-csharp'

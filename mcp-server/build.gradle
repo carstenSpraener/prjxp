@@ -18,6 +18,8 @@ dependencies {
     // DocPipe in-process: generates documentation for projects after the pipeline run (DocPipePipelineIntegration)
     implementation project(':docpipe')
     testFixturesImplementation project(':prjxp-common')
+    // WP-1 Phase 02: PluginJarBuilder + plugin fixtures for the bootstrap tests
+    testImplementation testFixtures(project(':prjxp-common'))
 
     // Spring Boot
     implementation libs.spring.boot.starter.json
@@ -53,10 +55,28 @@ dependencies {
     // Testing
     testImplementation libs.bundles.test.bundle
 }
+// ---------------------------------------------------------------------------
+// C# Language Pack E2E (WP-2 Phase 04): stage the lp-csharp plugin fat JAR
+// (built by the root-level :buildLpCsharpPlugin task) so the host tests can
+// load it via prjxp.language-packs.dir.
+// ---------------------------------------------------------------------------
+def lpCsharpJar = new File(rootProject.projectDir, 'lp-csharp/build/libs/lp-csharp-plugin.jar')
+def lpCsharpStageDir = layout.buildDirectory.dir('language-packs')
+
+tasks.register('stageLpCsharpPlugin', Copy) {
+    dependsOn ':buildLpCsharpPlugin'
+    from lpCsharpJar
+    into lpCsharpStageDir
+}
+
 test {
     // Phase 01 (DockerHub): chunk-norris/tibed sind jetzt auf der Classpath — ihre CLI-Runner
     // duerfen in Hub-Tests nicht feuern (matchIfMissing=true wuerde sie sonst starten lassen).
     systemProperty 'prjxp.cli.enabled', 'false'
+    // WP-2 Phase 04: the C# E2E test loads the staged lp-csharp plugin JAR
+    // (the property is only consumed by that test, via @DynamicPropertySource).
+    dependsOn 'stageLpCsharpPlugin'
+    systemProperty 'prjxp.csharp.e2e.pluginDir', lpCsharpStageDir.get().asFile.absolutePath
 }
 
 jar {

@@ -130,3 +130,26 @@ subprojects {
         dependsOn jacocoTestCoverageVerification
     }
 }
+
+// ---------------------------------------------------------------------------
+// C# Language Pack E2E (WP-2 Phase 04): build the standalone lp-csharp plugin.
+// lp-csharp is a SEPARATE Gradle build (not in settings.gradle) that consumes
+// prjxp-common from mavenLocal, so it is driven via an Exec task. Shared by
+// mcp-server and chunk-norris, whose E2E tests load the staged JAR via
+// prjxp.language-packs.dir.
+// ---------------------------------------------------------------------------
+def lpCsharpDir = new File(rootDir, 'lp-csharp')
+def lpCsharpJar = new File(lpCsharpDir, 'build/libs/lp-csharp-plugin.jar')
+
+tasks.register('buildLpCsharpPlugin', Exec) {
+    dependsOn ':prjxp-common:publishToMavenLocal'
+    workingDir = lpCsharpDir
+    commandLine './gradlew', 'shadowJar', '--console=plain'
+    // Rebuild when the plugin sources, its build scripts, or the host API it
+    // compiles against change (the inner build is up-to-date-checked itself).
+    inputs.dir(new File(lpCsharpDir, 'src'))
+    inputs.file(new File(lpCsharpDir, 'build.gradle'))
+    inputs.file(new File(lpCsharpDir, 'settings.gradle'))
+    inputs.dir(new File(rootDir, 'prjxp-common/src'))
+    outputs.file(lpCsharpJar)
+}

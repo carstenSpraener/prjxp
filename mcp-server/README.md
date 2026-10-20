@@ -72,6 +72,26 @@ The server operates in two modes:
 | **Static** (default) | `prjxp.hub.enabled=false` or unset | `StaticProjectRegistry` | Pre-configured projects from `application.yaml` |
 | **Hub** | `prjxp.hub.enabled=true` | `HubProjectRegistry` | Dynamic project import, lifecycle management, shared Lucene index |
 
+## Language Packs (plugins)
+
+The server loads external **Language Pack** plugins at startup (before any Bean is
+created) from the plugin directory — default `./language-packs`, configurable via
+`prjxp.language-packs.dir` or the `PRJXP_LANGUAGE_PACKS_DIR` environment variable.
+Each plugin JAR runs in its own isolating class loader and contributes its language to:
+
+- **chunking** (hub pipeline / in-process chunk-norris) — the pack's chunker processes
+  the language's files,
+- **retrieval** — the pack's retriever enriches search hits,
+- **the `grep` language filter** — the pack's MIME type is used for filtering.
+
+A broken plugin is rejected with an error log (naming the JAR) and never blocks the
+other plugins or the server startup. There is **no hot reload** — add, remove or change
+a plugin JAR and restart. In Docker, mount your plugins at
+`/app-source/language-packs` (they are never baked into the image).
+
+Full plugin contract (delegation rule, golden rules, packaging):
+[`doc/LanguagePack_Plugin_Guide.md`](../doc/LanguagePack_Plugin_Guide.md).
+
 ---
 
 ## Quick Start
@@ -213,7 +233,7 @@ Exact full-text search over all chunks. Use the **exact method signature** as qu
 |-----------|------|----------|---------|-------------|
 | `query` | string | **Yes** | — | Exact search string, e.g. `public MClass createMClass` |
 | `project` | string | No | active project | Project name |
-| `language` | string | No | — | Language filter, e.g. `java`, `ts` |
+| `language` | string | No | — | Language filter, e.g. `java`, `ts`, `csharp` (resolved to the pack's MIME type via the `LanguagePackRegistry`, so plugin languages work too) |
 | `limit` | integer | No | `10` | Max results (1–100) |
 
 **Result:** `SearchHit` list with `file`, `lineFrom`/`lineTo`, `snippet`, `chunkId`, `score`, `source="grep"`.
@@ -235,7 +255,7 @@ Returns a **complete source view** of one file, reconstructed from the project i
 
 ### 4. `readBySignature` — Level 3 (Complete Symbol)
 
-Returns the **complete implementation** of a symbol (javadoc + full method body). **Java only.**
+Returns the **complete implementation** of a symbol (javadoc + full method body). **Language-agnostic** — works for every language whose chunks carry `symbol_*` metadata (Java, C# via plugin, …).
 
 | Parameter | Type | Required | Default | Description |
 |-----------|------|----------|---------|-------------|

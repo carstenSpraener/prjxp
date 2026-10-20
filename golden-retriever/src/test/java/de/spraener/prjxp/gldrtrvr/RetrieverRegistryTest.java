@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr;
 
 import de.spraener.prjxp.common.language.LanguagePack;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.model.ScoredChunk;
@@ -10,7 +11,6 @@ import de.spraener.prjxp.common.model.SearchHit;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.function.Function;
@@ -29,7 +29,8 @@ class RetrieverRegistryTest {
         LanguagePack packA = new SimpleLanguagePack("a", "text/a", a);
         LanguagePack packB = new SimpleLanguagePack("b", "text/b", b);
 
-        RetrieverRegistry registry = new RetrieverRegistry(List.of(packA, packB), List.of());
+        RetrieverRegistry registry = new RetrieverRegistry(
+                new LanguagePackRegistry(List.of(packA, packB), List.of()), List.of());
         List<GoldenRetriever> result = registry.all();
 
         assertThat(result).hasSize(2);
@@ -45,7 +46,8 @@ class RetrieverRegistryTest {
 
         LanguagePack pack = new SimpleLanguagePack("java", "text/x-java", packRetriever);
 
-        RetrieverRegistry registry = new RetrieverRegistry(List.of(pack), List.of(plainBean));
+        RetrieverRegistry registry = new RetrieverRegistry(
+                new LanguagePackRegistry(List.of(pack), List.of()), List.of(plainBean));
         List<GoldenRetriever> result = registry.all();
 
         assertThat(result).hasSize(2);
@@ -61,43 +63,46 @@ class RetrieverRegistryTest {
         LanguagePack pack = new SimpleLanguagePack("java", "text/x-java", shared);
 
         // The same instance is also injected as a plain bean
-        RetrieverRegistry registry = new RetrieverRegistry(List.of(pack), List.of(shared));
+        RetrieverRegistry registry = new RetrieverRegistry(
+                new LanguagePackRegistry(List.of(pack), List.of()), List.of(shared));
         List<GoldenRetriever> result = registry.all();
 
         assertThat(result).hasSize(1);
         assertThat(result.get(0)).isSameAs(shared);
     }
 
-    /* --- Test 4: External ServiceLoader pack + Spring pack with same language → external skipped --- */
+    /* --- Test 4: Plugin pack + built-in pack with same language → plugin wins --- */
     @Test
-    void externalPackDedupedBySpringPack() {
-        // TestLanguagePack is loaded via META-INF/services (external)
-        // We also provide a Spring-managed pack with the same language "testlang"
-        FakeRetriever springRetriever = new FakeRetriever("testlang");
-        LanguagePack springPack = new SimpleLanguagePack("testlang", "text/x-testlang", springRetriever);
+    void pluginPackOverridesBuiltIn_sameLanguage() {
+        FakeRetriever builtInRetriever = new FakeRetriever("testlang");
+        FakeRetriever pluginRetriever = new FakeRetriever("testlang-plugin");
 
-        RetrieverRegistry registry = new RetrieverRegistry(List.of(springPack), List.of());
+        LanguagePack builtInPack = new SimpleLanguagePack("testlang", "text/x-testlang", builtInRetriever);
+        LanguagePack pluginPack = new SimpleLanguagePack("testlang", "text/x-testlang", pluginRetriever);
+
+        RetrieverRegistry registry = new RetrieverRegistry(
+                new LanguagePackRegistry(List.of(builtInPack), List.of(pluginPack)), List.of());
         List<GoldenRetriever> result = registry.all();
 
-        // External TestLanguagePack has no retriever (Optional.empty), so only the Spring pack's retriever appears
         assertThat(result).hasSize(1);
-        assertThat(result.get(0)).isSameAs(springRetriever);
+        assertThat(result.get(0)).isSameAs(pluginRetriever);
     }
 
-    /* --- Test 5: External pack with retriever + Spring pack same language → external skipped, only Spring --- */
+    /* --- Test 5: Plugin pack for a new language → included --- */
     @Test
-    void externalPackWithRetriever_dedupedBySpring() {
-        FakeRetriever springRetriever = new FakeRetriever("testlang");
-        LanguagePack springPack = new SimpleLanguagePack("testlang", "text/x-testlang", springRetriever);
+    void pluginPackForNewLanguage_included() {
+        FakeRetriever javaRetriever = new FakeRetriever("java");
+        FakeRetriever cobolRetriever = new FakeRetriever("cobol");
 
-        // The external TestLanguagePack has no retriever, but let's verify merge behavior:
-        // Spring packs come first; external deduped by language(). Since TestLanguagePack.retriever() is empty,
-        // only the Spring pack contributes.
-        RetrieverRegistry registry = new RetrieverRegistry(List.of(springPack), List.of());
+        LanguagePack javaPack = new SimpleLanguagePack("java", "text/x-java", javaRetriever);
+        LanguagePack cobolPack = new SimpleLanguagePack("cobol", "text/x-cobol", cobolRetriever);
+
+        RetrieverRegistry registry = new RetrieverRegistry(
+                new LanguagePackRegistry(List.of(javaPack), List.of(cobolPack)), List.of());
         List<GoldenRetriever> result = registry.all();
 
-        assertThat(result).hasSize(1);
-        assertThat(result.get(0)).isSameAs(springRetriever);
+        assertThat(result).hasSize(2);
+        assertThat(result).containsExactlyInAnyOrder(javaRetriever, cobolRetriever);
     }
 
     /* --- Test 6: Multiple plain beans, none in packs --- */
@@ -106,7 +111,8 @@ class RetrieverRegistryTest {
         FakeRetriever plain1 = new FakeRetriever("markdown");
         FakeRetriever plain2 = new FakeRetriever("yaml");
 
-        RetrieverRegistry registry = new RetrieverRegistry(List.of(), List.of(plain1, plain2));
+        RetrieverRegistry registry = new RetrieverRegistry(
+                new LanguagePackRegistry(List.of(), List.of()), List.of(plain1, plain2));
         List<GoldenRetriever> result = registry.all();
 
         assertThat(result).hasSize(2);
@@ -124,7 +130,8 @@ class RetrieverRegistryTest {
         LanguagePack javaPack = new SimpleLanguagePack("java", "text/x-java", javaR);
         LanguagePack tsPack   = new SimpleLanguagePack("typescript", "text/x-ts", tsR);
 
-        RetrieverRegistry registry = new RetrieverRegistry(List.of(tsPack, javaPack), List.of(mdR));
+        RetrieverRegistry registry = new RetrieverRegistry(
+                new LanguagePackRegistry(List.of(tsPack, javaPack), List.of()), List.of(mdR));
         List<GoldenRetriever> result = registry.all();
 
         assertThat(result).hasSize(3);

@@ -23,8 +23,9 @@ serialized to JSONL, stored in Lucene, and consumed by golden-retriever/mcp-serv
 
 **Typed unit-role metadata** (written by chunkers, read by retrievers/readers):
 `java_code_section` (`imports|method|methodDoc|classFrame|…`), `typescript_code_section`,
-`visualbasic_code_section`, and the symbol keys from `SymbolMetadata`:
-`symbol_fqn`, `symbol_name`, `symbol_type`, `symbol_container_fqn`,
+`visualbasic_code_section`, `csharp_code_section` (plugin chunker: `typeFrame|method|
+methodDoc|field|property|event|indexer|usings|…`), and the symbol keys from
+`SymbolMetadata`: `symbol_fqn`, `symbol_name`, `symbol_type`, `symbol_container_fqn`,
 `symbol_signature_hash` (SHA-256 of the declaration — overload-safe).
 
 Any other metadata key is stored under `pxchunk_metadata.<key>` in the index.
@@ -59,10 +60,13 @@ whitelist `java,ts`) is created — the "just works" default.
 | File veto | `@ChunkVeto` on `boolean(Path)` methods, collected by a `BeanPostProcessor` | build artifacts, >1 MB files, hidden files, images, whitelist misses |
 | File view reader | `FileViewProvider` beans (mime → renderer), registry in mcp-server | Java/TS/VB/Markdown providers + `GenericFileViewProvider` fallback |
 | Chat model supplier | `ChatModelSupplier` beans (`canProvide`/`provide`) | Ollama, OpenAI-compatible, Gemini, LM Studio, Azure |
-| Retriever | `GoldenRetriever` beans (auto-collected list) | per-language retrievers |
+| Retriever | `RetrieverRegistry` (merged view: pack-provided retrievers + plain `GoldenRetriever` beans) | Java/TS/VB retriever packs, Markdown retriever, plugin retrievers |
+| **Language pack** | **`LanguagePack` Spring beans (built-in) + plugin JARs via `LanguagePackProvider` SPI, loaded into isolating class loaders at startup** | Java/TS/VB chunker packs + retriever packs (built-in), `lp-csharp` (external plugin) |
 
-**Rule of thumb:** adding a new language = one chunker + one ranker/prompt session +
-one file-view provider (+ capability registration) — no core changes.
+**Rule of thumb:** adding a new language = one `LanguagePack` (chunker side + retriever
+side) — as a Spring bean for built-in languages, or as a **plugin JAR** in
+`./language-packs` for external ones (no core changes, no rebuild of the host; see
+[09](09_design_decisions.md) D15).
 
 ## 8.5 Multi-Project Separation (one shared index)
 

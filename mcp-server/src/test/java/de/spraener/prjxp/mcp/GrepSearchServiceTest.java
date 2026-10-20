@@ -1,7 +1,7 @@
 package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.language.LanguagePack;
-import de.spraener.prjxp.common.language.LanguagePacks;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -66,7 +66,8 @@ class GrepSearchServiceTest {
     @BeforeEach void setUp() {
         // No stubbing for retrieverRegistry.all(): Mockito's default answer is an empty List,
         // and most tests never reach the retriever loop (strict stubs would reject an unused stub).
-        service = new GrepSearchService(provider, retrieverRegistry, List.of(javaPack), projectRegistry);
+        service = new GrepSearchService(provider, retrieverRegistry,
+                new LanguagePackRegistry(List.of(javaPack), List.of()), projectRegistry);
     }
 
     /** The FULLTEXT exclusion filter that every grep search carries (raw Lucene field name). */
@@ -225,7 +226,8 @@ class GrepSearchServiceTest {
 
     @Test
     void tsAliasResolvesToTypescriptMimeType() {
-        service = new GrepSearchService(provider, retrieverRegistry, List.of(javaPack, tsPack), projectRegistry);
+        service = new GrepSearchService(provider, retrieverRegistry,
+                new LanguagePackRegistry(List.of(javaPack, tsPack), List.of()), projectRegistry);
 
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
@@ -240,9 +242,10 @@ class GrepSearchServiceTest {
     }
 
     @Test
-    void cobolLanguageUsesExternalPack() {
-        // LanguagePacks.merge(empty) still loads external ServiceLoader packs → TestLanguagePack (cobol)
-        service = new GrepSearchService(provider, retrieverRegistry, List.of(), projectRegistry);
+    void cobolLanguageResolvesFromRegistry() {
+        // TestLanguagePack (cobol) is part of the registry — the old ServiceLoader mechanism is gone
+        service = new GrepSearchService(provider, retrieverRegistry,
+                new LanguagePackRegistry(List.of(new TestLanguagePack()), List.of()), projectRegistry);
 
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
@@ -252,6 +255,48 @@ class GrepSearchServiceTest {
         verify(dao).searchFullText(
                 eq("q"),
                 eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-cobol",
+                        PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
+                eq(10));
+    }
+
+    @Test
+    void pluginPackMimeResolvesFromRegistry() {
+        LanguagePack pluginPack = new LanguagePack() {
+            @Override public String language() { return "goodlang"; }
+            @Override public String mimeType() { return "text/x-goodlang-code"; }
+        };
+        service = new GrepSearchService(provider, retrieverRegistry,
+                new LanguagePackRegistry(List.of(javaPack), List.of(pluginPack)), projectRegistry);
+
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        service.search("q", "myproj", "goodlang", 10);
+
+        verify(dao).searchFullText(
+                eq("q"),
+                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-goodlang-code",
+                        PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
+                eq(10));
+    }
+
+    @Test
+    void pluginOverrideWinsMime() {
+        LanguagePack pluginJava = new LanguagePack() {
+            @Override public String language() { return "java"; }
+            @Override public String mimeType() { return "text/x-java-plugin"; }
+        };
+        service = new GrepSearchService(provider, retrieverRegistry,
+                new LanguagePackRegistry(List.of(javaPack), List.of(pluginJava)), projectRegistry);
+
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        service.search("q", "myproj", "java", 10);
+
+        verify(dao).searchFullText(
+                eq("q"),
+                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-plugin",
                         PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
                 eq(10));
     }

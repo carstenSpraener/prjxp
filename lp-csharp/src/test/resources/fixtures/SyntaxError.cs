@@ -1,0 +1,6 @@
+class Broken
+{
+    void Method(
+    {
+    }
+}

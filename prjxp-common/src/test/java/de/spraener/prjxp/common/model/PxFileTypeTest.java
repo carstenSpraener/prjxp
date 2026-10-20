@@ -20,6 +20,11 @@ class PxFileTypeTest {
     }
 
     @Test
+    void from_csharpExtension_returnsCSharpCode() {
+        assertThat(PxFileType.from(Path.of("Foo.cs"))).isEqualTo(PxFileType.C_SHARP_CODE);
+    }
+
+    @Test
     void from_visualBasicExtensions_returnVisualBasicCode() {
         assertThat(PxFileType.from(Path.of("a.vb"))).isEqualTo(PxFileType.VISUAL_BASIC_CODE);
         assertThat(PxFileType.from(Path.of("a.bas"))).isEqualTo(PxFileType.VISUAL_BASIC_CODE);
@@ -56,6 +61,9 @@ class PxFileTypeTest {
     void matches_positiveAndNegative() {
         assertThat(PxFileType.JAVA_CODE.matches(new File("Foo.java"))).isTrue();
         assertThat(PxFileType.JAVA_CODE.matches(new File("Foo.txt"))).isFalse();
+
+        assertThat(PxFileType.C_SHARP_CODE.matches(new File("Foo.cs"))).isTrue();
+        assertThat(PxFileType.C_SHARP_CODE.matches(new File("Foo.java"))).isFalse();
 
         // The five types unreachable via from() still match correctly through matches(File):
         assertThat(PxFileType.TXT.matches(new File("a.txt"))).isTrue();

@@ -18,6 +18,7 @@ flowchart TB
     end
 
     ORA[("oragel — incubator,<br/>not in default build")]
+    LPC[("lp-csharp — external plugin<br/>(standalone build, not in root)")]
 
     MS --> GR
     MS --> LS
@@ -31,6 +32,9 @@ flowchart TB
     GR --> PC
     LS ==>|"api"| PC
     ORA -.-> GR
+    LPC ==>|"compileOnly: host API"| PC
+    LPC -.->|"plugin JAR, own class loader"| CN
+    LPC -.->|"plugin JAR, own class loader"| MS
 
     style PC fill:#e8f0fe,stroke:#4285f4
     style LS fill:#fef7e0,stroke:#f9ab00
@@ -40,18 +44,21 @@ flowchart TB
 kernel) and, where retrieval/storage is needed, on `lucene-store`. Only the *applications*
 compose libraries; `mcp-server` is the only module that sees all of them (it must, because
 hub mode runs the whole pipeline in one process). `lucene-store` exposes `prjxp-common`
-as **api** (its DAO types appear in its public signatures).
+as **api** (its DAO types appear in its public signatures). `lp-csharp` is the one
+exception to "in the root build": it is a **standalone Gradle project** that depends on
+`prjxp-common` as a *published Maven artifact* (`compileOnly`) and ships as a plugin JAR
+loaded at runtime into an isolating class loader (see [09](09_design_decisions.md) D15).
 
 ### Contained building blocks (Level 1 black boxes)
 
 | Black box | Purpose / Responsibility | Interface(s) | Quality characteristics |
 |---|---|---|---|
-| **prjxp-common** (`de.spraener.prjxp.common`) | Shared kernel: `PxChunk` model + metadata keys, config binding (`PrjXPConfig`, `ProjectDefinition`, store/chat/MCP references), chat abstraction (`KIChat`, `KIChatProvider` + per-server suppliers: Ollama, OpenAI-compatible, Gemini, LM Studio, Azure), **MCP client infrastructure** (`McpClientManager` with stdio + **Streamable HTTP transport**, `McPEnablingKIChatDecorator` for tool-enabled LLMs with system prompts), store abstractions (`PxChunkDao`, `PxChunkDaoProvider`), transfer crypto (AES-256-GCM/PBKDF2), annotations (`@Chunker`, `@ChunkVeto`, `@Retriever`, `@PreWalk`, `@PostWalkChunker`, `@ChunkNorrisComponent`), capability registry types, reader SPI (`FileViewProvider`), error log service. | Java API (no own process) | Dependency of all modules; keeps the `PxChunk` contract in exactly one place. LangChain4j MCP **1.21.0-beta31** for `StreamableHttpMcpTransport`. |
-| **chunk-norris** (`de.spraener.prjxp.chuno`) | CLI chunking framework: walks a project tree, applies vetoes, selects & runs chunkers per file (SPI), writes JSONL (optionally encrypted). | `ChunkNorris` main; `ChunkerBroker` SPI (`META-INF/services/de.spraener.chuno.ChunkerBroker`); `PxChunker`; `@Chunker`/`@PostWalkChunker` discovery; `VetoRegistry`. | Parallel file processing; per-file fault isolation (parse errors → empty stream, run continues). |
+| **prjxp-common** (`de.spraener.prjxp.common`) | Shared kernel: `PxChunk` model + metadata keys, config binding (`PrjXPConfig`, `ProjectDefinition`, store/chat/MCP references), chat abstraction (`KIChat`, `KIChatProvider` + per-server suppliers: Ollama, OpenAI-compatible, Gemini, LM Studio, Azure), **MCP client infrastructure** (`McpClientManager` with stdio + **Streamable HTTP transport**, `McPEnablingKIChatDecorator` for tool-enabled LLMs with system prompts), store abstractions (`PxChunkDao`, `PxChunkDaoProvider`), **language pack infrastructure** (`LanguagePack`, `LanguagePackProvider`, `LanguagePackRegistry`, `LanguagePackPluginLoader` + `ApplicationContextInitializer` bootstrap, isolating `PluginClassLoader`), transfer crypto (AES-256-GCM/PBKDF2), annotations (`@Chunker`, `@ChunkVeto`, `@Retriever`, `@PreWalk`, `@PostWalkChunker`, `@ChunkNorrisComponent`), capability registry types, reader SPI (`FileViewProvider`), error log service. | Java API (no own process) | Dependency of all modules; keeps the `PxChunk` contract in exactly one place. LangChain4j MCP **1.21.0-beta31** for `StreamableHttpMcpTransport`. |
+| **chunk-norris** (`de.spraener.prjxp.chuno`) | CLI chunking framework: walks a project tree, applies vetoes, selects & runs chunkers per file (SPI + `LanguagePackBroker` for built-in/plugin packs), writes JSONL (optionally encrypted). | `ChunkNorris` main; `ChunkerBroker` SPI (`META-INF/services/de.spraener.chuno.ChunkerBroker`); `PxChunker`; `@Chunker`/`@PostWalkChunker` discovery; `VetoRegistry`; `LanguagePackBroker`. | Parallel file processing; per-file fault isolation (parse errors → empty stream, run continues). |
 | **lucene-store** (`de.spraener.prjxp.lucene`) | File-based vector + full-text index: `LuceneEmbeddingStore` (LangChain4j `EmbeddingStore`, KNN search, filter-based delete), `LucenePxChunkDao` (project-scoped DAO: vector/full-text/index search, find-by-id/metadata), Spring auto-configuration. | `EmbeddingStore<TextSegment>`, `PxChunkDao`; `LuceneStoreAutoConfiguration`. | Single-writer index; stale-lock recovery; read/write locking. |
 | **tibed** (`de.spraener.prjxp.tibed`) | Batch embedding engine: reads JSONL in batches, embeds via LangChain4j `EmbeddingModel`, writes to the store. Modes: **STORE** (default), **EXPORT** (chunks → `embedding.jsonl` with vectors, encrypted transfer), **IMPORT** (`embedding.jsonl` → store). | `TiBedCliApp` main; `EmbeddingService.executeForProject()` (in-process use by hub). | Incremental embed (`StoreIdChecker` skips existing ids); project-scoped reset; batch size per project. |
-| **golden-retriever** (`de.spraener.prjxp.gldrtrvr`) | RAG engine: `GoldenRetriever` implementations per language (Java, TypeScript, Visual Basic, Markdown), chunk ranking services/rankers, prompt sessions with **Forest of Trees** reconstruction, `GRPromptEnrichment` (search + fallback iteration + budgets), per-language `FileViewProvider`s, Javadoc enricher. | `GoldenRetriever` (buildPromptForFindings / retrieveSearchHits), `GRPromptEnrichment.enrich(...)`, `FileViewProvider` beans. | Deterministic context construction; global content budget across retrievers. |
-| **mcp-server** (`de.spraener.prjxp.mcp`) | Runtime: Spring AI MCP server (streamable) with tools `vectorSearch`, `grep`, `readFile`, `readBySignature`, `listProjects`; REST API + OpenAPI; project registries (static / hub); search capability registry; reader services; **hub package** (import poller, tar extractor with security limits, pipeline orchestrator, lifecycle service, projects REST + web UI). | `McpServer` main; MCP endpoint `/mcp`; REST `/prjxp/*`; web UI `/`. | Strictest coverage ratchet (0.80); compatibility filter for legacy MCP protocol versions. |
+| **golden-retriever** (`de.spraener.prjxp.gldrtrvr`) | RAG engine: `RetrieverRegistry` (merged view over pack-provided + plain `GoldenRetriever` beans), per-language retriever packs (Java, TypeScript, Visual Basic) + Markdown retriever, chunk ranking services/rankers, prompt sessions with **Forest of Trees** reconstruction, `GRPromptEnrichment` (search + fallback iteration + budgets), per-language `FileViewProvider`s, Javadoc enricher. | `RetrieverRegistry.all()`, `GoldenRetriever` (buildPromptForFindings / retrieveSearchHits), `GRPromptEnrichment.enrich(...)`, `FileViewProvider` beans. | Deterministic context construction; global content budget across retrievers. |
+| **mcp-server** (`de.spraener.prjxp.mcp`) | Runtime: Spring AI MCP server (streamable) with tools `vectorSearch`, `grep`, `readFile`, `readBySignature`, `listProjects`; REST API + OpenAPI; project registries (static / hub); search capability registry; reader services (language-agnostic `SymbolReaderService`); `LanguagePackRegistry` (plugin packs visible to grep language filter + retrieval); **hub package** (import poller, tar extractor with security limits, pipeline orchestrator, lifecycle service, projects REST + web UI). | `McpServer` main; MCP endpoint `/mcp`; REST `/prjxp/*`; web UI `/`. | Strictest coverage ratchet (0.80); compatibility filter for legacy MCP protocol versions. |
 | **docpipe** (`de.spraener.prjxp.docpipe`) | Documentation pipeline: reads jobs from `.dp/documents.json`, resolves Handlebars prompt templates via pluggable resolvers (`gr` → golden-retriever enrichment, `source-dump`, `source-skeleton`, `groovy` scripts, `url`, `current-file`, **`mcp-project`** → project context for MCP tool usage), calls LLMs by stereotype, writes output files. The LLM can use **MCP tools over HTTP** (via `McPEnablingKIChatDecorator`) to query the prjxp MCP server (`vectorSearch`, `grep`, `readFile`, `readBySignature`) for embedded project information during content generation. | `DocPipeCliApp` main; `.dp/` job configuration directory. | Parallel task execution (fixed pool, `prjxp.docpipe.maxthreads`); misconfigured jobs degrade to empty job instead of aborting; MCP tool loop runs transparently inside `String chat(String)`. |
 | **oragel** (`de.spraener.prjxp.oragel`, *incubator*) | Experimental interactive CLI: prompt sources + enrichment events, console log listener. Scans `gldrtrvr` beans. | `OragelCliApp` main. | **Not included** in the default `settings.gradle`; experimental, no stability promise. |
 
@@ -84,6 +91,13 @@ flowchart LR
         DAO["PxChunkDao<br/>findById findByMetaData<br/>findRelevant searchFullText<br/>searchByIndex searchVector"]
         DAP["PxChunkDaoProvider<br/>register/unregister   get(name)"]
     end
+    subgraph language ["language (host API for plugins)"]
+        LP["LanguagePack<br/>language() mimeType()<br/>findPxChunkers() listPostWalkChunkers()<br/>retriever() bind(PxChunkDaoProvider)"]
+        LPP["LanguagePackProvider<br/>(SPI, no-arg create())"]
+        LPR["LanguagePackRegistry<br/>built-in + plugin packs<br/>mimeByLanguage()"]
+        LPL["LanguagePackPluginLoader<br/>one PluginClassLoader per JAR<br/>parent-first: prjxp + slf4j"]
+        LBI["LanguagePackBootstrapInitializer<br/>(spring.factories, pre-Bean)"]
+    end
     subgraph transfer ["transfer"]
         TC["TransferCrypto<br/>AES-256-GCM + PBKDF2"]
         TS["TransferSession /<br/>PasswordResolver / Mode"]
@@ -97,6 +111,8 @@ flowchart LR
     KIP --> KIM --> SUP
     KIM --> KIW
     DAP -.-> DAO
+    LBI --> LPL --> LPR
+    LPR -.-> LP
 ```
 
 Key interfaces:
@@ -119,6 +135,7 @@ flowchart LR
     ARGS["CliArgsParser<br/>+ PrjXPConfig binding"]
     PROC["ChunkProcess<br/>walk   vetoes   dispatch<br/>JSONL writer (± encrypted)<br/>post-walk"]
     FACT["ChunkerFactory<br/>extends AnnotationBasedChunkerBrokerImpl<br/>+ ServiceLoader brokers"]
+    LPB["LanguagePackBroker<br/>(pack chunkers: Java/TS/VB<br/>+ external plugin packs)"]
     VETO["VetoRegistry<br/>BeanPostProcessor over @ChunkVeto<br/>StandardVetos:<br/>build artifacts   size>1MB<br/>hidden   images   whitelist"]
     subgraph chunkers ["PxChunker implementations"]
         JC["JavaCodeChunker<br/>JavaParser: imports   methods+javadoc<br/>class frames   symbol_* metadata"]
@@ -131,12 +148,14 @@ flowchart LR
     MAIN --> ARGS --> PROC
     PROC --> VETO
     PROC --> FACT --> chunkers
+    FACT --> LPB
 
     style JC fill:#e8f0fe,stroke:#4285f4
 ```
 
-- **Selection logic:** `ChunkerFactory` aggregates its own annotation-discovered chunkers
-  plus all `ServiceLoader<ChunkerBroker>` registrations; for a file, every matching
+- **Selection logic:** `ChunkerFactory` aggregates its own annotation-discovered chunkers,
+  the `LanguagePackBroker` (built-in + plugin pack chunkers, e.g. C#) and all
+  `ServiceLoader<ChunkerBroker>` registrations; for a file, every matching
   chunker (`PxFileType` suffix match via `@Chunker(fileTypes=…)`) runs.
 - **Java unit structure** (mime `text/x-java-code`, section key `java_code_section`):
 
@@ -209,6 +228,7 @@ flowchart LR
         GRE["GRPromptEnrichment<br/>vector search (window 50) →<br/>retriever loop   global budget<br/>fallback iteration (grid 0.05, abort below 0.5)"]
         SP["SearchParams<br/>maxResult   minScore   skeletonsOnly<br/>effectiveMinScore   fallbackRounds"]
     end
+    RR["RetrieverRegistry<br/>pack retrievers (Java/TS/VB + plugins)<br/>+ plain beans (Markdown)"]
     subgraph retrievers ["GoldenRetriever implementations"]
         JR["JavaRetriever<br/>combine by id → JavaPromptSession"]
         TRS["TypeScriptRetriever"]
@@ -229,7 +249,7 @@ flowchart LR
     JD["JavaDocEnricher<br/>(generated javadoc events)"]
 
     GRE --> SP
-    GRE --> retrievers
+    GRE --> RR --> retrievers
     JR --> session
     readers -.->|"used by mcp-server ReaderService"| GRE
 ```
@@ -257,10 +277,11 @@ flowchart LR
         VSS["VectorSearchService"]
         GSS["GrepSearchService"]
         RS["ReaderService<br/>lenient path   paging   100k cap"]
-        SRS["SymbolReaderService<br/>readBySignature (Java)"]
+        SRS["SymbolReaderService<br/>readBySignature (language-agnostic)"]
         FVR["FileViewRegistry<br/>mime → provider"]
         REG["ProjectRegistry:<br/>StaticProjectRegistry (config)<br/>HubProjectRegistry (dirs, runtime)"]
         SCR2["SearchCapabilitiesRegistry<br/>+ JavaSearchCapabilitiesProvider"]
+        LPR2["LanguagePackRegistry<br/>plugin packs: grep MIME filter<br/>+ retriever view"]
     end
     subgraph hub ["hub package — @ConditionalOnProperty prjxp.hub.enabled"]
         POLL["ImportPoller<br/>5s: tars + prjxp.yaml markers<br/>exclude names   max depth"]
@@ -273,6 +294,7 @@ flowchart LR
 
     MAIN --> mcp & rest & core
     TOOL --> VSS & GSS & RS & SRS & REG
+    GSS --> LPR2
     rest --> core
     hub --> ORCH
     POLL --> TAR --> ORCH

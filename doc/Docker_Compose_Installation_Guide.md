@@ -380,6 +380,12 @@ curl -X DELETE http://localhost/prjxp/projects/your-project
 (`/projects`: extracted imports). Your live projects in `PROJECTS_HOME` are never
 modified. Back up by exporting the volumes:
 
+**Language pack plugins:** mount a directory of plugin JARs (e.g.
+`lp-csharp-plugin.jar`) at `/app-source/language-packs` — the default of
+`prjxp.language-packs.dir` (override: `PRJXP_LANGUAGE_PACKS_DIR`). Plugins are
+loaded at startup and are never baked into the image; see
+[LanguagePack_Plugin_Guide.md](LanguagePack_Plugin_Guide.md).
+
 ```bash
 docker run --rm -v prjxp-hub-data:/data -v "$PWD/backup":/backup alpine \
   tar czf /backup/prjxp-hub-data.tar.gz -C /data .

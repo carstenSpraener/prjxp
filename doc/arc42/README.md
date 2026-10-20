@@ -9,9 +9,9 @@ Dr. Peter Hruschka, Dr. Gernot Starke and contributors. See <https://arc42.org>.
 | | |
 |---|---|
 | **Document** | prjxp — An AI toolset to provide an expert for a software project |
-| **Version** | 1.0 |
-| **Date** | September 2026 |
-| **Status** | Draft (generated from the code base) |
+| **Version** | 1.1 |
+| **Date** | October 2026 |
+| **Status** | Draft (generated from the code base, manually maintained since) |
 
 ## Table of Contents
 

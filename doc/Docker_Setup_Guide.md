@@ -291,6 +291,7 @@ server on 7007) and mounts:
 | `./import` → `/import` | Drop tar archives here to import projects — or mount a directory of live projects (see below) |
 | named volume `prjxp-projects` → `/projects` | Extracted project directories (persistent) |
 | named volume `prjxp-hub-data` → `/data` | Shared Lucene index (persistent) |
+| `./language-packs` → `/app-source/language-packs` | External Language Pack plugin JARs (e.g. `lp-csharp-plugin.jar`) — loaded at startup, never baked into the image |
 
 The hub uses the Lucene index unconditionally (no store-type switch since the
 LuceneOnlyStorage cleanup). All projects share one index; chunks are stamped
