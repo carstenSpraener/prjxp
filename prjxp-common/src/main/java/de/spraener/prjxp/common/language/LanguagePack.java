@@ -11,10 +11,10 @@ import java.util.stream.Stream;
  * A LanguagePack bundles everything prjxp needs to support one programming language:
  * a chunking side (files -> PxChunks) and a retrieval side (a GoldenRetriever).
  *
- * Built-in packs are Spring beans inside the engine modules (chunk-norris / golden-retriever).
- * External packs are plain classes registered via
- * META-INF/services/de.spraener.prjxp.common.language.LanguagePack and only need to
- * depend on prjxp-common.
+ * <p>Built-in packs are Spring beans inside the engine modules (chunk-norris / golden-retriever).
+ * External packs are provided by plugin JARs via {@link LanguagePackProvider} and loaded
+ * into the {@link LanguagePackRegistry} at startup; a plugin only needs to depend on
+ * prjxp-common.
  */
 public interface LanguagePack {
 

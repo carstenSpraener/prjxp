@@ -4,12 +4,20 @@ import de.spraener.prjxp.common.language.LanguagePack;
 import de.spraener.prjxp.common.language.LanguagePackProvider;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxChunker;
+import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.SearchParams;
 
 import java.io.File;
+import java.util.List;
+import java.util.Optional;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 /**
- * Test fixture: a well-behaved external pack that produces real PxChunks.
+ * Test fixture: a well-behaved external pack with both engine sides —
+ * a chunker that produces real PxChunks and a retriever.
  * Compiled at test time against the host classpath and packaged into a JAR.
  */
 public class GoodPackProvider implements LanguagePackProvider {
@@ -33,6 +41,23 @@ public class GoodPackProvider implements LanguagePackProvider {
         @Override
         public Stream<PxChunker> findPxChunkers(File f) {
             return Stream.of(new GoodChunker());
+        }
+
+        @Override
+        public Optional<GoldenRetriever> retriever() {
+            return Optional.of(new GoodRetriever());
+        }
+    }
+
+    public static class GoodRetriever implements GoldenRetriever {
+        @Override
+        public StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
+            return new StringBuilder("good-retriever");
+        }
+
+        @Override
+        public List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks, Function<String, Boolean>... contextValidators) {
+            return List.of();
         }
     }
 
