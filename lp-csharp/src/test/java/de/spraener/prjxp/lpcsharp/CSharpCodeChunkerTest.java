@@ -1,6 +1,7 @@
 package de.spraener.prjxp.lpcsharp;
 
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.model.SymbolMetadata;
 import org.junit.jupiter.api.Test;
 
 import java.io.File;
@@ -172,6 +173,158 @@ class CSharpCodeChunkerTest {
 
         assertThat(sections(chunks, CSharpCodeSection.RAW_FILE)).isNotEmpty();
         assertThat(sections(chunks, CSharpCodeSection.TYPE_FRAME)).isEmpty();
+    }
+
+    // ------------------------------------------------------------------
+    // Phase 03: fields, properties, events, indexers, enum values, docs, metadata
+    // ------------------------------------------------------------------
+
+    @Test
+    void fullClass_producesAllMemberSections() {
+        List<PxChunk> chunks = chunkFixture("FullClass.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.FullClass");
+        assertThat(byId).containsKey("Acme.FullClass.Count");
+        assertThat(byId).containsKey("Acme.FullClass.Name");
+        assertThat(byId).containsKey("Acme.FullClass.Changed");
+        assertThat(byId).containsKey("Acme.FullClass.this(int index)");
+        assertThat(byId).containsKey("Acme.FullClass.FullClass()");
+        assertThat(byId).containsKey("Acme.FullClass.Add(int a, int b)");
+
+        assertThat(byId.get("Acme.FullClass.Count").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.FIELD.getName());
+        assertThat(byId.get("Acme.FullClass.Name").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.PROPERTY.getName());
+        assertThat(byId.get("Acme.FullClass.Changed").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.EVENT.getName());
+        assertThat(byId.get("Acme.FullClass.this(int index)").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.INDEXER.getName());
+
+        // All members point at the type
+        for (String id : List.of("Acme.FullClass.Count", "Acme.FullClass.Name",
+                "Acme.FullClass.Changed", "Acme.FullClass.this(int index)")) {
+            assertThat(byId.get(id).getParent()).isEqualTo("Acme.FullClass");
+        }
+    }
+
+    @Test
+    void fullClass_xmlDocAssociatedWithCorrectSymbols() {
+        List<PxChunk> chunks = chunkFixture("FullClass.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.FullClass.doc");
+        assertThat(byId.get("Acme.FullClass.doc").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.TYPE_DOC.getName());
+        assertThat(byId.get("Acme.FullClass.doc").getContent()).contains("A fully-featured class.");
+
+        assertThat(byId).containsKey("Acme.FullClass.Count.doc");
+        assertThat(byId.get("Acme.FullClass.Count.doc").getContent()).contains("A public counter field.");
+
+        assertThat(byId).containsKey("Acme.FullClass.Name.doc");
+        assertThat(byId.get("Acme.FullClass.Name.doc").getContent()).contains("The display name.");
+
+        assertThat(byId).containsKey("Acme.FullClass.Add(int a, int b).doc");
+        assertThat(byId.get("Acme.FullClass.Add(int a, int b).doc").getContent()).contains("Adds two numbers.");
+    }
+
+    @Test
+    void allChunks_haveValidOrderedLineReferences() {
+        List<PxChunk> chunks = chunkFixture("FullClass.cs");
+        assertThat(chunks).isNotEmpty();
+        for (PxChunk c : chunks) {
+            assertThat(c.getFromLine()).as("fromLine of %s", c.getId()).isNotBlank();
+            assertThat(c.getToLine()).as("toLine of %s", c.getId()).isNotBlank();
+            int from = Integer.parseInt(c.getFromLine());
+            int to = Integer.parseInt(c.getToLine());
+            assertThat(from).as("fromLine <= toLine for %s", c.getId()).isLessThanOrEqualTo(to);
+        }
+    }
+
+    @Test
+    void modifiersAndAttributes_arePreservedInMemberChunks() {
+        List<PxChunk> chunks = chunkFixture("FullClass.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        // The method chunk includes the 'public' modifier (full member declaration)
+        assertThat(byId.get("Acme.FullClass.Add(int a, int b)").getContent()).contains("public");
+        // The field chunk includes the 'public' modifier
+        assertThat(byId.get("Acme.FullClass.Count").getContent()).contains("public");
+        // The type frame includes the [Serializable] attribute
+        assertThat(byId.get("Acme.FullClass").getContent()).contains("[Serializable]");
+    }
+
+    @Test
+    void fullClass_symbolMetadataIsDeterministic() {
+        List<PxChunk> chunks = chunkFixture("FullClass.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        PxChunk frame = byId.get("Acme.FullClass");
+        assertThat(frame.getMetadata().get(SymbolMetadata.SYMBOL_FQN)).isEqualTo("Acme.FullClass");
+        assertThat(frame.getMetadata().get(SymbolMetadata.SYMBOL_NAME)).isEqualTo("FullClass");
+        assertThat(frame.getMetadata().get(SymbolMetadata.SYMBOL_TYPE)).isEqualTo(CSharpCodeSection.TYPE_FRAME.getName());
+
+        PxChunk method = byId.get("Acme.FullClass.Add(int a, int b)");
+        assertThat(method.getMetadata().get(SymbolMetadata.SYMBOL_FQN)).isEqualTo("Acme.FullClass#Add");
+        assertThat(method.getMetadata().get(SymbolMetadata.SYMBOL_NAME)).isEqualTo("Add");
+        assertThat(method.getMetadata().get(SymbolMetadata.SYMBOL_CONTAINER_FQN)).isEqualTo("Acme.FullClass");
+        assertThat(method.getMetadata().get(SymbolMetadata.SYMBOL_SIGNATURE_HASH)).isNotBlank();
+    }
+
+    @Test
+    void enumValues_produceConstantsChunkAndDoc() {
+        List<PxChunk> chunks = chunkFixture("EnumValues.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.RainbowColor");
+        assertThat(byId).containsKey("Acme.RainbowColor.constants");
+        assertThat(byId.get("Acme.RainbowColor.constants").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.ENUM_CONSTANT.getName());
+        String constants = byId.get("Acme.RainbowColor.constants").getContent();
+        assertThat(constants).contains("Red").contains("Green = 5").contains("Blue = 10").contains("Violet");
+
+        assertThat(byId).containsKey("Acme.RainbowColor.doc");
+        assertThat(byId.get("Acme.RainbowColor.doc").getContent()).contains("Colors of the rainbow.");
+    }
+
+    @Test
+    void expressionBodiedMembers_produceChunks() {
+        List<PxChunk> chunks = chunkFixture("ExpressionBodied.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.MathHelper.Double(int x)");
+        assertThat(byId.get("Acme.MathHelper.Double(int x)").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.METHOD.getName());
+        assertThat(byId.get("Acme.MathHelper.Double(int x)").getContent()).contains("x * 2");
+
+        assertThat(byId).containsKey("Acme.MathHelper.Answer");
+        assertThat(byId.get("Acme.MathHelper.Answer").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.PROPERTY.getName());
+
+        assertThat(byId).containsKey("Acme.MathHelper.Greet(string name)");
+    }
+
+    @Test
+    void generics_fqnExcludesTypeParameters() {
+        List<PxChunk> chunks = chunkFixture("Generics.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.Repository");
+        assertThat(byId).containsKey("Acme.IRepository");
+        assertThat(byId).containsKey("Acme.Repository.Find(int id)");
+        assertThat(byId.get("Acme.Repository.Find(int id)").getParent()).isEqualTo("Acme.Repository");
+    }
+
+    @Test
+    void crlfFile_chunksWithoutCarriageReturns() {
+        List<PxChunk> chunks = chunkFixture("CrlfClass.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.CrlfClass");
+        assertThat(byId).containsKey("Acme.CrlfClass.Value");
+        assertThat(byId).containsKey("Acme.CrlfClass.Get()");
+        assertThat(byId.get("Acme.CrlfClass.Value").getContent()).doesNotContain("\r");
+        assertThat(byId.get("Acme.CrlfClass.Get()").getContent()).doesNotContain("\r");
     }
 
     // ------------------------------------------------------------------

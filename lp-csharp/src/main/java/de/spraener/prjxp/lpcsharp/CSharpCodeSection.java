@@ -17,6 +17,20 @@ public enum CSharpCodeSection {
     METHOD("method"),
     /** A constructor (body included). */
     CONSTRUCTOR("constructor"),
+    /** A field declaration. */
+    FIELD("field"),
+    /** A property (including accessors). */
+    PROPERTY("property"),
+    /** An event declaration. */
+    EVENT("event"),
+    /** An indexer (this[...]). */
+    INDEXER("indexer"),
+    /** All enum constants of an enum (analog of Java enumConstants). */
+    ENUM_CONSTANT("enumConstants"),
+    /** XML documentation comment belonging to a type. */
+    TYPE_DOC("typeDoc"),
+    /** XML documentation comment belonging to a method/member. */
+    METHOD_DOC("methodDoc"),
     /** Whole-file fallback when parsing fails (line-based parts). */
     RAW_FILE("rawFile"),
     ;
