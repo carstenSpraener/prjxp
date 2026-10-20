@@ -104,6 +104,8 @@ PROTECTED  : 'protected';
 PUBLIC     : 'public';
 READONLY   : 'readonly';
 REF        : 'ref';
+// Local extension (C# 9+): the base v7 grammar predates records.
+RECORD     : 'record';
 REMOVE     : 'remove';
 RETURN     : 'return';
 SBYTE      : 'sbyte';

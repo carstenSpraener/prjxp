@@ -53,10 +53,11 @@ class CSharpParserTest {
         return parse(source);
     }
 
-    /** Collects the top-level structure (namespaces, classes, methods) of a parse tree. */
+    /** Collects the top-level structure (namespaces, classes, records, methods) of a parse tree. */
     static class Structure extends CSharpParserBaseVisitor<Void> {
         final List<String> namespaces = new ArrayList<>();
         final List<String> classes = new ArrayList<>();
+        final List<String> records = new ArrayList<>();
         final List<String> methods = new ArrayList<>();
 
         @Override
@@ -69,6 +70,12 @@ class CSharpParserTest {
         public Void visitClass_definition(CSharpParser.Class_definitionContext ctx) {
             classes.add(ctx.identifier().getText());
             return super.visitClass_definition(ctx);
+        }
+
+        @Override
+        public Void visitRecord_definition(CSharpParser.Record_definitionContext ctx) {
+            records.add(ctx.identifier().getText());
+            return super.visitRecord_definition(ctx);
         }
 
         @Override
@@ -130,6 +137,18 @@ class CSharpParserTest {
                 .as("a file with a syntax error must be reported")
                 .isTrue();
         assertThat(result.errors()).isNotEmpty();
+    }
+
+    /** Validates the local record extension (C# 9+) added on top of the v7 grammar. */
+    @Test
+    void parsesRecord() throws IOException {
+        ParseResult result = parseFixture("Record.cs");
+
+        assertThat(result.hasErrors())
+                .as("a positional record must parse without syntax errors: %s", result.errors)
+                .isFalse();
+        Structure s = structure(result.tree());
+        assertThat(s.records).containsExactly("Person");
     }
 
     /** Error listener that collects syntax errors instead of printing them. */

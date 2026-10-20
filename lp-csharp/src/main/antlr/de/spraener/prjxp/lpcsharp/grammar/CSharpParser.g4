@@ -644,6 +644,7 @@ type_declaration
         | interface_definition
         | enum_definition
         | delegate_definition
+        | record_definition   // local extension (C# 9+)
     )
     ;
 
@@ -745,6 +746,7 @@ common_member_declaration
     | interface_definition
     | enum_definition
     | delegate_definition
+    | record_definition   // local extension (C# 9+)
     ;
 
 typed_member_declaration
@@ -1196,6 +1198,14 @@ keyword
 
 class_definition
     : CLASS identifier type_parameter_list? class_base? type_parameter_constraints_clauses? class_body ';'?
+    ;
+
+// Local extension (C# 9+): the base v7 grammar predates records. Mirrors
+// class_definition with the RECORD keyword plus an optional positional
+// (primary-constructor) parameter list before the body.
+record_definition
+    : RECORD identifier type_parameter_list? class_base? type_parameter_constraints_clauses?
+        ( OPEN_PARENS formal_parameter_list? CLOSE_PARENS )? ( class_body | ';' )
     ;
 
 struct_definition

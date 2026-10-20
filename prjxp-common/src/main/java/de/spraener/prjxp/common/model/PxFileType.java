@@ -7,6 +7,7 @@ public enum PxFileType {
     NONE(),
     JAVA_CODE(".java"),
     TYPESCRIPT_CODE(".ts"),
+    C_SHARP_CODE(".cs"),
     VISUAL_BASIC_CODE(".vb", ".bas", ".cls", ".frm"),
     JSP(".jsp"),
     XML(".xml"),
