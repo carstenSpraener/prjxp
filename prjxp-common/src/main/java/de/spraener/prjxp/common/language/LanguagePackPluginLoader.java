@@ -162,6 +162,16 @@ public final class LanguagePackPluginLoader implements AutoCloseable {
                 LanguagePack.class.getClassLoader());
     }
 
+    /** The configured plugin directory. */
+    public File pluginDir() {
+        return pluginDir;
+    }
+
+    /** The packs loaded by {@link #loadAll()} — empty until the first call. */
+    public List<LanguagePack> loadedPacks() {
+        return loadedPacks == null ? List.of() : loadedPacks;
+    }
+
     /** The class loaders created so far, for shutdown handling. */
     public List<ClassLoader> classLoaders() {
         return List.copyOf(classLoaders);

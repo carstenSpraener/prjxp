@@ -18,6 +18,8 @@ dependencies {
     // DocPipe in-process: generates documentation for projects after the pipeline run (DocPipePipelineIntegration)
     implementation project(':docpipe')
     testFixturesImplementation project(':prjxp-common')
+    // WP-1 Phase 02: PluginJarBuilder + plugin fixtures for the bootstrap tests
+    testImplementation testFixtures(project(':prjxp-common'))
 
     // Spring Boot
     implementation libs.spring.boot.starter.json

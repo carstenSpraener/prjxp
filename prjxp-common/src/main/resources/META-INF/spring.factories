@@ -1,0 +1,2 @@
+org.springframework.context.ApplicationContextInitializer=\
+de.spraener.prjxp.common.language.LanguagePackBootstrapInitializer

@@ -13,6 +13,8 @@ plugins {
 dependencies {
     implementation project(':prjxp-common')
     testFixturesImplementation project(':prjxp-common')
+    // WP-1 Phase 02: PluginJarBuilder + plugin fixtures for the bootstrap tests
+    testImplementation testFixtures(project(':prjxp-common'))
 
     // Spring & DevTools
     implementation libs.spring.boot.starter.json

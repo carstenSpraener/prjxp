@@ -21,8 +21,11 @@ import java.util.jar.JarOutputStream;
  * {@code src/test/resources/plugin-fixtures/<fixture>/src/}, compiles them
  * against the test classpath (so fixtures link against the host API) and
  * packages the classes plus a {@code META-INF/services} entry into a JAR.
+ *
+ * <p>Exposed as a test fixture so host modules (mcp-server, chunk-norris)
+ * can build the same plugin JARs in their bootstrap tests.
  */
-final class PluginJarBuilder {
+public final class PluginJarBuilder {
 
     private static final String SERVICE_FILE = "META-INF/services/de.spraener.prjxp.common.language.LanguagePackProvider";
 
@@ -35,7 +38,7 @@ final class PluginJarBuilder {
      * @param sources        source file paths relative to the fixture's src/ dir
      * @param providerClasses FQNs for the SPI service file; empty = no service file
      */
-    static File build(Path workDir, String fixture, List<String> sources, String... providerClasses) throws IOException {
+    public static File build(Path workDir, String fixture, List<String> sources, String... providerClasses) throws IOException {
         Path srcDir = workDir.resolve(fixture + "-src");
         List<String> sourceFiles = new ArrayList<>();
         for (String source : sources) {
