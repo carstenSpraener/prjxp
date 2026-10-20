@@ -24,7 +24,7 @@ subprojects {
     apply plugin: 'jacoco'
 
     group = 'de.spraener.prjxp'
-    version = '0.0.1-SNAPSHOT'
+    version = '0.8.0-rc1'
 
     apply plugin: 'java'
 

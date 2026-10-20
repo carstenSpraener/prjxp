@@ -14,7 +14,7 @@ plugins {
 }
 
 group = 'de.spraener.prjxp'
-version = '0.0.1-SNAPSHOT'
+version = '0.8.0-rc1'
 
 java {
     toolchain {
@@ -46,7 +46,7 @@ dependencies {
     // so it must NOT be bundled into the plugin JAR. compileOnly keeps it off the
     // runtime classpath (and thus out of the shadow JAR) while still letting the
     // plugin compile against it. It is re-added for the test source set below.
-    compileOnly 'de.spraener.prjxp:prjxp-common:0.0.1-SNAPSHOT'
+    compileOnly 'de.spraener.prjxp:prjxp-common:0.8.0-rc1'
 
     // ANTLR: the tool (build-time generation) and the runtime (compile + run).
     // The runtime is the plugin's private dependency and IS bundled into the JAR.
@@ -54,7 +54,7 @@ dependencies {
     implementation "org.antlr:antlr4-runtime:${antlrVersion}"
 
     // Testing: the host API is needed on the test compile + runtime classpath.
-    testImplementation 'de.spraener.prjxp:prjxp-common:0.0.1-SNAPSHOT'
+    testImplementation 'de.spraener.prjxp:prjxp-common:0.8.0-rc1'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.12.1'
     testImplementation 'org.assertj:assertj-core:3.27.7'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
