@@ -55,6 +55,8 @@ public class ProjectConfigFileParser {
             def.setRootDir(stringOf(map.get("rootDir"), "."));
             def.setJsonlFile(stringOf(map.get("jsonlFile"), "px-chunks.jsonl"));
             def.setChunoWhiteList(stringOf(map.get("chunoWhiteList"), "java,ts"));
+            def.setExcludeDirNames(stringOf(map.get("excludeDirNames"), ProjectDefinition.DEFAULT_EXCLUDE_DIR_NAMES));
+            def.setSourceDirNames(stringOf(map.get("sourceDirNames"), ProjectDefinition.DEFAULT_SOURCE_DIR_NAMES));
             def.setTibedBatchSize(intOf(map.get("tibedBatchSize"), 32));
             def.setFulltext(boolOf(map.get("fulltext"), false));
             def.setEmbeddingsFile(stringOf(map.get("embeddingsFile"), null));
@@ -93,6 +95,8 @@ public class ProjectConfigFileParser {
         def.setRootDir(".");
         def.setJsonlFile("px-chunks.jsonl");
         def.setChunoWhiteList("java,ts");
+        def.setExcludeDirNames(ProjectDefinition.DEFAULT_EXCLUDE_DIR_NAMES);
+        def.setSourceDirNames(ProjectDefinition.DEFAULT_SOURCE_DIR_NAMES);
         def.setTibedBatchSize(32);
         return def;
     }
@@ -142,6 +146,8 @@ public class ProjectConfigFileParser {
             appendLineIfNotBlank(yaml, "rootDir", definition.getRootDir());
             appendLineIfNotBlank(yaml, "jsonlFile", definition.getJsonlFile());
             appendLineIfNotBlank(yaml, "chunoWhiteList", definition.getChunoWhiteList());
+            appendLineIfNotBlank(yaml, "excludeDirNames", definition.getExcludeDirNames());
+            appendLineIfNotBlank(yaml, "sourceDirNames", definition.getSourceDirNames());
             if (definition.getTibedBatchSize() != 32) {
                 yaml.append("tibedBatchSize: ").append(definition.getTibedBatchSize()).append("\n");
             }

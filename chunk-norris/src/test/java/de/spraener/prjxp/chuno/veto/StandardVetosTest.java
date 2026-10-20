@@ -14,10 +14,13 @@ import static org.mockito.Mockito.when;
 class StandardVetosTest {
 
     private StandardVetos vetos;
+    private PrjXPConfig config;
 
     @BeforeEach
     void setUp() {
-        vetos = new StandardVetos(mock(PrjXPConfig.class), mock(VetoContext.class));
+        config = mock(PrjXPConfig.class);
+        when(config.getActiveProject()).thenReturn(Optional.empty());
+        vetos = new StandardVetos(config, mock(VetoContext.class));
     }
 
     @Test
@@ -54,6 +57,17 @@ class StandardVetosTest {
     void bareTargetSegmentIsBuildArtifact() {
         Path p = Path.of("target");
         assertThat(vetos.isBuildArtifact(p)).isTrue();
+    }
+
+    @Test
+    void customSourceDirNamesProtectsBuildNamedPackage() {
+        de.spraener.prjxp.common.config.ProjectDefinition def = mock(de.spraener.prjxp.common.config.ProjectDefinition.class);
+        VetoContext ctx = mock(VetoContext.class);
+        when(ctx.get()).thenReturn(def);
+        when(def.getSourceDirNames()).thenReturn("sources");
+        vetos = new StandardVetos(config, ctx);
+
+        assertThat(vetos.isBuildArtifact(Path.of("sources/main/java/x/target/Foo.java"))).isFalse();
     }
 
     @Test

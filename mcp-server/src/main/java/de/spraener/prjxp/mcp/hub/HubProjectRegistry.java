@@ -163,6 +163,8 @@ public class HubProjectRegistry implements ProjectRegistry {
             oldDef.setRootDir(freshDef.getRootDir());
             oldDef.setJsonlFile(freshDef.getJsonlFile());
             oldDef.setChunoWhiteList(freshDef.getChunoWhiteList());
+            oldDef.setExcludeDirNames(freshDef.getExcludeDirNames());
+            oldDef.setSourceDirNames(freshDef.getSourceDirNames());
             oldDef.setTibedBatchSize(freshDef.getTibedBatchSize());
             oldDef.setEmbeddingsFile(freshDef.getEmbeddingsFile());
             oldDef.setTibedResetStore(freshDef.isTibedResetStore());

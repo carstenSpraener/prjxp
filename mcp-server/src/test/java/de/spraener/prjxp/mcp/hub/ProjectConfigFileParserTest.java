@@ -29,6 +29,8 @@ class ProjectConfigFileParserTest {
         assertThat(def.getRootDir()).isEqualTo(".");
         assertThat(def.getJsonlFile()).isEqualTo("px-chunks.jsonl");
         assertThat(def.getChunoWhiteList()).isEqualTo("java,ts");
+        assertThat(def.getExcludeDirNames()).isEqualTo(ProjectDefinition.DEFAULT_EXCLUDE_DIR_NAMES);
+        assertThat(def.getSourceDirNames()).isEqualTo(ProjectDefinition.DEFAULT_SOURCE_DIR_NAMES);
         assertThat(def.getTibedBatchSize()).isEqualTo(32);
     }
 
@@ -278,5 +280,67 @@ class ProjectConfigFileParserTest {
         parser.save(projectDir, def);
 
         assertThat(parser.parse(projectDir, "alpha").isFulltext()).isTrue();
+    }
+
+    // ------------------------------------------------------------------ excludeDirNames
+
+    @Test
+    void configuredExcludeDirNamesIsPickedUp() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"),
+                "name: alpha\nexcludeDirNames: node_modules,build-output\n");
+
+        assertThat(parser.parse(projectDir, "alpha").getExcludeDirNames())
+                .isEqualTo("node_modules,build-output");
+    }
+
+    @Test
+    void missingExcludeDirNamesKeyYieldsDefault() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: alpha\n");
+
+        assertThat(parser.parse(projectDir, "alpha").getExcludeDirNames())
+                .isEqualTo(ProjectDefinition.DEFAULT_EXCLUDE_DIR_NAMES);
+    }
+
+    @Test
+    void excludeDirNamesRoundTrips() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("alpha");
+        def.setExcludeDirNames("node_modules,my-vendor");
+
+        parser.save(projectDir, def);
+
+        assertThat(parser.parse(projectDir, "alpha").getExcludeDirNames())
+                .isEqualTo("node_modules,my-vendor");
+    }
+
+    // ------------------------------------------------------------------ sourceDirNames
+
+    @Test
+    void configuredSourceDirNamesIsPickedUp() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"),
+                "name: alpha\nsourceDirNames: src,sources\n");
+
+        assertThat(parser.parse(projectDir, "alpha").getSourceDirNames())
+                .isEqualTo("src,sources");
+    }
+
+    @Test
+    void missingSourceDirNamesKeyYieldsDefault() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: alpha\n");
+
+        assertThat(parser.parse(projectDir, "alpha").getSourceDirNames())
+                .isEqualTo(ProjectDefinition.DEFAULT_SOURCE_DIR_NAMES);
+    }
+
+    @Test
+    void sourceDirNamesRoundTrips() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("alpha");
+        def.setSourceDirNames("code");
+
+        parser.save(projectDir, def);
+
+        assertThat(parser.parse(projectDir, "alpha").getSourceDirNames())
+                .isEqualTo("code");
     }
 }
