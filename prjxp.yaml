@@ -1,6 +1,7 @@
 name: prjxp
 rootDir: /import/prjxp
 jsonlFile: /data/chunks/prjxp.jsonl
-chunoWhiteList: java,ts,html
+chunoWhiteList: java,ts,html,md
+excludeDirNames: node_modules,.git,.svn,.hg,vendor,dist,coverage,.idea,.vscode,__pycache__,target,build,bin,obj,debug,release
+sourceDirNames: src
 tibedBatchSize: 500
-tibedResetStore: false
