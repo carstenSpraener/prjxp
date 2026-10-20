@@ -69,13 +69,19 @@ public class AzureOpenAPISupplier implements ChatModelSupplier {
         if (apiVersion != null && !apiVersion.isBlank()) {
             customQueryParams.put("api-version", apiVersion);
         }
-        return OpenAiChatModel.builder()
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
                 .baseUrl(baseUrl)
                 .apiKey(apiKey)
                 .customHeaders(Map.of("api-key",apiKey))
                 .customQueryParams(customQueryParams)
-                .timeout(Duration.of(15, ChronoUnit.MINUTES))
-                .build();
+                .timeout(Duration.of(15, ChronoUnit.MINUTES));
+
+        // Request-level body properties (e.g. enable_thinking for Qwen3) — merged into the JSON body.
+        Map<String, Object> bodyProperties = BodyPropertyCoercer.coerce(cmRef.getBodyProperties());
+        if (!bodyProperties.isEmpty()) {
+            builder.customParameters(bodyProperties);
+        }
+        return builder.build();
     }
 
     // TODO: Move this to a more global application initializer

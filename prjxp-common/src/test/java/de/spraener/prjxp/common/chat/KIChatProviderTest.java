@@ -24,6 +24,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.ActiveProfiles;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.function.Predicate;
 
@@ -129,6 +130,36 @@ class KIChatProviderTest {
 
         assertThat(result).isPresent();
         assertThat(result.get().getChatModelReference().getPrompt()).isNull();
+    }
+
+    @Test
+    void getByStereotype_copiesBodyProperties() {
+        PrjXPChatModelReference ref = new PrjXPChatModelReference();
+        ref.setStereoType("bodyprops-test-1");
+        ref.setServerType("ollama");
+        ref.setProviderUrl("http://localhost:11434");
+        ref.setBodyProperties(Map.of("enable_thinking", false));
+        prjXPConfig.getChatModels().add(ref);
+
+        var result = uut.getByStereotype("bodyprops-test-1");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getChatModelReference().getBodyProperties())
+                .containsEntry("enable_thinking", false);
+    }
+
+    @Test
+    void getByStereotype_withoutBodyProperties_staysEmpty() {
+        PrjXPChatModelReference ref = new PrjXPChatModelReference();
+        ref.setStereoType("bodyprops-test-2");
+        ref.setServerType("ollama");
+        ref.setProviderUrl("http://localhost:11434");
+        prjXPConfig.getChatModels().add(ref);
+
+        var result = uut.getByStereotype("bodyprops-test-2");
+
+        assertThat(result).isPresent();
+        assertThat(result.get().getChatModelReference().getBodyProperties()).isEmpty();
     }
 
     @Configuration

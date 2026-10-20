@@ -8,6 +8,7 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import java.time.Duration;
+import java.util.Map;
 
 @Component
 /**
@@ -52,12 +53,18 @@ public class OpenAPISupplier implements de.spraener.prjxp.common.chat.ChatModelS
             resolvedApiKey = defaultApiKey;
         }
 
-        return OpenAiChatModel.builder()
+        OpenAiChatModel.OpenAiChatModelBuilder builder = OpenAiChatModel.builder()
                 .modelName(EnvPlaceholderResolver.resolve(cmRef.getModelName()))
                 .apiKey(resolvedApiKey)
                 .temperature(cmRef.getTemperature())
                 .timeout(Duration.ofSeconds(cmRef.getTimeoutSecs()))
-                .baseUrl(baseUrl)
-                .build();
+                .baseUrl(baseUrl);
+
+        // Request-level body properties (e.g. enable_thinking for Qwen3) — merged into the JSON body.
+        Map<String, Object> bodyProperties = BodyPropertyCoercer.coerce(cmRef.getBodyProperties());
+        if (!bodyProperties.isEmpty()) {
+            builder.customParameters(bodyProperties);
+        }
+        return builder.build();
     }
 }

@@ -19,6 +19,10 @@ prjxp:
       modelName: qwen3.8-27b-splash
       timeoutSecs: 600
       apiKey: ${EMBEDDING_API_KEY}
+      # Qwen3: thinking mode breaks tool-calling (the call leaks into content as XML).
+      # DocPipe relies on native function calling, so disable thinking for this stereotype.
+      bodyProperties:
+        enable_thinking: false
 
     - stereotype: documentation
       serverType: lm-studio
@@ -26,6 +30,10 @@ prjxp:
       modelName: qwen3.8-27b-splash
       timeoutSecs: 600
       apiKey: ${EMBEDDING_API_KEY}
+      # Qwen3: thinking mode breaks tool-calling (the call leaks into content as XML).
+      # DocPipe relies on native function calling, so disable thinking for this stereotype.
+      bodyProperties:
+        enable_thinking: false
 
     - stereotype: javadoc
       serverType: lm-studio
@@ -33,6 +41,9 @@ prjxp:
       modelName: qwen3.8-27b-splash
       timeoutSecs: 600
       apiKey: ${EMBEDDING_API_KEY}
+      # Same Qwen3 thinking-mode issue as above (DocPipe javadoc generation).
+      bodyProperties:
+        enable_thinking: false
 
   mcp-servers:
     - name: prjxp

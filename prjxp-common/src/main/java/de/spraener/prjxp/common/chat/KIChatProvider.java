@@ -54,6 +54,9 @@ public class KIChatProvider {
         if (source.getArgs() != null && !source.getArgs().isEmpty()) {
             resolved.setArgs(new HashMap<>(EnvPlaceholderResolver.resolveMap(source.getArgs())));
         }
+        if (source.getBodyProperties() != null && !source.getBodyProperties().isEmpty()) {
+            resolved.setBodyProperties(new HashMap<>(source.getBodyProperties()));
+        }
         return resolved;
     }
 }

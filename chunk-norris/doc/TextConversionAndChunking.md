@@ -1,184 +1,191 @@
-# Chunk Norris – Document Conversion Mechanism  
+# Document Conversion Mechanism – Chunk Norris
 
-## Overview  
-Chunk Norris provides a flexible, cost‑aware document conversion framework. The core of the mechanism is the `DocConversionRouter`, which discovers and executes the cheapest conversion path between any two document artifact types (`DocArtifaktType`).  
+## Overview
 
-The router builds a directed weighted graph of **conversion agents** (implementations of `DocConversionAgent`).  
-It then uses Dijkstra’s shortest‑path algorithm to pick the optimal sequence of agents, taking into account conversion costs, quantity estimates and required accuracy.  
+The document conversion system in Chunk Norris is a **graph-based routing engine** that transforms a document from one format (e.g. PDF) to another (e.g. Markdown) by chaining together individual **conversion agents**. The router selects the most cost-efficient chain of agents and then executes the conversion recursively over the document's artifact tree.
 
----
-
-## Key Concepts  
-
-| Concept | Description |
-|--------|-------------|
-| **DocArtifakt** | Represents a document artifact. Holds the original file, its current format (`DocArtifaktType`), child artifacts and meta data needed for cost estimation. |
-| **DocConversionAgent** | A Spring bean that can convert from one `DocArtifaktType` to another. It provides: <br>• `getSourceFormat()`<br>• `getTargetFormat()`<br>• `estimateCosts(DocArtifakt)`<br>• `estimateQuantity(DocArtifakt)`<br>• `accuracy()` (a `ConversionAccuracy`) |
-| **ConversionRoutesConfig** | Optional configuration that defines *pre‑defined* conversion routes (hard‑coded agent sequences) for specific source/target type pairs. |
-| **ConversionAccuracy** | Enum‑like model describing required accuracy level (`HIGH`, `MEDIUM`, `LOW`). Each agent reports its own accuracy rank. |
-| **inaccurateSurcharge** | Global penalty (default 1 000 000) added to the edge weight when an agent’s accuracy is lower than the required one. |
-| **DocContentCollector** | Utility that extracts the final textual content from a converted artifact tree. |
+All core classes live in the package `de.spraener.prjxp.chuno.docs`.
 
 ---
 
-## How It Works  
+## Key Concepts
 
-### 1. Router Construction  
-```java
-public DocConversionRouter(List<DocConversionAgent> agents,
-                         BeanNameFinder beanNameFinder,
-                         ConversionRoutesConfig conversionRoutesConfig) {
-    this.agents = agents;
-    this.beanNameFinder = beanNameFinder;
-    this.conversionRoutesConfig = conversionRoutesConfig;
-    // log all available agents
-}
-```
-*All discovered `DocConversionAgent` beans are injected by Spring.*  
-
-### 2. Build the Conversion Graph  
-```java
-private Graph<DocArtifaktType, DocConversionAgent<?, ?>> buildGraph() {
-    SimpleDirectedWeightedGraph<DocArtifaktType, DocConversionAgent<?, ?>> graph =
-        new SimpleDirectedWeightedGraph<>(DocConversionAgent.class);
-    for (var agent : agents) {
-        graph.addVertex(agent.getSourceFormat());
-        graph.addVertex(agent.getTargetFormat());
-        graph.addEdge(agent.getSourceFormat(),
-                      agent.getTargetFormat(),
-                      agent);
-    }
-    return graph;
-}
-```
-*Each edge represents a possible conversion step. Edge weights are set later by `estimateConversionCosts`.*
-
-### 3. Find the Best Path  
-
-1. **Pre‑defined route check** – If `ConversionRoutesConfig` contains a static list of agents for the requested source/target pair, that route is used directly.  
-
-2. **Dynamic path search** –  
-   - Build the graph (`buildGraph`).  
-   - Recursively call `estimateConversionCosts` to assign a weight (cost) to every edge.  
-   - Run Dijkstra on the weighted graph:  
-
-```java
-DijkstraShortestPath<DocArtifaktType, DocConversionAgent<?, ?>> dijkstra =
-        new DijkstraShortestPath<>(conversionGraph);
-GraphPath<DocArtifaktType, DocConversionAgent<?, ?>> path = dijkstra.getPath(start, end);
-```
-
-The returned list of agents is the cheapest conversion sequence.  
-
-### 4. Cost Estimation (`estimateConversionCosts`)  
-
-```java
-var costs   = agent.estimateCosts(f);          // monetary/CPU cost estimate
-var quantity = agent.estimateQuantity(f);       // how many child artifacts are produced
-var total   = costs * quantity;
-
-if (agent.accuracy().getRank() < requestedAccuracy.getRank()) {
-    total += inaccurateSurcharge; // penalize low‑accuracy steps
-}
-conversionGraph.setEdgeWeight(agent, total);
-```
-
-The method recurses through possible next steps to fill the entire graph with realistic weights.  
-
-### 5. Execute Conversion  
-
-```java
-List<DocConversionAgent<?, ?>> agents = findBestPath(f, start, end, accuracy);
-DocArtifakt root = DocArtifakt.createRoot(f).setFormat(start);
-doConversion(root, agents);          // run each agent in order
-return DocContentCollector.collectTextContent(root, end);
-```
-
-*`doConversion` walks the agent list and calls `agent.convert(artifakt)`. For each generated child artifact, the same agent list is applied recursively.*  
-
-### 6. Optional Collector Variant  
-```java
-public void doConversion(File f,
-                         DocArtifaktType start,
-                         DocArtifaktType end,
-                         ConversionAccuracy accuracy,
-                         Consumer<DocArtifakt> artifaktCollector) {
-    // same path discovery, then:
-    DocContentCollector.collectContent(root, end, artifaktCollector);
-}
-```
-Allows callers to receive the final `DocArtifakt` tree instead of just a string.
+| Term | Description |
+|---|---|
+| **`DocArtifaktType`** | An enum representing a document format (PDF, HTML, MARK_DOWN, TEXT, DOC, …). Acts as a **vertex** in the conversion graph. |
+| **`DocConversionAgent<S, T>`** | A Spring bean that knows how to convert from source format `S` to target format `T`. Acts as a **directed edge** in the graph. |
+| **`DocArtifakt`** | The in-memory representation of a document (or a sub-document). Carries a `format`, a `data` payload, and an optional list of **child artifacts**. |
+| **`ConversionAccuracy`** | An enum (ordinal-ordered) expressing how lossy a conversion may be. |
+| **`ConversionRoutesConfig`** | Optional YAML/properties configuration for **predefined routes** that bypass the graph search. |
+| **`DocContentCollector`** | Utility that walks the final artifact tree and extracts the text/structured content in the target format. |
 
 ---
 
-## Configuration  
+## The Conversion Graph
 
-| Property | Default | Description |
-|---------|--------|-------------|
-| `prjxp.conversion.inaccurateSurcharge` | `1000000.0` | Penalty added when an agent’s accuracy is lower than required. |
-| `ConversionRoutesConfig` bean | – | Holds user‑defined static routes (`List<DocConversionAgent>` per start/end pair). |
-
-Add a `conversion-routes.yml` (or equivalent) to define shortcuts, e.g.:
-
-```yaml
-routes:
-  - from: PDF
-    to: HTML
-    agents:
-      - pdfToImageAgent
-      - imageToTextAgent
+```
+        ┌──────────┐   agent-pdf2html   ┌──────────┐   agent-html2md   ┌────────────┐
+        │   PDF    │ ─────────────────► │   HTML   │ ─────────────────► │ MARK_DOWN  │
+        └──────────┘                    └──────────┘                    └────────────┘
+             │                                  ▲
+             │ agent-pdf2text                  │ agent-text2html
+             ▼                                  │
+        ┌──────────┐                           │
+        │   TEXT   │ ──────────────────────────┘
+        └──────────┘
 ```
 
-The router will prefer this predefined list over the Dijkstra search.  
+* **Vertices** – every `DocArtifaktType` that appears as a source or target of at least one agent.
+* **Directed edges** – one per `DocConversionAgent` bean. The edge weight is the **estimated conversion cost** (see below).
+* The graph is built at runtime by `DocConversionRouter#buildGraph()` using JGraphT's `SimpleDirectedWeightedGraph`.
 
 ---
 
-## Extending the System  
+## Path Selection – `findBestPath`
 
-1. **Create a new `DocConversionAgent`**  
-   - Implement `convert(DocArtifakt)`.  
-   - Provide realistic implementations for `estimateCosts`, `estimateQuantity` and `accuracy()`.  
-   - Register it as a Spring bean (or manually add to the router’s constructor list).  
+The method `DocConversionRouter#findBestPath(File, DocArtifaktType, DocArtifaktType, ConversionAccuracy)` determines the ordered list of agents to apply. It follows a two-tier strategy:
 
-2. **Add custom accuracy levels** – Extend `ConversionAccuracy` enum or class with additional ranks and adjust the surcharge logic if needed.  
+1. **Predefined route (fast path).**
+   `ConversionRoutesConfig#findPredefinedRouteAgents(start, end)` is consulted first. If the configuration supplies an explicit agent chain for the given format pair, that chain is returned immediately and the graph is never built.
 
-3. **Tune cost model** – Override `inaccurateSurcharge` via Spring property or inject a custom bean that calculates dynamic penalties.  
+2. **Dijkstra shortest path (general path).**
+   If no predefined route exists, the router:
+   1. Builds the conversion graph from all registered `DocConversionAgent` beans.
+   2. Calls `estimateConversionCosts(…)` to assign a **weight** to every edge (see *Cost Estimation* below).
+   3. Runs `DijkstraShortestPath` from `start` to `end`.
+   4. Returns the edge list of the resulting `GraphPath`, or an empty list if no path exists.
+
+If `start == end` the method short-circuits and returns an empty list (no conversion needed).
 
 ---
 
-## Example Usage (Spring‑Boot)  
+## Cost Estimation – `estimateConversionCosts`
+
+This private recursive method walks the graph **from the source format toward the target format**, assigning a weight to each edge it encounters.
+
+For every agent whose `sourceFormat` matches the current artifact's format (and that has not yet been visited in this branch):
+
+```
+totalCosts = agent.estimateCosts(artifakt)  ×  agent.estimateQuantity(artifakt)
+```
+
+* `estimateCosts` – a per-unit cost (e.g. CPU time, API call cost) the agent reports for the given artifact.
+* `estimateQuantity` – a multiplier reflecting the artifact's size/complexity (e.g. number of pages, number of child elements).
+
+**Accuracy surcharge.** If the agent's own `accuracy()` rank is *lower* (more lossy) than the `ConversionAccuracy` requested by the caller, a configurable penalty is added:
+
+```
+totalCosts += inaccurateSurcharge   // default: 1 000 000.0
+```
+
+The value is read from the property `prjxp.conversion.inaccurateSurcharge`. This makes Dijkstra strongly prefer routes that meet the requested accuracy, while still allowing a lossy route if it is the *only* path.
+
+The method then creates a **synthetic child artifact** (same content, format changed to the agent's target, quantity propagated) and recurses. A `visited` set prevents infinite cycles in the graph.
+
+---
+
+## Execution – `doConversion`
+
+Two public overloads exist:
+
+| Signature | Returns |
+|---|---|
+| `doConversion(File, start, end, accuracy)` | `String` – the final text content |
+| `doConversion(File, start, end, accuracy, Consumer<DocArtifakt>)` | `void` – streams each artifact to the consumer |
+
+Both follow the same pipeline:
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  1. findBestPath(…)  →  List<DocConversionAgent>                   │
+│  2. DocArtifakt.createRoot(file)  →  root artifact                 │
+│  3. root.setFormat(start)                                            │
+│  4. loadTextContent(root, file, start)                              │
+│       • text-based formats (HTML, TEXT, MARK_DOWN):                 │
+│         read the file into a UTF-8 String → root.setData(…)         │
+│       • binary formats (PDF, DOC, …):                               │
+│         no-op – the File reference stays on disk                    │
+│  5. doConversion(root, agents)   ← recursive agent application      │
+│  6. DocContentCollector.collectTextContent / collectContent          │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+### Recursive agent application
+
+The private `doConversion(DocArtifakt, List<DocConversionAgent>)` method:
+
+1. Takes the **first** agent in the list and calls `agent.convert(artifakt)`.
+   The agent mutates the artifact in place (changes its format, rewrites its data, and may produce **child artifacts**).
+2. Recurses into every child artifact with the **remaining** agents.
+3. If the agent list is empty, the recursion stops.
+
+This design means a single top-level document can fan out into a tree of sub-artifacts (e.g. a PDF with multiple pages), and each branch of the tree is converted independently through the same agent chain.
+
+---
+
+## Text vs. Binary Handling
 
 ```java
-@Service
-public class MyConversionService {
-    private final DocConversionRouter router;
-
-    public MyConversionService(DocConversionRouter router) {
-        this.router = router;
-    }
-
-    public String convertPdfToHtml(File pdfFile) {
-        return router.doConversion(
-                pdfFile,
-                DocArtifaktType.PDF,
-                DocArtifaktType.HTML,
-                ConversionAccuracy.HIGH);
-    }
+private static boolean isTextBasedFormat(DocArtifaktType type) {
+    return type == DocArtifaktType.HTML
+            || type == DocArtifaktType.TEXT
+            || type == DocArtifaktType.MARK_DOWN;
 }
 ```
 
-The service will automatically pick the cheapest route (e.g., `PdfToTextAgent → TextToHtmlAgent`) respecting accuracy constraints.
+* **Text-based formats** are held as a `String` in `DocArtifakt.data`. The router reads the file into memory before the first agent runs, because agents and the content collector expect a `String` payload.
+* **Binary formats** (PDF, DOC, …) keep the `File` reference on disk; agents read/write the file directly.
 
 ---
 
-## Summary  
+## Configuration
 
-* **Graph‑based routing** – All agents form a directed weighted graph.  
-* **Cost‑aware Dijkstra search** – Finds the cheapest conversion chain, penalising insufficient accuracy.  
-* **Pre‑defined routes** – Override dynamic search for known fast paths.  
-* **Extensible design** – Add agents, tune costs, and plug custom accuracy levels without touching the router logic.  
+| Property | Default | Purpose |
+|---|---|---|
+| `prjxp.conversion.inaccurateSurcharge` | `1000000.0` | Cost penalty added to any agent whose accuracy is below the requested level. Effectively makes lossy routes "very expensive" so Dijkstra avoids them unless no accurate path exists. |
 
-The `DocConversionRouter` together with its supporting model classes provides a powerful, pluggable engine for arbitrary document format conversions inside the Chunk Norris project.  
+Predefined routes are configured via `ConversionRoutesConfig` (Spring `@ConfigurationProperties`). Each entry maps a `(sourceFormat, targetFormat)` pair to an ordered list of agent bean names, bypassing the graph search entirely.
+
+---
+
+## Extending the System
+
+To add a new conversion capability:
+
+1. Create a new `DocArtifaktType` enum constant if the format does not yet exist.
+2. Implement a `DocConversionAgent<Source, Target>` bean:
+   * `getSourceFormat()` / `getTargetFormat()` – the edge endpoints.
+   * `convert(DocArtifakt)` – perform the actual transformation.
+   * `estimateCosts(DocArtifakt)` – return a per-unit cost.
+   * `estimateQuantity(DocArtifakt)` – return a size/complexity multiplier.
+   * `accuracy()` – declare the `ConversionAccuracy` this agent achieves.
+3. Register the bean with Spring. The `DocConversionRouter` picks it up automatically via constructor injection of `List<DocConversionAgent>`.
+4. (Optional) Add a predefined route in `ConversionRoutesConfig` if you want to force a specific chain for a format pair.
+
+No changes to the router itself are required.
+
+---
+
+## Class Diagram (simplified)
+
+```
+DocConversionRouter
+ ├── List<DocConversionAgent>          (all registered agents)
+ ├── BeanNameFinder                    (Spring bean-name lookup for logging)
+ ├── ConversionRoutesConfig            (predefined routes)
+ ├── double inaccurateSurcharge        (configurable penalty)
+ │
+ ├── buildGraph()                      → SimpleDirectedWeightedGraph
+ ├── findBestPath(…)                  → List<DocConversionAgent>
+ │    ├── ConversionRoutesConfig       (fast path)
+ │    ├── estimateConversionCosts(…)   (weight assignment)
+ │    └── DijkstraShortestPath         (shortest path)
+ ├── doConversion(…)                  → String | void
+ │    ├── loadTextContent(…)
+ │    ├── doConversion(artifakt, agents)   (recursive)
+ │    └── DocContentCollector
+ └── listAgentPath(…)                 (logging helper)
+```
 
 _This document was generated with Doc|Pipe and gemini-3-flash-preview_
 

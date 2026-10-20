@@ -22,5 +22,17 @@ public class PrjXPChatModelReference {
      * text protocol if the provider rejects them.
      */
     private Boolean supportsTools;
+    /**
+     * Client/connection-level parameters (supplier-specific setup, e.g. Azure endpoint, api-version,
+     * trust-all-certs). Consumed by the individual {@code ChatModelSupplier} implementations.
+     */
     private Map<String,String> args = new HashMap<>();
+    /**
+     * Request-level properties merged into every chat-completion request body (via the provider's
+     * "custom parameters", serialized as top-level JSON body fields). Use for provider-specific knobs
+     * that have no dedicated config field, e.g. {@code enable_thinking: false} for Qwen3 (its thinking
+     * mode breaks tool-calling). Values may be booleans, numbers, strings, or nested objects; string
+     * values that look like booleans/numbers are coerced to their native JSON type by the supplier.
+     */
+    private Map<String,Object> bodyProperties = new HashMap<>();
 }
