@@ -10,6 +10,7 @@ import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -213,5 +214,71 @@ class McpProxyIntegrationTest {
         upstream.closeSession().get();
 
         assertThat(anyRequest[0]).isFalse(); // No request sent
+    }
+
+    /**
+     * Drives the full proxy event loop ({@link McpProxy#run}) with piped streams against the
+     * mock server: request in → response out, then stdin EOF → session DELETE → exit(0).
+     */
+    @Test
+    void runDrivesFullProxyLoopUntilStdinEof() throws Exception {
+        boolean[] deleteReceived = {false};
+
+        mockServer.createContext("/", exchange -> {
+            if ("DELETE".equals(exchange.getRequestMethod())) {
+                deleteReceived[0] = true;
+                exchange.sendResponseHeaders(204, -1);
+                return;
+            }
+            String body = new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
+            exchange.getResponseHeaders().set("Content-Type", "application/json");
+            exchange.getResponseHeaders().add("Mcp-Session-Id", "loop-session");
+            exchange.sendResponseHeaders(200, 0);
+            try (OutputStream os = exchange.getResponseBody()) {
+                String echo = body.contains("tools/list") ? "yes" : "no";
+                os.write(("{\"jsonrpc\":\"2.0\",\"id\":1,\"result\":{\"echo\":\"" + echo + "\"}}")
+                        .getBytes(StandardCharsets.UTF_8));
+            }
+        });
+
+        PipedInputStream stdin = new PipedInputStream();
+        PipedOutputStream stdinWriter = new PipedOutputStream(stdin);
+        ByteArrayOutputStream stdout = new ByteArrayOutputStream();
+        ByteArrayOutputStream stderrBuf = new ByteArrayOutputStream();
+        PrintStream stderr = new PrintStream(stderrBuf, true, StandardCharsets.UTF_8);
+        CountDownLatch exitLatch = new CountDownLatch(1);
+        AtomicInteger exitCode = new AtomicInteger(-1);
+
+        Thread runner = new Thread(() -> {
+            try {
+                McpProxy.run(baseUrl, 10, stdin, stdout, stderr, code -> {
+                    exitCode.set(code);
+                    exitLatch.countDown();
+                });
+            } catch (Exception e) {
+                e.printStackTrace();
+            }
+        }, "proxy-run-test");
+        runner.start();
+
+        // Send a request, wait for the relayed response on stdout
+        stdinWriter.write("{\"jsonrpc\":\"2.0\",\"id\":1,\"method\":\"tools/list\"}\n".getBytes(StandardCharsets.UTF_8));
+        stdinWriter.flush();
+        long deadline = System.currentTimeMillis() + 5000;
+        while (System.currentTimeMillis() < deadline
+                && !stdout.toString(StandardCharsets.UTF_8).contains("\"echo\":\"yes\"")) {
+            Thread.sleep(20);
+        }
+        assertThat(stdout.toString(StandardCharsets.UTF_8)).contains("\"echo\":\"yes\"");
+
+        // Close stdin → EOF → graceful shutdown (session DELETE + exit 0)
+        stdinWriter.close();
+
+        assertThat(exitLatch.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(exitCode.get()).isEqualTo(0);
+        assertThat(stderrBuf.toString(StandardCharsets.UTF_8)).contains("Connected to upstream");
+        assertThat(deleteReceived[0]).isTrue(); // captured session was closed on shutdown
+        runner.join(5000);
+        assertThat(runner.isAlive()).isFalse();
     }
 }

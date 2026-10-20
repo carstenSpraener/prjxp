@@ -4,6 +4,7 @@ import org.apache.commons.cli.*;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class McpProxyTest {
 
@@ -40,5 +41,41 @@ class McpProxyTest {
     void shouldNormalizeSingleDashLongOptionForCompatibility() {
         assertThat(McpProxy.normalizeArguments(new String[]{"-server-url", "http://localhost:7007/mcp"}))
                 .containsExactly("--server-url", "http://localhost:7007/mcp");
+    }
+
+    @Test
+    void parseArgsReturnsUrlAndTimeout() throws Exception {
+        McpProxy.ParsedArgs parsed = McpProxy.parseArgs(new String[]{
+                "--server-url", "http://localhost:7007/mcp", "--timeout-seconds", "60"});
+
+        assertThat(parsed.serverUrl()).isEqualTo("http://localhost:7007/mcp");
+        assertThat(parsed.timeoutSeconds()).isEqualTo(60);
+    }
+
+    @Test
+    void parseArgsDefaultsTimeoutTo300() throws Exception {
+        McpProxy.ParsedArgs parsed = McpProxy.parseArgs(new String[]{"--server-url", "http://localhost:7007/mcp"});
+
+        assertThat(parsed.timeoutSeconds()).isEqualTo(300);
+    }
+
+    @Test
+    void parseArgsAcceptsSingleDashCompatibilityForm() throws Exception {
+        McpProxy.ParsedArgs parsed = McpProxy.parseArgs(new String[]{"-server-url", "http://localhost:7007/mcp"});
+
+        assertThat(parsed.serverUrl()).isEqualTo("http://localhost:7007/mcp");
+    }
+
+    @Test
+    void parseArgsThrowsWithoutServerUrl() {
+        assertThatThrownBy(() -> McpProxy.parseArgs(new String[]{})
+        ).isInstanceOf(ParseException.class)
+                .hasMessageContaining("server-url");
+    }
+
+    @Test
+    void parseArgsThrowsOnMissingOptionValue() {
+        assertThatThrownBy(() -> McpProxy.parseArgs(new String[]{"--server-url"}))
+                .isInstanceOf(ParseException.class);
     }
 }

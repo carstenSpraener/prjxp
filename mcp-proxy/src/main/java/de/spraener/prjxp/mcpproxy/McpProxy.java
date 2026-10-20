@@ -3,11 +3,15 @@ package de.spraener.prjxp.mcpproxy;
 import org.apache.commons.cli.*;
 import lombok.extern.slf4j.Slf4j;
 
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.io.PrintStream;
+import java.util.Arrays;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.Arrays;
+import java.util.function.IntConsumer;
 
 /**
  * stdio → streamable-http MCP proxy.
@@ -24,29 +28,51 @@ import java.util.Arrays;
 public class McpProxy {
 
     public static void main(String[] args) throws Exception {
-        CommandLineParser parser = new DefaultParser();
-        CommandLine cmd;
+        ParsedArgs parsed;
         try {
-            cmd = parser.parse(options(), normalizeArguments(args));
+            parsed = parseArgs(args);
         } catch (ParseException e) {
             System.err.println("ERROR: " + e.getMessage());
             printUsage();
             System.exit(1);
             return; // unreachable, satisfies compiler
         }
+        run(parsed.serverUrl(), parsed.timeoutSeconds(),
+                System.in, System.out, System.err, System::exit);
+    }
 
+    /**
+     * Parses and validates the command line arguments.
+     *
+     * @throws ParseException if parsing fails or --server-url is missing
+     */
+    static ParsedArgs parseArgs(String[] args) throws ParseException {
+        CommandLine cmd = new DefaultParser().parse(options(), normalizeArguments(args));
         if (!cmd.hasOption("server-url")) {
-            System.err.println("ERROR: --server-url is required.");
-            printUsage();
-            System.exit(1);
-            return;
+            throw new ParseException("--server-url is required.");
         }
+        return new ParsedArgs(cmd.getOptionValue("server-url"),
+                Integer.parseInt(cmd.getOptionValue("timeout-seconds", "300")));
+    }
 
-        String serverUrl = cmd.getOptionValue("server-url");
-        int timeoutSeconds = Integer.parseInt(cmd.getOptionValue("timeout-seconds", "300"));
+    /** Parsed command line arguments. */
+    record ParsedArgs(String serverUrl, int timeoutSeconds) {
+    }
 
+    /**
+     * The proxy event loop: reads lines from {@code in}, dispatches them to the upstream
+     * (serially, preserving initialize/session ordering required by streamable HTTP servers)
+     * and relays responses to {@code out}. Blocks until EOF on {@code in}; then closes the
+     * upstream session and invokes {@code exit} with 0.
+     * <p>
+     * Streams and the exit callback are injectable so the loop can be tested with piped
+     * streams and a local mock server instead of {@code System.in}/{@code System.exit}.
+     */
+    static void run(String serverUrl, int timeoutSeconds,
+                    InputStream in, OutputStream out, PrintStream err,
+                    IntConsumer exit) throws Exception {
         log.info("Starting MCP Proxy: upstream={}, timeout={}s", serverUrl, timeoutSeconds);
-        System.err.println("[mcp-proxy] Connected to upstream: " + serverUrl);
+        err.println("[mcp-proxy] Connected to upstream: " + serverUrl);
 
         // Create the HTTP upstream client
         StreamableHttpUpstream upstream = new StreamableHttpUpstream(serverUrl, timeoutSeconds);
@@ -68,12 +94,12 @@ public class McpProxy {
                 if (line == null || line.trim().isEmpty()) return;
 
                 requestChain.updateAndGet(previous -> previous
-                        .handle((ignored, err) -> null)
+                        .handle((ignored, e) -> null)
                         .thenComposeAsync(ignored -> upstream.send(line), dispatchPool)
                         .thenAccept(responseLines -> responseLines.forEach(channelRef.get()::writeLine))
-                        .exceptionally(err -> {
-                            log.error("Request dispatch failed: {}", err.getMessage());
-                            System.err.println("[mcp-proxy] Error: " + err.getMessage());
+                        .exceptionally(e -> {
+                            log.error("Request dispatch failed: {}", e.getMessage());
+                            err.println("[mcp-proxy] Error: " + e.getMessage());
                             return null;
                         }));
             }
@@ -81,26 +107,26 @@ public class McpProxy {
             @Override
             public void onEof() {
                 log.info("stdin EOF — initiating graceful shutdown.");
-                System.err.println("[mcp-proxy] stdin closed, closing upstream session...");
+                err.println("[mcp-proxy] stdin closed, closing upstream session...");
 
                 requestChain.get()
-                        .handle((ignored, err) -> null)
+                        .handle((ignored, e) -> null)
                         .thenCompose(ignored -> upstream.closeSession())
-                        .whenComplete((v, err) -> {
-                    if (err != null) {
-                        log.warn("Session close failed: {}", err.getMessage());
-                    }
-                    log.info("Shutdown complete.");
-                    System.err.println("[mcp-proxy] Shutdown complete.");
+                        .whenComplete((v, e) -> {
+                            if (e != null) {
+                                log.warn("Session close failed: {}", e.getMessage());
+                            }
+                            log.info("Shutdown complete.");
+                            err.println("[mcp-proxy] Shutdown complete.");
 
-                    // Clean up and exit
-                    dispatchPool.shutdownNow();
-                    System.exit(0);
+                            // Clean up and exit
+                            dispatchPool.shutdownNow();
+                            exit.accept(0);
                         });
             }
         };
 
-        StdioChannel channel = new StdioChannel(System.in, System.out, handler);
+        StdioChannel channel = new StdioChannel(in, out, handler);
         channelRef.set(channel);
 
         // Start the stdin reader thread
