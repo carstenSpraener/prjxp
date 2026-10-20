@@ -103,6 +103,8 @@ public class ChatService {
             2. **grep**: Find exact definitions, method names, and specific patterns
             3. **readFile** or **readBySignature**: Read the actual source code for detailed understanding
 
+            Orthogonal to this ladder: **listFiles** lists which files exist (structural discovery by path pattern).
+
             ## Available Projects
             {project_list}
 
@@ -1124,7 +1126,7 @@ public class ChatService {
     /** Get the names of all tools available to the chat (prjxp, external MCP servers and Groovy). */
     public List<String> getAvailableTools() {
         if (toolRegistry == null || toolRegistry.getTools().isEmpty()) {
-            return List.of("vectorSearch", "grep", "readFile", "readBySignature", "listProjects");
+            return List.of("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles");
         }
         return toolRegistry.getTools().stream()
                 .map(ToolDefinition::getName)

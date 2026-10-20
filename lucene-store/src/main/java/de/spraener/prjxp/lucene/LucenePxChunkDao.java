@@ -13,6 +13,7 @@ import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.comparison.IsNotEqualTo;
 import dev.langchain4j.store.embedding.filter.logical.And;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
+import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.store.PxChunkDao;
@@ -27,10 +28,12 @@ import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.search.WildcardQuery;
 
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -191,6 +194,72 @@ public class LucenePxChunkDao implements PxChunkDao {
         return store.search(searchRequest).matches().stream()
                 .map(match -> new ScoredChunk(toPxChunk(match), match.score()))
                 .collect(Collectors.toList());
+    }
+
+    @Override
+    public FileListResult listFiles(String pattern, int limit) {
+        if (luceneStore == null) {
+            throw new UnsupportedOperationException("File listing requires a Lucene store");
+        }
+
+        Query query = new BooleanQuery.Builder()
+                .add(new TermQuery(new Term(PxChunk.PXCHUNK_PROJECT, storeReference.getProjectName())), BooleanClause.Occur.FILTER)
+                .add(new WildcardQuery(new Term(PxChunk.PXCHUNK_FILE, toGlob(pattern))), BooleanClause.Occur.MUST)
+                .build();
+
+        try {
+            IndexSearcher searcher = luceneStore.getSearcher();
+            try {
+                int maxDoc = searcher.getIndexReader().maxDoc();
+                LinkedHashSet<String> files = new LinkedHashSet<>();
+                boolean truncated = false;
+                int from = 0;
+                final int pageSize = 1000;
+                while (files.size() < limit) {
+                    int size = Math.min(pageSize, maxDoc - from);
+                    if (size <= 0) {
+                        break;
+                    }
+                    TopDocs topDocs = searcher.search(query, from + size);
+                    int sliceEnd = Math.min(from + size, topDocs.scoreDocs.length);
+                    int consumed = 0;
+                    for (int i = from; i < sliceEnd; i++) {
+                        consumed++;
+                        org.apache.lucene.document.Document doc = searcher.storedFields().document(topDocs.scoreDocs[i].doc);
+                        String file = doc.get(PxChunk.PXCHUNK_FILE);
+                        if (file != null) {
+                            files.add(file);
+                        }
+                        if (files.size() >= limit) {
+                            break;
+                        }
+                    }
+                    boolean moreDocs = consumed < (sliceEnd - from) || sliceEnd < topDocs.totalHits.value;
+                    if (files.size() >= limit) {
+                        truncated = moreDocs;
+                        break;
+                    }
+                    if (!moreDocs) {
+                        break;
+                    }
+                    from += size;
+                }
+                return new FileListResult(files.stream().sorted().toList(), truncated);
+            } finally {
+                luceneStore.releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to list files", e);
+        }
+    }
+
+    /** Pattern -> Lucene glob: blank = everything; no wildcard chars = prefix; else as-is. '*' spans '/'. */
+    static String toGlob(String pattern) {
+        if (pattern == null || pattern.isBlank()) {
+            return "*";
+        }
+        String p = pattern.trim();
+        return (p.contains("*") || p.contains("?")) ? p : p + "*";
     }
 
     private Filter buildFilter(Map<String, String> filters) {

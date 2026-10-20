@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp.tools;
 
+import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.common.model.MethodView;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -45,9 +46,9 @@ class PrjxpToolRegistrationTest {
     }
 
     @Test
-    void registersAllFiveTools() {
+    void registersAllTools() {
         assertThat(registry.getTools()).extracting(ToolDefinition::getName)
-                .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects");
+                .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles");
     }
 
     @Test
@@ -55,7 +56,7 @@ class PrjxpToolRegistrationTest {
         // The second run hits name collisions — they must be logged, not thrown
         registration.registerTools();
 
-        assertThat(registry.getTools()).hasSize(5);
+        assertThat(registry.getTools()).hasSize(6);
     }
 
     @Test
@@ -222,6 +223,37 @@ class PrjxpToolRegistrationTest {
         when(mcpTool.listProjects()).thenReturn(List.of());
 
         assertThat(execute("listProjects", Map.of())).isEqualTo("No searchable projects available.");
+    }
+
+    // ==================== listFiles ====================
+
+    @Test
+    void listFilesFormatsPaths() {
+        when(mcpTool.listFiles(any(), any(), any()))
+                .thenReturn(new FileListResult(List.of("src/a.java", "src/b.java"), false));
+
+        String result = execute("listFiles", Map.of("path", "src"));
+
+        assertThat(result).contains("Found 2 file(s)");
+        assertThat(result).contains("src/a.java");
+        assertThat(result).contains("src/b.java");
+    }
+
+    @Test
+    void listFilesMentionsTruncation() {
+        when(mcpTool.listFiles(any(), any(), any()))
+                .thenReturn(new FileListResult(List.of("src/a.java"), true));
+
+        String result = execute("listFiles", Map.of());
+
+        assertThat(result).contains("truncated");
+    }
+
+    @Test
+    void listFilesWithoutMatches() {
+        when(mcpTool.listFiles(any(), any(), any())).thenReturn(new FileListResult(List.of(), false));
+
+        assertThat(execute("listFiles", Map.of())).contains("No files found");
     }
 
     // ==================== argument coercion & truncation ====================

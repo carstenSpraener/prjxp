@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp.tools;
 
+import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
@@ -17,7 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Registers the five prjxp search tools in the central {@link ToolRegistry} so that they are
+ * Registers the six prjxp tools in the central {@link ToolRegistry} so that they are
  * available for native function calling — executed in-process as plain Java calls on
  * {@link PrjxpMcpTool}, without a JSON-RPC round trip.
  * <p>
@@ -44,6 +45,7 @@ public class PrjxpToolRegistration {
         register(readFileTool());
         register(readBySignatureTool());
         register(listProjectsTool());
+        register(listFilesTool());
     }
 
     private void register(ToolDefinition tool) {
@@ -199,7 +201,47 @@ public class PrjxpToolRegistration {
                 }, spec);
     }
 
+    private ToolDefinition listFilesTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("listFiles")
+                .description("""
+                        STRUCTURAL DISCOVERY TOOL (orthogonal to the search ladder): Lists which files exist in the project index.
+                        Use it to explore the file tree and locate files by name pattern before reading them.
+                        """)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("path",
+                                "Path prefix or glob. '*' matches any characters including '/' (recursive). Empty = all files.")
+                        .addStringProperty("project", "Optional project name.")
+                        .addIntegerProperty("limit", "Maximum number of files to return (default 50, max 500).")
+                        .build())
+                .build();
+
+        return new ToolDefinition("listFiles", spec.description(),
+                Map.of("path", "Path prefix or glob", "project", "Optional project name"),
+                params -> {
+                    FileListResult result = mcpTool.listFiles(string(params, "path"),
+                            string(params, "project"), integer(params, "limit"));
+                    return formatFileList(result);
+                }, spec);
+    }
+
     // ==================== Result formatting ====================
+
+    private String formatFileList(FileListResult result) {
+        if (result == null || result.files().isEmpty()) {
+            return "No files found.";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Found ").append(result.files().size()).append(" file(s)");
+        if (result.truncated()) {
+            sb.append(" (truncated — narrow the pattern or raise the limit)");
+        }
+        sb.append(":\n");
+        for (String file : result.files()) {
+            sb.append("  - ").append(file).append("\n");
+        }
+        return truncate(sb.toString(), SEARCH_RESULT_CAP);
+    }
 
     private String formatHits(String query, String project, List<SearchHit> hits) {
         if (hits == null || hits.isEmpty()) {

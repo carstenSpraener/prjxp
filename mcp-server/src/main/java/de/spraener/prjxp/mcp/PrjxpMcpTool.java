@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp;
 
+import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -27,6 +28,8 @@ public class PrjxpMcpTool {
     private final SymbolReaderService symbolReaderService;
 
     private final ProjectRegistry projectRegistry;
+
+    private final FileListService fileListService;
 
     @McpTool(name = "vectorSearch", description = """
             CRITICAL PRIMARY SEARCH TOOL (level 1 of 3): Delivers relevant semantic information from the project context.
@@ -185,6 +188,34 @@ public class PrjxpMcpTool {
     ) {
         if (StringUtils.isEmpty(project)) project = "default";
         return symbolReaderService.readBySignature(method, container, project);
+    }
+
+    @McpTool(name = "listFiles", description = """
+            STRUCTURAL DISCOVERY TOOL (orthogonal to the search ladder): Lists which files exist in the project index.
+            Answers "which files are there?" — not "what do they say?" (that is vectorSearch/grep).
+            USE IT to explore the file tree: find directories, locate files by name pattern, see what is indexed.
+            PATTERN: a path prefix (e.g. "frontend/src") or a glob (e.g. "*Controller.java").
+            '*' matches any characters INCLUDING '/' (recursive); '?' matches a single character. Case-sensitive.
+            An empty pattern lists everything (subject to limit).
+            RESULT: distinct file paths (sorted) + truncated flag. If truncated, narrow the pattern or raise the limit.
+            WORKFLOW: listFiles (find the path) -> readFile / grep / readBySignature (read the content).
+            """)
+    public FileListResult listFiles(
+            @McpToolParam(description = """
+                Path prefix or glob. Prefix: "frontend/src" matches everything below it.
+                Glob: "*Controller.java". '*' spans path separators. Empty = all files.
+                """, required = false)
+            String path,
+
+            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            String project,
+
+            @McpToolParam(description = "Maximum number of files to return (default 50, max 500).", required = false)
+            Integer limit
+    ) {
+        if (StringUtils.isEmpty(project)) project = "default";
+        int safeLimit = (limit == null) ? SearchLimits.LIST_DEFAULT_LIMIT : SearchLimits.clampList(limit);
+        return fileListService.list(path, project, safeLimit);
     }
 
 }

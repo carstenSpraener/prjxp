@@ -1,6 +1,7 @@
 package de.spraener.prjxp.common.store;
 
-import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;import de.spraener.prjxp.common.model.FileListResult;
+import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 
 import java.util.List;
@@ -32,5 +33,14 @@ public interface PxChunkDao {
      */
     default List<ScoredChunk> searchVector(String query, Map<String, String> filters, int limit) {
         throw new UnsupportedOperationException("Vector search is not supported by this store");
+    }
+
+    /**
+     * Structural file listing: distinct file paths of this project's chunks matching a pattern
+     * (prefix or glob; '*' spans path separators). Orthogonal to the content search methods —
+     * it answers "which files exist?", not "what do they say?".
+     */
+    default FileListResult listFiles(String pattern, int limit) {
+        throw new UnsupportedOperationException("File listing is not supported by this store");
     }
 }
