@@ -15,10 +15,12 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class LanguagePackPluginLoaderTest {
 
@@ -196,5 +198,68 @@ class LanguagePackPluginLoaderTest {
         loader.close();
         assertThat(loader.classLoaders()).isEmpty();
         assertThatCode(loader::close).doesNotThrowAnyException();
+    }
+
+    /* --- WP-1 Phase 04: close releases the class loaders' resources --- */
+
+    @Test
+    void closeReleasesAllPluginClassLoaders() throws IOException {
+        PluginJarBuilder.build(pluginDir, "good", GOOD_SOURCES, GOOD_PROVIDER);
+
+        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        loader.loadAll();
+        LanguagePackPluginLoader.PluginClassLoader pluginCL =
+                (LanguagePackPluginLoader.PluginClassLoader) loader.classLoaders().get(0);
+
+        // probe with a class that is not in the jar: while the jar is open,
+        // findClass reports a missing entry (ClassNotFoundException)
+        assertThatThrownBy(() -> pluginCL.findClass("de.spraener.prjxp.pluginfix.good.DoesNotExist"))
+                .isInstanceOf(ClassNotFoundException.class);
+
+        loader.close();
+
+        assertThat(loader.classLoaders()).isEmpty();
+        // the JarFile behind the class loader is closed: the same probe now
+        // fails with a zip error before the entry lookup
+        assertThatThrownBy(() -> pluginCL.findClass("de.spraener.prjxp.pluginfix.good.DoesNotExist"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test
+    void closeErrorInOneLoaderDoesNotBlockOthers() throws IOException {
+        PluginJarBuilder.build(pluginDir, "good", GOOD_SOURCES, GOOD_PROVIDER);
+        PluginJarBuilder.build(pluginDir, "second",
+                List.of("de/spraener/prjxp/pluginfix/second/SecondPackProvider.java"),
+                "de.spraener.prjxp.pluginfix.second.SecondPackProvider");
+
+        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        loader.loadAll();
+        assertThat(loader.classLoaders()).hasSize(2);
+
+        LanguagePackPluginLoader.PluginClassLoader real =
+                (LanguagePackPluginLoader.PluginClassLoader) loader.classLoaders().get(0);
+        File goodJar = pluginDir.resolve("good.jar").toFile();
+        LanguagePackPluginLoader.PluginClassLoader failing =
+                new LanguagePackPluginLoader.PluginClassLoader(goodJar, ClassLoader.getSystemClassLoader(),
+                        LanguagePackPluginLoader.defaultDelegation()) {
+                    @Override
+                    public void close() throws IOException {
+                        throw new IOException("simulated close failure");
+                    }
+                };
+        List<LanguagePackPluginLoader.PluginClassLoader> all = new ArrayList<>();
+        for (ClassLoader cl : loader.classLoaders()) {
+            all.add((LanguagePackPluginLoader.PluginClassLoader) cl);
+        }
+        all.add(failing);
+
+        assertThatCode(() -> loader.closeClassLoaders(all)).doesNotThrowAnyException();
+
+        // the healthy loader was still closed (zip error on the same probe)
+        assertThatThrownBy(() -> real.findClass("de.spraener.prjxp.pluginfix.good.DoesNotExist"))
+                .isInstanceOf(IllegalStateException.class);
+        assertThat(logAppender.list)
+                .anyMatch(e -> e.getLevel() == Level.WARN
+                        && e.getFormattedMessage().contains("simulated close failure"));
     }
 }

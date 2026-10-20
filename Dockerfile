@@ -41,6 +41,13 @@ RUN mkdir -p /import /projects
 VOLUME /app-source
 VOLUME /app-source/.prjxp-data/lucene-index
 
+# Language Pack Plugins (WP-1): werden zur Laufzeit gemountet, nie ins Image
+# gebacken. Die Apps laufen mit WORKDIR /app-source, daher loest der
+# Default-Plugin-Ordner (prjxp.language-packs.dir, Default ./language-packs)
+# auf /app-source/language-packs auf. Override: PRJXP_LANGUAGE_PACKS_DIR.
+RUN mkdir -p /app-source/language-packs
+VOLUME /app-source/language-packs
+
 # Default-Fallback, wird zur Laufzeit im ENTRYPOINT ueberschrieben wenn
 # /app-source/application.yml oder /app-source/application.yaml existiert.
 ENV SPRING_CONFIG_LOCATION=file:/app/

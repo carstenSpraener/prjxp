@@ -2,6 +2,8 @@ package de.spraener.prjxp.common.language;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.support.BeanDefinitionRegistry;
+import org.springframework.beans.factory.support.RootBeanDefinition;
 import org.springframework.context.ApplicationContextInitializer;
 import org.springframework.context.ConfigurableApplicationContext;
 
@@ -17,9 +19,11 @@ import java.io.File;
  * environment variable, via relaxed binding); the default is
  * {@value #DEFAULT_DIR}, relative to the working directory.
  *
- * <p>The loader is registered as the singleton {@value #BEAN_NAME}; Spring
- * closes it (and its plugin class loaders) on context shutdown. A missing or
- * empty directory is a no-op: the loader is still registered, with no packs.
+ * <p>The loader is registered as the Bean {@value #BEAN_NAME} (a proper
+ * {@link RootBeanDefinition} backed by the pre-created instance), so Spring
+ * manages its lifecycle and closes it — and with it all plugin class
+ * loaders — on context shutdown. A missing or empty directory is a no-op:
+ * the loader is still registered, with no packs.
  */
 public class LanguagePackBootstrapInitializer implements ApplicationContextInitializer<ConfigurableApplicationContext> {
 
@@ -37,16 +41,32 @@ public class LanguagePackBootstrapInitializer implements ApplicationContextIniti
         String dir = context.getEnvironment().getProperty(PROPERTY_DIR, DEFAULT_DIR);
         LanguagePackPluginLoader loader = new LanguagePackPluginLoader(new File(dir));
         loader.loadAll();
-        // The context's BeanFactory is not accessible before the first refresh,
-        // so the singleton is registered via a BeanFactoryPostProcessor — which
-        // runs during refresh, before any Bean is instantiated.
-        context.addBeanFactoryPostProcessor(beanFactory ->
-                beanFactory.registerSingleton(BEAN_NAME, loader));
+        registerLoader(context, loader);
         if (loader.loadedPacks().isEmpty()) {
             log.debug("Language pack bootstrap: no external LanguagePacks in {}", dir);
         } else {
             log.info("Language pack bootstrap: {} external LanguagePack(s) from {}",
                     loader.loadedPacks().size(), dir);
+        }
+    }
+
+    private void registerLoader(ConfigurableApplicationContext context, LanguagePackPluginLoader loader) {
+        if (context instanceof BeanDefinitionRegistry registry) {
+            // A proper Bean definition (backed by the pre-created instance) so
+            // that Spring manages the lifecycle: the loader is AutoCloseable,
+            // so Spring closes it — and with it all plugin class loaders — on
+            // context shutdown. (Manually registered singletons are never
+            // destroyed by Spring, which would leak the plugin class loaders.)
+            RootBeanDefinition beanDefinition = new RootBeanDefinition(LanguagePackPluginLoader.class);
+            beanDefinition.setInstanceSupplier(() -> loader);
+            registry.registerBeanDefinition(BEAN_NAME, beanDefinition);
+        } else {
+            // Fallback for non-registry contexts: the loader is still available
+            // as a singleton, but Spring does not destroy manually registered
+            // singletons, so it is not closed on context shutdown (the JVM
+            // releases the resources on exit).
+            context.addBeanFactoryPostProcessor(beanFactory ->
+                    beanFactory.registerSingleton(BEAN_NAME, loader));
         }
     }
 }

@@ -180,14 +180,19 @@ public final class LanguagePackPluginLoader implements AutoCloseable {
     /** Closes all plugin class loaders. Idempotent. */
     @Override
     public void close() {
-        for (PluginClassLoader loader : classLoaders) {
+        closeClassLoaders(classLoaders);
+        classLoaders.clear();
+    }
+
+    /** Package-private: a failure in one class loader must not block the others. */
+    void closeClassLoaders(List<PluginClassLoader> loaders) {
+        for (PluginClassLoader loader : loaders) {
             try {
                 loader.close();
             } catch (IOException e) {
                 log.warn("Error closing plugin class loader for {}: {}", loader.jarName(), e.toString());
             }
         }
-        classLoaders.clear();
     }
 
     /**
@@ -195,7 +200,7 @@ public final class LanguagePackPluginLoader implements AutoCloseable {
      * Delegates according to the configured rule: parent-first for the
      * host API + slf4j, child-first for everything else.
      */
-    private static final class PluginClassLoader extends ClassLoader implements AutoCloseable {
+    static class PluginClassLoader extends ClassLoader implements AutoCloseable {
 
         private final File jarFile;
         private final JarFile jar;
