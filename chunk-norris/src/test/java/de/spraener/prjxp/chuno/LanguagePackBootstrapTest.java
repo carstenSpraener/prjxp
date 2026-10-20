@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.language.LanguagePack;
 import de.spraener.prjxp.common.language.LanguagePackPluginLoader;
 import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.language.PluginJarBuilder;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -97,8 +98,9 @@ class LanguagePackBootstrapTest {
 
         @Bean
         LanguagePackRegistry languagePackRegistry(ObjectProvider<LanguagePack> builtInPacks,
-                                                  ObjectProvider<LanguagePackPluginLoader> loader) {
-            return new LanguagePackRegistry(builtInPacks, loader);
+                                                  ObjectProvider<LanguagePackPluginLoader> loader,
+                                                  ObjectProvider<PxChunkDaoProvider> chunkDaoProvider) {
+            return new LanguagePackRegistry(builtInPacks, loader, chunkDaoProvider);
         }
 
         @Bean

@@ -2,6 +2,7 @@ package de.spraener.prjxp.common.language;
 
 import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 
 import java.io.File;
 import java.util.Optional;
@@ -37,5 +38,21 @@ public interface LanguagePack {
     /** Retriever side: this pack's retriever, or empty if not provided. */
     default Optional<GoldenRetriever> retriever() {
         return Optional.empty();
+    }
+
+    /**
+     * Optional host binding: the host calls this once after loading the pack,
+     * before first use, to hand the pack's retriever access to the embedding
+     * store (the {@link PxChunkDaoProvider}).
+     *
+     * <p>Built-in packs are Spring-managed and already receive their dependencies
+     * via constructor injection, so they use the default no-op. External (plugin)
+     * packs — which are instantiated no-arg inside an isolating class loader and
+     * cannot be Spring-injected — override this to create a store-aware retriever,
+     * enabling full part reassembly and parent-frame enrichment in the host
+     * retrieval path. Without a binding the retriever degrades gracefully to
+     * best-effort (parts/parents only from the chunks handed in per request).
+     */
+    default void bind(PxChunkDaoProvider chunkDaoProvider) {
     }
 }

@@ -8,6 +8,9 @@
  */
 plugins {
     id 'java'
+    // Fat-JAR (plugin) packaging: bundles the plugin classes + ANTLR, but not the
+    // host API (prjxp-common) or logging (slf4j) — the host provides those.
+    id 'com.gradleup.shadow' version '8.3.0'
 }
 
 group = 'de.spraener.prjxp'
@@ -38,13 +41,20 @@ def antlrVersion = '4.13.1'
 dependencies {
     // The shared host API (LanguagePack, LanguagePackProvider, PxChunker,
     // PxChunk, GoldenRetriever, ...). Pinned to the locally published version.
-    implementation 'de.spraener.prjxp:prjxp-common:0.0.1-SNAPSHOT'
+    //
+    // compileOnly (NOT implementation): the host provides prjxp-common at runtime,
+    // so it must NOT be bundled into the plugin JAR. compileOnly keeps it off the
+    // runtime classpath (and thus out of the shadow JAR) while still letting the
+    // plugin compile against it. It is re-added for the test source set below.
+    compileOnly 'de.spraener.prjxp:prjxp-common:0.0.1-SNAPSHOT'
 
     // ANTLR: the tool (build-time generation) and the runtime (compile + run).
+    // The runtime is the plugin's private dependency and IS bundled into the JAR.
     antlrTool "org.antlr:antlr4:${antlrVersion}"
     implementation "org.antlr:antlr4-runtime:${antlrVersion}"
 
-    // Testing
+    // Testing: the host API is needed on the test compile + runtime classpath.
+    testImplementation 'de.spraener.prjxp:prjxp-common:0.0.1-SNAPSHOT'
     testImplementation 'org.junit.jupiter:junit-jupiter:5.12.1'
     testImplementation 'org.assertj:assertj-core:3.27.7'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
@@ -100,4 +110,31 @@ tasks.withType(JavaCompile).configureEach {
 
 test {
     useJUnitPlatform()
+    // PluginJarTest inspects the fat-JAR, so it must be built first.
+    dependsOn shadowJar
+}
+
+// ---------------------------------------------------------------------------
+// Plugin fat-JAR
+//
+// The deliverable is a self-contained plugin JAR that the host drops into
+// ./language-packs. It bundles the plugin's own classes and its private ANTLR
+// runtime, plus the SPI service file. It must NOT bundle the host API
+// (de.spraener.prjxp.common.** — provided by the host, see compileOnly above)
+// or logging (org.slf4j.** — provided by the host).
+// ---------------------------------------------------------------------------
+shadowJar {
+    archiveBaseName.set('lp-csharp')
+    archiveClassifier.set('plugin')
+    archiveVersion.set('')
+    zip64 = true
+
+    // Belt-and-suspenders: prjxp-common is already off the runtime classpath
+    // (compileOnly), but exclude the host API and logging explicitly so a future
+    // dependency change cannot leak them into the plugin JAR.
+    exclude 'de/spraener/prjxp/common/**'
+    exclude 'org/slf4j/**'
+
+    // Merge META-INF/services so the LanguagePackProvider SPI entry survives.
+    mergeServiceFiles()
 }

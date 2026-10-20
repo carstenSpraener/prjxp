@@ -105,6 +105,28 @@ class SymbolReaderServiceTest {
         return unit(fqn + ".imports", fqn, file, fromLine, toLine, "imports", meta, imports);
     }
 
+    /** C# variant: uses csharp_code_section (typeFrame/.doc conventions). */
+    private static PxChunk csharpUnit(String id, String parent, String file,
+                                      String fromLine, String toLine, String section,
+                                      Map<String, String> symbolMeta, String content) {
+        return PxChunk.create(
+                c -> c.setId(id),
+                c -> c.setParent(parent),
+                c -> c.setFile(file),
+                c -> c.setFromLine(fromLine),
+                c -> c.setToLine(toLine),
+                c -> c.setPart(0),
+                c -> c.setTotal(1),
+                c -> c.setSize(content.length()),
+                c -> c.setOverlap(0),
+                c -> {
+                    c.getMetadata().put("csharp_code_section", section);
+                    c.getMetadata().putAll(symbolMeta);
+                },
+                c -> c.setContent(content)
+        );
+    }
+
     private static ScoredChunk scored(PxChunk chunk) {
         return new ScoredChunk(chunk, 1.0);
     }
@@ -200,6 +222,47 @@ class SymbolReaderServiceTest {
         assertThat(view.fqn()).isEqualTo("de.ex.Foo");
         assertThat(view.file()).isEqualTo(file);
         assertThat(view.javadoc()).isNull();
+        assertThat(view.body()).isEqualTo(frame);
+    }
+
+    @Test
+    void csharpFqnLookupReturnsMethodWithDoc() {
+        String file = "/src/MyApp/Widget.cs";
+        String body = "public void DoWork() {\n    // implementation\n}\n";
+        Map<String, String> meta = new HashMap<>();
+        meta.put(SymbolMetadata.SYMBOL_FQN, "MyApp.Widget#DoWork");
+        meta.put(SymbolMetadata.SYMBOL_NAME, "DoWork");
+        meta.put(SymbolMetadata.SYMBOL_CONTAINER_FQN, "MyApp.Widget");
+        PxChunk method = csharpUnit("MyApp.Widget.DoWork()", "MyApp.Widget", file, "10", "25", "method", meta, body);
+        PxChunk doc = csharpUnit("MyApp.Widget.DoWork().doc", "MyApp.Widget", file, "5", "9", "methodDoc", Map.of(), "Does the work.");
+        stubDaoReturns(method, doc);
+
+        SymbolReadResult result = service.readBySignature("MyApp.Widget#DoWork", null, "p");
+
+        assertThat(result.error()).isNull();
+        assertThat(result.matches()).hasSize(1);
+        MethodView view = result.matches().get(0);
+        assertThat(view.fqn()).isEqualTo("MyApp.Widget#DoWork");
+        assertThat(view.javadoc()).isEqualTo("Does the work.");
+        assertThat(view.body()).isEqualTo(body);
+    }
+
+    @Test
+    void csharpTypeFrameIsRenderedAsBody() {
+        String file = "/src/MyApp/Widget.cs";
+        String frame = "public class Widget {\n    public void DoWork() { }\n}\n";
+        Map<String, String> meta = new HashMap<>();
+        meta.put(SymbolMetadata.SYMBOL_FQN, "MyApp.Widget");
+        meta.put(SymbolMetadata.SYMBOL_NAME, "Widget");
+        PxChunk frameUnit = csharpUnit("MyApp.Widget", null, file, "1", "50", "typeFrame", meta, frame);
+        stubDaoReturns(frameUnit);
+
+        SymbolReadResult result = service.readBySignature("MyApp.Widget", null, "p");
+
+        assertThat(result.error()).isNull();
+        assertThat(result.matches()).hasSize(1);
+        MethodView view = result.matches().get(0);
+        assertThat(view.fqn()).isEqualTo("MyApp.Widget");
         assertThat(view.body()).isEqualTo(frame);
     }
 

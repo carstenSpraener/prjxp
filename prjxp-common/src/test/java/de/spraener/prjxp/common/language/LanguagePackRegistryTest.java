@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -167,13 +168,41 @@ class LanguagePackRegistryTest {
         ctx.close();
     }
 
+    /* --- Test 9: Spring wiring binds the PxChunkDaoProvider into every pack --- */
+    @Test
+    void springWiring_bindsChunkDaoProviderIntoPacks() {
+        AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
+        ctx.register(BindingWiringConfig.class);
+        ctx.refresh();
+
+        BindingRecordingPack pack = ctx.getBean(BindingRecordingPack.class);
+        assertThat(pack.boundProvider)
+                .as("the registry must hand the store provider to the pack")
+                .isSameAs(ctx.getBean(PxChunkDaoProvider.class));
+
+        ctx.close();
+    }
+
+    /* --- Test 10: no provider bean -> binding is skipped, no error --- */
+    @Test
+    void springWiring_withoutProviderBean_skipsBinding() {
+        AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext();
+        ctx.register(NoProviderWiringConfig.class);
+        ctx.refresh();
+
+        assertThat(ctx.getBean(BindingRecordingPack.class).boundProvider).isNull();
+
+        ctx.close();
+    }
+
     @Configuration
     static class WiringConfig {
 
         @Bean
         LanguagePackRegistry languagePackRegistry(ObjectProvider<LanguagePack> builtInPacks,
-                                                  ObjectProvider<LanguagePackPluginLoader> loader) {
-            return new LanguagePackRegistry(builtInPacks, loader);
+                                                  ObjectProvider<LanguagePackPluginLoader> loader,
+                                                  ObjectProvider<PxChunkDaoProvider> chunkDaoProvider) {
+            return new LanguagePackRegistry(builtInPacks, loader, chunkDaoProvider);
         }
 
         @Bean
@@ -186,6 +215,43 @@ class LanguagePackRegistryTest {
         @Bean
         LanguagePack javaPack() {
             return new BuiltInPack("java", "text/x-java");
+        }
+    }
+
+    @Configuration
+    static class BindingWiringConfig {
+
+        @Bean
+        LanguagePackRegistry languagePackRegistry(ObjectProvider<LanguagePack> builtInPacks,
+                                                  ObjectProvider<LanguagePackPluginLoader> loader,
+                                                  ObjectProvider<PxChunkDaoProvider> chunkDaoProvider) {
+            return new LanguagePackRegistry(builtInPacks, loader, chunkDaoProvider);
+        }
+
+        @Bean
+        BindingRecordingPack bindingRecordingPack() {
+            return new BindingRecordingPack();
+        }
+
+        @Bean
+        PxChunkDaoProvider pxChunkDaoProvider() {
+            return new PxChunkDaoProvider(java.util.List.of());
+        }
+    }
+
+    @Configuration
+    static class NoProviderWiringConfig {
+
+        @Bean
+        LanguagePackRegistry languagePackRegistry(ObjectProvider<LanguagePack> builtInPacks,
+                                                  ObjectProvider<LanguagePackPluginLoader> loader,
+                                                  ObjectProvider<PxChunkDaoProvider> chunkDaoProvider) {
+            return new LanguagePackRegistry(builtInPacks, loader, chunkDaoProvider);
+        }
+
+        @Bean
+        BindingRecordingPack bindingRecordingPack() {
+            return new BindingRecordingPack();
         }
     }
 
@@ -215,5 +281,14 @@ class LanguagePackRegistryTest {
 
         @Override public String language() { return language; }
         @Override public String mimeType() { return mimeType; }
+    }
+
+    /** Records the provider handed in via {@link LanguagePack#bind}. */
+    static class BindingRecordingPack implements LanguagePack {
+        PxChunkDaoProvider boundProvider;
+
+        @Override public String language() { return "bindlang"; }
+        @Override public String mimeType() { return "text/x-bindlang"; }
+        @Override public void bind(PxChunkDaoProvider provider) { this.boundProvider = provider; }
     }
 }

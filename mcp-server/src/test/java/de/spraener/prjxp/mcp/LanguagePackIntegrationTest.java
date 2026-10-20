@@ -9,6 +9,7 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.SearchParams;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -86,8 +87,9 @@ class LanguagePackIntegrationTest {
 
         @Bean
         LanguagePackRegistry languagePackRegistry(ObjectProvider<LanguagePack> builtInPacks,
-                                                  ObjectProvider<LanguagePackPluginLoader> loader) {
-            return new LanguagePackRegistry(builtInPacks, loader);
+                                                  ObjectProvider<LanguagePackPluginLoader> loader,
+                                                  ObjectProvider<PxChunkDaoProvider> chunkDaoProvider) {
+            return new LanguagePackRegistry(builtInPacks, loader, chunkDaoProvider);
         }
 
         @Bean

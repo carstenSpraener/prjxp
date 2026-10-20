@@ -39,6 +39,27 @@ dependencies {
 
 }
 
+// ---------------------------------------------------------------------------
+// C# Language Pack E2E (WP-2 Phase 04): stage the lp-csharp plugin fat JAR
+// (built by the root-level :buildLpCsharpPlugin task) so the host tests can
+// load it via prjxp.language-packs.dir.
+// ---------------------------------------------------------------------------
+def lpCsharpJar = new File(rootProject.projectDir, 'lp-csharp/build/libs/lp-csharp-plugin.jar')
+def lpCsharpStageDir = layout.buildDirectory.dir('language-packs')
+
+tasks.register('stageLpCsharpPlugin', Copy) {
+    dependsOn ':buildLpCsharpPlugin'
+    from lpCsharpJar
+    into lpCsharpStageDir
+}
+
+test {
+    // WP-2 Phase 04: the C# E2E test loads the staged lp-csharp plugin JAR
+    // (the property is only consumed by that test, via @DynamicPropertySource).
+    dependsOn 'stageLpCsharpPlugin'
+    systemProperty 'prjxp.csharp.e2e.pluginDir', lpCsharpStageDir.get().asFile.absolutePath
+}
+
 jar {
     manifest {
         attributes(

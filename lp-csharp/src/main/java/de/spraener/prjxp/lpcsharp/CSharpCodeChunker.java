@@ -333,7 +333,7 @@ public class CSharpCodeChunker implements PxChunker {
                     )));
 
             createDocChunk(fqn, parent, name, CSharpCodeSection.TYPE_DOC,
-                    docAbove(fromLine), fromLine, toLine);
+                    docAbove(fromLine), null, fromLine, toLine);
         }
 
         private void createMethod(String containerFqn, CSharpParser.Method_declarationContext method,
@@ -360,7 +360,7 @@ public class CSharpCodeChunker implements PxChunker {
                     )));
 
             createDocChunk(id, containerFqn, methodName, CSharpCodeSection.METHOD_DOC,
-                    docAbove(fromLine), fromLine, toLine);
+                    docAbove(fromLine), declaration, fromLine, toLine);
         }
 
         private void createConstructor(String containerFqn, CSharpParser.Constructor_declarationContext ctor,
@@ -387,7 +387,7 @@ public class CSharpCodeChunker implements PxChunker {
                     )));
 
             createDocChunk(id, containerFqn, typeName, CSharpCodeSection.METHOD_DOC,
-                    docAbove(fromLine), fromLine, toLine);
+                    docAbove(fromLine), declaration, fromLine, toLine);
         }
 
         private void createField(String containerFqn, CSharpParser.Typed_member_declarationContext tmd,
@@ -414,7 +414,7 @@ public class CSharpCodeChunker implements PxChunker {
                     )));
 
             createDocChunk(id, containerFqn, name, CSharpCodeSection.METHOD_DOC,
-                    docAbove(fromLine), fromLine, toLine);
+                    docAbove(fromLine), declaration, fromLine, toLine);
         }
 
         private void createProperty(String containerFqn, CSharpParser.Typed_member_declarationContext tmd,
@@ -441,7 +441,7 @@ public class CSharpCodeChunker implements PxChunker {
                     )));
 
             createDocChunk(id, containerFqn, name, CSharpCodeSection.METHOD_DOC,
-                    docAbove(fromLine), fromLine, toLine);
+                    docAbove(fromLine), declaration, fromLine, toLine);
         }
 
         private void createIndexer(String containerFqn, CSharpParser.Typed_member_declarationContext tmd,
@@ -470,7 +470,7 @@ public class CSharpCodeChunker implements PxChunker {
                     )));
 
             createDocChunk(id, containerFqn, name, CSharpCodeSection.METHOD_DOC,
-                    docAbove(fromLine), fromLine, toLine);
+                    docAbove(fromLine), declaration, fromLine, toLine);
         }
 
         private void createEvent(String containerFqn, CSharpParser.Event_declarationContext event,
@@ -501,7 +501,7 @@ public class CSharpCodeChunker implements PxChunker {
                     )));
 
             createDocChunk(id, containerFqn, name, CSharpCodeSection.METHOD_DOC,
-                    docAbove(fromLine), fromLine, toLine);
+                    docAbove(fromLine), declaration, fromLine, toLine);
         }
 
         /**
@@ -667,12 +667,19 @@ public class CSharpCodeChunker implements PxChunker {
         /**
          * Creates a documentation chunk bound to the given symbol, if the doc text is non-empty.
          *
-         * @param symbolId the id of the documented symbol (the doc chunk id becomes {@code symbolId + ".doc"})
-         * @param parent   the parent of the doc chunk (the documented symbol's parent)
-         * @param name     the documented symbol's simple name
+         * <p>The doc chunk carries the same symbol metadata as the documented symbol
+         * (analog of the Java chunker's javadoc chunks), so host lookups that filter on
+         * {@code symbol_name} + {@code symbol_container_fqn} (e.g. readBySignature)
+         * match the doc as well.
+         *
+         * @param symbolId     the id of the documented symbol (the doc chunk id becomes {@code symbolId + ".doc"})
+         * @param parent       the parent of the doc chunk (the documented symbol's parent)
+         * @param name         the documented symbol's simple name
+         * @param declaration  the documented symbol's declaration (for the signature hash; may be null for types)
          */
         private void createDocChunk(String symbolId, String parent, String name,
-                                    CSharpCodeSection docSection, String doc, int symbolFromLine, int symbolToLine) {
+                                    CSharpCodeSection docSection, String doc, String declaration,
+                                    int symbolFromLine, int symbolToLine) {
             if (doc.isBlank()) {
                 return;
             }
@@ -689,8 +696,13 @@ public class CSharpCodeChunker implements PxChunker {
                             c -> c.setFile(file.getAbsolutePath()),
                             c -> { if (parent != null) c.setParent(parent); },
                             c -> c.getMetadata().put(CSharpCodeSection.METADATA_KEY, docSection.getName()),
-                            c -> c.getMetadata().put(SymbolMetadata.SYMBOL_NAME, name),
-                            c -> c.getMetadata().put(SymbolMetadata.SYMBOL_TYPE, docSection.getName())
+                            c -> {
+                                if (CSharpCodeSection.TYPE_DOC == docSection) {
+                                    SymbolMetadata.applyClass(c.getMetadata(), docSection.getName(), symbolId, name);
+                                } else {
+                                    SymbolMetadata.applyMethod(c.getMetadata(), docSection.getName(), parent, name, declaration);
+                                }
+                            }
                     )));
         }
     }

@@ -18,15 +18,24 @@ import java.util.Map;
 
 /**
  * 3rd search level: deterministic symbol lookup in the index (symbol_* metadata),
- * reassembly of method + javadoc units, max 10 full matches plus the remaining FQNs.
- * Java-only in Phase 1 — only the Java chunker writes symbol metadata.
+ * reassembly of method + doc units, max 10 full matches plus the remaining FQNs.
+ *
+ * <p>Language-agnostic: any chunker that writes {@code symbol_*} metadata and a
+ * {@code <language>_code_section} marker is supported (Java, C#, TypeScript,
+ * Visual Basic). The section marker and the doc-id suffix differ per language
+ * (e.g. C# uses {@code typeFrame} + {@code .doc}, Java uses {@code classFrame} +
+ * {@code .javadoc}); both are understood here.
  */
 @Service
 @RequiredArgsConstructor
 public class SymbolReaderService {
     private static final int LOOKUP_LIMIT = 10_000;
     private static final int MAX_FULL_MATCHES = 10;
-    private static final String SECTION_KEY = "java_code_section";
+    /** Section-marker metadata keys, one per supported language; the first present key wins. */
+    private static final List<String> SECTION_KEYS = List.of(
+            "java_code_section", "csharp_code_section", "typescript_code_section", "visualbasic_code_section");
+    /** Doc-id suffixes per language (Java {@code .javadoc}, C# {@code .doc}). */
+    private static final List<String> DOC_SUFFIXES = List.of(".javadoc", ".doc");
 
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ProjectRegistry projectRegistry;
@@ -64,16 +73,16 @@ public class SymbolReaderService {
         List<PxChunk> methodUnits = new ArrayList<>();
         List<PxChunk> classUnits = new ArrayList<>();
         for (PxChunk u : units) {
-            String section = u.getMetadata().get(SECTION_KEY);
+            String section = sectionOf(u);
             if ("method".equals(section)) methodUnits.add(u);
             else if ("methodDoc".equals(section)) docByMethodId.put(u.getId(), u);
-            else if ("classFrame".equals(section)) classUnits.add(u);
-            // imports / unknown: never rendered
+            else if ("classFrame".equals(section) || "typeFrame".equals(section)) classUnits.add(u);
+            // imports / usings / unknown: never rendered
         }
 
         List<MethodView> views = new ArrayList<>();
         for (PxChunk m : methodUnits)
-            views.add(toMethodView(m, docByMethodId.get(m.getId() + ".javadoc")));
+            views.add(toMethodView(m, findDoc(docByMethodId, m)));
         for (PxChunk c : classUnits)   // a class FQN was requested -> return the class frame as the "body"
             views.add(new MethodView(meta(c, SymbolMetadata.SYMBOL_FQN), c.getFile(),
                     ReaderSupport.parseLineOrNull(c.getFromLine()), ReaderSupport.parseLineOrNull(c.getToLine()), null, c.getContent()));
@@ -99,6 +108,28 @@ public class SymbolReaderService {
 
     private String meta(PxChunk u, String key) {
         return u.getMetadata().get(key);
+    }
+
+    /** The section marker of a unit, read from whichever language's key is present. */
+    private static String sectionOf(PxChunk unit) {
+        for (String key : SECTION_KEYS) {
+            String section = unit.getMetadata().get(key);
+            if (section != null) {
+                return section;
+            }
+        }
+        return null;
+    }
+
+    /** The doc unit belonging to a method, trying each language's doc-id suffix. */
+    private static PxChunk findDoc(Map<String, PxChunk> docByMethodId, PxChunk method) {
+        for (String suffix : DOC_SUFFIXES) {
+            PxChunk doc = docByMethodId.get(method.getId() + suffix);
+            if (doc != null) {
+                return doc;
+            }
+        }
+        return null;
     }
 
     private PxChunkDao resolveDao(String project) {   // same pattern as ReaderService (Phase 05)

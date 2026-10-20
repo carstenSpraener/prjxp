@@ -1,5 +1,6 @@
 package de.spraener.prjxp.common.language;
 
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -35,11 +36,24 @@ public class LanguagePackRegistry {
     private final List<LanguagePack> packs;
     private final Map<String, String> mimeByLanguage;
 
+    /**
+     * Spring wiring: resolves built-in beans + plugin packs, then binds the
+     * {@link PxChunkDaoProvider} (when present) into every pack so plugin
+     * retrievers gain store access. The provider is optional — hosts without an
+     * embedding store (or without the bean) simply skip the binding.
+     */
     @Autowired
     public LanguagePackRegistry(ObjectProvider<LanguagePack> builtInPacks,
-                                ObjectProvider<LanguagePackPluginLoader> pluginLoader) {
+                                ObjectProvider<LanguagePackPluginLoader> pluginLoader,
+                                ObjectProvider<PxChunkDaoProvider> chunkDaoProvider) {
         this(builtInPacks.orderedStream().toList(),
                 pluginLoader.stream().map(LanguagePackPluginLoader::loadedPacks).flatMap(List::stream).toList());
+        PxChunkDaoProvider provider = chunkDaoProvider.getIfAvailable();
+        if (provider != null) {
+            for (LanguagePack pack : packs) {
+                pack.bind(provider);
+            }
+        }
     }
 
     /**
