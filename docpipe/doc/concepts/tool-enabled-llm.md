@@ -585,7 +585,7 @@ The tool-enabled LLM capability is **implemented** via the following components 
 
 | Component | Location | Purpose |
 |---|---|---|
-| **LangChain4j upgrade** | `gradle/libs.versions.toml` | Upgraded from `1.13.0-beta23` to `1.21.0-beta31` for `StreamableHttpMcpTransport` |
+| **LangChain4j MCP module** | `gradle/libs.versions.toml` | `langchain4j-mcp` uses `1.21.0-beta31` for `StreamableHttpMcpTransport` (the core stays on stable `1.13.0`) |
 | **McpClientManager** | `prjxp-common/.../mcp/McpClientManager.java` | Added `"http"` transport branch; creates `StreamableHttpMcpTransport` clients from config |
 | **McPEnablingKIChatDecorator** | `prjxp-common/.../mcp/McPEnablingKIChatDecorator.java` | Wraps `KIChat` in LangChain4j `AiServices` agent with MCP tools; injects system prompt |
 | **McpServerReference** | `prjxp-common/.../config/McpServerReference.java` | Added `defaultProject` field for project context in system prompt |

@@ -10,13 +10,14 @@ Doc|Pipe solves this by treating documentation as a **build artifact**. You decl
 Project Root
 ├── .dp/
 │   ├── documents.json          ← what to generate (glob patterns, output paths, stereotypes)
-│   ├── models.json             ← which LLM to use per stereotype
-│   ├── content-hashes.properties  ← SHA-256 cache to skip unchanged prompts
+│   ├── content-hashes.properties  ← SHA-256 cache to skip unchanged prompts (auto-generated)
 │   └── *.prompt.txt            ← Handlebars prompt templates
 ├── src/
 │   └── ...
 └── docs/                       ← generated output
 ```
+
+LLM models are configured centrally in `application.yaml` (`prjxp.chatModels[]`), not per `.dp` directory.
 
 The execution flow for a single run:
 
@@ -24,7 +25,7 @@ The execution flow for a single run:
 2. **Expansion** – Each `DPContentCreation` entry with a `forEach` glob is expanded into one task per matched file (e.g., `**/*.java` → one task per Java file).
 3. **Prompt Resolution** – `PromptResolvingService` reads the Handlebars template, registers all `TemplateResolver` helpers, and renders the final prompt with project context.
 4. **Change Detection** – `ContentUpdateRequiredController` hashes the resolved prompt (SHA-256) and compares it against the stored hash. If unchanged, the LLM call is skipped entirely.
-5. **Generation** – `LLMService` routes the prompt to the correct model (selected by *stereotype*) and receives the response.
+5. **Generation** – `LLMService` routes the prompt to the correct model (selected by *stereotype*), decorates it with MCP tools when `prjxp.mcp-servers[]` is configured, and receives the response.
 6. **Post-processing** – Configured `ContentFilter` implementations clean the output (e.g., stripping Markdown code fences).
 7. **Output** – The result is written via an `OutputSink` to the declared output path.
 
@@ -204,14 +205,14 @@ If no skeletonizer matches a file, the resolver falls back to a full content dum
 
 ### Adding a custom `OutputSink`
 
-The `OutputSink` interface (with `println`, `printf`, `close`) abstracts the write target. The default `FileOutputSink` writes to the filesystem. For testing or alternative targets (e.g., an in-memory buffer, a database, a remote store), provide a different implementation through the `OutputSinkFactory`:
+The `OutputSink` interface (with `println`, `printf`, `close`) abstracts the write target. The default `FileOutputSink` writes to the filesystem. `OutputSinkFactory` is a concrete Spring `@Service` that creates sinks — for testing or alternative targets (e.g., an in-memory buffer, a database, a remote store), replace the bean with a `@Primary` subclass:
 
 ```java
 @Service
 @Primary
-public class CustomOutputSinkFactory implements OutputSinkFactory {
+public class InMemoryOutputSinkFactory extends OutputSinkFactory {
     @Override
-    public OutputSink createSink(Path path) throws IOException {
+    public OutputSink createSink(Path path) {
         return new InMemoryOutputSink(path); // your implementation
     }
 }
@@ -219,13 +220,12 @@ public class CustomOutputSinkFactory implements OutputSinkFactory {
 
 ### Configuration files at a glance
 
-All configuration lives in the `.dp` directory next to the source it documents:
+All document configuration lives in the `.dp` directory next to the source it documents:
 
 ```
 my-module/
 ├── .dp/
 │   ├── documents.json
-│   ├── models.json
 │   ├── content-hashes.properties   ← auto-generated, do not edit
 │   ├── architecture.prompt.txt
 │   └── class-doc.prompt.txt
@@ -233,26 +233,23 @@ my-module/
 └── docs/                           ← generated output
 ```
 
-**`models.json`** maps stereotypes to LLM configurations:
+**`application.yaml`** maps stereotypes to LLM configurations (bound to `PrjXPConfig.chatModels`):
 
-```json
-[
-  {
-    "stereotype": "doc-writer",
-    "serverType": "lm-studio",
-    "modelName": "qwen2.5-7b-instruct",
-    "apiKey": "${LM_STUDIO_API_KEY}",
-    "providerUrl": "http://localhost:1234/v1",
-    "timeoutSecs": 180
-  },
-  {
-    "stereotype": "reader",
-    "modelName": "gpt-4o-mini"
-  }
-]
+```yaml
+prjxp:
+  chatModels:
+    - stereoType: doc-writer
+      serverType: lm-studio
+      modelName: qwen2.5-7b-instruct
+      apiKey: ${LM_STUDIO_API_KEY}
+      providerUrl: http://localhost:1234/v1
+      timeoutSecs: 180
+    - stereoType: reader
+      serverType: openapi
+      modelName: gpt-4o-mini
 ```
 
-The `${VARIABLE}` syntax is resolved from environment variables at runtime via `EnvResolver`.
+The `${VARIABLE}` syntax is resolved at runtime by `EnvPlaceholderResolver` (prjxp-common) from environment variables and system properties (the CLI loads `.env` into system properties); `${VAR:default}` provides a fallback.
 
 ---
 
@@ -308,7 +305,7 @@ This means a full re-run of a 200-file project after a single-file change costs 
 ### Reproducibility and auditability
 
 - **`storePrompt`** – optionally persist the fully resolved prompt to a file. This gives you an exact, replayable record of what was sent to the LLM for a given output.
-- **Manifest** – after each run, `DocPipeManifestWriter` writes `.prjxp-data/docpipe/manifest.json`, a sorted JSON array of all generated file paths. Downstream tooling (e.g., a documentation hub) can read this to know exactly what was produced.
+- **Manifest** – in hub mode (`runForProject`), `DocPipeManifestWriter` writes `.prjxp-data/docpipe/manifest.json` after every run (even on partial failure): a sorted JSON array of all generated file paths. Downstream tooling (e.g., the documentation hub) reads this to know exactly what was produced. CLI runs do not write a manifest.
 - **Deterministic output paths** – output filenames are derived from source filenames, so the mapping from source to documentation is stable and predictable.
 
 ### Integration into CI/CD

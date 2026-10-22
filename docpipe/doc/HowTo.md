@@ -1,10 +1,11 @@
 ## Overview
 
-**Doc|Pipe** is a Java library that automates the generation of documentation using one or more Large Language Models (LLMs). It maps *stereotypes* to model configurations, hashes prompts to avoid redundant generation, and uses Handlebars/Groovy templates for flexible output. Typical use‑cases:
+**Doc|Pipe** is a Spring Boot CLI application that automates the generation of documentation using one or more Large Language Models (LLMs). It discovers `.dp` configuration directories in a project, maps *stereotypes* to model configurations, hashes resolved prompts to avoid redundant generation, and uses Handlebars/Groovy templates for flexible prompts. Typical use cases:
 
-* Create README files, API docs, or FAQs from a single template definition.
-* Switch between multiple LLM providers (Gemini, Ollama, OpenAI, etc.) to optimise token costs.
+* Create README files, architecture overviews, or FAQs from a single template definition.
+* Switch between multiple LLM providers (Gemini, Ollama, LM Studio, OpenAI-compatible, …) to optimise token costs.
 * Extend the pipeline with custom Spring beans and Groovy scripts inside Handlebars templates.
+* Let the LLM research the codebase autonomously via MCP tools (see [Tool-Enabled LLM](concepts/tool-enabled-llm.md)).
 
 ---
 
@@ -12,69 +13,75 @@
 
 | Requirement | Details |
 |------------|---------|
-| **Java**   | JDK 17 or newer |
-| **Build tool** | Maven 3.8+ or Gradle 7+ |
-| **Dependencies** | Add the `docpipe` artifact to your project (replace version with the latest release) |
-| **Optional** | Spring Boot 3.x if you want DI support for Groovy scripts inside templates |
+| **Java**   | JDK 17 or newer (21 recommended) |
+| **Build tool** | Gradle 8.x (the project uses a version catalog) |
+| **Configuration** | `application.yaml` with `prjxp.*` properties (projects, chat models, MCP servers) |
+| **Secrets** | Optional `.env` file in the working directory (loaded into system properties at startup) |
 
-### Maven
+Doc|Pipe is part of the prjxp multi-module build:
 
-```xml
-<dependency>
-    <groupId>io.github.docpipe</groupId>
-    <artifactId>docpipe-core</artifactId>
-    <version>1.3.0</version>
-</dependency>
+```bash
+./gradlew :docpipe:run --args="--project my-project"
 ```
 
-### Gradle (Groovy DSL)
+or build the fat JAR:
 
-```groovy
-implementation 'io.github.docpipe:docpipe-core:1.3.0'
+```bash
+./gradlew :docpipe:shadowJar
+java -jar docpipe/build/libs/docpipe-<version>.jar --project my-project
 ```
 
-### Configuration files
-
-* `models.json` – describes available LLM endpoints and per‑stereotype parameters.
-* `documents.json` – maps a *document definition* (output file, prompt template) to a stereotype.
-
-Place both files in `src/main/resources/docpipe/` or any location you pass to the API via `DocPipeConfig`.
+> **Note:** the shadow JAR excludes `application.yaml` — provide your own `application.yaml` (or `application.yml`) next to the JAR or in `./config/`.
 
 ---
 
 ## Quick Start
 
-1. **Create a model configuration** (`models.json`)
+### 1. Define the project and models (`application.yaml`)
+
+```yaml
+prjxp:
+  projects:
+    - name: my-project
+      rootDir: /path/to/my-project
+
+  chatModels:
+    - stereoType: documentation
+      serverType: gemini
+      modelName: gemini-3-flash-preview
+      timeoutSecs: 240
+    - stereoType: javadoc
+      serverType: ollama
+      modelName: deepseek-coder-v2:16b
+      providerUrl: http://localhost:11434
+    - stereoType: faq
+      serverType: openapi
+      modelName: qwen3.6-31b
+      providerUrl: http://192.168.1.228:1234
+      apiKey: ${FAQ_API_KEY}
+```
+
+If no project is selected, Doc|Pipe falls back to a `cwd` project whose root is the current working directory.
+
+### 2. Create the `.dp` directory
+
+In the project root (or any subdirectory that should be documented):
+
+```
+my-project/
+└── .dp/
+    ├── documents.json
+    └── Readme.prompt.txt
+```
+
+### 3. Define a document generation job (`.dp/documents.json`)
+
+`documents.json` is a **JSON array** of document definitions:
 
 ```json
 [
   {
     "stereotype": "documentation",
-    "serverType": "gemini",
-    "modelName": "gemini-3-flash-preview",
-    "timeOutSeconds": "240"
-  },
-  {
-    "stereotype": "javadoc",
-    "modelName": "deepseek-coder-v2:16b",
-    "modelProviderURL": "http://localhost:11434",
-    "serverType": "ollama"
-  },
-  {
-    "stereotype": "faq",
-    "modelName": "qwen3.6-31b",
-    "modelProviderURL": "http://192.168.1.228:1234",
-    "serverType": "openapi"
-  }
-]
-```
-
-2. **Define a document generation job** (`documents.json`)
-
-```json
-[
-  {
-    "stereotype": "detailed",
     "outputFile": "README.md",
     "prompt": "Readme.prompt.txt",
     "ps": "\n\n_This document was generated with Doc|Pipe and gemini-3-flash-preview_"
@@ -82,118 +89,112 @@ Place both files in `src/main/resources/docpipe/` or any location you pass to th
 ]
 ```
 
-3. **Create the prompt template** (`Readme.prompt.txt`)
+### 4. Create the prompt template (`.dp/Readme.prompt.txt`)
 
 ```text
-Create a Readme as MarkDown to explain the usage of Doc|Pipe. Explain the cli application from a users perspective as easy as possible to understand. Enhance if possible with examples and ASCII-Diagrams.
+Create a Readme as MarkDown to explain the usage of my-project. Explain the CLI application from a user's perspective as easy as possible to understand. Enhance if possible with examples and ASCII diagrams.
 
-IMPORTANT: As a title image use the image that will be provided under the path doc/images/docpipe.png.
+## Source Code Context
+{{src-dump "src/main/java" ending="java" scanSubs=true}}
 ```
 
-4. **Run the generator**
+### 5. Run the generator
 
-```java
-import io.github.docpipe.DocPipe;
-import java.nio.file.Path;
-
-public class GenerateDocs {
-    public static void main(String[] args) throws Exception {
-        Path models = Path.of("src/main/resources/docpipe/models.json");
-        Path docs   = Path.of("src/main/resources/docpipe/documents.json");
-        DocPipe job = new DocPipe(models, docs);
-        job.execute(); // Generates README.md in the current working directory
-    }
-}
+```bash
+./gradlew :docpipe:run --args="--project my-project"
 ```
 
-The library automatically:
+Doc|Pipe then:
 
-* Hashes the prompt content; if a file with the same hash already exists, generation is skipped.
-* Selects the appropriate LLM based on `stereotype`.
-* Renders the Handlebars template, allowing Groovy snippets to access Spring beans.
+* walks the project root and finds every `.dp` directory,
+* resolves each prompt template (Handlebars + Groovy),
+* hashes the resolved prompt (SHA-256) and skips the LLM call if the hash in `.dp/content-hashes.properties` is unchanged,
+* selects the LLM by `stereotype`, applies `filterList`/`ps`, and writes the result to `outputFile`.
 
 ---
 
 ## Core Concepts / Advanced Usage
 
-### 1. Model Mapping (`models.json`)
+### 1. Model Mapping (`prjxp.chatModels[]`)
 
-| Field                | Meaning |
-|----------------------|---------|
-| `stereotype`        | Logical name used by a document definition to pick an LLM configuration. |
-| `serverType`        | `"gemini"`, `"ollama"`, or `"openapi"` – determines the client implementation. |
-| `modelName`         | Identifier of the model on the target provider (e.g., `"gemini-3-flash-preview"`). |
-| `modelProviderURL`  | Optional base URL for self‑hosted providers (required for Ollama / OpenAI local). |
-| `timeOutSeconds`    | Request timeout – useful when the model response may be large. |
+| Field | Meaning |
+|-------|---------|
+| `stereoType` | Logical name used by a document definition to pick an LLM configuration. |
+| `serverType` | `"ollama"`, `"gemini"`, `"lm-studio"`, `"openapi"`, or `"custom"` — selects the client implementation. |
+| `modelName` | Identifier of the model on the target provider. |
+| `providerUrl` | Base URL for self-hosted / OpenAI-compatible providers. |
+| `apiKey` | API key; `${ENV_VAR}` placeholders are resolved at runtime. |
+| `timeoutSecs` | Request timeout in seconds (default 60). |
+| `temperature` | Sampling temperature (default 0.0). |
+| `prompt` | Optional standing instructions prepended to every conversation. |
+| `supportsTools` | Explicitly enable/disable native function calling (`null` = auto-detect). |
+| `args` | Supplier-specific client parameters (e.g. Azure endpoint, api-version). |
+| `bodyProperties` | Extra request-body fields merged into every chat completion. |
 
-**Tip:** Use a single entry per stereotype; you can later add extra fields (e.g., temperature, maxTokens) as the library evolves.
+All string values support `${ENV_VAR}` (and `${ENV_VAR:default}`) placeholders, resolved from environment variables and system properties.
 
-### 2. Document Definition (`documents.json`)
+**Tip:** use one entry per stereotype; switch stereotypes in `documents.json` to move work between cheap and expensive models without touching code.
 
-| Property   | Description |
-|-----------|-------------|
-| `stereotype` | Must match a key from *models.json* – determines which LLM to use. |
-| `outputFile` | Relative or absolute path of the generated file. |
-| `prompt`     | Path to a text file containing the Handlebars template or raw prompt. |
-| `ps`        | Optional post‑script text appended to the generated output (useful for licensing notes). |
+### 2. Document Definition (`.dp/documents.json`)
+
+| Property | Description |
+|----------|-------------|
+| `stereotype` | Must match a `stereoType` from `chatModels[]` — determines which LLM is used. |
+| `outputFile` | Path of the generated file, relative to the job root (the directory containing `.dp/`). |
+| `outputDir` | Output directory used together with `forEach` (combined with the source file name). |
+| `prompt` | Name of the prompt template file inside `.dp/` (Handlebars). |
+| `forEach` | Glob pattern (relative to the job root); the entry is cloned once per matched file. |
+| `ps` | Optional post-script text appended to the generated output. |
+| `filterList` | Comma-separated `ContentFilter` names applied to the LLM response (e.g. `noSurroundingCodeBlock`). |
+| `storePrompt` | Optional file name to persist the fully resolved prompt for auditing. |
+| `args` | Map passed as the Handlebars context (for `forEach` tasks, `currentFile` is added automatically). |
 
 ### 3. Handlebars + Groovy Templates
 
 ```handlebars
-{{!-- docpipe/template/Readme.handlebars --}}
-<h1>Welcome to {{project.name}}</h1>
+{{!-- .dp/Readme.prompt.txt --}}
+<h1>Welcome to {{args.projectName}}</h1>
 
-{{#*inline "toc"}}
-## Table of Contents
-- [Features]({{link "features"}})
-{{/inline}}
-
-{{> toc }}
-
-{{! Groovy script to expose Spring bean }}
-<#assign version = @SpringContext.getBean("appVersion")>
-Current version: **{{version}}**
-
+{{#groovy}}
+    // Bindings: dir (.dp dir), options, applicationContext, dpContext, currentFile
+    return "Generated on: " + new Date()
+{{/groovy}}
 ```
 
-* The `{{#...}}` blocks work exactly like standard Handlebars.
-* Inside a template you can embed Groovy code using `<#...>` tags, giving full access to the Spring context.
-* The generated prompt is then sent to the selected LLM; its response populates the output file.
+* `{{...}}` blocks work like standard Handlebars; the `args` map is the template context.
+* `{{#groovy}} … {{/groovy}}` executes an inline Groovy script with access to the Spring `ApplicationContext` — powerful, but untrusted templates can do anything (see [ArchitectureAssessment](ArchitectureAssessment.md), risk H1).
+* Built-in helpers: `src-dump`/`java-src-dump`, `src-skeleton`, `URL`, `groovy`, `currentFile`, `mcp-project`/`mcpProject`, `gr` (see [FAQ](FAQ.md) for details).
 
 ### 4. Prompt Hashing & Incremental Generation
 
-The library computes an SHA‑256 hash of the *prompt text + model identifier*. If a file with this hash already exists in `$HOME/.docpipe/cache`, the generation step is skipped, saving tokens and latency.
+Doc|Pipe computes a SHA-256 hash of the **resolved prompt** and stores it in `.dp/content-hashes.properties`, keyed by the output file path. If the stored hash matches, the LLM call is skipped and the existing output file is left as-is. The hash file is a flat Java `Properties` file — inspectable and diffable (it is git-ignored by the prjxp `.gitignore`).
 
-```java
-String hash = DocPipeUtil.sha256(promptContent + modelId);
-if (Cache.exists(hash)) {
-    log.info("Cached result found – skipping LLM call.");
-}
+### 5. Multi-LLM Mapping for Cost Optimisation
+
+Define multiple stereotypes pointing at cheaper models for bulk tasks (e.g. `documentation` → Gemini flash, `javadoc` → local Ollama). Switch stereotypes in `documents.json` without touching code.
+
+### 6. Tool-Enabled LLMs (MCP)
+
+Configure MCP servers in `application.yaml` and the LLM can research the codebase autonomously while generating a document:
+
+```yaml
+prjxp:
+  mcp-servers:
+    - name: prjxp-search
+      type: http
+      url: http://localhost:7007/mcp
+      defaultProject: my-project
 ```
 
-### 5. Multi‑LLM Mapping for Cost Optimisation
+`LLMService` decorates every chat with the active MCP tools; use `{{mcp-project project="my-project"}}` in a template to tell the model which project to search. See [Tool-Enabled LLM](concepts/tool-enabled-llm.md) and [EXAMPLE](EXAMPLE.md).
 
-Define multiple stereotypes that point to cheaper models for bulk tasks (e.g., `documentation` → Gemini flash, `javadoc` → Ollama local). Switch stereotypes in `documents.json` without touching code.
+### 7. Extending the Pipeline
 
-```json
-{
-  "stereotype": "javadoc",
-  "outputFile": "API.md",
-  "prompt": "Javadoc.prompt.txt"
-}
-```
-
-### 6. Extending the Pipeline
-
-* **Custom Template Loader** – implement `TemplateResolver` and register via Spring configuration.
-* **Additional LLM Client** – extend `AbstractLlmClient` to plug in new providers (e.g., Anthropic).
-
-```java
-@Bean
-public LlmClient customClient() {
-    return new MySpecialLlmClient("http://my-host:8080");
-}
-```
+* **Custom template resolver** – implement `TemplateResolver` (`getID()`, optional `getAliases()`, `resolve(baseDir, context, options)`) and annotate with `@Component`; it is registered as a Handlebars helper automatically.
+* **Content filter** – implement `ContentFilter` (`name()`, `filter(String)`) and reference it in `filterList`.
+* **Source skeletonizer** – implement `SourceSkeletonizer` (`supports(File, ending)`, `skeletonize(File)`) for the `src-skeleton` helper.
+* **Output sink** – `OutputSinkFactory` (a Spring `@Service`) creates `FileOutputSink`; replace the bean (e.g. with a `@Primary` subclass) for in-memory or remote targets.
+* **LLM provider** – add a `ChatModelSupplier` in `prjxp-common` for new `serverType`s; Doc|Pipe itself is unaffected.
 
 ---
 
@@ -201,25 +202,20 @@ public LlmClient customClient() {
 
 | Practice | Reason |
 |---------|--------|
-| **Keep prompts deterministic** – minor whitespace changes change the hash and trigger a re‑run. |
-| **Store `models.json` under version control** – accidental removal of a provider URL will break generation. |
-| **Limit template complexity** – heavy Groovy logic can slow rendering; keep business logic in Java and use templates for presentation only. |
-| **Cache directory cleanup** – the default cache lives in `${user.home}/.docpipe`. Periodically prune old entries if disk space is a concern. |
-| **Thread safety** – `DocPipe` instances are **not** thread‑safe by default. Create a new instance per generation job or synchronize external calls. |
-| **Model time‑outs** – set `timeOutSeconds` generously for large outputs; otherwise the client may abort prematurely. |
-| **Secure provider URLs** – when using self‑hosted endpoints (Ollama, OpenAI), ensure they are reachable from the build environment. |
+| **Keep prompts deterministic** – minor whitespace changes change the hash and trigger a re-run. |
+| **Store `application.yaml` under version control** (keep secrets in `.env`) – a missing model entry breaks generation with "No Model found for Stereotype …". |
+| **Limit template complexity** – heavy Groovy logic slows rendering; keep business logic in Java and use templates for presentation only. |
+| **Prune `content-hashes.properties`** – it lives in `.dp/` next to the sources; stale entries are harmless but the file grows. |
+| **Parallelism** – tasks run on a fixed pool (`prjxp.docpipe.maxthreads`, default 5); raise it for large projects, but note that LLM rate limits apply. |
+| **Model time-outs** – set `timeoutSecs` generously for large outputs; otherwise the client aborts prematurely. |
+| **Secure provider URLs** – when using self-hosted endpoints (Ollama, LM Studio), ensure they are reachable from the build environment. |
 
 ---
 
 ## Further Reading
 
-* **[HowTo – detailed developer guide](/doc/HowTo.md)**
-* **[FAQ – common questions](/doc/FAQ.md)**
-* **[ArchitectureAssessment – internal design review](/doc/ArchitectureAssessment.md)**
-
----
-
-*Fun fact:* Doc|Pipe automatically generates its own architectural assessment under `doc/ArchitectureAssessment.md`. See the link above for a deep dive.
-
-_This document was generated with .dp and gemini-3-flash-preview_
-
+* **[FAQ](FAQ.md)** – common questions, built-in resolvers, extension examples.
+* **[Configuration](Configuration.md)** – technical walkthrough of the pipeline internals.
+* **[ArchitectureAssessment](ArchitectureAssessment.md)** – internal design review, risks and technical debt.
+* **[Tool-Enabled LLM](concepts/tool-enabled-llm.md)** – concept and implementation of MCP tool calling.
+* **[EXAMPLE](EXAMPLE.md)** – end-to-end example: MCP-powered architecture documentation.

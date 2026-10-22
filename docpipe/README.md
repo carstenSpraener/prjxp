@@ -38,22 +38,19 @@ Doc|Pipe scans your project for configuration directories, resolves dynamic temp
 
 Doc|Pipe looks for a `.dp` directory in your project folders. This directory acts as the control center for your documentation tasks.
 
-### 1. Define your Models (`.dp/models.json`)
+### 1. Define your Models (`application.yaml`)
 Map stereotypes to specific LLM configurations:
 
-```json
-[
-  {
-    "stereoType": "architect",
-    "provider": "openai",
-    "model": "gpt-4"
-  },
-  {
-    "stereoType": "summarizer",
-    "provider": "anthropic",
-    "model": "claude-3-haiku"
-  }
-]
+```yaml
+prjxp:
+  chatModels:
+    - stereoType: architect
+      serverType: openapi
+      modelName: gpt-4
+      apiKey: ${OPENAI_API_KEY}
+    - stereoType: summarizer
+      serverType: gemini
+      modelName: gemini-3-flash-preview
 ```
 
 ### 2. Define your Documents (`.dp/documents.json`)
@@ -89,11 +86,20 @@ This document describes the architecture of the project.
 
 ## Usage
 
-Simply run the application from your project root:
+Register the project in `application.yaml` and run the application:
+
+```yaml
+prjxp:
+  projects:
+    - name: my-project
+      rootDir: /path/to/my-project
+```
 
 ```bash
-java -jar docpipe.jar --project.dir=.
+java -jar docpipe.jar --project my-project
 ```
+
+(Without `--project`, Doc|Pipe processes the current working directory as a `cwd` project.)
 
 Doc|Pipe will:
 1. Walk through your directories.

@@ -16,12 +16,15 @@ der LLM autonom über den prjxp MCP-Server nach Informationen sucht.
 
 Zuerst muss das Ziel-Projekt im prjxp-Index vorhanden sein.
 
+Das Projekt muss dafür in der `application.yaml` unter `prjxp.projects[]` definiert sein
+(`name` + `rootDir`):
+
 ```bash
 # Chunking
-./gradlew :chunk-norris:run --args="--project.dir=/path/to/my-spring-app"
+./gradlew :chunk-norris:run --args="--project my-spring-app"
 
 # Embedding
-./gradlew :tibed:run --args="--project.dir=/path/to/my-spring-app"
+./gradlew :tibed:run --args="--project my-spring-app"
 ```
 
 Oder über den Docker-Hub:
@@ -42,17 +45,17 @@ Der prjxp MCP-Server muss laufen, damit docpipe's LLM darauf zugreifen kann.
 # Lokaler Start (Port 7007)
 ./gradlew :mcp-server:run
 
-# Oder via Docker
-docker compose up -d mcp-server
+# Oder via Docker (der Hub-Service kapselt den MCP-Server)
+docker compose up -d hub
 ```
 
 Verifikation:
 
 ```bash
-curl http://localhost:7007/prjxp/tools/ping
+curl http://localhost:7007/api/tools/ping
 # → "pong!"
 
-curl http://localhost:7007/prjxp/tools/projects
+curl http://localhost:7007/api/tools/projects
 # → Liste der eingebetteten Projekte (Status: READY)
 ```
 
@@ -64,11 +67,9 @@ curl http://localhost:7007/prjxp/tools/projects
 
 ```yaml
 prjxp:
-  hub:
-    enabled: true
-    importDir: "."
-    projectsRoot: "/path/to/.prjxp/projects"
-    liveJsonlDir: "/path/to/.prjxp/data/chunks"
+  projects:
+    - name: "my-spring-app"
+      rootDir: "/path/to/my-spring-app"
 
   embeddingStoreLucene:
     indexPath: ${LUCENE_INDEX_PATH:.prjxp-data/lucene-index}
@@ -121,7 +122,7 @@ spring:
 | `mcp-servers[].url` | URL des MCP-Servers (`/mcp`-Endpoint) |
 | `mcp-servers[].defaultProject` | Name des eingebetteten Projekts — wird im System-Prompt an den LLM übergeben |
 | `chatModels[].stereoType` | Stereotyp-Name (wird in documents.json referenziert) |
-| `chatModels[].serverType` | Provider (`ollama`, `lm-studio`, `openai`, `gemini`, `azure`) |
+| `chatModels[].serverType` | Provider (`ollama`, `lm-studio`, `openapi`, `gemini`, `custom` — Azure läuft über `custom`) |
 | `chatModels[].providerUrl` | API-Endpoint des Providers |
 
 ### 3b. `.dp/`-Verzeichnis erstellen
@@ -170,18 +171,26 @@ Strukturiere die Dokumentation mit Überschriften, Tabellen und Code-Beispielen.
 Füge für jedes Hauptmodul eine kurze Beschreibung hinzu.
 ```
 
-**Wichtig:** `{{mcp-project project="my-spring-app"}}` injiziert den Text:
+**Wichtig:** `{{mcp-project project="my-spring-app"}}` injiziert für jedes registrierte MCP-Tool
+seine Beschreibung (aus der `ToolRegistry`) sowie den Projekt-Kontext, z. B.:
 
-> *Search the embedded project 'my-spring-app' using available MCP tools (vectorSearch, grep, readFile, readBySignature). Use these tools to gather information about the project's structure, modules, and key classes before answering.*
+> You have access to the following tools:
+>
+> vectorSearch: … (eine Beschreibung pro registriertem Tool)
+>
+> The active project is: 'my-spring-app'.
+>
+> Use these tools to gather information about the project's structure, modules, and key classes before answering.
 
-Dies signalisiert dem LLM, dass es MCP-Tools zur Verfügung stehen.
+Dies signalisiert dem LLM, dass es MCP-Tools zur Verfügung stehen. Ohne `project`-Parameter
+entfällt der Projektname (generischer Hinweis).
 
 ---
 
 ## Schritt 4: docpipe ausführen
 
 ```bash
-./gradlew :docpipe:run --args="--project.dir=/path/to/my-spring-app"
+./gradlew :docpipe:run --args="--project my-spring-app"
 ```
 
 **Was passiert intern:**
@@ -320,7 +329,7 @@ Erstelle eine Dokumentation mit Fokus auf "{{args.focusArea}}".
 | LLM ruft keine MCP-Tools auf | Prüfe, ob `mcp-servers` in `application.yaml` korrekt konfiguriert sind; überprüfe, ob MCP-Server auf `:7007/mcp` erreichbar ist |
 | `defaultProject` nicht im System-Prompt | Stelle sicher, dass `defaultProject` in der MCP-Server-Konfiguration gesetzt ist (nicht leer/null) |
 | `{{mcp-project}}` gibt leeren String zurück | Prüfe, ob der `project`-Parameter korrekt übergeben wird: `{{mcp-project project="name"}}` |
-| MCP-Server nicht erreichbar | `curl http://localhost:7007/prjxp/tools/ping` → sollte `"pong!"` zurückgeben |
+| MCP-Server nicht erreichbar | `curl http://localhost:7007/api/tools/ping` → sollte `"pong!"` zurückgeben |
 | LLM antwortet ohne Tools zu nutzen | Der LLM muss Tool-Calling unterstützen; einige kleinere Modelle ignorieren Tool-Definitionen — verwende ein Modell mit guter Tool-Support (z.B. Qwen 3, Llama 4) |
 | `documents.json` wird nicht gefunden | Stelle sicher, dass die Datei im `.dp/`-Verzeichnis liegt und ein gültiges JSON-**Array** ist (nicht ein Objekt) |
 
@@ -345,7 +354,7 @@ prjxp:
 
 | Feld | Typ | Pflicht | Beschreibung |
 |------|-----|---------|-------------|
-| `outputFile` | String | Ja | Ausgabepfad (relativ zu project.dir) |
+| `outputFile` | String | Ja | Ausgabepfad (relativ zum Job-Root, d. h. dem Verzeichnis mit `.dp/`) |
 | `stereotype` | String | Ja | Modell-Stereotyp (muss in `chatModels[]` existieren) |
 | `prompt` | String | Ja | Handlebars-Template-Datei (in `.dp/`) |
 | `forEach` | String | Nein | Glob-Pattern für per-Datei-Jobs (z.B. `src/**/*Controller.java`) |
@@ -360,7 +369,7 @@ prjxp:
 | Feld | Typ | Pflicht | Beschreibung |
 |------|-----|---------|-------------|
 | `stereoType` | String | Ja | Stereotyp-Name (z.B. `"documentation"`, `"javadoc"`) |
-| `serverType` | String | Ja | Provider (`ollama`, `lm-studio`, `openai`, `gemini`, `azure`) |
+| `serverType` | String | Ja | Provider (`ollama`, `lm-studio`, `openapi`, `gemini`, `custom` — Azure läuft über `custom`) |
 | `modelName` | String | Ja | Modell-Name (z.B. `"qwen3.6-27b"`) |
 | `providerUrl` | String | Nein | API-Endpoint (provider-spezifisch) |
 | `apiKey` | String | Nein | API-Schlüssel (oder `${ENV_VAR}`) |
