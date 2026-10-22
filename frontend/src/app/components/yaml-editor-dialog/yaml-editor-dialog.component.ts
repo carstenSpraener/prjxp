@@ -2,11 +2,12 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PrjxpYamlConfig, DEFAULT_YAML_CONFIG } from '../../models/prjxp-yaml-config.model';
 import { ProjectInfo } from '../../models/project-info.model';
+import { DialogOverlayComponent } from '../dialog-overlay/dialog-overlay.component';
 
 @Component({
   selector: 'yaml-editor-dialog',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, DialogOverlayComponent],
   templateUrl: './yaml-editor-dialog.component.html',
   styleUrl: './yaml-editor-dialog.component.css'
 })

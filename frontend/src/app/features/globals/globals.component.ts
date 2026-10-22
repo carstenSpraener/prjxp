@@ -8,12 +8,13 @@ import { ChatModelCardComponent } from '../../components/chat-model-card/chat-mo
 import { ChatModelEditorDialogComponent } from '../../components/chat-model-editor-dialog/chat-model-editor-dialog.component';
 import { EmbeddingModelCardComponent } from '../../components/embedding-model-card/embedding-model-card.component';
 import { EmbeddingModelEditorDialogComponent } from '../../components/embedding-model-editor-dialog/embedding-model-editor-dialog.component';
+import { DialogOverlayComponent } from '../../components/dialog-overlay/dialog-overlay.component';
 import { catchError, tap, of } from 'rxjs';
 
 @Component({
   selector: 'app-globals',
   standalone: true,
-  imports: [CommonModule, FormsModule, ChatModelCardComponent, ChatModelEditorDialogComponent, EmbeddingModelCardComponent, EmbeddingModelEditorDialogComponent],
+  imports: [CommonModule, FormsModule, ChatModelCardComponent, ChatModelEditorDialogComponent, EmbeddingModelCardComponent, EmbeddingModelEditorDialogComponent, DialogOverlayComponent],
   templateUrl: './globals.component.html',
   styleUrl: './globals.component.css'
 })

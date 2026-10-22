@@ -10,13 +10,13 @@
     <embedding-model-card [model]="embeddingModel()" (edit)="openEmbeddingEditor()"></embedding-model-card>
 
     @if (isEditingEmbedding()) {
-      <div class="dialog-overlay" (click)="closeEmbeddingEditor()">
+      <dialog-overlay>
         <embedding-model-editor-dialog
           [model]="embeddingModel()"
           (save)="onEmbeddingSaved($event); closeEmbeddingEditor()"
           (close)="closeEmbeddingEditor()">
         </embedding-model-editor-dialog>
-      </div>
+      </dialog-overlay>
     }
   </section>
 
@@ -64,12 +64,12 @@
 
   <!-- Editor Dialog Overlay -->
   @if (isEditing()) {
-    <div class="dialog-overlay" (click)="closeEditor()">
+    <dialog-overlay>
       <chat-model-editor-dialog
         [model]="editingModel()"
         (save)="onModelSaved($event)"
         (close)="closeEditor()"
       ></chat-model-editor-dialog>
-    </div>
+    </dialog-overlay>
   }
 </div>
