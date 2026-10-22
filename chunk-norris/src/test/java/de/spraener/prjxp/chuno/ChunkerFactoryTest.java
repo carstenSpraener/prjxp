@@ -82,6 +82,25 @@ class ChunkerFactoryTest {
     }
 
     @Test
+    void fileWithoutSpecificChunkerFallsBackToLineBreakTextChunker() throws Exception {
+        // No chunker matches .rst (no RST PxFileType / @Chunker) — the always-matching
+        // FullTextChunker is a catch-all, so without the fallback the file would be dropped.
+        List<PxChunker> chunkers = createChunkers(".rst");
+
+        assertThat(chunkers).hasSize(2);
+        assertThat(chunkers).anyMatch(c -> c instanceof FullTextChunker);
+        assertThat(chunkers).anyMatch(c -> c instanceof DefaultLineBreakTextChunker);
+    }
+
+    @Test
+    void fileWithSpecificChunkerDoesNotGetTheLineBreakFallback() throws Exception {
+        // A .java file has a specific chunker (JavaCodeChunker) → no fallback.
+        List<PxChunker> chunkers = createChunkers(".java");
+
+        assertThat(chunkers).noneMatch(c -> c instanceof DefaultLineBreakTextChunker);
+    }
+
+    @Test
     void listPostWalkChunkerContainsJavaDependenciesChunker() {
         var stream = chunkerFactory.listPostWalkChunker();
 

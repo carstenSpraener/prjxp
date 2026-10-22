@@ -29,8 +29,10 @@ public class PxChunk {
     public static final String PXCHUNK_PROJECT = "pxchunk_project";
     /** Metadata key marking the parallel full-text copy of a file (lossless readFile). */
     public static final String PXCHUNK_TYPE = "pxchunk_type";
-    /** Value of {@link #PXCHUNK_TYPE} for full-text copy chunks. */
+    /** Value of {@link #PXCHUNK_TYPE} for full-text copy chunks (lossless readFile, excluded from search). */
     public static final String FULLTEXT_MARKER = "FULLTEXT";
+    /** Value of {@link #PXCHUNK_TYPE} for line-break text-fallback chunks (searchable). */
+    public static final String TEXT_MARKER = "TEXT";
 
     private String id;
     private String mimeType;
