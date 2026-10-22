@@ -154,7 +154,9 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
                 writer.addDocument(createDocument(id, embeddings.get(i), textSegments.get(i)));
             }
             writer.commit();
-            searcherManager.maybeRefresh();
+            // Blocking refresh so the batched documents are visible immediately
+            // (see addInternal — fixes the "embedded but not findable" bug).
+            searcherManager.maybeRefreshBlocking();
         } catch (IOException e) {
             throw new RuntimeException("Failed to add batched documents", e);
         } finally {
@@ -186,7 +188,11 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             Document doc = createDocument(id, embedding, textSegment);
             writer.addDocument(doc);
             writer.commit();
-            searcherManager.maybeRefresh();
+            // Blocking refresh: guarantees the new document is visible to the next
+            // search as soon as this call returns. (maybeRefresh() is asynchronous
+            // and left the reader stale — the "embedded but not findable" bug,
+            // Known Bug in v0.8.0-rc1.)
+            searcherManager.maybeRefreshBlocking();
         } catch (IOException e) {
             throw new RuntimeException("Failed to add document", e);
         }
@@ -203,7 +209,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             for (Map.Entry<String, Object> entry : metadata.entrySet()) {
                 String key = entry.getKey();
                 String value = entry.getValue() != null ? entry.getValue().toString() : "";
-                doc.add(new StringField(key, value, Field.Store.YES));
+                doc.add(new StringField(key, value, Field.Store.NO));
                 doc.add(new StoredField(key, value));
             }
         }
@@ -307,7 +313,9 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             Query luceneQuery = LuceneFilterConverter.convert(filter);
             writer.deleteDocuments(luceneQuery);
             writer.commit();
-            searcherManager.maybeRefresh();
+            // Blocking refresh so the deletions are visible immediately
+            // (see addInternal — fixes the "embedded but not findable" bug).
+            searcherManager.maybeRefreshBlocking();
         } catch (IOException e) {
             throw new RuntimeException("Failed to remove documents", e);
         }
@@ -318,7 +326,9 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
         try {
             if (writer != null) {
                 writer.commit();
-                searcherManager.maybeRefresh();
+                // Blocking refresh so the committed changes are visible immediately
+                // (see addInternal — fixes the "embedded but not findable" bug).
+                searcherManager.maybeRefreshBlocking();
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to commit", e);

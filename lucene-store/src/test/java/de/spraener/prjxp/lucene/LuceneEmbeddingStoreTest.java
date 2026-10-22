@@ -9,16 +9,23 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.logical.And;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.StoredFields;
+import org.apache.lucene.store.NIOFSDirectory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -190,6 +197,27 @@ class LuceneEmbeddingStoreTest {
         Map<String, Object> metaMap = found.metadata().toMap();
         assertThat(metaMap).containsEntry("pxchunk_file", "src/Main.java");
         assertThat(metaMap).containsEntry("custom_key", "custom_value");
+    }
+
+    @Test
+    void metadataFieldsAreStoredExactlyOnce() throws IOException {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_file", "HelloWorld.md");
+        meta.put("pxchunk_project", "TheWall");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content", meta));
+        store.close();
+
+        try (NIOFSDirectory dir = new NIOFSDirectory(tempDir.resolve("index"));
+             DirectoryReader reader = DirectoryReader.open(dir)) {
+            StoredFields storedFields = reader.storedFields();
+            for (int i = 0; i < reader.maxDoc(); i++) {
+                Document doc = storedFields.document(i);
+                Map<String, Long> storedCounts = doc.getFields().stream()
+                        .collect(Collectors.groupingBy(IndexableField::name, Collectors.counting()));
+                assertThat(storedCounts.get("pxchunk_file")).as("stored count of pxchunk_file").isEqualTo(1);
+                assertThat(storedCounts.get("pxchunk_project")).as("stored count of pxchunk_project").isEqualTo(1);
+            }
+        }
     }
 
     @Test
