@@ -1,14 +1,51 @@
 # ==========================================
-# Stage 1: Java Application Build (Gradle)
+# Stage 1: Gradle Wrapper (Distribution Download)
 # ==========================================
-FROM eclipse-temurin:21-jdk-jammy AS app-builder
+# Nur die Wrapper-Dateien: Diese Layer wird nur invalide, wenn sich der
+# Wrapper selbst aendert. Der Download der Gradle-Distribution wird damit
+# in einer eigenen, cachebaren Layer gehalten.
+FROM eclipse-temurin:21-jdk-jammy AS gradle-wrapper
 
 WORKDIR /app
+COPY gradlew ./
+COPY gradle/wrapper/ ./gradle/wrapper/
+RUN ./gradlew --version --no-daemon
+
+# ==========================================
+# Stage 2: Gradle Dependency Cache
+# ==========================================
+# Nur die Build-Skripte (keine Quellen): Diese Layer wird nur invalide,
+# wenn sich settings.gradle, build.gradle oder libs.versions.toml aendern.
+# warmUpDependencyCache (Init-Script) loest alle Konfigurationen aller
+# Module auf und laed damit alle JARs in den Gradle-Dependency-Cache.
+FROM gradle-wrapper AS gradle-deps
+
+COPY settings.gradle build.gradle ./
+COPY gradle/libs.versions.toml gradle/cache-warmup.init.gradle ./gradle/
+COPY prjxp-common/build.gradle prjxp-common/
+COPY chunk-norris/build.gradle chunk-norris/
+COPY tibed/build.gradle tibed/
+COPY golden-retriever/build.gradle golden-retriever/
+COPY mcp-server/build.gradle mcp-server/
+COPY docpipe/build.gradle docpipe/
+COPY lucene-store/build.gradle lucene-store/
+COPY mcp-proxy/build.gradle mcp-proxy/
+# prjxp-launcher: leeres Platzhalter-Modul ohne build.gradle
+
+RUN ./gradlew --no-daemon -I gradle/cache-warmup.init.gradle warmUpDependencyCache
+
+# ==========================================
+# Stage 3: Java Application Build (Gradle)
+# ==========================================
+# Volle Quellen: Diese Layer aendert sich bei jedem Commit, aber der Build
+# selbst muss weder die Gradle-Distribution noch die Dependencies laden.
+FROM gradle-deps AS app-builder
+
 COPY . .
 RUN ./gradlew :chunk-norris:shadowJar :tibed:shadowJar :mcp-server:shadowJar --no-daemon
 
 # ==========================================
-# Stage 2: Final Runtime Image (Java + TEI)
+# Stage 4: Final Runtime Image (Java + TEI)
 # ==========================================
 FROM eclipse-temurin:21-jre-jammy
 
@@ -20,7 +57,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# 1. Alle drei Fat-JARs aus Stage 1 kopieren
+# 1. Alle drei Fat-JARs aus der Build-Stage (app-builder) kopieren
 COPY --from=app-builder /app/chunk-norris/build/libs/chunk-norris-all.jar /app/
 COPY --from=app-builder /app/tibed/build/libs/tibed-all.jar /app/
 COPY --from=app-builder /app/mcp-server/build/libs/mcp-server-all.jar /app/

@@ -50,6 +50,9 @@ services:
       - prjxp-projects:/projects
       - prjxp-hub-data:/data
       - ${PRJXP_ENV_FILE:-./.env}:/data/prjxp.env:ro
+      # External Language Pack plugin JARs (e.g. lp-csharp-plugin.jar) —
+      # loaded at startup, never baked into the image (see Dockerfile VOLUME).
+      - ./language-packs:/app-source/language-packs
     environment:
       PRJXP_ENV_FILE: /data/prjxp.env
       LUCENE_INDEX_PATH: /data/lucene-index
