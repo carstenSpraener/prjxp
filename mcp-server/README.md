@@ -1,106 +1,61 @@
-# prjxp mcp-server
+# prjxp MCP Server
 
-**prjxp mcp-server** is a Spring Boot application that indexes the source code and documentation of software projects and exposes them through the **Model Context Protocol (MCP)**, a **REST API**, and an **agentic chat interface**. It lets LLMs and other AI agents discover, search, and read project code with a structured 3-level search ladder.
+The **prjxp MCP Server** is a Spring Boot application that exposes project source code and documentation as a searchable, embeddable knowledge base. It implements the **Model Context Protocol (MCP)** for AI-assisted code exploration and provides a rich REST API for programmatic access.
 
----
-
-## Table of Contents
-
-- [Architecture](#architecture)
-- [Quick Start](#quick-start)
-- [Configuration](#configuration)
-- [MCP Tools](#mcp-tools)
-- [Search Strategy (3-Level Ladder)](#search-strategy-3-level-ladder)
-- [REST API](#rest-api)
-- [Hub Mode](#hub-mode)
-- [Chat API](#chat-api)
-- [Project Configuration (`prjxp.yaml`)](#project-configuration-prjxpyaml)
-- [MCP Protocol](#mcp-protocol)
-- [System Monitoring](#system-monitoring)
-- [Globals & Model Management](#globals--model-management)
-- [Troubleshooting](#troubleshooting)
+The server indexes entire projects (Java, TypeScript, and other languages) into a Lucene-based embedding store, enabling semantic vector search, exact full-text search, deterministic symbol lookup, and complete file/symbol reading.
 
 ---
 
-## Architecture
+## Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                        mcp-server (Spring Boot)                     │
+│                        MCP Server (Spring Boot)                     │
+├─────────────────────────────────────────────────────────────────────┤
 │                                                                     │
-│  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────────┐ │
-│  │  MCP Layer   │  │  REST Layer  │  │  Chat Layer (agentic)     │ │
-│  │  /mcp        │  │  /api/**     │  │  /api/chat/**             │ │
-│  │  JSON-RPC    │  │  JSON        │  │  SSE + JSON               │ │
-│  └──────┬───────┘  └──────┬───────┘  └────────────┬──────────────┘ │
-│         │                  │                       │                │
-│  ┌──────▼──────────────────▼───────────────────────▼──────────────┐ │
-│  │                    PrjxpMcpTool / ToolRegistry                  │ │
-│  │  vectorSearch · grep · readFile · readBySignature ·            │ │
-│  │  listProjects · listFiles                                      │ │
-│  └──────────────────────────┬──────────────────────────────────────┘ │
-│                             │                                       │
-│  ┌──────────────────────────▼──────────────────────────────────────┐ │
-│  │              Search & Reader Services                            │ │
-│  │  VectorSearchService · GrepSearchService · ByIndexSearchService │ │
-│  │  ReaderService · SymbolReaderService · FileListService          │ │
-│  └──────────────────────────┬──────────────────────────────────────┘ │
-│                             │                                       │
-│  ┌──────────────────────────▼──────────────────────────────────────┐ │
-│  │              PxChunkDao / LuceneEmbeddingStore                  │ │
-│  │              (per-project or shared)                            │ │
-│  └──────────────────────────┬──────────────────────────────────────┘ │
-│                             │                                       │
-│  ┌──────────────────────────▼──────────────────────────────────────┐ │
-│  │              ProjectRegistry                                     │ │
-│  │  StaticProjectRegistry (default)  |  HubProjectRegistry (hub)   │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
+│  ┌──────────────┐   ┌──────────────────────────────────────────┐   │
+│  │  MCP Layer   │   │           REST API Layer                  │   │
+│  │  /mcp        │   │  /api/tools/*  /api/projects  /api/chat  │   │
+│  │  (JSON-RPC)  │   │  /api/globals  /api/system               │   │
+│  └──────┬───────┘   └──────────────────┬───────────────────────┘   │
+│         │                              │                           │
+│         ▼                              ▼                           │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │              PrjxpMcpTool / ToolRegistry                    │   │
+│  │  vectorSearch · grep · readFile · readBySignature ·         │   │
+│  │  listProjects · listFiles                                   │   │
+│  └────────────────────────────┬────────────────────────────────┘   │
+│                               │                                     │
+│         ┌─────────────────────┼─────────────────────┐              │
+│         ▼                     ▼                     ▼              │
+│  ┌─────────────┐    ┌───────────────┐    ┌──────────────────┐     │
+│  │ VectorSearch│    │  GrepSearch   │    │  ByIndexSearch   │     │
+│  │  Service    │    │   Service     │    │    Service       │     │
+│  └──────┬──────┘    └──────┬────────┘    └────────┬─────────┘     │
+│         │                  │                      │                │
+│         ▼                  ▼                      ▼                │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │              PxChunkDao (Lucene Embedding Store)            │   │
+│  └─────────────────────────────────────────────────────────────┘   │
 │                                                                     │
-│  ┌─────────────────────────────────────────────────────────────────┐ │
-│  │  Hub (prjxp.hub.enabled=true)                                   │ │
-│  │  ImportPoller · PipelineOrchestrator · TarExtractor ·           │ │
-│  │  EmbeddedArchiveImporter · ProjectLifecycleService ·            │ │
-│  │  DocPipePipelineListener                                        │ │
-│  └─────────────────────────────────────────────────────────────────┘ │
+│  ┌─────────────────────────────────────────────────────────────┐   │
+│  │         ProjectRegistry (Static | Hub)                      │   │
+│  └─────────────────────────────────────────────────────────────┘   │
+│                                                                     │
+│  [Hub Mode: PipelineOrchestrator, ImportPoller, TarExtractor,      │
+│   EmbeddedArchiveImporter, DocPipePipelineListener]                │
 └─────────────────────────────────────────────────────────────────────┘
 ```
 
-The server operates in two modes:
-
-| Mode | Trigger | Project Registry | Use Case |
-|------|---------|-----------------|----------|
-| **Static** (default) | `prjxp.hub.enabled=false` or unset | `StaticProjectRegistry` | Pre-configured projects from `application.yaml` |
-| **Hub** | `prjxp.hub.enabled=true` | `HubProjectRegistry` | Dynamic project import, lifecycle management, shared Lucene index |
-
-## Language Packs (plugins)
-
-The server loads external **Language Pack** plugins at startup (before any Bean is
-created) from the plugin directory — default `./language-packs`, configurable via
-`prjxp.language-packs.dir` or the `PRJXP_LANGUAGE_PACKS_DIR` environment variable.
-Each plugin JAR runs in its own isolating class loader and contributes its language to:
-
-- **chunking** (hub pipeline / in-process chunk-norris) — the pack's chunker processes
-  the language's files,
-- **retrieval** — the pack's retriever enriches search hits,
-- **the `grep` language filter** — the pack's MIME type is used for filtering.
-
-A broken plugin is rejected with an error log (naming the JAR) and never blocks the
-other plugins or the server startup. There is **no hot reload** — add, remove or change
-a plugin JAR and restart. In Docker, mount your plugins at
-`/app-source/language-packs` (they are never baked into the image).
-
-Full plugin contract (delegation rule, golden rules, packaging):
-[`doc/LanguagePack_Plugin_Guide.md`](../doc/LanguagePack_Plugin_Guide.md).
-
 ---
 
-## Quick Start
+## Configuration
 
-### 1. Configure `application.yaml`
+The server is configured via `application.yaml` (or the path in `PRJXP_CONFIG_FILE`):
 
 ```yaml
 prjxp:
-  # --- Static mode (default) ---
+  # --- Projects (static mode) ---
   active-project: my-project
   embedding-stores:
     - project-name: my-project
@@ -110,11 +65,20 @@ prjxp:
 
   # --- Hub mode (optional) ---
   hub:
-    enabled: true
-    import-dir: /import
-    projects-root: /projects
+    enabled: false              # Master switch for all hub beans
+    import-dir: /import        # Directory watched for tar/embedded uploads
+    projects-root: /projects   # Root for extracted snapshot projects
     live-jsonl-dir: /data/chunks
     poll-interval-ms: 5000
+    max-tar-bytes: 2147483648
+    max-extracted-bytes: 4294967296
+    max-entries: 100000
+    scan-exclude-dir-names: [.git, .svn, .hg, node_modules]
+    scan-max-depth: 8
+    compatibility:
+      sample-size: 4
+      threshold-high: 0.995
+      threshold-low: 0.975
 
   # --- Embedding model ---
   embedding-model:
@@ -123,458 +87,25 @@ prjxp:
     model-name: nomic-embed-text
     timeout-secs: 60
 
-  # --- Chat models (for the chat API) ---
+  # --- Chat models ---
   chat-models:
-    - stereo-type: gpt4
+    - stereo-type: my-llm
       server-type: openai
-      model-name: gpt-4
-      api-key: ${OPENAI_API_KEY}
       provider-url: https://api.openai.com/v1
+      model-name: gpt-4o
+      api-key: ${OPENAI_API_KEY}
+      temperature: 0.0
+      timeout-secs: 120
+
+# --- CORS ---
+mcp:
+  cors:
+    allowed-patterns: http://localhost:*
 ```
 
-### 2. Define a project (static mode)
+### Project Configuration (`prjxp.yaml`)
 
-Place a `prjxp.yaml` in your project root:
-
-```yaml
-name: my-project
-rootDir: .
-chunoWhiteList: java,ts
-excludeDirNames: node_modules,.git,target
-tibedBatchSize: 32
-fulltext: true
-```
-
-### 3. Run
-
-```bash
-java -jar mcp-server.jar
-```
-
-The server starts on port **8080** by default. Verify with:
-
-```bash
-curl http://localhost:8080/api/tools/ping
-# → "pong!"
-```
-
----
-
-## Configuration
-
-### Core Properties
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `prjxp.active-project` | `default` | Project name used when no `project` parameter is passed |
-| `prjxp.hub.enabled` | `false` | Master switch for hub mode |
-| `mcp.cors.allowed-patterns` | `http://localhost:*` | Comma-separated CORS origin patterns |
-
-### Hub Properties (`prjxp.hub.*`)
-
-| Property | Default | Description |
-|----------|---------|-------------|
-| `import-dir` | `/import` | Directory watched for tar/embedded uploads |
-| `projects-root` | `/projects` | Root for extracted snapshot projects |
-| `live-jsonl-dir` | `/data/chunks` | JSONL output for live projects (hub-managed) |
-| `poll-interval-ms` | `5000` | Import poller interval |
-| `max-tar-bytes` | `2 GiB` | Max tar file size |
-| `max-extracted-bytes` | `4 GiB` | Max total extracted size (compression-bomb guard) |
-| `max-entries` | `100000` | Max number of tar entries |
-| `scan-exclude-dir-names` | `.git,.svn,.hg,node_modules` | Directory names the live scan never enters |
-| `scan-max-depth` | `8` | Max recursion depth for live project discovery |
-| `compatibility-sample-size` | `4` | Chunks sampled for embedding compatibility check |
-| `compatibility-threshold-high` | `0.995` | Min avg cosine for COMPATIBLE verdict |
-| `compatibility-threshold-low` | `0.975` | Min avg cosine for PARTIALLY_COMPATIBLE verdict |
-
-### Search Limits
-
-| Constant | Value | Applies To |
-|----------|-------|------------|
-| `DEFAULT_LIMIT` | 10 | grep, byIndex, vectorSearch |
-| `MAX_LIMIT` | 100 | grep, byIndex, vectorSearch |
-| `LIST_DEFAULT_LIMIT` | 50 | listFiles |
-| `LIST_MAX_LIMIT` | 500 | listFiles |
-
----
-
-## MCP Tools
-
-The server exposes **six tools** via the MCP protocol (`/mcp` endpoint) and as in-process function-calling tools for the chat layer.
-
-### 1. `vectorSearch` — Level 1 (Discovery)
-
-Semantic vector search over all chunks of a project. **Always call this first** for broad discovery.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `userQuestion` | string | **Yes** | — | A targeted, standalone search prompt optimized for vector retrieval |
-| `projectName` | string | No | active project | Project name to narrow scope |
-| `similarity` | number | No | `0.85` | Similarity threshold 0.0–1.0 (higher = more precise) |
-| `maxResults` | integer | No | `20` | Maximum results (1–20) |
-| `skeletonsOnly` | boolean | No | `false` | `true` = class skeletons only; `false` = full method context on hits |
-
-**Similarity guide:**
-
-| Range | Quality |
-|-------|---------|
-| 1.0 – 0.9 | Very precise |
-| 0.9 – 0.8 | Precise |
-| 0.8 – 0.7 | Balanced |
-| < 0.7 | Low precision ("fantasy land") |
-
-**Result:** Method implementations (when a method chunk is hit and `skeletonsOnly=false`) or class skeletons with imports for an architectural overview.
-
-### 2. `grep` — Level 2 (Exact Text)
-
-Exact full-text search over all chunks. Use the **exact method signature** as query to retrieve its full body.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `query` | string | **Yes** | — | Exact search string, e.g. `public MClass createMClass` |
-| `project` | string | No | active project | Project name |
-| `language` | string | No | — | Language filter, e.g. `java`, `ts`, `csharp` (resolved to the pack's MIME type via the `LanguagePackRegistry`, so plugin languages work too) |
-| `limit` | integer | No | `10` | Max results (1–100) |
-
-**Result:** `SearchHit` list with `file`, `lineFrom`/`lineTo`, `snippet`, `chunkId`, `score`, `source="grep"`.
-
-### 3. `readFile` — Level 3 (Complete File)
-
-Returns a **complete source view** of one file, reconstructed from the project index.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `file` | string | **Yes** | — | File path (absolute, project-root-relative, or basename) |
-| `project` | string | No | active project | Project name |
-| `offset` | integer | No | `1` | 1-based line number to start from |
-| `limit` | integer | No | all | Max lines to return from `offset` |
-
-**Path resolution:** exact → suffix → basename. Ambiguous paths return a `candidates` list instead of content.
-
-**Result:** `FileView` with `content`, `truncated` (100k char cap), `totalLines`, `returnedLines`, `chunkCount`, `candidates`, `error`.
-
-### 4. `readBySignature` — Level 3 (Complete Symbol)
-
-Returns the **complete implementation** of a symbol (javadoc + full method body). **Language-agnostic** — works for every language whose chunks carry `symbol_*` metadata (Java, C# via plugin, …).
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `method` | string | **Yes** | — | Method name (`createMClass`) or FQN (`com.example.Foo#bar`). Class FQNs return the class frame |
-| `container` | string | No | — | Containing class FQN to disambiguate a bare method name |
-| `project` | string | No | active project | Project name |
-
-**Result:** `SymbolReadResult` with up to 10 full matches (`fqn`, `file`, `lineFrom`/`lineTo`, `javadoc`, `body`). Additional matches appear in `remainingFqns` — call again with one of them.
-
-### 5. `listProjects` — Discovery
-
-Lists all project names that have a searchable index. **Call before other tools** when you don't know valid project names.
-
-No parameters. Returns a list of project name strings.
-
-### 6. `listFiles` — Structural Discovery
-
-Lists file paths in the project index matching a prefix or glob. Orthogonal to the search ladder.
-
-| Parameter | Type | Required | Default | Description |
-|-----------|------|----------|---------|-------------|
-| `path` | string | No | `""` (all) | Path prefix or glob. `*` matches any characters including `/` (recursive). `?` matches one character |
-| `project` | string | No | active project | Project name |
-| `limit` | integer | No | `50` | Max files (1–500) |
-
-**Result:** `FileListResult` with sorted file paths and a `truncated` flag.
-
----
-
-## Search Strategy (3-Level Ladder)
-
-The recommended workflow for any code question:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  1. vectorSearch (discovery)                                        │
-│     "Find the class that handles user authentication"               │
-│     → Returns relevant classes/methods/skeletons                    │
-│                                                                     │
-│  2. grep (exact text)                                               │
-│     "public MClass createMClass"                                    │
-│     → Returns the exact chunk containing that signature             │
-│                                                                     │
-│  3. readBySignature / readFile (complete content)                   │
-│     readBySignature("createMClass")  or  readFile("Foo.java")       │
-│     → Returns the full method body or entire file                   │
-└─────────────────────────────────────────────────────────────────────┘
-
-Orthogonal:
-  listProjects  →  "Which projects are available?"
-  listFiles     →  "Which files match *Controller.java?"
-```
-
-**Key rules:**
-- **Always start with `vectorSearch`** for semantic discovery.
-- **Use `grep`** when you know the exact identifier or signature.
-- **Use `readBySignature`** for a complete method by name; **`readFile`** for the whole file.
-- **Use `listFiles`** to explore the file tree before reading.
-- **Use `listProjects`** when you don't know valid project names.
-- You can execute **multiple follow-up queries** with refined terms to dig deeper.
-
----
-
-## REST API
-
-All endpoints are under `/api/` and return JSON. CORS is configured via `mcp.cors.allowed-patterns`.
-
-### Tools (`/api/tools`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/tools/ping` | Health check → `"pong!"` |
-| `GET` | `/api/tools/vectorSearch?query=...&project=...&language=...&limit=...` | Semantic vector search |
-| `GET` | `/api/tools/grep?query=...&project=...&language=...&limit=...` | Full-text search |
-| `GET` | `/api/tools/byIndex?language=...&fqn=...&methodName=...&signatureHash=...&containerFqn=...&symbolType=...&project=...&limit=...` | Deterministic symbol search over chunk index |
-| `GET` | `/api/tools/files?path=...&project=...&limit=...` | List files in the index |
-| `GET` | `/api/tools/meta-search-params` | Machine-readable search parameter schema |
-| `GET` | `/api/tools/context?userQuestion=...&project=...&similarity=...&maxResults=...&skeletonsOnly=...` | Enriched RAG context (legacy) |
-| `GET` | `/api/tools/projects` | All projects with lifecycle status |
-
-#### `byIndex` Parameters
-
-| Parameter | Required | Description |
-|-----------|----------|-------------|
-| `language` | **Yes** | e.g. `java` |
-| `fqn` | At least one of the four below | Fully qualified name, e.g. `com.example.Foo#bar` |
-| `methodName` | | Method name |
-| `signatureHash` | | Signature hash for exact matching |
-| `containerFqn` | | Containing class FQN |
-| `symbolType` | No | e.g. `method`, `classFrame` |
-| `project` | No | Defaults to active project |
-| `limit` | No | Default 10, max 100 |
-
-#### `meta-search-params` Response
-
-```json
-{
-  "version": "1.0",
-  "globalParams": [
-    { "name": "project", "description": "Optional project name...", "required": false },
-    { "name": "limit", "description": "Maximum number of results (default 10, max 100).", "required": false },
-    { "name": "mode", "description": "Optional search mode...", "required": false }
-  ],
-  "languages": {
-    "java": {
-      "language": "java",
-      "mimeTypes": ["text/x-java-code"],
-      "symbolTypes": ["method", "classFrame", "import", ...],
-      "params": [ ... ],
-      "identifierRules": { "pattern": "[A-Za-z_$][A-Za-z0-9_$]*", "caseSensitive": true }
-    }
-  }
-}
-```
-
-### Error Format
-
-All tool endpoints return a consistent error object on failure:
-
-```json
-{
-  "error": "missingQuery",
-  "detail": "Parameter 'query' is required."
-}
-```
-
-Common error codes: `missingQuery`, `missingLanguage`, `missingSearchParams`, `unknownLanguage`, `unknownProject`.
-
----
-
-## Hub Mode
-
-Enable with `prjxp.hub.enabled: true`. The hub adds dynamic project management, a shared Lucene index, and an import pipeline.
-
-### Project Lifecycle
-
-```
-IMPORTING → CHUNKING → EMBEDDING → READY
-    │           │           │
-    │           │           └──→ FAILED
-    │           └──────────────→ FAILED
-    └──────────────────────────→ FAILED
-
-Reindex:  READY → CHUNKING → EMBEDDING → READY
-DocPipe:  READY → DOCPIPE → READY  (code index untouched)
-```
-
-### Projects API (`/api/projects`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/projects` | List all projects with status, stats, and config |
-| `POST` | `/api/projects` | Create a new project (body: `ProjectCreateRequest`) |
-| `PUT` | `/api/projects/{name}` | Update project config (body: `ProjectUpdateRequest`) |
-| `DELETE` | `/api/projects/{name}` | Delete project (scoped index wipe; SNAPSHOT dirs removed, LIVE trees preserved) |
-| `POST` | `/api/projects/{name}/reindex` | Trigger full pipeline re-run (async) |
-| `POST` | `/api/projects/{name}/docpipe` | Trigger DocPipe-only re-run (code index stays) |
-| `GET` | `/api/projects/{name}/reindex-status` | Current reindex status + progress (0–100) |
-| `GET` | `/api/projects/{name}/stats` | Chunk count, file count, languages |
-| `POST` | `/api/projects/{name}/importEmbeddings` | Upload pre-embedded JSONL (multipart) |
-| `POST` | `/api/projects/upload-archive` | Upload a tar/tgz/zip archive (multipart) |
-| `POST` | `/api/projects/upload-embedded` | Upload a pre-embedded archive (multipart) |
-| `GET` | `/api/projects/live-scan` | Scan import dir for live project candidates |
-
-### `ProjectCreateRequest`
-
-```json
-{
-  "name": "my-project",
-  "kind": "LIVE",
-  "rootDir": "/path/to/source",
-  "chunoWhiteList": "java,ts",
-  "tibedBatchSize": 32,
-  "fulltext": true
-}
-```
-
-### `ProjectUpdateRequest`
-
-All fields optional; only non-null values are applied.
-
-```json
-{
-  "rootDir": "/new/path",
-  "chunoWhiteList": "java",
-  "tibedBatchSize": 64,
-  "prompt": "Always explain in German.",
-  "fulltext": false
-}
-```
-
-### `ProjectInfo` Response
-
-```json
-{
-  "name": "my-project",
-  "status": "READY",
-  "kind": "LIVE",
-  "lastError": null,
-  "chunkCount": 1523,
-  "embeddingCount": 1523,
-  "fileCount": 87,
-  "rootDir": "/projects/my-project",
-  "jsonlFile": "px-chunks.jsonl",
-  "chunoWhiteList": "java,ts",
-  "tibedBatchSize": 32,
-  "embeddingsFile": null,
-  "tibedResetStore": false,
-  "reindexStatus": "COMPLETE",
-  "reindexProgress": 100,
-  "prompt": null,
-  "fulltext": true
-}
-```
-
-### Import Pipeline
-
-The `ImportPoller` watches the `import-dir` every `poll-interval-ms`:
-
-1. **Tar files** (`*.tar`, `*.tgz`, `*.tar.gz`): Extracted into `projects-root/<name>/`, then the pipeline runs (chunk → embed → swap).
-2. **Embedded files** (`*-embedded.jsonl|gz|tgz|zip`): Pre-embedded archives are validated (embedding compatibility check), extracted, and imported.
-3. **Live projects**: Directories with a `prjxp.yaml`/`prjxp.yml` marker are discovered recursively (up to `scan-max-depth`), registered, and enqueued.
-
-**Security:** Tar/zip extraction rejects absolute paths, `..` segments, symbolic links, and enforces size/entry limits. A single top-level directory is stripped automatically.
-
-**Keep-old-index semantics:** During chunking and embedding, the old index stays in place (project remains searchable). Only the final swap (scoped `removeAll` + batched import) is briefly offline.
-
-### Pre-Embedded Projects
-
-A project with `embeddingsFile` set in its `prjxp.yaml` skips chunking and embedding. The pipeline:
-1. Validates embedding compatibility (samples N vectors, computes avg cosine against the local model).
-2. If **INCOMPATIBLE** (avg cosine < `threshold-low`): import is blocked, project stays READY (old index) or FAILED.
-3. If **PARTIALLY_COMPATIBLE** (between thresholds): import proceeds with a warning.
-4. If **COMPATIBLE** (≥ `threshold-high`): import proceeds.
-
-Pre-embedded projects require a `.ready` marker file before being enqueued (prevents race conditions during file transfers).
-
----
-
-## Chat API
-
-The chat layer provides an agentic interface with RAG enrichment and tool calling.
-
-### Endpoints
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `POST` | `/api/chat/send` | Send a message, get a response (JSON) |
-| `POST` | `/api/chat/send` (with `Accept: text/event-stream`) | SSE streaming with live phase feedback |
-| `POST` | `/api/chat/projects` | List available project names |
-| `POST` | `/api/chat/tools` | List available tool names |
-
-### `ChatRequest`
-
-```json
-{
-  "message": "How does the authentication flow work?",
-  "chatModelName": "gpt4",
-  "projectContext": "my-project",
-  "useTools": true,
-  "messages": [
-    { "role": "user", "content": "What classes handle auth?" },
-    { "role": "assistant", "content": "The main classes are..." }
-  ]
-}
-```
-
-| Field | Required | Description |
-|-------|----------|-------------|
-| `message` | **Yes** | The user's question |
-| `chatModelName` | **Yes** | Stereo type of the LLM (must match a configured `chat-models` entry) |
-| `projectContext` | No | Project name for RAG enrichment |
-| `useTools` | No | `true` enables the agentic tool loop (default `false`) |
-| `messages` | No | Conversation history for multi-turn context |
-
-### `ChatResponse`
-
-```json
-{
-  "id": "uuid",
-  "role": "assistant",
-  "content": "The authentication flow starts in AuthController...",
-  "ragContext": [
-    { "projectName": "my-project", "chunkId": "abc123", "snippet": "...", "score": 0.92 }
-  ],
-  "toolCalls": [
-    { "toolName": "vectorSearch", "arguments": { "userQuestion": "..." }, "result": "..." }
-  ]
-}
-```
-
-### SSE Streaming Events
-
-When using `Accept: text/event-stream`, the server emits:
-
-| Event Name | Data | Description |
-|------------|------|-------------|
-| `phase` | `{ "phase": "rag_search", "message": "..." }` | RAG search started |
-| `phase` | `{ "phase": "llm_generating", "message": "..." }` | LLM generating |
-| `phase` | `{ "phase": "tools", "message": "...", "toolCalls": [...] }` | Tool calls requested |
-| `phase` | `{ "phase": "tool_result", "tool": "...", "result": "..." }` | Individual tool result |
-| `complete` | Full `ChatResponse` JSON | Final answer |
-| `error` | `{ "message": "..." }` | Error |
-
-### Tool Calling
-
-When `useTools=true`, the chat service runs an **agentic loop** (max 3 iterations):
-
-1. **Native function calling** (preferred): Tool schemas are passed to the LLM provider; the model returns structured `ToolExecutionRequest` objects.
-2. **Text protocol fallback** (`TOOL_CALL[tool](params)`): Used when the model doesn't support native function calling.
-3. **XML recovery**: Some models (e.g. Qwen) emit XML-style calls; these are detected and recovered.
-
-The system prompt includes the 3-level search strategy and the list of available projects.
-
----
-
-## Project Configuration (`prjxp.yaml`)
-
-Each project directory contains a `prjxp.yaml` (or `prjxp.yml`) file:
+Each project directory contains a `prjxp.yaml` (or `prjxp.yml`):
 
 ```yaml
 name: my-project
@@ -584,176 +115,389 @@ chunoWhiteList: java,ts
 excludeDirNames: node_modules,.git,target
 sourceDirNames: src
 tibedBatchSize: 32
-fulltext: true
-# embeddingsFile: my-project-embedded.jsonl   # for pre-embedded projects
-# tibedResetStore: true                        # reset the store before embedding
-# prompt: |
-#   Always explain code in German.
-#   Focus on the business logic, not boilerplate.
+fulltext: false
+# embeddingsFile: my-project-embedded.jsonl   # for pre-embedded imports
+# prompt: "Always answer in German."           # standing instructions for chat
 ```
-
-| Key | Default | Description |
-|-----|---------|-------------|
-| `name` | directory name | Project name (used in all API calls) |
-| `rootDir` | `.` | Source root (relative to project dir or absolute) |
-| `jsonlFile` | `px-chunks.jsonl` | Chunk JSONL output filename |
-| `chunoWhiteList` | `java,ts` | Comma-separated languages to index |
-| `excludeDirNames` | built-in defaults | Directory names to skip during chunking |
-| `sourceDirNames` | built-in defaults | Source directories to include |
-| `tibedBatchSize` | `32` | Embedding batch size |
-| `fulltext` | `false` | Store a lossless fulltext copy (for byte-identical `readFile`) |
-| `embeddingsFile` | — | Pre-embedded JSONL filename (skips chunking + embedding) |
-| `tibedResetStore` | `false` | Reset the embedding store before a new run |
-| `prompt` | — | Standing instructions appended to the chat system prompt |
-
-### Marker Files
-
-| File | Purpose |
-|------|---------|
-| `prjxp.yaml` / `prjxp.yml` | Project marker — the hub's live scan registers directories containing this |
-| `.prjxp-exclude` | Exclusion marker — the hub's live scan never enters this directory |
-| `.ready` | Readiness marker — required for pre-embedded projects before import |
 
 ---
 
-## MCP Protocol
+## MCP Tools
 
-The server implements the **Model Context Protocol** (JSON-RPC 2.0) at the `/mcp` endpoint.
+The server exposes **six tools** via the MCP protocol (`POST /mcp`) and as native function-calling tools. These are the primary interface for AI agents.
 
-### Protocol Version
+### Search Ladder (3 Levels)
 
-`2025-06-18`
+| Level | Tool | Purpose |
+|-------|------|---------|
+| 1 | `vectorSearch` | Semantic discovery — broad overview |
+| 2 | `grep` | Exact full-text match — locate specific strings |
+| 3 | `readBySignature` / `readFile` | Complete source — full method or file |
 
-### Capabilities
+**Orthogonal:** `listFiles` (structural discovery by path) and `listProjects` (project discovery).
 
-The `McpCompatibilityFilter` auto-detects which capabilities are available based on registered beans:
+---
 
-| Capability | Condition |
-|------------|-----------|
-| `tools` | At least one `@McpTool`-annotated method exists |
-| `prompts` | At least one `@McpPrompt`-annotated method exists |
-| `resources` | At least one `@McpResource`-annotated method exists |
-| `completions` | At least one `@McpComplete`-annotated method exists |
+### `vectorSearch`
 
-### `server/discover`
+**Level 1 — Semantic discovery.** Always call this first to find relevant code.
 
-A non-standard method handled by the compatibility filter. Returns:
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `userQuestion` | string | **Yes** | A targeted, standalone search prompt optimized for vector retrieval |
+| `projectName` | string | No | Project name (defaults to active project) |
+| `similarity` | number | No | 0.0–1.0 threshold. Default 0.85. Higher = more precise |
+| `maxResults` | integer | No | Max results. Default 20, max 20 |
+| `skeletonsOnly` | boolean | No | `true` = class skeletons only; `false` (default) = full method context on hits |
 
+**Example (MCP JSON-RPC):**
 ```json
 {
   "jsonrpc": "2.0",
   "id": 1,
-  "result": {
-    "supportedVersions": ["2025-06-18"],
-    "capabilities": {
-      "tools": { "listChanged": false },
-      "prompts": { "listChanged": false },
-      "resources": { "listChanged": false, "subscribe": false }
+  "method": "tools/call",
+  "params": {
+    "name": "vectorSearch",
+    "arguments": {
+      "userQuestion": "How is the user authentication flow implemented?",
+      "projectName": "my-project",
+      "similarity": 0.85,
+      "maxResults": 10
     }
   }
 }
 ```
 
-### `initialize`
-
-The filter strips the `elicitation` capability from the client's `initialize` params before forwarding to the MCP handler (compatibility with clients that send it).
-
-### Tool Registration
-
-The six prjxp tools are registered in the central `ToolRegistry` via `PrjxpToolRegistration` (highest precedence — first registration of a name wins, so external MCP or Groovy tools cannot shadow them). They are executed **in-process** as plain Java calls on `PrjxpMcpTool`, without a JSON-RPC round trip.
+**REST equivalent:** `GET /api/tools/vectorSearch?query=...&project=...&language=...&limit=...`
 
 ---
 
-## System Monitoring
+### `grep`
 
-Available in hub mode (`prjxp.hub.enabled=true`).
+**Level 2 — Exact full-text search.** Use the exact method signature or string to retrieve its full body.
 
-### `GET /api/system/health`
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `query` | string | **Yes** | Exact search string (e.g. `"public MClass createMClass"`) |
+| `project` | string | No | Project name |
+| `language` | string | No | Language filter (`java`, `ts`, etc.) |
+| `limit` | integer | No | Max results. Default 10, max 100 |
 
+**Example:**
 ```json
 {
-  "cpuUsage": 0.5,
-  "totalMemory": 4294967296,
-  "usedMemory": 1073741824,
-  "freeDiskSpace": 53687091200,
-  "totalDiskSpace": 107374182400,
-  "activeConnections": 0
+  "jsonrpc": "2.0",
+  "id": 2,
+  "method": "tools/call",
+  "params": {
+    "name": "grep",
+    "arguments": {
+      "query": "public MClass createMClass",
+      "project": "my-project"
+    }
+  }
 }
 ```
 
-### `GET /api/system/query-stats`
+**REST equivalent:** `GET /api/tools/grep?query=...&project=...&language=...&limit=...`
 
+---
+
+### `readBySignature`
+
+**Level 3 — Complete symbol implementation.** Returns javadoc + full method body. Java only (C#, TypeScript, VB supported via index metadata).
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `method` | string | **Yes** | Method name (`createMClass`) or FQN (`com.example.Foo#bar`). Class FQNs return the class frame |
+| `container` | string | No | Containing class FQN to disambiguate a bare method name |
+| `project` | string | No | Project name |
+
+**Result:** Up to 10 full matches (FQN, file, line range, javadoc, body). Additional matches listed in `remainingFqns` — call again with one of them.
+
+**REST equivalent:** `GET /api/tools/byIndex?language=java&fqn=...&methodName=...&signatureHash=...&containerFqn=...`
+
+---
+
+### `readFile`
+
+**Level 3 — Complete file view.** Reconstructs the entire source file from the index.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `file` | string | **Yes** | File path — absolute, project-root-relative, or just the file name |
+| `project` | string | No | Project name |
+| `offset` | integer | No | 1-based line number to start from (paged reading) |
+| `limit` | integer | No | Max lines to return from `offset` |
+
+**Path resolution:** exact → suffix → basename. Ambiguous paths return a `candidates` list.
+
+**REST equivalent:** No direct REST endpoint (MCP tool only).
+
+---
+
+### `listFiles`
+
+**Structural discovery.** Lists file paths in the project index matching a prefix or glob.
+
+| Parameter | Type | Required | Description |
+|-----------|------|----------|-------------|
+| `path` | string | No | Path prefix (`frontend/src`) or glob (`*Controller.java`). `*` spans `/`. Empty = all |
+| `project` | string | No | Project name |
+| `limit` | integer | No | Max files. Default 50, max 500 |
+
+**REST equivalent:** `GET /api/tools/files?path=...&project=...&limit=...`
+
+---
+
+### `listProjects`
+
+**Discovery.** Lists all searchable project names.
+
+No parameters.
+
+**REST equivalent:** `GET /api/tools/projects`
+
+---
+
+## REST API
+
+### Tool Endpoints
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/tools/ping` | Health check — returns `"pong!"` |
+| `GET` | `/api/tools/context` | Semantic context (vector search with enrichment) |
+| `GET` | `/api/tools/vectorSearch` | Vector search |
+| `GET` | `/api/tools/grep` | Full-text search |
+| `GET` | `/api/tools/byIndex` | Deterministic symbol search |
+| `GET` | `/api/tools/files` | List files |
+| `GET` | `/api/tools/projects` | List projects with lifecycle status |
+| `GET` | `/api/tools/meta-search-params` | Machine-readable search parameter schema |
+
+#### `/api/tools/context`
+
+```
+GET /api/tools/context?userQuestion=How+does+the+pipeline+work&project=my-project&similarity=0.85&maxResults=10&skeletonsOnly=false
+```
+
+Returns enriched text context (vector search + GR prompt enrichment).
+
+#### `/api/tools/byIndex`
+
+```
+GET /api/tools/byIndex?language=java&fqn=com.example.Foo#bar&symbolType=method&limit=10
+```
+
+At least one of `fqn`, `methodName`, `signatureHash`, `containerFqn` is required.
+
+#### `/api/tools/meta-search-params`
+
+Returns the schema version, global parameters, and per-language capabilities (valid symbol types, parameter definitions). Call this once before using language-specific search parameters.
+
+---
+
+### Chat API
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/api/chat/send` | Send a chat message (JSON response) |
+| `POST` | `/api/chat/send` (Accept: `text/event-stream`) | Send with SSE streaming |
+| `POST` | `/api/chat/projects` | List available projects for chat |
+| `POST` | `/api/chat/tools` | List available tools |
+
+**Request body:**
 ```json
 {
-  "totalQueries": 152,
-  "avgResponseTimeMs": 45.2,
-  "p95ResponseTimeMs": 120.0,
-  "cacheHits": 89,
-  "cacheMisses": 63,
-  "recentQueries": [
-    { "query": "auth flow", "responseTimeMs": 32, "resultCount": 5, "fromCache": true }
+  "message": "How does the authentication flow work?",
+  "chatModelName": "my-llm",
+  "projectContext": "my-project",
+  "useTools": true,
+  "messages": [
+    { "role": "user", "content": "Earlier question" },
+    { "role": "assistant", "content": "Earlier answer" }
   ]
 }
 ```
 
+**Response:**
+```json
+{
+  "id": "uuid",
+  "role": "assistant",
+  "content": "The authentication flow works as follows...",
+  "ragContext": [
+    { "projectName": "my-project", "chunkId": "abc123", "snippet": "...", "score": 0.92 }
+  ],
+  "toolCalls": [
+    { "toolName": "vectorSearch", "arguments": {...}, "result": "..." }
+  ]
+}
+```
+
+The chat supports **native function calling** (when the model supports it) and falls back to a text-based `TOOL_CALL[tool](params)` protocol. An agentic loop of up to 3 tool iterations is executed before the final answer.
+
 ---
 
-## Globals & Model Management
+### Project Management (Hub Mode)
 
-### Chat Models (`/api/globals/chat-models`)
+Available when `prjxp.hub.enabled=true`:
 
 | Method | Path | Description |
 |--------|------|-------------|
-| `GET` | `/api/globals/chat-models` | List all configured chat models (API keys masked) |
-| `POST` | `/api/globals/chat-models` | Create a new chat model |
-| `PUT` | `/api/globals/chat-models/{name}` | Update by stereo type |
-| `DELETE` | `/api/globals/chat-models/{name}` | Delete by stereo type |
+| `GET` | `/api/projects` | List all projects with lifecycle status |
+| `POST` | `/api/projects` | Create a new project |
+| `PUT` | `/api/projects/{name}` | Update project configuration |
+| `DELETE` | `/api/projects/{name}` | Delete a project |
+| `POST` | `/api/projects/{name}/reindex` | Trigger full reindex pipeline |
+| `POST` | `/api/projects/{name}/docpipe` | Trigger DocPipe-only re-run |
+| `GET` | `/api/projects/{name}/reindex-status` | Get reindex progress |
+| `GET` | `/api/projects/{name}/stats` | Get project statistics |
+| `POST` | `/api/projects/upload-archive` | Upload a TAR archive |
+| `POST` | `/api/projects/upload-embedded` | Upload a pre-embedded archive |
+| `GET` | `/api/projects/live-scan` | Scan for live project candidates |
+
+**Project lifecycle:** `IMPORTING → CHUNKING → EMBEDDING → READY` (or `FAILED`)
+
+**Reindex progress:** `IDLE → CHUNKING (0-10%) → EMBEDDING (10-80%) → IMPORTING (80-100%) → COMPLETE`
+
+---
+
+### System Monitoring (Hub Mode)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/system/health` | CPU, memory, disk, connections |
+| `GET` | `/api/system/query-stats` | Query statistics (total, avg/p95 response time, cache hits/misses, recent queries) |
+
+---
+
+### Globals (Model Configuration)
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/api/globals/chat-models` | List chat models (API keys masked) |
+| `POST` | `/api/globals/chat-models` | Create a chat model |
+| `PUT` | `/api/globals/chat-models/{name}` | Update a chat model |
+| `DELETE` | `/api/globals/chat-models/{name}` | Delete a chat model |
 | `GET` | `/api/globals/server-types` | List supported server types |
-
-### Embedding Model (`/api/globals/embedding-model`)
-
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/api/globals/embedding-model` | Get current embedding model config (API key masked) |
+| `GET` | `/api/globals/embedding-model` | Get embedding model config |
 | `PUT` | `/api/globals/embedding-model` | Update embedding model config |
 
-Secrets (API keys, sensitive args) are masked as `********` in GET responses. Environment variable placeholders (e.g. `${OPENAI_API_KEY}`) are returned as-is.
+---
+
+## MCP Protocol Endpoint
+
+The server implements the MCP protocol at `POST /mcp` (JSON-RPC 2.0).
+
+**Compatibility:** The `McpCompatibilityFilter` handles:
+- `server/discover` — returns supported protocol versions and capabilities
+- `initialize` — strips unsupported `elicitation` capability for older clients
+
+**Supported MCP methods:**
+- `tools/list` — lists all registered tools
+- `tools/call` — executes a tool by name with arguments
 
 ---
 
-## Troubleshooting
+## Hub Mode: Project Import
 
-### "No searchable store for project 'X'. Available projects: ..."
+When `prjxp.hub.enabled=true`, the server watches the import directory for:
 
-The project name doesn't match any registered project. Call `listProjects` (MCP) or `GET /api/tools/projects` (REST) to see valid names. In hub mode, the project may still be in `IMPORTING`/`CHUNKING`/`EMBEDDING` state — wait for `READY`.
+### TAR Archives (Snapshot Projects)
+- Files: `*.tar`, `*.tgz`, `*.tar.gz`
+- Extracted into `projects-root/<name>/`
+- Full pipeline: chunk → embed → swap
+- Security: rejects absolute paths, `..` segments, symlinks; enforces size/entry limits
 
-### `readFile` returns `candidates` instead of content
+### Pre-Embedded Archives
+- Files: `<Name>-embedded.jsonl`, `<Name>-embedded.gz`, `<Name>-embedded.tgz`, `<Name>-embedded.zip`
+- Must contain exactly one `.jsonl` entry with valid `EmbeddedChunkRecord` objects
+- Pipeline: compatibility check → swap (skips chunking/embedding)
+- Requires a `.ready` marker file before import (race-condition protection)
 
-The file path is ambiguous (multiple files match). Use one of the listed candidate paths in a follow-up call.
+### Live Projects
+- Directories containing `prjxp.yaml` or `prjxp.yml` anywhere below the import dir
+- Discovered recursively (bounded by `scan-max-depth`)
+- Excluded via `.prjxp-exclude` marker file or `scan-exclude-dir-names` config
+- JSONL output redirected to `live-jsonl-dir` (never into the live tree)
 
-### `readBySignature` returns `remainingFqns`
+---
 
-More than 10 overloads/matches were found. Call again with one of the FQNs from `remainingFqns` to fetch it in full.
+## Search Strategy Guide
 
-### Hub: "tar entry with '..' path segment" / "tar entry escapes target directory"
+For AI agents and developers, the recommended workflow:
 
-The uploaded archive contains a path traversal attempt. The file is quarantined as `<name>.tar.failed`. Re-upload a clean archive.
+```
+1. listProjects          → Which projects are available?
+2. vectorSearch          → "What is the authentication flow?" (broad discovery)
+3. grep                  → "public void authenticate" (exact match, full body)
+4. readBySignature       → "com.example.AuthService#authenticate" (complete method)
+   OR readFile           → "src/main/java/com/example/AuthService.java" (whole file)
+5. listFiles             → "*Controller.java" (structural exploration)
+```
 
-### Hub: "Embedding model incompatible"
+**Key rules:**
+- Always start with `vectorSearch` for discovery
+- Use `grep` with the **exact** method signature for full method bodies
+- Use `readBySignature` for complete implementation by name
+- Use `readFile` when you need the entire file
+- `listFiles` is orthogonal — use it to explore the file tree
+- Pass the `project` parameter when multiple projects exist
 
-The pre-embedded vectors were generated with a different embedding model or incompatible hardware. Re-embed using the local model, or adjust `prjxp.hub.compatibility.*` thresholds.
+---
 
-### Hub: "Hub import dir /import does not exist (yet)"
+## Result Size Caps
 
-The import directory volume is not mounted. The live project scan is skipped until the directory appears. This warning is logged once per outage.
+To protect the model's context window, results are truncated:
 
-### Chat: "Chat model 'X' not found"
+| Tool | Cap |
+|------|-----|
+| `vectorSearch` / `grep` / `listFiles` | 8,000 characters |
+| `readFile` / `readBySignature` | 10,000 characters |
+| `readFile` content | 100,000 characters (configurable via `readerMaxOutputChars`) |
 
-The `chatModelName` in the request doesn't match any configured `stereo-type` in `prjxp.chat-models`. Check `GET /api/globals/chat-models`.
+Truncated results include a `... [truncated, total N chars]` marker.
 
-### CORS errors in the browser
+---
 
-Adjust `mcp.cors.allowed-patterns` in `application.yaml` to include your frontend origin, e.g. `http://localhost:3000,http://localhost:*`.
+## Running the Server
+
+```bash
+# Static mode (default)
+java -jar mcp-server.jar
+
+# Hub mode
+java -jar mcp-server.jar --prjxp.hub.enabled=true \
+  --prjxp.hub.import-dir=/import \
+  --prjxp.hub.projects-root=/projects
+
+# With environment variables
+PRJXP_CONFIG_FILE=/path/to/application.yaml java -jar mcp-server.jar
+```
+
+The server starts on port **8080** by default (configurable via `server.port`).
+
+---
+
+## CORS
+
+Configured via `mcp.cors.allowed-patterns` (comma-separated). Defaults to `http://localhost:*`. Applies to `/api/**`, `/mcp`, and `/v3/api-docs/**`.
+
+---
+
+## Error Handling
+
+- **Unknown project:** `400 Bad Request` with `{"error": "unknownProject", "detail": "No searchable store for project 'X'. Available projects: ..."}`
+- **Missing required parameter:** `400 Bad Request` with a specific error code
+- **Unknown language:** `400 Bad Request` listing valid languages
+- **MCP tool errors:** Returned as text in the tool result (e.g. `"ERROR: No searchable store for project 'X'..."`)
+
+---
+
+## Swagger / OpenAPI
+
+Interactive API documentation is available at `/v3/api-docs` (OpenAPI 3.0 JSON) and `/swagger-ui.html` (if the SpringDoc dependency is included).
 
 _This document was generated with Doc|Pipe_
 
