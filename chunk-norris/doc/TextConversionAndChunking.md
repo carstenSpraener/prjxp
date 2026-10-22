@@ -4,7 +4,7 @@
 
 The document conversion system in Chunk Norris is a **graph-based routing engine** that transforms a document from one format (e.g. PDF) to another (e.g. Markdown) by chaining together individual **conversion agents**. The router selects the most cost-efficient chain of agents and then executes the conversion recursively over the document's artifact tree.
 
-All core classes live in the package `de.spraener.prjxp.chuno.docs`.
+All core classes live in the package `de.spraener.prjxp.chuno.docs` and its subpackages (`docs.model`, `docs.pdf`, `docs.html`, `docs.poi`, `docs.txt`, `docs.rtf`, `docs.config`).
 
 ---
 
@@ -15,8 +15,8 @@ All core classes live in the package `de.spraener.prjxp.chuno.docs`.
 | **`DocArtifaktType`** | An enum representing a document format (PDF, HTML, MARK_DOWN, TEXT, DOC, …). Acts as a **vertex** in the conversion graph. |
 | **`DocConversionAgent<S, T>`** | A Spring bean that knows how to convert from source format `S` to target format `T`. Acts as a **directed edge** in the graph. |
 | **`DocArtifakt`** | The in-memory representation of a document (or a sub-document). Carries a `format`, a `data` payload, and an optional list of **child artifacts**. |
-| **`ConversionAccuracy`** | An enum (ordinal-ordered) expressing how lossy a conversion may be. |
-| **`ConversionRoutesConfig`** | Optional YAML/properties configuration for **predefined routes** that bypass the graph search. |
+| **`ConversionAccuracy`** | An enum with an explicit `rank` (ANALYTIC=4, AI_DRIVEN=3, LOCAL_AI_DRIVEN=2, INFORMATION_LOST=1) expressing how lossy a conversion may be. |
+| **`ConversionRoutesConfig`** | Holds **predefined routes** (a list of `ConversionRoute`) that bypass the graph search. Currently inactive by default — the list is not bound from the shipped `application.yaml`. |
 | **`DocContentCollector`** | Utility that walks the final artifact tree and extracts the text/structured content in the target format. |
 
 ---
@@ -24,20 +24,18 @@ All core classes live in the package `de.spraener.prjxp.chuno.docs`.
 ## The Conversion Graph
 
 ```
-        ┌──────────┐   agent-pdf2html   ┌──────────┐   agent-html2md   ┌────────────┐
-        │   PDF    │ ─────────────────► │   HTML   │ ─────────────────► │ MARK_DOWN  │
-        └──────────┘                    └──────────┘                    └────────────┘
-             │                                  ▲
-             │ agent-pdf2text                  │ agent-text2html
-             ▼                                  │
-        ┌──────────┐                           │
-        │   TEXT   │ ──────────────────────────┘
-        └──────────┘
+        ┌──────────┐   pdf2text    ┌──────────┐   text2md    ┌────────────┐
+        │   PDF    │ ────────────► │   TEXT   │ ────────────► │ MARK_DOWN  │
+        └──────────┘               └──────────┘              └────────────┘
+              │
+              └── pdf2md-tika ───────────────────────────────►
 ```
 
 * **Vertices** – every `DocArtifaktType` that appears as a source or target of at least one agent.
 * **Directed edges** – one per `DocConversionAgent` bean. The edge weight is the **estimated conversion cost** (see below).
 * The graph is built at runtime by `DocConversionRouter#buildGraph()` using JGraphT's `SimpleDirectedWeightedGraph`.
+
+The diagram above shows two real paths from a PDF source: `pdf2md-tika` goes straight to Markdown (for text-based PDFs), while `pdf2text` → `text2md` is the two-step analytic path. Other registered agents include `pdf2image` → `image2md`, `html2md`, `doc2html`/`docx2html` → `html2md`, and `rtf2html` → `html2md`.
 
 ---
 
@@ -46,7 +44,7 @@ All core classes live in the package `de.spraener.prjxp.chuno.docs`.
 The method `DocConversionRouter#findBestPath(File, DocArtifaktType, DocArtifaktType, ConversionAccuracy)` determines the ordered list of agents to apply. It follows a two-tier strategy:
 
 1. **Predefined route (fast path).**
-   `ConversionRoutesConfig#findPredefinedRouteAgents(start, end)` is consulted first. If the configuration supplies an explicit agent chain for the given format pair, that chain is returned immediately and the graph is never built.
+   `ConversionRoutesConfig#findPredefinedRouteAgents(start, end)` is consulted first. If the configuration supplies an explicit agent chain for the given format pair, that chain is returned immediately and the graph is never built. *(Currently inactive by default — no routes are bound from the shipped `application.yaml`, so this tier always falls through to Dijkstra.)*
 
 2. **Dijkstra shortest path (general path).**
    If no predefined route exists, the router:
@@ -144,7 +142,7 @@ private static boolean isTextBasedFormat(DocArtifaktType type) {
 |---|---|---|
 | `prjxp.conversion.inaccurateSurcharge` | `1000000.0` | Cost penalty added to any agent whose accuracy is below the requested level. Effectively makes lossy routes "very expensive" so Dijkstra avoids them unless no accurate path exists. |
 
-Predefined routes are configured via `ConversionRoutesConfig` (Spring `@ConfigurationProperties`). Each entry maps a `(sourceFormat, targetFormat)` pair to an ordered list of agent bean names, bypassing the graph search entirely.
+Predefined routes are modeled by `ConversionRoute` (annotated `@ConfigurationProperties(prefix = "prjxp.conversion.routes")`) and held in `ConversionRoutesConfig.predefinedRoutes`. Each entry maps a `(sourceFormat, targetFormat)` pair to an ordered list of agent bean names, bypassing the graph search entirely. **Note:** the `predefinedRoutes` list is not currently bound from the shipped `application.yaml`, so this fast path is inactive by default until routes are registered (e.g. via a `@Bean` or by adding `@ConfigurationProperties` to `ConversionRoutesConfig`).
 
 ---
 

@@ -1,44 +1,40 @@
-# Software Architecture Assessment: ChunkNorris – Multi-Format Document & Code Chunking Pipeline
+# Software Architecture Assessment: ChunkNorris (PrjXP Document & Code Chunking Engine)
 
 ## 1. Executive Summary
 
-ChunkNorris is a Spring Boot application within the PrjXP ecosystem that transforms source code files and documents into structured, semantically-aware chunks (JSONL) for downstream RAG/embedding pipelines. The architecture employs a **plugin-based, annotation-driven discovery model** combined with a **graph-theoretic document conversion router** (Dijkstra shortest path) to handle heterogeneous input formats.
+ChunkNorris is a Spring Boot application within the PrjXP ecosystem that transforms source code files and documents into semantically structured chunks (JSONL) for downstream search, embedding, and retrieval pipelines. The system employs a multi-strategy chunking architecture: language-specific code chunkers (Java, TypeScript, Visual Basic), a document conversion pipeline with Dijkstra-based routing, and a fallback text chunker.
 
 **Key Strengths:**
-- Well-defined extension points via `LanguagePack`, `ChunkerBroker`, and `DocConversionAgent` interfaces
-- Clean orchestration layer (`ChunkProcess`) separating file-walking, veto evaluation, chunking, and serialization
-- Configuration-driven behavior (project definitions, chunk sizes, overlap, encryption)
-- Graceful degradation strategies (raw fallback on parse failure, charset fallback for VB)
+- Well-defined extension points via `LanguagePack`, `PxChunker`, and annotation-driven discovery
+- Clever Dijkstra-based conversion routing with cost/accuracy trade-offs
+- Clean separation between the chunking pipeline, veto system, and document conversion
+- Thoughtful fallback semantics (DefaultLineBreakTextChunker, raw fallback in JavaCodeChunker)
 
 **Most Critical Risks:**
-- **Fragile regex-based parsing** in `TypeScriptCodeChunker` and `VisualBasicCodeChunker` will silently produce incorrect chunks for non-trivial code structures
-- **Thread-safety gap** in `DependencyRegistry` (synchronized writes on non-concurrent `HashMap`) under parallel stream execution
-- **Resource leak** in `Pdf2ImageConversionAgent` (PDDocument not closed on mid-loop exception) and `Doc2HtmlConversionAgent` (PrintWriter not in try-with-resources)
-- **Dead/incomplete code** (`PdfChapterChunker` commented out, `createMetaChunk` returns empty list) signals unfinished features
-
----
+- **Thread-safety defects** in `AnnotationBasedChunkerBrokerImpl` (unsynchronized lazy init), `DependencyRegistryManager` (plain `HashMap`), and `StaticJavaParser` global configuration mutation
+- **Resource leaks** in `Pdf2ImageConversionAgent` (inner non-static classes, unclosed streams in `RtfToHtmlAgent`)
+- **Over-complexity** in `MarkdownChunker` (single class handles line scanning, table detection, section hierarchy, TOC detection, and chunk assembly)
+- **Dead code and commented-out components** (`PdfChapterChunker`, `Text2MDConversionAgent` no-op) increasing maintenance surface
 
 ## 2. Architectural Style & Patterns
 
 | Pattern | Where Applied | Assessment |
 |---------|--------------|------------|
-| **Layered / Pipeline** | `ChunkProcess` → `ChunkerFactory` → `ChunkerBroker` → `PxChunker` | Clear unidirectional flow; each layer has a single responsibility |
-| **Strategy** | `PxChunker` implementations (Java, TS, VB, FullText, Markdown, Text) | Each chunker encapsulates its own matching + splitting logic |
-| **Plugin / SPI** | `LanguagePack` + `ServiceLoader<ChunkerBroker>` | External modules can register new language packs without modifying core |
-| **Annotation-Driven Discovery** | `@Chunker`, `@PostWalkChunker`, `@ChunkVeto`, `@ChunkNorrisComponent` | Reflection-based scanning in `AnnotationBasedChunkerBrokerImpl` and `VetoRegistry` |
-| **Graph / Dijkstra Routing** | `DocConversionRouter` + `SimpleDirectedWeightedGraph` | Optimal multi-step conversion path selection (e.g., PDF → Image → MD via AI) |
-| **Observer / Event-Driven** | `SpringPreWalkEvent`, `CliArgsParsingEvent` | Decouples pre-processing hooks from the main walk loop |
-| **Template Method** | `AnnotationBasedChunkerBrokerImpl` (abstract) → `ChunkerFactory` | Shared discovery logic, specialized aggregation |
-| **Builder / Fluent API** | `PxChunk.create(Consumer<PxChunk>...)`, `DocArtifakt` chaining | Readable chunk construction with optional refinements |
-| **Registry / Service Locator** | `DependencyRegistryManager`, `VetoRegistry` | Centralized lookup for per-project registries and veto methods |
+| **Layered Pipeline** | `ChunkProcess` → `ChunkerFactory` → `PxChunker` implementations → JSONL output | Clear unidirectional flow; well-separated |
+| **Strategy / Plugin** | `LanguagePack` implementations (`JavaChunkerPack`, `TypeScriptChunkerPack`, `VisualBasicChunkerPack`) | Good extensibility; new languages require a pack + chunker |
+| **Annotation-Driven Discovery** | `@Chunker`, `@PostWalkChunker`, `@ChunkNorrisComponent`, `@ChunkVeto` | Flexible but introduces reflection-based coupling; discovery is deferred and non-deterministic in ordering |
+| **Graph-Based Routing** | `DocConversionRouter` with JGraphT Dijkstra | Elegant for multi-step format conversion; cost model is extensible |
+| **Tree / Composite** | `DocArtifakt<T,C>` with `childs` list | Supports fan-out (PDF → N page images) and fan-in (collect text) |
+| **Event-Driven** | `SpringPreWalkEvent`, `CliArgsParsingEvent` | Decouples pre-walk preparation (FQ name mapping) from the main walk |
+| **Template Method** | `AnnotationBasedChunkerBrokerImpl` (abstract) → `ChunkerFactory` | Reasonable, but the abstract class mixes discovery logic with broker contract |
+| **Thread-Local Context** | `VetoContext` | Pragmatic for passing project definition through veto chain; risk of leaks in async contexts |
+| **ServiceLoader (SPI)** | `ChunkerFactory.initBrokerList()` | Allows external JARs to contribute chunkers without Spring coupling |
 
 **Decoupling Assessment:**
-- The core `ChunkProcess` is well-decoupled from specific chunkers via the `ChunkerFactory` → `ChunkerBroker` indirection.
-- The document conversion subsystem (`DocConversionRouter`, `DocArtifakt`, agents) is self-contained and loosely coupled from the code-chunking path.
-- **Coupling concern:** `JavaCodeChunker` directly depends on `JavaDependencyHandler`, which in turn depends on `JavaFQNamesMapper` and `DependencyRegistryManager`. This creates a tight intra-language cluster that would be harder to replace or test in isolation.
-- **Coupling concern:** `MarkdownChunker` depends on `DocConversionRouter`, `MetaInfReader`, and `LineScanner` — a reasonable fan-in, but the `DocConversionRouter` itself depends on `ConversionRoutesConfig` which uses `SpringContextSupplier` (a service-locator anti-pattern).
-
----
+- The `ChunkerBroker` interface provides a clean seam between the process and chunker discovery.
+- `LanguagePackBroker` bridges the common `LanguagePackRegistry` to the `ChunkerBroker` contract — good adapter usage.
+- However, `ChunkerFactory` extends `AnnotationBasedChunkerBrokerImpl` *and* composes `LanguagePackBroker` *and* `DefaultLineBreakTextChunker` — it is both a broker and a composite, violating single responsibility.
+- The document conversion subsystem (`DocConversionRouter`, agents, `DocArtifakt`) is well-isolated from the code chunking subsystem, communicating only through `MarkdownChunker`.
 
 ## 3. Quality Attribute Evaluation
 
@@ -46,201 +42,223 @@ ChunkNorris is a Spring Boot application within the PrjXP ecosystem that transfo
 
 **Positive:**
 - Consistent use of Lombok (`@RequiredArgsConstructor`, `@Data`) reduces boilerplate.
-- Javadoc is present on key classes (`FullTextChunker`, `TypeScriptCodeChunker`, `DirectoryVetos`) explaining *why*, not just *what*.
-- Records (`SpringPreWalkEvent`, `VisualBasicFileInfo`, `ContainerInfo`, `MemberInfo`) provide clean value objects.
-- Naming conventions are generally clear (`createMethodChunks`, `findClassEndLine`, `toProjectRelativePath`).
+- Records for value objects (`SpringPreWalkEvent`, `VisualBasicFileInfo`, `ContainerInfo`, `MemberInfo`).
+- Javadoc on key classes explains *why* (e.g., `DefaultLineBreakTextChunker` explains its non-registration rationale).
+- Clear package structure: `code.java`, `code.typescript`, `code.visualbasic`, `docs.pdf`, `docs.html`, `docs.poi`, `veto`, `language`.
 
 **Negative:**
-- **Mixed logging frameworks:** `java.util.logging` (`@Log`), `slf4j` (`@Slf4j`), and a custom `PxLogService` coexist. This fragments log configuration and makes centralized log-level management difficult.
-- **Language mixing in comments:** German and English comments are interleaved (e.g., `// Pfad zur Sidecar-Datei konstruieren` next to `// Binary file — skip`). While not a functional issue, it hampers team-wide readability.
-- **`TypeScriptCodeChunker` is 300+ lines** with deeply nested loops and repeated JSDoc-extraction logic (duplicated between `createClassMethodChunks` and `createTopLevelFunctionChunks`). This violates DRY and makes maintenance error-prone.
-- **`MarkdownChunker.processFile` / `chunkMarkdownText`** contains a complex state machine (paragraph accumulation, section counters, TOC detection) that is hard to follow without extensive comments.
-- **`javax.print.Doc`** is imported in `Pdf2ImageConversionAgent` — this is almost certainly a wrong IDE auto-import (should be `javax.print.Doc` from the JFP API, unrelated to PDF). This is a code smell indicating insufficient review.
+- **Mixed logging frameworks:** `java.util.logging` (`@Log`), `slf4j` (`@Slf4j`), and a custom `PxLogService` coexist. This fragments log configuration and makes debugging harder.
+- **`MarkdownChunker`** is a 200+ line class with 15+ private methods, magic numbers (window size 4, 40-char threshold, 500/100 splitter params), and inline regex compilation per line. It is the least maintainable component.
+- **`Pdf2ImageConversionAgent`** imports `javax.print.Doc` (a JNDI/printing class) — clearly an IDE auto-import error that will confuse readers.
+- **`ConversionRoutesConfig`** imports `javax.swing.*` — another spurious import.
+- **`TextChunker`** uses a `ValueContainer<BiConsumer<...>>` to pass a mutable lambda — an over-engineered indirection that obscures intent.
+- German and English comments are mixed throughout (e.g., "Fehler bei RTF -> HTML Konvertierung" vs. "binary file — skip"), reducing consistency for international teams.
+- `DocArtifakt` uses `@Data` which generates `equals()`/`hashCode()` over the `data` field (potentially a multi-MB `BufferedImage` or `String`), making any accidental use in a `HashSet`/`HashMap` a performance bomb.
 
 ### Extensibility
 
 **Positive:**
-- Adding a new language requires: (1) a `PxChunker` implementation, (2) a `LanguagePack` wrapper, (3) registration as a Spring `@Component`. No core modification needed.
-- `ServiceLoader<ChunkerBroker>` allows fully external JARs to contribute chunkers without Spring.
-- `DocConversionAgent` is a clean SPI: implement `getSourceFormat()`, `getTargetFormat()`, `convert()`, and the Dijkstra router picks it up automatically.
-- `@ChunkVeto` annotation on any Spring bean method auto-registers it via `VetoRegistry` (a `BeanPostProcessor`).
+- Adding a new language requires: (1) a `PxChunker` implementation, (2) a `LanguagePack` registration, (3) optionally a `PxFileType` entry. The `LanguagePackBroker` auto-discovers all packs.
+- `ServiceLoader<ChunkerBroker>` allows external JARs to inject additional brokers.
+- `DocConversionAgent` is a clean interface; new format conversions are plug-and-play.
+- `@ChunkVeto` annotation + `BeanPostProcessor` discovery means new veto rules are a single annotated method.
+- `ConversionRoutesConfig` models predefined routes (`ConversionRoute` with `@ConfigurationProperties`), bypassing Dijkstra for known paths — though the `predefinedRoutes` list is not currently bound from the shipped `application.yaml`, so the fast path is inactive by default.
 
 **Negative:**
-- The `AnnotationBasedChunkerBrokerImpl` uses `ClassPathScanningCandidateComponentProvider` with a hardcoded `rootPkg` (the package of `ChunkerFactory`). This means **only classes in the same package** are discovered. If a new chunker is placed in a sub-package (e.g., `de.spraener.prjxp.chuno.code.kotlin`), it will be missed unless the `LanguagePack` mechanism is used. This is a subtle extensibility trap.
-- `DependencyRegistryManager` creates registries lazily by name string. Adding a new dependency-tracking language requires knowing the internal string constant (`JAVA_DEPENDENCIES`). A typed enum or interface would be more robust.
-- The `DocArtifakt<T, C>` generic design is awkward: the type parameter `C` represents the *child's* data type, but it's used inconsistently (sometimes `?`, sometimes concrete). This makes it difficult for external contributors to implement new agents.
+- The `AnnotationBasedChunkerBrokerImpl` hardcodes the discovery mechanism (classpath scan for `@ChunkNorrisComponent`). Adding a new discovery strategy (e.g., SPI-based, config-based) requires modifying this class.
+- `ChunkerFactory` special-cases `FullTextChunker` by class identity (`instanceof FullTextChunker`). A new catch-all chunker would require code changes here — the comment acknowledges this.
+- `DocConversionRouter` builds the graph on every `findBestPath()` call. For a large number of agents, this is wasteful and makes it harder to add dynamic edge weights without rebuilding.
+- The `PxChunker` interface is minimal (`matches`, `chunk`), but the `AnnotationBasedChunkerBrokerImpl` also supports method-level `@Chunker` annotations with a `fileTypes` attribute — two parallel registration mechanisms that can be confusing.
 
 ### Robustness & Error Handling
 
-**Positive:**
-- `JavaCodeChunker` has a well-structured fallback: `ParseProblemException` → log individual problems → `rawFallback()` → if that fails, return empty stream.
-- `FullTextChunker` gracefully skips binary files (null-byte sniff) and empty files.
-- `VisualBasicCodeChunker` handles non-UTF-8 files with a `windows-1252` fallback.
-- `VetoRegistry.VetoMethodWrapper.check()` catches all exceptions and returns `false` (fail-open for vetos — a file is not vetoed if the veto method throws).
+**Critical Issues:**
+- **`AnnotationBasedChunkerBrokerImpl.initChunkers()` / `initPostWalkChunkers()`** are called lazily from `findPxChunkers()` / `listPostWalkChunker()` without any synchronization. In a multi-threaded context (`.parallel()` streams in `ChunkProcess`), two threads can trigger concurrent initialization, leading to duplicate or incomplete chunker lists.
+- **`DependencyRegistryManager`** uses a plain `HashMap` for `dependencyRegistryMap`. The `get()` method performs a check-then-act (`if null → create → put`) without synchronization. Under concurrent access (`.parallel()` in `ChunkProcess`), this is a race condition.
+- **`JavaFQNamesMapper.fillFQNamesMap()`** catches all exceptions with a `// FIXME: handle exceptions!!!` comment. A failure here silently produces an empty FQ-name map, degrading all subsequent Java chunking without alerting the operator.
+- **`JavaCodeChunker.chunk()`** calls `StaticJavaParser.getConfiguration().setLanguageLevel(...)` — this mutates a **global singleton**. In a parallel stream, concurrent calls can corrupt the parser state for other threads.
+- **`RtfToHtmlAgent.convert()`** creates a `DocArtifakt` (`htmlArt`) but never calls `input.addChild(htmlArt)`. The converted HTML is silently lost.
+- **`Pdf2ImageConversionAgent`** inner classes (`Pdf2ImageContext`, `ImageSupplier`) are non-static inner classes of a `@Component`. They hold an implicit reference to the outer agent instance. The `Pdf2ImageContext` implements `AutoCloseable` but is never explicitly closed in the `convert()` method's normal path (only via `postConversionAction`). If the post-conversion action is never invoked, the `PDDocument` leaks.
+- **`Doc2HtmlConversionAgent`** writes a `.html` file to disk as a side effect of conversion. This is a hidden I/O operation that can fail (permissions, disk full) and is not part of the `DocArtifakt` tree.
 
-**Negative:**
-- **`JavaFQNamesMapper.fillFQNamesMap()`** has a `// FIXME: handle exceptions!!!` comment with an empty catch block. If `Files.walk` throws (e.g., permission denied on a subdirectory), the entire FQN map is silently incomplete, leading to incorrect dependency resolution downstream.
-- **`Pdf2ImageConversionAgent.convert()`** creates a `Pdf2ImageContext` (which holds an open `PDDocument`) and iterates pages. If `renderImageWithDPI` throws on page N, the `PDDocument` is **never closed** (the `postConversionAction` is only invoked by `DocContentCollector` after the full tree is processed). This is a resource leak for large PDFs.
-- **`Doc2HtmlConversionAgent.convert()`** opens a `PrintWriter` without try-with-resources. If `parser.parse()` throws, the file handle leaks.
-- **`TextChunker.chunkTextFile()`** throws `RuntimeException` on any exception, which will propagate up and potentially abort the entire file-walk. Other chunkers return `Stream.of()` on failure — inconsistent failure semantics.
-- **`RtfToHtmlAgent.convert()`** creates a `DocArtifakt` and sets data but **never calls `input.addChild(htmlArt)`** — the converted HTML is silently discarded. This appears to be a bug.
-- **`DependencyRegistry`** uses `synchronized` on `addDependency` but the backing maps are plain `HashMap`. Under `parallel()` stream execution in `ChunkProcess.handlePath()`, concurrent reads of `dependencies`/`usedBy` during a write can cause `ConcurrentModificationException` or infinite loops in `HashMap` (pre-Java 8; in Java 8+ it's data corruption).
+**Positive:**
+- `JavaCodeChunker` has a well-structured fallback: `ParseProblemException` → log problems → `rawFallback()`.
+- `VisualBasicCodeChunker` handles encoding fallback (UTF-8 → windows-1252).
+- `DefaultLineBreakTextChunker` and `FullTextChunker` gracefully return empty streams for binary files (null-byte sniffing).
+- `VetoRegistry.VetoMethodWrapper.check()` catches all exceptions and returns `false` (fail-open for vetos) — a reasonable default.
 
 ### Performance & Resource Efficiency
 
-**Positive:**
-- `ContentSplitter` is reused per chunker instance (not per call), avoiding repeated allocation.
-- `FullTextChunker` uses `Files.readString` (NIO) rather than line-by-line reading — efficient for the "read whole file" use case.
-- The Dijkstra router builds the graph once per `findBestPath` call and reuses it for cost estimation.
-- `processedFiles` set in `ChunkProcess` prevents re-processing (though it's cleared per run, so it's a safety net, not a performance optimization).
+**Bottlenecks:**
+- **`Files.readString()`** in `DefaultLineBreakTextChunker` and `FullTextChunker` loads the entire file into memory. For large files (the veto limits to 1 MB by default, but this is configurable), this is acceptable. However, `FullTextChunker` then calls `content.split("\n", -1)` which creates a new `String[]` of all lines — doubling memory usage.
+- **`JavaCodeChunker`** reads the file twice: once via `Files.readAllLines()` and once via `StaticJavaParser.parse(f)` (which re-reads the file). The `codeLines` list is then used for line-range extraction, but the parser also reads the file independently.
+- **`DocConversionRouter.estimateConversionCosts()`** is recursive and creates a new `DocArtifakt` at each step. For a graph with many intermediate formats, this can explode combinatorially. The `visited` set prevents infinite loops but not exponential paths.
+- **`AnnotationBasedChunkerBrokerImpl`** performs a full classpath scan (`ClassPathScanningCandidateComponentProvider`) on first use. This is a one-time cost but can be 100s of ms for large classpaths.
+- **`MarkdownChunker`** compiles a `Pattern` on every call to `preprocessLine()` (per line). This should be a `static final` compiled pattern.
+- **`Pdf2ImageConversionAgent`** renders at 300 DPI with `ImageType.BINARY` — for a 100-page PDF, this creates 100 `BufferedImage` objects (each ~10-50 MB at 300 DPI). The lazy `ImageSupplier` helps, but all pages are created as `DocArtifakt` children upfront.
+- **`ChunkProcess.handlePath()`** uses `.parallel()` on the chunker stream. Combined with the thread-safety issues above, this is a correctness risk, not just a performance one.
 
-**Negative:**
-- **`TypeScriptCodeChunker`** reads the entire file into a `List<String>`, then performs **multiple full passes** over the lines (imports scan, class scan, method scan per class, top-level function scan, class-frame construction). For a 5000-line file, this is O(n × passes) with high constant factors. The brace-matching helpers (`findClassEndLine`, `findMethodEndLine`) each scan to end-of-file in the worst case, making the total complexity O(n²) for files with many classes/methods.
-- **`JavaFQNamesMapper.fillFQNamesMap()`** walks the **entire project tree** and parses every `.java` file with JavaParser. For a large monorepo (10k+ files), this is a significant startup cost. There's no incremental/caching mechanism.
-- **`Pdf2ImageConversionAgent`** renders every page at 300 DPI as a `BufferedImage` in memory. A 100-page PDF at 300 DPI ≈ 100 × (2480×3508×4 bytes) ≈ **3.4 GB** of heap. The `ImageSupplier` lazy-loads on `get()`, but `DocContentCollector.collectContent` will call `getData()` on every child, materializing all images simultaneously.
-- **`MarkdownChunker`** uses a `LineScanner` with a window of 4 lines and calls `scanner.peek(i)` in a loop for `isEndOfParagraph` — this is O(window) per line, acceptable, but the overall algorithm is single-threaded and sequential.
-- **`DependencyRegistry`** stores all dependencies in memory. For a project with 10k Java files, each with ~10 dependencies, this is ~100k entries in two `HashMap<String, Set<String>>` structures. Acceptable, but unbounded.
-
----
+**Resource Leaks:**
+- `RtfToHtmlAgent`: `FileInputStream` is in a try-with-resources (good), but the `DocArtifakt` is never attached to the parent.
+- `Pdf2ImageConversionAgent`: `PDDocument` is closed via `postConversionAction`, but if the conversion pipeline is interrupted, the document leaks.
+- `Doc2HtmlConversionAgent`: `PrintWriter` is not in a try-with-resources (uses manual `flush()`/`close()`).
+- `Pdf2MDWithTikaDocConversionAgent`: `FileInputStream` is never closed (no try-with-resources).
 
 ## 4. Strengths & Best Practices
 
-1. **Clean Pipeline Orchestration:** `ChunkProcess.executeForProject()` is a well-structured method that clearly delineates phases: pre-walk event → file walk with vetos → per-file chunking → post-walk → output. The separation of `executeForProject` (full walk) and `executeForFiles` (explicit list) supports both CLI and programmatic (hub) use cases.
+1. **LanguagePack Abstraction:** The `LanguagePack` interface cleanly groups chunkers by language, with `findPxChunkers(File)` and `listPostWalkChunkers()` providing a uniform contract. The `LanguagePackBroker` adapter bridges this to the `ChunkerBroker` interface without coupling.
 
-2. **Graph-Based Conversion Routing:** The use of JGraphT's `DijkstraShortestPath` with cost/accuracy-weighted edges is an elegant solution to the "how do I convert format A to format B" problem. The `inaccurateSurcharge` mechanism allows the system to prefer analytic conversions over AI-driven ones when the caller demands high accuracy.
+2. **Dijkstra-Based Conversion Routing:** Using JGraphT with a cost model (including accuracy surcharges) is an elegant solution to the "how do I get from format A to format B" problem. The `ConversionAccuracy` enum provides a principled way to penalize lossy paths.
 
-3. **Annotation-Driven Veto System:** `VetoRegistry` as a `BeanPostProcessor` that auto-discovers `@ChunkVeto`-annotated methods is a clean, zero-configuration extension point. The `VetoContext` (ThreadLocal) for project-scoped veto evaluation is a pragmatic solution to the "which project's config applies" problem in a multi-project setup.
+3. **Veto System Design:** The `@ChunkVeto` + `BeanPostProcessor` discovery pattern is clean. The `VetoContext` ThreadLocal allows project-scoped vetos without polluting method signatures. The `DirectoryVetos.scan()` algorithm (monotonic source-tree flag) is well-reasoned and documented.
 
-4. **Graceful Degradation in Java Chunking:** The `JavaCodeChunker`'s fallback to `rawFallback()` (line-based splitting with lossless reconstruction) when JavaParser fails is a production-grade resilience pattern. The comment explaining *why* the fallback uses line-boundary splits (to preserve concatenation fidelity) shows architectural intent.
+4. **Fallback Semantics:** The `DefaultLineBreakTextChunker` is deliberately *not* registered as a `@Chunker` — it's injected into `ChunkerFactory` and only activated when no specific chunker matches. This prevents it from shadowing specialized chunkers.
 
-5. **LanguagePack Abstraction:** The `LanguagePack` interface + `LanguagePackBroker` bridge cleanly separates "which chunkers apply to this file" from "how to chunk it." The `ServiceLoader` integration allows non-Spring modules to participate.
+5. **JavaCodeChunker Fallback:** The `rawFallback()` method ensures that even unparseable Java files produce searchable chunks (line-based, no semantics), rather than being silently dropped.
 
-6. **Idempotent Re-Indexing:** `processedFiles.clear()` at the start of `executeForProject` ensures that re-running the tool produces identical output (no stale state from a previous run).
+6. **`DocArtifakt` Tree with `postConversionAction`:** The deferred cleanup mechanism (e.g., closing a `PDDocument` after all page images are consumed) is a practical solution to the "when do I release this resource" problem in a pipeline.
 
-7. **Path Rebase Logic:** The `rebaseIdToProjectPath` method in `ChunkProcess` solves a real-world problem (same-named files in different directories colliding on ID) with a well-documented, targeted transformation.
+7. **`rebaseIdToProjectPath()` in `ChunkProcess`:** The ID rebasing logic (basename → project-relative path) is a well-thought-out solution to the ID collision problem for same-named files in different directories.
 
-8. **Configuration-Driven Behavior:** Chunk sizes, overlaps, max file sizes, and encryption are all externalized via `@Value` / `@ConfigurationProperties`, enabling per-environment tuning without code changes.
+8. **`DependencyRegistry` with `synchronized addDependency()`:** The write path is thread-safe. The read path (`getDependencies`, `getUsedBy`) returns the raw (mutable) `HashSet` — safe for concurrent reads only after the write phase completes (happens-before via the stream pipeline).
 
-9. **Use of Modern Java:** Records, `var`, text blocks (implicit in string formatting), `Stream` API, and `List.of()` / `Set.of()` demonstrate current Java idioms.
+9. **`VisualBasicCodeChunker` Records:** Using Java records (`VisualBasicFileInfo`, `ContainerInfo`, `MemberInfo`) for internal value objects is modern and clean.
 
-10. **Defensive File Handling:** `FullTextChunker`'s binary-file sniff (null-byte check on first 8KB) and `VisualBasicCodeChunker`'s charset fallback show awareness of real-world file diversity.
-
----
+10. **`ChunkNorris` Application Entry Point:** The `@ConditionalOnProperty` and `@Profile("!test")` on the `CommandLineRunner` bean allow the same application class to be used in tests without triggering the pipeline.
 
 ## 5. Identified Risks & Technical Debt
 
-### Critical
+### Critical (Correctness / Data Integrity)
 
-| # | Risk | Location | Impact |
-|---|------|----------|--------|
-| C1 | **Thread-unsafe `DependencyRegistry`** under parallel streams | `DependencyRegistry` (synchronized write, non-concurrent `HashMap` read) | Data corruption, `ConcurrentModificationException`, or silent data loss when `ChunkProcess.handlePath` runs in parallel |
-| C2 | **Resource leak in PDF image conversion** | `Pdf2ImageConversionAgent.convert()` | OOM on large PDFs if any page render fails; `PDDocument` never closed |
-| C3 | **Silent data loss in RTF conversion** | `RtfToHtmlAgent.convert()` — creates `htmlArt` but never calls `input.addChild(htmlArt)` | RTF files produce no output; the conversion is a no-op |
-| C4 | **Unbounded exception swallowing in FQN mapper** | `JavaFQNamesMapper.fillFQNamesMap()` — empty catch with `// FIXME` | Incomplete FQN map → incorrect dependency resolution → wrong chunks for Java files |
+| # | Location | Issue |
+|---|----------|-------|
+| C1 | `AnnotationBasedChunkerBrokerImpl` | Unsynchronized lazy initialization of `chunkers`/`postWalkChunkers` lists. Under `.parallel()` streams, concurrent `findPxChunkers()` calls can cause `ConcurrentModificationException` or duplicate entries. |
+| C2 | `DependencyRegistryManager` | Plain `HashMap` with check-then-act in `get()`. Race condition under parallel chunking. |
+| C3 | `JavaCodeChunker.chunk()` | Mutates `StaticJavaParser.getConfiguration()` (global singleton). Thread-unsafe under parallel streams. |
+| C4 | `RtfToHtmlAgent.convert()` | Creates `htmlArt` but never calls `input.addChild(htmlArt)`. Converted content is silently discarded. |
+| C5 | `Pdf2ImageConversionAgent` | `Pdf2ImageContext` (holding `PDDocument`) is only closed via `postConversionAction`. If the pipeline is interrupted or the action is never called, the PDF document handle leaks. |
+| C6 | `JavaFQNamesMapper.fillFQNamesMap()` | Swallows all exceptions (`// FIXME`). A parse failure on one file aborts the entire `Files.walk` stream, leaving the FQ-name map incomplete. |
 
-### High
+### High (Maintainability / Extensibility)
 
-| # | Risk | Location | Impact |
-|---|------|----------|--------|
-| H1 | **Regex-based TypeScript parsing** | `TypeScriptCodeChunker` (all patterns) | Misidentifies methods/classes in non-trivial code (decorators, multi-line signatures, template literals with braces). Produces incorrect chunk boundaries silently. |
-| H2 | **O(n²) complexity in TS/VB chunkers** | `findClassEndLine`, `findMethodEndLine` called per method | 5000-line file with 100 methods → 500K+ line scans. Unacceptable for large codebases. |
-| H3 | **Inconsistent failure semantics** | `TextChunker` throws `RuntimeException`; others return `Stream.of()` | A single malformed TXT file can abort the entire walk |
-| H4 | **`javax.print.Doc` wrong import** | `Pdf2ImageConversionAgent` | Compilation risk; indicates insufficient code review |
-| H5 | **`Doc2HtmlConversionAgent` PrintWriter leak** | `convert()` method | File descriptor leak on exception; also writes to a file path derived from input (side effect not documented) |
+| # | Location | Issue |
+|---|----------|-------|
+| H1 | `MarkdownChunker` | God-class: handles line scanning, table detection, section hierarchy, TOC detection, paragraph splitting, and chunk assembly. 200+ lines, 15+ methods, magic numbers. |
+| H2 | `ChunkerFactory` | Extends `AnnotationBasedChunkerBrokerImpl` AND composes `LanguagePackBroker` AND special-cases `FullTextChunker` by `instanceof`. Three responsibilities in one class. |
+| H3 | `DocArtifakt` | `@Data` generates `equals()`/`hashCode()` over `data` (can be a multi-MB object). Also, the generic `C` parameter (child data type) is confusing and leads to raw-type casts in `DocContentCollector`. |
+| H4 | `PdfChapterChunker` | Entirely commented out (`//@Component`, `//@Chunker`) but still in the source tree. Dead code with `System.out.println` debug statements. |
+| H5 | `Text2MDConversionAgent` | A no-op conversion (copies data, changes format label). Adds a node to the graph that does nothing, potentially confusing the Dijkstra router. |
+| H6 | Mixed logging | `java.util.logging` (`@Log`), `slf4j` (`@Slf4j`), and `PxLogService` used interchangeably. No unified logging strategy. |
+| H7 | `ConversionRoutesConfig` | Imports `javax.swing.*` (spurious). Also, `@ConfigurationProperties` is on `ConversionRoute` (the element) but the `predefinedRoutes` list on `ConversionRoutesConfig` is never bound from the shipped `application.yaml` — so the predefined-route fast path is effectively dead in production (only exercised in tests via a manual `@Bean`). |
 
-### Medium
+### Medium (Performance / Resource Management)
 
-| # | Risk | Location | Impact |
-|---|------|----------|--------|
-| M1 | **Dead code: `PdfChapterChunker`** | Commented-out `@Component` / `@ChunkNorrisComponent` | Confusion; suggests an unfinished feature; should be removed or completed |
-| M2 | **Empty `createMetaChunk`** | `JavaCodeChunker.createMetaChunk()` returns `List.of()` | Dead code path; the method is called but produces nothing |
-| M3 | **Mixed logging frameworks** | `@Log` (JUL), `@Slf4j` (SLF4J), `PxLogService` (custom) | Fragmented log configuration; no single log-level control |
-| M4 | **`SpringContextSupplier` service locator** | `ConversionRoutesConfig` | Breaks testability; makes `ConversionRoutesConfig` hard to unit-test without a full Spring context |
-| M5 | **`DocArtifakt` generic design** | `DocArtifakt<T, C>` where C is child data type | Awkward to implement; `C` is often `?` or `Object`; the `childs` field is `List<DocArtifakt<C, ?>>` which is recursive and hard to reason about |
-| M6 | **`FullTextChunker` reads entire file into memory** | `Files.readString` | A 50MB text file consumes 50MB+ heap. No streaming alternative. |
-| M7 | **`MarkdownChunker` complexity** | 200+ line method with state machine | Hard to test, hard to extend (e.g., for new header styles) |
-| M8 | **`TextChunker` Groovy scripting** | Dynamic script compilation per file | Security risk (arbitrary code execution); performance cost of compilation; no sandboxing visible |
+| # | Location | Issue |
+|---|----------|-------|
+| M1 | `FullTextChunker` / `DefaultLineBreakTextChunker` | `content.split("\n", -1)` creates a full `String[]` in addition to the original `String`. For a 1 MB file, this is ~2 MB transient allocation per file. |
+| M2 | `MarkdownChunker.preprocessLine()` | Compiles a `Pattern` on every invocation (per line). Should be `static final`. |
+| M3 | `DocConversionRouter.buildGraph()` | Rebuilds the entire graph on every `findBestPath()` call. Should be cached or built once. |
+| M4 | `Pdf2MDWithTikaDocConversionAgent` | `FileInputStream` is never closed (no try-with-resources). |
+| M5 | `Doc2HtmlConversionAgent` | `PrintWriter` not in try-with-resources. Also, writing to disk is a hidden side effect. |
+| M6 | `Pdf2ImageConversionAgent` | Inner classes are non-static, holding implicit reference to the `@Component` outer instance. This prevents GC of the agent if a `Pdf2ImageContext` outlives it. |
 
-### Low
+### Low (Code Hygiene)
 
-| # | Risk | Location | Impact |
-|---|------|----------|--------|
-| L1 | **German/English comment mixing** | Throughout | Minor readability issue for non-German-speaking contributors |
-| L2 | **`ValueContainer` as mutable state carrier** | `TypeScriptCodeChunker`, `JavaCodeChunker`, `TextChunker` | Unnecessary indirection; a simple `int[]` or `AtomicInteger` would suffice |
-| L3 | **`CostEstimation` as interface with constants** | `CostEstimation` | Should be an enum or a class with `static final` fields; an interface with only constants is a code smell |
-| L4 | **`ConversionRoutesConfig` uses `@Data`** | Generates equals/hashCode/toString for a config bean | Unnecessary; `@Data` on a `@Component` is misleading |
-
----
+| # | Location | Issue |
+|---|----------|-------|
+| L1 | `Pdf2ImageConversionAgent` | Imports `javax.print.Doc` — clearly an IDE auto-import error. |
+| L2 | `TextChunker` | `ValueContainer<BiConsumer<...>>` for a single mutable lambda — over-engineered. |
+| L3 | `DocContentCollector` | Unchecked cast `(DocArtifakt) child` — raw type usage. |
+| L4 | `JavaCodeChunker` | `createMetaChunk()` returns `List.of()` — dead method. |
+| L5 | `TextDocChunkContext` | Field name `scriptSate` (typo for `scriptState`). |
+| L6 | `MarkdownChunker` | `isTabelStart` (typo for `isTableStart`). |
 
 ## 6. Actionable Recommendations
 
-### Priority 1 – Fix Critical Defects (Immediate)
+### Priority 1: Fix Correctness Bugs (Immediate)
 
-1. **Make `DependencyRegistry` thread-safe.**
-   Replace `HashMap` with `ConcurrentHashMap` and `HashSet` with `ConcurrentHashMap.newKeySet()`. Remove `synchronized` from `addDependency`. Alternatively, if the registry is only written during the pre-walk phase and read during the post-walk phase (sequential), document this contract explicitly and add a `freeze()` method that switches to unmodifiable views.
+1. **Synchronize `AnnotationBasedChunkerBrokerImpl` initialization.**
+   - Replace lazy `if (chunkers == null) initChunkers()` with `volatile` + double-checked locking, or better: initialize in the constructor / `@PostConstruct`. Since `ChunkerFactory` is a singleton `@Service`, eager initialization in the constructor is safe and eliminates the race.
 
-2. **Fix `RtfToHtmlAgent` to actually attach the result.**
-   Add `input.addChild(htmlArt)` at the end of the try block. Add a unit test that verifies the child is present after conversion.
+2. **Make `DependencyRegistryManager` thread-safe.**
+   - Replace `HashMap` with `ConcurrentHashMap` and use `computeIfAbsent()` for the check-then-act pattern.
 
-3. **Close `PDDocument` in `Pdf2ImageConversionAgent` on failure.**
-   Wrap the page-iteration loop in a try-finally that calls `context.close()`. Alternatively, make `Pdf2ImageContext` implement `AutoCloseable` and use try-with-resources around the entire conversion.
+3. **Eliminate `StaticJavaParser` global mutation in `JavaCodeChunker`.**
+   - Create a dedicated `JavaParser` instance per chunk call (or per thread via `ThreadLocal`), configured with the desired language level. Never mutate the global `StaticJavaParser` configuration.
 
-4. **Handle exceptions in `JavaFQNamesMapper.fillFQNamesMap()`.**
-   At minimum, log a warning per file that fails to parse. Consider collecting a list of failed files and logging a summary. Do not silently skip.
+4. **Fix `RtfToHtmlAgent` to attach the result.**
+   - Add `input.addChild(htmlArt)` after creating the `DocArtifakt`.
 
-### Priority 2 – Address High-Risk Architecture Issues (Sprint 1–2)
+5. **Ensure `Pdf2ImageContext` is always closed.**
+   - Wrap the page-iteration loop in a try-with-resources on `Pdf2ImageContext`, or register the close in a `finally` block. Do not rely solely on `postConversionAction`.
 
-5. **Replace regex-based TypeScript parsing with a proper parser.**
-   Integrate `typescript-java-parser` (or the TypeScript compiler API via a sidecar process) to produce an AST. This eliminates the O(n²) brace-matching and the fragility of single-line regex patterns. If a full parser is too heavy, at minimum use a **state-machine-based** scanner that tracks brace depth to find method/class boundaries in O(n).
+6. **Handle `JavaFQNamesMapper` exceptions per-file.**
+   - Move the try-catch inside the `forEach` lambda so one bad file doesn't abort the entire walk. Log a warning and continue.
 
-6. **Unify failure semantics across all chunkers.**
-   Define a contract: `PxChunker.chunk(File)` must **never throw**. All exceptions should be caught, logged, and result in `Stream.of()`. Update `TextChunker` to comply. Add a `@Test` that verifies no chunker throws for a corrupted file.
+### Priority 2: Refactor High-Risk Components (Sprint 1-2)
 
-7. **Fix `Doc2HtmlConversionAgent` resource management.**
-   Use try-with-resources for both the `FileInputStream` and the `PrintWriter`. Remove the side-effect of writing to a file (or make it configurable and documented).
+7. **Decompose `MarkdownChunker`.**
+   - Extract `MarkdownLinePreprocessor` (table detection, header normalization, section regex).
+   - Extract `MarkdownSectionTracker` (hierarchy, counters, TOC detection).
+   - Extract `MarkdownParagraphAssembler` (paragraph buffering, splitting).
+   - The main class should orchestrate: read lines → preprocess → track sections → assemble paragraphs → split into chunks.
+   - Make the `Pattern` a `static final` field.
 
-8. **Remove or complete `PdfChapterChunker`.**
-   If the feature is not ready, delete the class. If it is planned, add a `@Disabled` annotation and a tracking issue. Dead code with commented-out annotations is worse than no code.
+8. **Separate `ChunkerFactory` responsibilities.**
+   - `ChunkerFactory` should only compose brokers and apply the fallback logic.
+   - Move the `instanceof FullTextChunker` special-case to a `CatchAllChunker` marker interface or a `@CatchAll` annotation, so the factory can filter by type rather than class identity.
+   - Consider making `ChunkerFactory` a pure composition (no inheritance from `AnnotationBasedChunkerBrokerImpl`) — it can delegate to an `AnnotationBasedChunkerBroker` instance.
 
-### Priority 3 – Improve Maintainability & Extensibility (Sprint 2–3)
+9. **Fix `DocArtifakt` generics and `@Data`.**
+   - Replace `@Data` with `@Getter` + `@Setter` + explicit `equals()`/`hashCode()` on `id` only (exclude `data`, `childs`).
+   - Resolve the raw-type cast in `DocContentCollector` by using a wildcard or a non-generic `DocArtifakt<?>` parameter.
 
-9. **Standardize logging on SLF4J.**
-   Replace all `@Log` (JUL) annotations with `@Slf4j` (SLF4J). Configure `PxLogService` as a thin wrapper over SLF4J (or remove it and use SLF4J directly). This enables a single logback/log4j2 configuration for the entire application.
+10. **Unify logging.**
+    - Standardize on `slf4j` (or `PxLogService` if it's the project's canonical logger). Remove `java.util.logging` `@Log` annotations. Configure a single logging backend.
 
-10. **Extract the JSDoc-extraction logic in `TypeScriptCodeChunker` into a shared helper.**
-    The pattern "check if previous line is `*`, find start, build content, create chunk" is duplicated in `createClassMethodChunks` and `createTopLevelFunctionChunks`. Extract to a `JsDocExtractor` utility.
+### Priority 3: Performance & Resource Management (Sprint 2-3)
 
-11. **Replace `SpringContextSupplier` with direct `ApplicationContext` injection.**
-    `ConversionRoutesConfig` should inject `ApplicationContext` directly (or better, inject the specific beans it needs). The `SpringContextSupplier` indirection adds a service-locator anti-pattern that complicates testing.
+11. **Cache the conversion graph in `DocConversionRouter`.**
+    - Build the graph once in the constructor (or `@PostConstruct`). Rebuild only if agents are dynamically registered (unlikely in a Spring Boot app).
+    - Cache Dijkstra results per `(start, end, accuracy)` tuple.
 
-12. **Refactor `DocArtifakt` generics.**
-    Simplify to `DocArtifakt<T>` where `T` is the data type. The child list should be `List<DocArtifakt<?>>`. The current `<T, C>` design forces implementors to think about their child's type, which is an implementation detail of the conversion agent, not the artifact.
+12. **Avoid double file reads in `JavaCodeChunker`.**
+    - Pass the already-read `codeLines` (or the file content string) to the parser, or use `StaticJavaParser.parse(String)` instead of `StaticJavaParser.parse(File)`.
 
-13. **Add a `LanguagePack` for the `FullTextChunker` and `TextChunker`.**
-    Currently, `FullTextChunker` is discovered via `@ChunkNorrisComponent` + `@Chunker` (annotation scanning) while language-specific chunkers use `LanguagePack`. This dual discovery mechanism is confusing. Standardize on `LanguagePack` for all file-type-specific chunkers.
+13. **Close all streams with try-with-resources.**
+    - `Pdf2MDWithTikaDocConversionAgent`: wrap `FileInputStream` in try-with-resources.
+    - `Doc2HtmlConversionAgent`: wrap `PrintWriter` in try-with-resources.
+    - `RtfToHtmlAgent`: already uses try-with-resources for `FileInputStream` (good), but ensure the `DocArtifakt` is attached.
 
-### Priority 4 – Performance & Scalability (Sprint 3–4)
+14. **Make `Pdf2ImageConversionAgent` inner classes static.**
+    - `Pdf2ImageContext` and `ImageSupplier` should be `static` nested classes (or top-level) to avoid implicit outer-instance references.
 
-14. **Stream large files instead of reading into memory.**
-    For `FullTextChunker` and `TextChunker`, process files line-by-line (or in fixed-size buffers) rather than loading the entire content. This bounds memory usage to O(chunk_size) regardless of file size.
+### Priority 4: Code Hygiene & Dead Code (Ongoing)
 
-15. **Add incremental/caching to `JavaFQNamesMapper`.**
-    Cache parsed FQNs keyed by file path + last-modified timestamp. On re-runs, only re-parse changed files. This turns the O(all_files) startup cost into O(changed_files).
+15. **Remove or properly implement `PdfChapterChunker`.**
+    - If it's not ready, move it to a `src/experimental` or `src/scratch` directory. Remove the `System.out.println` debug statements.
 
-16. **Bound PDF image memory.**
-    In `Pdf2ImageConversionAgent`, process pages in a bounded window (e.g., 5 pages at a time) and flush to disk or a downstream consumer before rendering the next batch. Alternatively, reduce DPI for the initial pass and only render at 300 DPI for pages that need AI analysis.
+16. **Remove or implement `Text2MDConversionAgent`.**
+    - A no-op conversion agent that just relabels the format is confusing. If it's a placeholder for a future real conversion, add a `@Deprecated` annotation and a TODO. Otherwise, remove it.
 
-17. **Make `MarkdownChunker`'s state machine testable.**
-    Extract the paragraph/section accumulation logic into a separate `MarkdownSectionParser` class with a clear state enum (IN_HEADER, IN_PARAGRAPH, IN_TABLE, IN_TOC). This enables unit testing of edge cases without a full Spring context.
+17. **Fix typos and spurious imports.**
+    - `scriptSate` → `scriptState` in `TextDocChunkContext`.
+    - `isTabelStart` → `isTableStart` in `MarkdownChunker`.
+    - Remove `javax.print.Doc` import from `Pdf2ImageConversionAgent`.
+    - Remove `javax.swing.*` import from `ConversionRoutesConfig`.
 
-### Priority 5 – Code Hygiene (Ongoing)
+18. **Remove dead method `createMetaChunk()` in `JavaCodeChunker`.**
+    - It returns `List.of()` and is called but contributes nothing. Remove the call and the method.
 
-18. **Remove `javax.print.Doc` import** from `Pdf2ImageConversionAgent` (wrong auto-import).
-19. **Remove empty `createMetaChunk` method** or implement it.
-20. **Unify comment language** — pick English for all code comments (keep German only in user-facing strings if the target audience is German).
-21. **Replace `CostEstimation` interface** with a `final class` containing `public static final` constants, or an enum with associated cost values.
-22. **Add `@Data` → `@Getter @Setter`** on `ConversionRoutesConfig` to avoid generating misleading `equals`/`hashCode` on a singleton bean.
-23. **Add integration tests** that exercise the full pipeline (file → veto → chunk → JSONL) for at least one file type per chunker. The current codebase has no visible test files.
+19. **Add unit tests for critical paths.**
+    - `ChunkerFactory.createChunker()` fallback logic (specific vs. catch-all vs. default).
+    - `DocConversionRouter` path selection with multiple agents.
+    - `VetoRegistry` with concurrent access.
+    - `MarkdownChunker` with representative markdown inputs (tables, nested sections, TOC).
+    - `DependencyRegistry` thread-safety under concurrent `addDependency` + `getDependencies`.
+
+20. **Document the `LanguagePack` extension contract.**
+    - Add a `README` or Javadoc on `LanguagePack` explaining the expected registration, the `findPxChunkers` vs. `listPostWalkChunkers` semantics, and how to add a new language. This reduces the cognitive load for contributors.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 
