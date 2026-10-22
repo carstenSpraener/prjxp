@@ -19,20 +19,23 @@ public class KIChatModelProvider {
 
     public KIChat createKIChat(PrjXPChatModelReference cmRef) {
         String modelKey = cmRef.getProviderUrl() + ":" + cmRef.getModelName();
-        return cache.computeIfAbsent(modelKey, k -> {
-            ChatModel chatModel = null;
-            for (ChatModelSupplier supplier : chatModelSuppliers) {
-                if (supplier.canProvide(cmRef)) {
-                    chatModel = supplier.provide(cmRef);
-                    break;
-                }
+        return cache.computeIfAbsent(modelKey, k -> createFreshKIChat(cmRef));
+    }
+
+    /** Baut ein FRISCHES KIChat ohne Cache — für Konfigurations-Tests. */
+    public KIChat createFreshKIChat(PrjXPChatModelReference cmRef) {
+        ChatModel chatModel = null;
+        for (ChatModelSupplier supplier : chatModelSuppliers) {
+            if (supplier.canProvide(cmRef)) {
+                chatModel = supplier.provide(cmRef);
+                break;
             }
-            if (chatModel == null) {
-                throw new IllegalStateException("There is no supplier for server model stereotype " + cmRef.getServerType() + ". Please check configuration.");
-            }
-            log.fine("Created KIChat for model: " + cmRef.getModelName() + " with provider: " + cmRef.getServerType());
-            return new KIChatModelWrapper(chatModel, cmRef);
-        });
+        }
+        if (chatModel == null) {
+            throw new IllegalStateException("There is no supplier for server model stereotype " + cmRef.getServerType() + ". Please check configuration.");
+        }
+        log.fine("Created KIChat for model: " + cmRef.getModelName() + " with provider: " + cmRef.getServerType());
+        return new KIChatModelWrapper(chatModel, cmRef);
     }
 
     /** Clear the in-memory cache so that updated configurations take effect. */

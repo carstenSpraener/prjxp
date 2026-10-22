@@ -4,6 +4,8 @@ import de.spraener.prjxp.common.chat.KIChatModelProvider;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingModelReference;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.embedding.EmbeddingModelProvider;
+import de.spraener.prjxp.common.model.ModelLister;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -24,6 +26,12 @@ class GlobalsServiceTest {
 
     @Mock
     private KIChatModelProvider kiChatModelProvider;
+
+    @Mock
+    private EmbeddingModelProvider embeddingModelProvider;
+
+    @Mock
+    private ModelLister modelLister;
 
     private PrjXPConfig prjXPConfig;
     private GlobalsService globalsService;
@@ -47,7 +55,7 @@ class GlobalsServiceTest {
         System.setProperty("user.dir", tempDir.toString());
 
         try {
-            globalsService = new GlobalsService(prjXPConfig, kiChatModelProvider);
+            globalsService = new GlobalsService(prjXPConfig, kiChatModelProvider, embeddingModelProvider, modelLister);
         } finally {
             System.setProperty("user.dir", originalUserDir);
         }
@@ -161,7 +169,7 @@ class GlobalsServiceTest {
         String originalUserDir = System.getProperty("user.dir");
         System.setProperty("user.dir", tempDir.toString());
         try {
-            globalsService = new GlobalsService(prjXPConfig, kiChatModelProvider);
+            globalsService = new GlobalsService(prjXPConfig, kiChatModelProvider, embeddingModelProvider, modelLister);
         } finally {
             System.setProperty("user.dir", originalUserDir);
         }

@@ -71,6 +71,31 @@ public class GlobalsController {
         return ResponseEntity.ok(maskEmbeddingModelSecrets(globalsService.updateEmbeddingModel(svcRequest)));
     }
 
+    @PostMapping("/chat-models/test")
+    public ResponseEntity<ModelTestResult> testChatModel(@RequestBody PrjXPChatModelRequest request) {
+        return ResponseEntity.ok(globalsService.testChatModel(request));
+    }
+
+    @PostMapping("/embedding-model/test")
+    public ResponseEntity<ModelTestResult> testEmbeddingModel(@RequestBody PrjXPEmbeddingModelRequest request) {
+        return ResponseEntity.ok(globalsService.testEmbeddingModel(request));
+    }
+
+    @GetMapping("/chat-models/models")
+    public List<String> listChatModels(@RequestParam(required = false) String serverType,
+                                       @RequestParam(required = false) String providerUrl,
+                                       @RequestParam(required = false) String apiKey,
+                                       @RequestParam(required = false) String stereoType) {
+        return globalsService.listChatModels(serverType, providerUrl, apiKey, stereoType);
+    }
+
+    @GetMapping("/embedding-model/models")
+    public List<String> listEmbeddingModels(@RequestParam(required = false) String serverType,
+                                            @RequestParam(required = false) String providerUrl,
+                                            @RequestParam(required = false) String apiKey) {
+        return globalsService.listEmbeddingModels(serverType, providerUrl, apiKey);
+    }
+
     @ExceptionHandler(IllegalArgumentException.class)
     public ResponseEntity<String> handleIllegalArgument(IllegalArgumentException ex) {
         return ResponseEntity.badRequest().body(ex.getMessage());

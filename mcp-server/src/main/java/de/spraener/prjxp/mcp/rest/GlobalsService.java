@@ -5,6 +5,10 @@ import de.spraener.prjxp.common.chat.ServerTypes;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingModelReference;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import de.spraener.prjxp.common.embedding.EmbeddingModelProvider;
+import de.spraener.prjxp.common.model.ModelLister;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.model.output.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -22,12 +26,18 @@ public class GlobalsService {
 
     private final PrjXPConfig prjXPConfig;
     private final KIChatModelProvider kiChatModelProvider;
+    private final EmbeddingModelProvider embeddingModelProvider;
+    private final ModelLister modelLister;
     private final Path applicationYamlPath;
 
     public GlobalsService(PrjXPConfig prjXPConfig,
-                          KIChatModelProvider kiChatModelProvider) {
+                          KIChatModelProvider kiChatModelProvider,
+                          EmbeddingModelProvider embeddingModelProvider,
+                          ModelLister modelLister) {
         this.prjXPConfig = prjXPConfig;
         this.kiChatModelProvider = kiChatModelProvider;
+        this.embeddingModelProvider = embeddingModelProvider;
+        this.modelLister = modelLister;
 
         // Try multiple locations for application.yaml
         List<Path> candidates = new ArrayList<>();
@@ -144,11 +154,74 @@ public class GlobalsService {
         return getEmbeddingModel();
     }
 
+    /** Test a (possibly unsaved) chat model configuration with a fresh, uncached model instance. */
+    public ModelTestResult testChatModel(GlobalsController.PrjXPChatModelRequest request) {
+        PrjXPChatModelReference ref = new PrjXPChatModelReference();
+        if (request.getStereoType() != null) ref.setStereoType(request.getStereoType());
+        if (request.getServerType() != null) ref.setServerType(request.getServerType());
+        if (request.getModelName() != null) ref.setModelName(request.getModelName());
+        ref.setApiKey(resolveMaskedChatApiKey(request.getApiKey(), request.getStereoType()));
+        if (request.getProviderUrl() != null) ref.setProviderUrl(request.getProviderUrl());
+        if (request.getTimeoutSecs() != null) ref.setTimeoutSecs(request.getTimeoutSecs());
+        if (request.getTemperature() != null) ref.setTemperature(request.getTemperature());
+
+        long start = System.currentTimeMillis();
+        try {
+            String response = kiChatModelProvider.createFreshKIChat(ref).chat("Say hello");
+            return ModelTestResult.success("Chat test succeeded", System.currentTimeMillis() - start, response, null);
+        } catch (Exception e) {
+            return ModelTestResult.failure("Chat test failed: " + e.getMessage(), System.currentTimeMillis() - start);
+        }
+    }
+
+    /** Test a (possibly unsaved) embedding model configuration with a fresh model instance. */
+    public ModelTestResult testEmbeddingModel(GlobalsController.PrjXPEmbeddingModelRequest request) {
+        PrjXPEmbeddingModelReference ref = new PrjXPEmbeddingModelReference();
+        ref.setServerType(request.getServerType() != null ? request.getServerType() : "ollama");
+        ref.setProviderUrl(request.getProviderUrl());
+        ref.setModelName(request.getModelName());
+        ref.setApiKey(resolveMaskedEmbeddingApiKey(request.getApiKey()));
+        ref.setTimeoutSecs(request.getTimeoutSecs() != null ? request.getTimeoutSecs() : 60);
+
+        long start = System.currentTimeMillis();
+        try {
+            Response<Embedding> resp = embeddingModelProvider.createEmbeddingModel(ref).embed("test");
+            return ModelTestResult.success("Embedding test succeeded", System.currentTimeMillis() - start, null, resp.content().vector().length);
+        } catch (Exception e) {
+            return ModelTestResult.failure("Embedding test failed: " + e.getMessage(), System.currentTimeMillis() - start);
+        }
+    }
+
+    /** List the model names available at the given chat-model provider. */
+    public List<String> listChatModels(String serverType, String providerUrl, String apiKey, String stereoType) {
+        return modelLister.listModels(serverType, providerUrl, resolveMaskedChatApiKey(apiKey, stereoType), 30);
+    }
+
+    /** List the model names available at the given embedding-model provider. */
+    public List<String> listEmbeddingModels(String serverType, String providerUrl, String apiKey) {
+        return modelLister.listModels(serverType, providerUrl, resolveMaskedEmbeddingApiKey(apiKey), 30);
+    }
+
     private String resolveUpdatedApiKey(String requestedApiKey, String existingApiKey) {
         if (requestedApiKey == null || "********".equals(requestedApiKey)) {
             return existingApiKey;
         }
         return requestedApiKey;
+    }
+
+    /** Resolve the masked "********" placeholder back to the saved key of the chat model with the given stereoType. */
+    private String resolveMaskedChatApiKey(String apiKey, String stereoType) {
+        if (apiKey == null || !"********".equals(apiKey) || stereoType == null) return apiKey;
+        return prjXPConfig.getChatModels().stream()
+                .filter(m -> stereoType.equals(m.getStereoType()))
+                .map(PrjXPChatModelReference::getApiKey)
+                .findFirst().orElse(null);
+    }
+
+    /** Resolve the masked "********" placeholder back to the saved key of the single embedding model. */
+    private String resolveMaskedEmbeddingApiKey(String apiKey) {
+        if (apiKey == null || !"********".equals(apiKey)) return apiKey;
+        return prjXPConfig.getEmbeddingModel() != null ? prjXPConfig.getEmbeddingModel().getApiKey() : null;
     }
 
     private Map<String, String> resolveUpdatedArgs(Map<String, String> requestedArgs, Map<String, String> existingArgs) {
