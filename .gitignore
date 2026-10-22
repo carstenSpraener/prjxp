@@ -37,6 +37,9 @@ Thumbs.db
 !docs/Tasks/
 !docs/Tasks/**
 .prjxp-data/
+
+# Generated project home page (static site, not part of the source build)
+/prjxp-homepage/
 /docpipe/src/test/tmp/src-dmp.txt
 /px-chunks.jsonl
 /doc/Tasks/
