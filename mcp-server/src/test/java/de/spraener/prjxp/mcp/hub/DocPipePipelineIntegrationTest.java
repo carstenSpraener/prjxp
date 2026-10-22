@@ -150,9 +150,11 @@ class DocPipePipelineIntegrationTest {
             return null;
         }).when(contentCreationService).createContent(any(ContentCreationTask.class), any(DocPipeRunResult.class));
 
-        // The document-embedding run: the chunker produces one fake doc chunk
+        // The document-embedding run: the chunker produces one fake doc chunk (file = project-relative,
+        // as the real chunker sets it — this exercises the file-scoped reset path)
         when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of(
-                PxChunk.create(c -> c.setId("docs/a.md:01.01:01"), c -> c.setContent("# A"))));
+                PxChunk.create(c -> c.setId("docs/a.md:01.01:01"), c -> c.setContent("# A"),
+                        c -> c.setFile("docs/a.md"))));
     }
 
     @AfterEach

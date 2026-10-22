@@ -41,8 +41,9 @@ import static org.mockito.Mockito.when;
 
 /**
  * Tests the document-embedding run ({@link PipelineOrchestrator#scheduleEmbedding}): the source's
- * documents are chunked (markdown whitelisted), a doc-scoped reset removes only previously generated
- * document chunks (code chunks are untouched), and the new chunks are stamped + embedded additively.
+ * documents are chunked (markdown whitelisted), a file-scoped reset removes only the previously
+ * generated document chunks of the re-embedded files (code chunks and other documents are
+ * untouched), and the new chunks are stamped + embedded additively.
  * <p>
  * Setup mirrors {@link PipelineOrchestratorTest}: real registry + real 8-dim Lucene store, mocked
  * ChunkProcess/EmbeddingExportService/EmbeddingService. The retrigger is triggered by setting the
@@ -137,18 +138,32 @@ class DocumentEmbeddingRunTest {
         return () -> Stream.of(Path.of(relativePath));
     }
 
-    /** Seeds the real store with one chunk (optionally stamped as docpipe-generated). */
-    private void seed(String id, String project, boolean docMarker) {
+    /** Seeds the real store with one chunk (optionally stamped as docpipe-generated, optionally with a file). */
+    private void seed(String id, String project, boolean docMarker, String file) {
         PxChunk c = PxChunk.create(cc -> {
             cc.setId(id);
             cc.setProject(project);
             cc.setContent("content of " + id);
+            if (file != null) {
+                cc.setFile(file);
+            }
         });
         if (docMarker) {
             c.getMetadata().put(DocumentSource.DOCPIPE_GENERATED, "true");
         }
         TextSegment seg = PxChunk2TextSegmentConverter.convert(c);
         luceneStore.addAll(List.of(Embedding.from(new float[8])), List.of(seg));
+    }
+
+    /** Makes the mocked embedChunks actually write to the real store (simulating the real embedder). */
+    private void mockEmbeddingWritesToStore() {
+        doAnswer(inv -> {
+            List<PxChunk> chunks = inv.getArgument(2);
+            List<Embedding> embeddings = chunks.stream().map(c -> Embedding.from(new float[8])).toList();
+            List<TextSegment> segments = chunks.stream().map(PxChunk2TextSegmentConverter::convert).toList();
+            luceneStore.addAll(embeddings, segments);
+            return null;
+        }).when(embeddingService).embedChunks(any(), anyString(), any());
     }
 
     /**
@@ -190,33 +205,53 @@ class DocumentEmbeddingRunTest {
     }
 
     @Test
-    void docScopedResetRemovesOnlyDocChunks() throws Exception {
+    void fileScopedResetRemovesOnlyDocChunksOfReembeddedFiles() throws Exception {
         Path dir = registerProject("p1");
-        seed("code-1", "p1", false);
-        seed("old-doc-1", "p1", true);
+        seed("code-1", "p1", false, null);
+        seed("old-doc-1", "p1", true, "docs/x.md");
         assertThat(luceneStore.countByProject("p1")).isEqualTo(2);
 
-        PxChunk newDoc = PxChunk.create(c -> c.setId("new-doc-1"), c -> c.setContent("new doc"));
+        PxChunk newDoc = PxChunk.create(c -> c.setId("new-doc-1"), c -> c.setContent("new doc"),
+                c -> c.setFile("docs/x.md"));
         when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of(newDoc));
-        // the mock embedChunks actually writes to the real store (simulating the real embedder)
-        doAnswer(inv -> {
-            List<PxChunk> chunks = inv.getArgument(2);
-            List<Embedding> embeddings = chunks.stream().map(c -> Embedding.from(new float[8])).toList();
-            List<TextSegment> segments = chunks.stream().map(PxChunk2TextSegmentConverter::convert).toList();
-            luceneStore.addAll(embeddings, segments);
-            return null;
-        }).when(embeddingService).embedChunks(any(), anyString(), any());
+        mockEmbeddingWritesToStore();
 
         DocumentSource source = sourceFor(dir, "docs/x.md");
 
         orchestrator = createOrchestrator();
         runDocumentEmbedding("p1", source);
 
-        // doc-scoped reset: old doc chunk wiped, code chunk intact, new doc chunk added (2 -> 2)
+        // file-scoped reset: old doc chunk of the same file wiped, code chunk intact, new doc chunk added (2 -> 2)
         assertThat(luceneStore.countByProject("p1")).isEqualTo(2);
         assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "code-1"))).isTrue();
         assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "old-doc-1"))).isFalse();
         assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "new-doc-1"))).isTrue();
+    }
+
+    @Test
+    void fileScopedResetKeepsUnchangedDocuments() throws Exception {
+        Path dir = registerProject("p1");
+        seed("code-1", "p1", false, null);
+        seed("old-doc-a", "p1", true, "docs/a.md");   // re-embedded in this run
+        seed("old-doc-b", "p1", true, "docs/b.md");   // unchanged document (not in the manifest)
+        assertThat(luceneStore.countByProject("p1")).isEqualTo(3);
+
+        PxChunk newDocA = PxChunk.create(c -> c.setId("new-doc-a"), c -> c.setContent("new a"),
+                c -> c.setFile("docs/a.md"));
+        when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of(newDocA));
+        mockEmbeddingWritesToStore();
+
+        DocumentSource source = sourceFor(dir, "docs/a.md");   // only a.md is (re)generated
+
+        orchestrator = createOrchestrator();
+        runDocumentEmbedding("p1", source);
+
+        // regression: the unchanged document b.md must survive (the old doc-wide reset wiped it)
+        assertThat(luceneStore.countByProject("p1")).isEqualTo(3);
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "code-1"))).isTrue();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "old-doc-a"))).isFalse();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "new-doc-a"))).isTrue();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "old-doc-b"))).isTrue();
     }
 
     @Test

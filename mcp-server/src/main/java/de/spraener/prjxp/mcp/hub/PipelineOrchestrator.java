@@ -16,6 +16,7 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
+import dev.langchain4j.store.embedding.filter.comparison.IsIn;
 import jakarta.annotation.PreDestroy;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
@@ -33,12 +34,15 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -222,8 +226,9 @@ public class PipelineOrchestrator implements ImportHandler {
 
     /**
      * Schedules a retrigger run that chunks the documents from the given source and embeds them as an
-     * ADDITION to the project's index (doc-scoped reset via {@link DocumentSource#DOCPIPE_GENERATED} —
-     * code chunks are never wiped). Called from listener callbacks; returns immediately (FIFO queue).
+     * ADDITION to the project's index (file-scoped reset via {@link DocumentSource#DOCPIPE_GENERATED}
+     * + the re-embedded file paths — code chunks and other documents are never wiped). Called from
+     * listener callbacks; returns immediately (FIFO queue).
      */
     public void scheduleEmbedding(String name, DocumentSource source) {
         scheduleRetrigger(name, (runName, def) -> runDocumentEmbedding(runName, def, source));
@@ -231,8 +236,9 @@ public class PipelineOrchestrator implements ImportHandler {
 
     /**
      * The document-embedding run: resolves the source's (root-relative) paths, chunks them (markdown
-     * whitelisted), performs a doc-scoped reset (only previously generated document chunks — code
-     * chunks are untouched), stamps the new chunks and embeds them additively.
+     * whitelisted), performs a file-scoped reset (only the previously generated document chunks of
+     * the re-embedded files — code chunks and other documents are untouched), stamps the new chunks
+     * and embeds them additively.
      */
     private void runDocumentEmbedding(String name, ProjectDefinition def, DocumentSource source) throws Exception {
         if (embeddingService == null) {
@@ -257,11 +263,22 @@ public class PipelineOrchestrator implements ImportHandler {
             return;
         }
 
-        // Doc-scoped reset: remove only previously generated document chunks (never code chunks).
+        // File-scoped reset: remove only the previously generated document chunks of the files
+        // being re-embedded in this run. The manifest lists only (re)generated documents, so a
+        // doc-wide reset would wipe documents that were NOT regenerated and are therefore not
+        // re-added (they would vanish from the index). Code chunks are never touched (the
+        // docpipe_generated guard) and neither are other documents (the file guard).
         // metadataFieldKey() maps the logical key to the indexed field (pxchunk_metadata.* prefix).
-        Filter docReset = new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name)
-                .and(new IsEqualTo(PxChunk.metadataFieldKey(DocumentSource.DOCPIPE_GENERATED), "true"));
-        luceneStore.removeAll(docReset);
+        Set<String> filesToReset = chunks.stream()
+                .map(PxChunk::getFile)
+                .filter(Objects::nonNull)
+                .collect(Collectors.toSet());
+        if (!filesToReset.isEmpty()) {
+            Filter docReset = new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name)
+                    .and(new IsEqualTo(PxChunk.metadataFieldKey(DocumentSource.DOCPIPE_GENERATED), "true"))
+                    .and(new IsIn(PxChunk.PXCHUNK_FILE, filesToReset));
+            luceneStore.removeAll(docReset);
+        }
 
         chunks.forEach(c -> {
             c.getMetadata().put(DocumentSource.DOCPIPE_GENERATED, "true");
