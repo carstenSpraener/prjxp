@@ -34,8 +34,6 @@ Thumbs.db
 /prjxp-src.jsonl
 /LinkedIn-Artikel.md
 /docs/
-!docs/Tasks/
-!docs/Tasks/**
 .prjxp-data/
 
 # Generated project home page (static site, not part of the source build)
