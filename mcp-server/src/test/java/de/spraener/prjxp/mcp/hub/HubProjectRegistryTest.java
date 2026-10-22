@@ -41,6 +41,7 @@ class HubProjectRegistryTest {
     private Path importDir;
     private PxChunkDaoProvider daoProvider;
     private LuceneEmbeddingStore luceneStore;
+    private PrjXPConfig cfg;
     private HubProjectRegistry registry;
 
     @BeforeEach
@@ -61,7 +62,7 @@ class HubProjectRegistryTest {
         hub.setProjectsRoot(projectsRoot.toString());
         hub.setImportDir(importDir.toString());
 
-        PrjXPConfig cfg = new PrjXPConfig();
+        cfg = new PrjXPConfig();
         ProjectDefinition alpha = new ProjectDefinition();
         alpha.setName("alpha");
         cfg.setActiveProject("alpha");   // getActiveProject() resolves the name against the projects list
@@ -559,15 +560,66 @@ class HubProjectRegistryTest {
     }
 
     @Test
-    void resolveNullAndBlankReturnActiveProjectName() {
+    void resolveNullAndBlankReturnActiveProjectName() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));   // the active project must be a registered hub project
+
         assertThat(registry.resolve(null)).isEqualTo("alpha");   // active project from PrjXPConfig
         assertThat(registry.resolve("  ")).isEqualTo("alpha");
     }
 
     @Test
-    void resolveDefaultAndExplicitNamesPassThrough() {
-        assertThat(registry.resolve("default")).isEqualTo("default");
-        assertThat(registry.resolve("beta")).isEqualTo("beta");
+    void resolveDefaultStaysDefaultWhenNoProjectIsRegistered() {
+        assertThat(registry.resolve("default")).isEqualTo("default");   // nothing to fall back to
+        assertThat(registry.resolve("beta")).isEqualTo("beta");          // explicit names pass through
+    }
+
+    @Test
+    void resolveIgnoresSyntheticCwdFallbackInHubMode() throws Exception {
+        // The reported bug (doc/Todos.md §4): hub mode = empty static projects list, activeProject "cwd"
+        // -> getActiveProject() returns the synthetic cwd fallback, which is not a registered hub project.
+        cfg.setProjects(List.of());
+        cfg.setActiveProject("cwd");
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.setStatus("alpha", ProjectStatus.READY, null);
+
+        assertThat(registry.resolve(null)).isEqualTo("alpha");   // first READY — not the synthetic "cwd"
+    }
+
+    @Test
+    void resolveFallsBackToFirstReadyProjectWhenActiveNotRegistered() throws Exception {
+        cfg.setActiveProject("ghost");   // not in the static projects list -> getActiveProject() empty
+        registry.registerProject("zeta", projectDir("zeta"));
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.setStatus("zeta", ProjectStatus.READY, null);
+        registry.setStatus("alpha", ProjectStatus.READY, null);
+
+        assertThat(registry.resolve(null)).isEqualTo("alpha");        // first READY in sorted order
+        assertThat(registry.resolve("default")).isEqualTo("alpha");   // the tool default triggers the same fallback
+    }
+
+    @Test
+    void resolvePrefersActiveProjectOverFirstReady() throws Exception {
+        ProjectDefinition zeta = new ProjectDefinition();
+        zeta.setName("zeta");
+        cfg.setActiveProject("zeta");
+        cfg.setProjects(List.of(zeta));
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.registerProject("zeta", projectDir("zeta"));
+        registry.setStatus("alpha", ProjectStatus.READY, null);
+        registry.setStatus("zeta", ProjectStatus.READY, null);
+
+        assertThat(registry.resolve(null)).isEqualTo("zeta");   // the configured active project wins over "alpha" (first READY)
+    }
+
+    @Test
+    void resolveReturnsDefaultWhenNoProjectIsReady() throws Exception {
+        cfg.setActiveProject("ghost");   // not resolvable -> no active project
+        registry.registerProject("alpha", projectDir("alpha"));   // stays IMPORTING
+
+        assertThat(registry.resolve(null)).isEqualTo("default");
+        assertThatThrownBy(() -> registry.ensureSearchable(null))
+                .isInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("alpha");   // the available projects are listed
     }
 
     @Test

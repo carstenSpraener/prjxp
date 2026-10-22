@@ -206,6 +206,20 @@ class SymbolReaderServiceTest {
     }
 
     @Test
+    void classFqnUsesFqnFilterNotNameFilter() {
+        stubDaoReturns();   // empty hits — only the filter map matters here
+
+        service.readBySignature("de.ex.Foo", null, "p");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(dao).searchByIndex(captor.capture(), eq(10_000));
+        // A class FQN (dot, no '#') must filter on symbol_fqn — the class' symbol_name is only
+        // the short name, so a symbol_name filter would never match (Known Bug, doc/Todos.md §3).
+        assertThat(captor.getValue()).isEqualTo(Map.of("symbol_fqn", "de.ex.Foo"));
+    }
+
+    @Test
     void classFqnReturnsFrameAsBody() {
         String file = "/src/de/ex/Foo.java";
         String frame = "public class Foo {\n    public void bar() { }\n}\n";

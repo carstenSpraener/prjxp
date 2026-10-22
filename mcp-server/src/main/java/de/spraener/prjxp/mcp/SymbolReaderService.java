@@ -50,7 +50,10 @@ public class SymbolReaderService {
             return SymbolReadResult.error("No embedding store available for project '" + project + "'.");
 
         Map<String, String> filters = new HashMap<>();
-        if (method.contains("#"))
+        // A class FQN (contains '.', no '#') must be looked up by SYMBOL_FQN — the symbol
+        // name of a class is only its short name, so a SYMBOL_NAME filter would miss it.
+        // (Known Bug in v0.8.0-rc1, doc/Todos.md §3.)
+        if (method.contains("#") || method.contains("."))
             filters.put(SymbolMetadata.SYMBOL_FQN, method.trim());
         else {
             filters.put(SymbolMetadata.SYMBOL_NAME, method.trim());
