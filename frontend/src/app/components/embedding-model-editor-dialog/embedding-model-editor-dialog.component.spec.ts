@@ -2,7 +2,14 @@ import { TestBed } from '@angular/core/testing';
 import { EmbeddingModelEditorDialogComponent } from './embedding-model-editor-dialog.component';
 import { ReactiveFormsModule } from '@angular/forms';
 import { EmbeddingModelReference } from '../../models/embedding-model-reference.model';
+import { GlobalsService } from '../../services/globals.service';
+import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
+
+const mockGlobalsService = {
+  testChatModel: vi.fn(), testEmbeddingModel: vi.fn(),
+  listChatModels: vi.fn(), listEmbeddingModels: vi.fn()
+};
 
 describe('EmbeddingModelEditorDialogComponent', () => {
   let component: EmbeddingModelEditorDialogComponent;
@@ -16,13 +23,15 @@ describe('EmbeddingModelEditorDialogComponent', () => {
   };
 
   beforeEach(async () => {
+    vi.clearAllMocks();
+
     await TestBed.configureTestingModule({
-      imports: [EmbeddingModelEditorDialogComponent, ReactiveFormsModule]
+      imports: [EmbeddingModelEditorDialogComponent, ReactiveFormsModule],
+      providers: [{ provide: GlobalsService, useValue: mockGlobalsService }]
     }).compileComponents();
 
     fixture = TestBed.createComponent(EmbeddingModelEditorDialogComponent);
     component = fixture.componentInstance;
-    fixture.detectChanges();
   });
 
   it('should create', () => {
@@ -246,5 +255,50 @@ describe('EmbeddingModelEditorDialogComponent', () => {
 
     const savedModel = saveSpy.mock.calls[0][0];
     expect(savedModel.apiKey).toBe('********');
+  });
+
+  it('onTest should call testEmbeddingModel and set testResult on success', () => {
+    component.model = null; fixture.detectChanges();
+    component.form.patchValue({ serverType: 'ollama', modelName: 'mxbai-embed-large', providerUrl: 'http://localhost:11434' });
+    mockGlobalsService.testEmbeddingModel.mockReturnValue(of({ success: true, message: 'ok', latencyMs: 17, response: null, dimensions: 1024 }));
+    component.onTest();
+    expect(mockGlobalsService.testEmbeddingModel).toHaveBeenCalled();
+    expect(component.testResult?.success).toBe(true);
+    expect(component.testResult?.dimensions).toBe(1024);
+    expect(component.testLoading).toBe(false);
+  });
+
+  it('onTest should set a failure result on error', () => {
+    component.model = null; fixture.detectChanges();
+    component.form.patchValue({ serverType: 'ollama', modelName: 'mxbai-embed-large', providerUrl: 'http://localhost:11434' });
+    mockGlobalsService.testEmbeddingModel.mockReturnValue(throwError(() => new Error('boom')));
+    component.onTest();
+    expect(component.testResult?.success).toBe(false);
+  });
+
+  it('onReadModels should populate availableModels', () => {
+    component.model = null; fixture.detectChanges();
+    component.form.patchValue({ serverType: 'ollama', modelName: '', providerUrl: 'http://localhost:11434' });
+    mockGlobalsService.listEmbeddingModels.mockReturnValue(of(['mxbai-embed-large', 'nomic-embed-text']));
+    component.onReadModels();
+    expect(component.availableModels).toEqual(['mxbai-embed-large', 'nomic-embed-text']);
+  });
+
+  it('onReadModels should set listError on error', () => {
+    component.model = null; fixture.detectChanges();
+    component.form.patchValue({ serverType: 'custom', modelName: '', providerUrl: 'http://localhost:11434' });
+    mockGlobalsService.listEmbeddingModels.mockReturnValue(throwError(() => new Error('not supported')));
+    component.onReadModels();
+    expect(component.listError).toBeTruthy();
+  });
+
+  it('should render datalist options for availableModels', () => {
+    // availableModels must be set before the FIRST detectChanges(): in this
+    // test environment a subsequent detectChanges() is a no-op, so the @for
+    // would never render the options.
+    component.model = null;
+    component.availableModels = ['mxbai-embed-large', 'nomic-embed-text'];
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('#embedding-model-names option').length).toBe(2);
   });
 });

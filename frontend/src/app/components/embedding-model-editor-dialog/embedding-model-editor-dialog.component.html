@@ -30,7 +30,10 @@
     <!-- Model Name -->
     <div class="form-group">
       <label class="form-label text-secondary">Model Name <span class="text-magenta">*</span></label>
-      <input type="text" formControlName="modelName" class="form-input" placeholder="e.g. mxbai-embed-large" />
+      <input type="text" formControlName="modelName" class="form-input" list="embedding-model-names" placeholder="e.g. mxbai-embed-large" />
+      <datalist id="embedding-model-names">
+        @for (m of availableModels; track m) { <option [value]="m"></option> }
+      </datalist>
       @if (form.get('modelName')?.invalid && form.get('modelName')?.touched) {
         <span class="form-error text-magenta">Model name is required</span>
       }
@@ -52,9 +55,23 @@
       }
     </div>
 
+    @if (testResult) {
+      <div class="form-group">
+        <div class="test-result" [class.test-success]="testResult.success" [class.test-error]="!testResult.success">
+          <span>{{ testResult.message }} ({{ testResult.latencyMs }}ms)</span>
+          @if (testResult.dimensions != null) { <div class="test-response">Vector dimensions: {{ testResult.dimensions }}</div> }
+        </div>
+      </div>
+    }
+    @if (listError) {
+      <div class="form-group"><div class="test-result test-error">{{ listError }}</div></div>
+    }
+
     <!-- Action Buttons -->
     <div class="form-actions">
       <button type="button" class="btn-cancel" (click)="onClose()">Cancel</button>
+      <button type="button" class="btn-test" (click)="onTest()" [disabled]="testLoading">{{ testLoading ? 'Testing…' : 'Test' }}</button>
+      <button type="button" class="btn-test" (click)="onReadModels()" [disabled]="listLoading">{{ listLoading ? 'Loading…' : 'Read Models' }}</button>
       <button type="submit" class="btn-save text-cyan">Save</button>
     </div>
   </form>

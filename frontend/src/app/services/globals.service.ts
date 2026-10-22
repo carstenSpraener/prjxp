@@ -3,6 +3,7 @@ import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { ChatModelReference } from '../models/chat-model-reference.model';
 import { EmbeddingModelReference } from '../models/embedding-model-reference.model';
+import { ModelTestResult } from '../models/model-test-result.model';
 import { API_BASE } from '../config/api-config';
 
 @Injectable({ providedIn: 'root' })
@@ -37,5 +38,21 @@ export class GlobalsService {
 
   updateEmbeddingModel(model: Partial<EmbeddingModelReference>): Observable<EmbeddingModelReference> {
     return this.http.put<EmbeddingModelReference>(`${this.baseUrl}/embedding-model`, model);
+  }
+
+  testChatModel(model: ChatModelReference): Observable<ModelTestResult> {
+    return this.http.post<ModelTestResult>(`${this.baseUrl}/chat-models/test`, model);
+  }
+
+  testEmbeddingModel(model: EmbeddingModelReference): Observable<ModelTestResult> {
+    return this.http.post<ModelTestResult>(`${this.baseUrl}/embedding-model/test`, model);
+  }
+
+  listChatModels(params: { serverType: string; providerUrl: string; apiKey: string; stereoType: string }): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/chat-models/models`, { params });
+  }
+
+  listEmbeddingModels(params: { serverType: string; providerUrl: string; apiKey: string }): Observable<string[]> {
+    return this.http.get<string[]>(`${this.baseUrl}/embedding-model/models`, { params });
   }
 }

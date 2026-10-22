@@ -128,4 +128,41 @@ describe('GlobalsService', () => {
     expect(req.request.body).toEqual(updateData);
     req.flush(updateData);
   });
+
+  it('testChatModel should POST to /chat-models/test', () => {
+    service.testChatModel({ stereoType: 'default', serverType: 'ollama', modelName: 'llama3', providerUrl: 'http://x' })
+      .subscribe(r => expect(r.success).toBe(true));
+
+    const req = httpMock.expectOne(`${baseUrl}/chat-models/test`);
+    expect(req.request.method).toBe('POST');
+    req.flush({ success: true, message: 'ok', latencyMs: 10, response: 'hi', dimensions: null });
+  });
+
+  it('testEmbeddingModel should POST to /embedding-model/test', () => {
+    service.testEmbeddingModel({ serverType: 'ollama', modelName: 'mxbai', providerUrl: 'http://x' })
+      .subscribe(r => expect(r.success).toBe(true));
+
+    const req = httpMock.expectOne(`${baseUrl}/embedding-model/test`);
+    expect(req.request.method).toBe('POST');
+    req.flush({ success: true, message: 'ok', latencyMs: 5, response: null, dimensions: 384 });
+  });
+
+  it('listChatModels should GET /chat-models/models with params', () => {
+    service.listChatModels({ serverType: 'ollama', providerUrl: 'http://x', apiKey: '', stereoType: 'default' })
+      .subscribe(m => expect(m).toEqual(['a', 'b']));
+
+    const req = httpMock.expectOne(r => r.url.startsWith(`${baseUrl}/chat-models/models`));
+    expect(req.request.method).toBe('GET');
+    expect(req.request.params.get('serverType')).toBe('ollama');
+    req.flush(['a', 'b']);
+  });
+
+  it('listEmbeddingModels should GET /embedding-model/models with params', () => {
+    service.listEmbeddingModels({ serverType: 'ollama', providerUrl: 'http://x', apiKey: '' })
+      .subscribe(m => expect(m).toEqual(['c']));
+
+    const req = httpMock.expectOne(r => r.url.startsWith(`${baseUrl}/embedding-model/models`));
+    expect(req.request.method).toBe('GET');
+    req.flush(['c']);
+  });
 });

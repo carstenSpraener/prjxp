@@ -2,7 +2,14 @@ import { TestBed } from '@angular/core/testing';
 import { ChatModelEditorDialogComponent } from './chat-model-editor-dialog.component';
 import { ReactiveFormsModule } from '@angular/forms';
 import { ChatModelReference } from '../../models/chat-model-reference.model';
+import { GlobalsService } from '../../services/globals.service';
+import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
+
+const mockGlobalsService = {
+  testChatModel: vi.fn(), testEmbeddingModel: vi.fn(),
+  listChatModels: vi.fn(), listEmbeddingModels: vi.fn()
+};
 
 describe('ChatModelEditorDialogComponent', () => {
   let component: ChatModelEditorDialogComponent;
@@ -18,8 +25,11 @@ describe('ChatModelEditorDialogComponent', () => {
   };
 
   beforeEach(async () => {
+    vi.clearAllMocks();
+
     await TestBed.configureTestingModule({
-      imports: [ChatModelEditorDialogComponent]
+      imports: [ChatModelEditorDialogComponent],
+      providers: [{ provide: GlobalsService, useValue: mockGlobalsService }]
     }).compileComponents();
 
     fixture = TestBed.createComponent(ChatModelEditorDialogComponent);
@@ -307,5 +317,50 @@ describe('ChatModelEditorDialogComponent', () => {
 
     const emitted = saveSpy.mock.calls[0][0];
     expect(emitted.prompt).toBeNull();
+  });
+
+  it('onTest should call testChatModel and set testResult on success', () => {
+    component.model = null; fixture.detectChanges();
+    component.form.patchValue({ stereoType: 'default', serverType: 'ollama', modelName: 'llama3', providerUrl: 'http://localhost:11434' });
+    mockGlobalsService.testChatModel.mockReturnValue(of({ success: true, message: 'ok', latencyMs: 42, response: 'Hello!', dimensions: null }));
+    component.onTest();
+    expect(mockGlobalsService.testChatModel).toHaveBeenCalled();
+    expect(component.testResult?.success).toBe(true);
+    expect(component.testResult?.response).toBe('Hello!');
+    expect(component.testLoading).toBe(false);
+  });
+
+  it('onTest should set a failure result on error', () => {
+    component.model = null; fixture.detectChanges();
+    component.form.patchValue({ stereoType: 'default', serverType: 'ollama', modelName: 'llama3', providerUrl: 'http://localhost:11434' });
+    mockGlobalsService.testChatModel.mockReturnValue(throwError(() => new Error('boom')));
+    component.onTest();
+    expect(component.testResult?.success).toBe(false);
+  });
+
+  it('onReadModels should populate availableModels', () => {
+    component.model = null; fixture.detectChanges();
+    component.form.patchValue({ stereoType: 'default', serverType: 'ollama', modelName: '', providerUrl: 'http://localhost:11434' });
+    mockGlobalsService.listChatModels.mockReturnValue(of(['llama3', 'gemma']));
+    component.onReadModels();
+    expect(component.availableModels).toEqual(['llama3', 'gemma']);
+  });
+
+  it('onReadModels should set listError on error', () => {
+    component.model = null; fixture.detectChanges();
+    component.form.patchValue({ stereoType: 'default', serverType: 'custom', modelName: '', providerUrl: 'http://localhost:11434' });
+    mockGlobalsService.listChatModels.mockReturnValue(throwError(() => new Error('not supported')));
+    component.onReadModels();
+    expect(component.listError).toBeTruthy();
+  });
+
+  it('should render datalist options for availableModels', () => {
+    // availableModels must be set before the FIRST detectChanges(): in this
+    // test environment a subsequent detectChanges() is a no-op, so the @for
+    // would never render the options.
+    component.model = null;
+    component.availableModels = ['llama3', 'gemma'];
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelectorAll('datalist option').length).toBe(2);
   });
 });

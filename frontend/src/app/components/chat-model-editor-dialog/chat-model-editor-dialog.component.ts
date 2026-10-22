@@ -2,6 +2,8 @@ import { Component, Input, Output, EventEmitter, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ReactiveFormsModule, FormBuilder, FormGroup, Validators, FormArray, AbstractControl, ValidationErrors, ValidatorFn } from '@angular/forms';
 import { ChatModelReference } from '../../models/chat-model-reference.model';
+import { ModelTestResult } from '../../models/model-test-result.model';
+import { GlobalsService } from '../../services/globals.service';
 
 const ENV_PLACEHOLDER_PATTERN = /^\$\{[A-Za-z0-9_.-]+(?::[^}]*)?}$/;
 const URL_PATTERN = /^https?:\/\/.+/;
@@ -35,6 +37,12 @@ export class ChatModelEditorDialogComponent implements OnInit {
   form!: FormGroup;
   isEditing = false;
 
+  testResult: ModelTestResult | null = null;
+  testLoading = false;
+  listLoading = false;
+  listError: string | null = null;
+  availableModels: string[] = [];
+
   serverTypeOptions = [
     { value: 'ollama', label: 'Ollama' },
     { value: 'openapi', label: 'OpenAI' },
@@ -43,7 +51,7 @@ export class ChatModelEditorDialogComponent implements OnInit {
     { value: 'custom', label: 'Custom' }
   ];
 
-  constructor(private fb: FormBuilder) {}
+  constructor(private fb: FormBuilder, private globalsService: GlobalsService) {}
 
   ngOnInit(): void {
     this.isEditing = this.model !== null && this.model?.stereoType !== undefined;
@@ -131,6 +139,36 @@ export class ChatModelEditorDialogComponent implements OnInit {
     };
 
     this.save.emit(result);
+  }
+
+  onTest(): void {
+    if (this.form.invalid) { this.form.markAllAsTouched(); return; }
+    const v = this.form.value;
+    this.testLoading = true; this.testResult = null;
+    const model: ChatModelReference = {
+      stereoType: v.stereoType, serverType: v.serverType, modelName: v.modelName,
+      apiKey: v.apiKey || null, providerUrl: v.providerUrl,
+      timeoutSecs: v.timeoutSecs, temperature: v.temperature
+    };
+    this.globalsService.testChatModel(model).subscribe({
+      next: (r) => { this.testResult = r; this.testLoading = false; },
+      error: (e) => {
+        this.testResult = { success: false, message: e?.error?.message ?? e?.message ?? 'Test failed', latencyMs: 0, response: null, dimensions: null };
+        this.testLoading = false;
+      }
+    });
+  }
+
+  onReadModels(): void {
+    const v = this.form.value;
+    this.listLoading = true; this.listError = null;
+    this.globalsService.listChatModels({
+      serverType: v.serverType, providerUrl: v.providerUrl,
+      apiKey: v.apiKey || '', stereoType: v.stereoType
+    }).subscribe({
+      next: (models) => { this.availableModels = models; this.listLoading = false; },
+      error: (e) => { this.listError = e?.error?.message ?? e?.message ?? 'Failed to load models'; this.listLoading = false; }
+    });
   }
 
   onClose(): void {
