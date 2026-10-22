@@ -27,7 +27,8 @@ class EmbeddedChunkRecordTest {
                 Map.of("author", "spraener"),
                 "# Hello\nWorld",
                 new float[]{0.5f, -0.25f, 1.0f},
-                "pkg Foo"
+                "pkg Foo",
+                "test-project"
         );
     }
 
@@ -42,7 +43,7 @@ class EmbeddedChunkRecordTest {
         assertThat(fieldNames).containsExactly(
                 "id", "mimeType", "file", "parent", "part", "total",
                 "fromLine", "toLine", "size", "overlap", "metadata",
-                "content", "vector", "embeddingPrefix"
+                "content", "vector", "embeddingPrefix", "project"
         );
         assertThat(node.get("id").asText()).isEqualTo("chunk-1");
         assertThat(node.get("mimeType").asText()).isEqualTo("text/markdown");
@@ -62,12 +63,13 @@ class EmbeddedChunkRecordTest {
         assertThat(node.get("vector").get(1).floatValue()).isEqualTo(-0.25f);
         assertThat(node.get("vector").get(2).floatValue()).isEqualTo(1.0f);
         assertThat(node.get("embeddingPrefix").asText()).isEqualTo("pkg Foo");
+        assertThat(node.get("project").asText()).isEqualTo("test-project");
     }
 
     @Test
     void serialize_withNullOptionalFields_writesJsonNulls() throws Exception {
         EmbeddedChunkRecord record = new EmbeddedChunkRecord(
-                "chunk-2", null, "f.java", null, 1, 1, null, null, 10, 0, Map.of(), "code", new float[]{0.1f}, null
+                "chunk-2", null, "f.java", null, 1, 1, null, null, 10, 0, Map.of(), "code", new float[]{0.1f}, null, null
         );
 
         JsonNode node = objMapper.readTree(objMapper.writeValueAsString(record));
@@ -90,7 +92,7 @@ class EmbeddedChunkRecordTest {
     @Test
     void roundTrip_withNullOptionalFields_preservesNulls() throws Exception {
         EmbeddedChunkRecord original = new EmbeddedChunkRecord(
-                "chunk-3", null, "f.java", null, 1, 1, null, null, 10, 0, Map.of(), "code", new float[]{0.25f}, null
+                "chunk-3", null, "f.java", null, 1, 1, null, null, 10, 0, Map.of(), "code", new float[]{0.25f}, null, null
         );
 
         EmbeddedChunkRecord copy = objMapper.readValue(objMapper.writeValueAsString(original), EmbeddedChunkRecord.class);
@@ -162,5 +164,21 @@ class EmbeddedChunkRecordTest {
         EmbeddedChunkRecord copy = EmbeddedChunkRecord.from(original.toPxChunk(), original.vector());
 
         assertThat(copy).isEqualTo(original);
+    }
+
+    @Test
+    void projectSurvivesFromAndToPxChunkRoundTrip() {
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("id-proj");
+            c.setFile("docs/readme.md");
+            c.setProject("TheWall");
+            c.setContent("content");
+        });
+
+        EmbeddedChunkRecord record = EmbeddedChunkRecord.from(chunk, new float[]{0.5f});
+        assertThat(record.project()).isEqualTo("TheWall");
+
+        PxChunk restored = record.toPxChunk();
+        assertThat(restored.getProject()).isEqualTo("TheWall");
     }
 }

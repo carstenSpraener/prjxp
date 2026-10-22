@@ -127,6 +127,6 @@ class EmbeddingCompatibilityCheckerTest {
 
     private EmbeddedChunkRecord createRecord(String id, String content, float[] vector) {
         return new EmbeddedChunkRecord(id, "text/plain", "/test.java", null, 0, 1,
-                "1", "10", content.length(), 0, Map.of(), content, vector, null);
+                "1", "10", content.length(), 0, Map.of(), content, vector, null, null);
     }
 }

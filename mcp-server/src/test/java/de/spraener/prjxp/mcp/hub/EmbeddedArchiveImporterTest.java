@@ -284,7 +284,7 @@ class EmbeddedArchiveImporterTest {
         EmbeddedChunkRecord rec = new EmbeddedChunkRecord(
                 "c1", "text/plain", "/test.java", null, 0, 1,
                 "1", "10", 50, 0, Map.of(), "class Test {}",
-                new float[]{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f}, null);
+                new float[]{1.0f, 2.0f, 3.0f, 4.0f, 5.0f, 6.0f, 7.0f, 8.0f}, null, null);
         return objMapper.writeValueAsString(rec);
     }
 

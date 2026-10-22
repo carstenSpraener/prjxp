@@ -19,7 +19,8 @@ public record EmbeddedChunkRecord(
         Map<String, String> metadata,
         String content,
         float[] vector,
-        String embeddingPrefix
+        String embeddingPrefix,
+        String project
 ) {
     public EmbeddedChunkRecord {
         metadata = metadata == null ? new HashMap<>() : new HashMap<>(metadata);
@@ -40,7 +41,8 @@ public record EmbeddedChunkRecord(
                 new HashMap<>(chunk.getMetadata()),
                 chunk.getContent(),
                 vector,
-                chunk.getEmbeddingPrefix()
+                chunk.getEmbeddingPrefix(),
+                chunk.getProject()
         );
     }
 
@@ -60,6 +62,9 @@ public record EmbeddedChunkRecord(
             c.setContent(content);
             if (embeddingPrefix != null) {
                 c.setEmbeddingPrefix(embeddingPrefix);
+            }
+            if (project != null) {
+                c.setProject(project);
             }
         });
     }
@@ -81,11 +86,12 @@ public record EmbeddedChunkRecord(
                 && Objects.equals(metadata, other.metadata)
                 && Objects.equals(content, other.content)
                 && Objects.equals(embeddingPrefix, other.embeddingPrefix)
+                && Objects.equals(project, other.project)
                 && Arrays.equals(vector, other.vector);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, mimeType, file, parent, part, total, fromLine, toLine, size, overlap, metadata, content, Arrays.hashCode(vector), embeddingPrefix);
+        return Objects.hash(id, mimeType, file, parent, part, total, fromLine, toLine, size, overlap, metadata, content, Arrays.hashCode(vector), embeddingPrefix, project);
     }
 }
