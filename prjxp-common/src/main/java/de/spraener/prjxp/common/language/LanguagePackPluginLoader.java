@@ -143,6 +143,7 @@ public final class LanguagePackPluginLoader implements AutoCloseable {
             pack.mimeType();
             pack.retriever();
             pack.listPostWalkChunkers().toList();
+            pack.fileViewProvider();
         } catch (Throwable t) {
             log.error("Rejecting plugin {} ({}): contract validation failed ({})",
                     jar.getName(), pack.getClass().getName(), t.toString());

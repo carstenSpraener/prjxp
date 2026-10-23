@@ -1,6 +1,7 @@
 package de.spraener.prjxp.common.language;
 
 import de.spraener.prjxp.common.model.PxChunker;
+import de.spraener.prjxp.common.reader.FileViewProvider;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 
@@ -37,6 +38,20 @@ public interface LanguagePack {
 
     /** Retriever side: this pack's retriever, or empty if not provided. */
     default Optional<GoldenRetriever> retriever() {
+        return Optional.empty();
+    }
+
+    /**
+     * Reader side: this pack's {@link FileViewProvider} for lossless {@code readFile}
+     * rendering, or empty if not provided (the host falls back to the generic reader).
+     *
+     * <p>Built-in packs are Spring-managed and register their providers as plain
+     * {@code FileViewProvider} beans, so they use the default no-op. External (plugin)
+     * packs — which are instantiated no-arg inside an isolating class loader and cannot
+     * be Spring beans — override this to expose their provider to the host's
+     * {@code FileViewRegistry}.
+     */
+    default Optional<FileViewProvider> fileViewProvider() {
         return Optional.empty();
     }
 
