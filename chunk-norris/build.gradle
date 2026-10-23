@@ -53,11 +53,29 @@ tasks.register('stageLpCsharpPlugin', Copy) {
     into lpCsharpStageDir
 }
 
+// ---------------------------------------------------------------------------
+// GDScript Language Pack E2E (Phase 04): stage the lp-gdscript plugin fat JAR
+// (built by the root-level :buildLpGdscriptPlugin task) so the host tests can
+// load it via prjxp.language-packs.dir.
+// ---------------------------------------------------------------------------
+def lpGdscriptJar = new File(rootProject.projectDir, 'lp-gdscript/build/libs/lp-gdscript-plugin.jar')
+def lpGdscriptStageDir = layout.buildDirectory.dir('language-packs')
+
+tasks.register('stageLpGdscriptPlugin', Copy) {
+    dependsOn ':buildLpGdscriptPlugin'
+    from lpGdscriptJar
+    into lpGdscriptStageDir
+}
+
 test {
     // WP-2 Phase 04: the C# E2E test loads the staged lp-csharp plugin JAR
     // (the property is only consumed by that test, via @DynamicPropertySource).
     dependsOn 'stageLpCsharpPlugin'
     systemProperty 'prjxp.csharp.e2e.pluginDir', lpCsharpStageDir.get().asFile.absolutePath
+    // Phase 04: the GDScript E2E test loads the staged lp-gdscript plugin JAR
+    // (the property is only consumed by that test, via @DynamicPropertySource).
+    dependsOn 'stageLpGdscriptPlugin'
+    systemProperty 'prjxp.gdscript.e2e.pluginDir', lpGdscriptStageDir.get().asFile.absolutePath
 }
 
 jar {

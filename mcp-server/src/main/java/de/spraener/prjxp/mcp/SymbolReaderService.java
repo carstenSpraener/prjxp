@@ -33,7 +33,8 @@ public class SymbolReaderService {
     private static final int MAX_FULL_MATCHES = 10;
     /** Section-marker metadata keys, one per supported language; the first present key wins. */
     private static final List<String> SECTION_KEYS = List.of(
-            "java_code_section", "csharp_code_section", "typescript_code_section", "visualbasic_code_section");
+            "java_code_section", "csharp_code_section", "typescript_code_section",
+            "visualbasic_code_section", "gdscript_code_section");
     /** Doc-id suffixes per language (Java {@code .javadoc}, C# {@code .doc}). */
     private static final List<String> DOC_SUFFIXES = List.of(".javadoc", ".doc");
 
@@ -77,9 +78,9 @@ public class SymbolReaderService {
         List<PxChunk> classUnits = new ArrayList<>();
         for (PxChunk u : units) {
             String section = sectionOf(u);
-            if ("method".equals(section)) methodUnits.add(u);
-            else if ("methodDoc".equals(section)) docByMethodId.put(u.getId(), u);
-            else if ("classFrame".equals(section) || "typeFrame".equals(section)) classUnits.add(u);
+            if ("method".equals(section) || "func".equals(section)) methodUnits.add(u);
+            else if ("methodDoc".equals(section) || "funcDoc".equals(section)) docByMethodId.put(u.getId(), u);
+            else if ("classFrame".equals(section) || "typeFrame".equals(section) || "header".equals(section)) classUnits.add(u);
             // imports / usings / unknown: never rendered
         }
 
