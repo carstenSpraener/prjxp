@@ -1,8 +1,8 @@
 package de.spraener.prjxp.lpcsharp;
 
+import de.spraener.prjxp.lpcsharp.grammar.CSharpBaseVisitor;
 import de.spraener.prjxp.lpcsharp.grammar.CSharpLexer;
 import de.spraener.prjxp.lpcsharp.grammar.CSharpParser;
-import de.spraener.prjxp.lpcsharp.grammar.CSharpParserBaseVisitor;
 import org.antlr.v4.runtime.BaseErrorListener;
 import org.antlr.v4.runtime.CharStreams;
 import org.antlr.v4.runtime.CommonTokenStream;
@@ -10,7 +10,6 @@ import org.antlr.v4.runtime.RecognitionException;
 import org.antlr.v4.runtime.Recognizer;
 import org.antlr.v4.runtime.Token;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -21,12 +20,16 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * WP-2 Phase 01: smoke tests for the ANTLR-generated C# parser.
+ * C# grammar upgrade Phase 02: parser tests for the Roslyn-derived grammar
+ * (generated from {@code CSharp.g4}).
  *
- * <p>These verify that the parser (generated from the MIT-licensed
- * antlr/grammars-v4 csharp/v7 grammar) can handle the basic C# constructs the
- * chunker will need: a valid file, namespaces, classes, methods, and that it
- * reports syntax errors. No chunking happens here (that is Phase 02).
+ * <p>Re-enabled and adapted from the v7 test (git commit d42f171): the context
+ * types changed from the v7 grammar ({@code Class_definitionContext},
+ * {@code method_member_name}, ...) to the Roslyn rule names
+ * ({@code Class_declarationContext}, {@code IDENTIFIER_TOKEN}, ...). These
+ * verify the parser extracts namespaces, classes, records, and methods, and
+ * reports syntax errors. No chunking happens here (that is
+ * {@link CSharpCodeChunkerTest}).
  */
 class CSharpParserTest {
 
@@ -54,7 +57,7 @@ class CSharpParserTest {
     }
 
     /** Collects the top-level structure (namespaces, classes, records, methods) of a parse tree. */
-    static class Structure extends CSharpParserBaseVisitor<Void> {
+    static class Structure extends CSharpBaseVisitor<Void> {
         final List<String> namespaces = new ArrayList<>();
         final List<String> classes = new ArrayList<>();
         final List<String> records = new ArrayList<>();
@@ -62,25 +65,25 @@ class CSharpParserTest {
 
         @Override
         public Void visitNamespace_declaration(CSharpParser.Namespace_declarationContext ctx) {
-            namespaces.add(ctx.qualified_identifier().getText());
+            namespaces.add(ctx.name().getText());
             return super.visitNamespace_declaration(ctx);
         }
 
         @Override
-        public Void visitClass_definition(CSharpParser.Class_definitionContext ctx) {
-            classes.add(ctx.identifier().getText());
-            return super.visitClass_definition(ctx);
+        public Void visitClass_declaration(CSharpParser.Class_declarationContext ctx) {
+            classes.add(ctx.IDENTIFIER_TOKEN().getText());
+            return super.visitClass_declaration(ctx);
         }
 
         @Override
-        public Void visitRecord_definition(CSharpParser.Record_definitionContext ctx) {
-            records.add(ctx.identifier().getText());
-            return super.visitRecord_definition(ctx);
+        public Void visitRecord_declaration(CSharpParser.Record_declarationContext ctx) {
+            records.add(ctx.IDENTIFIER_TOKEN().getText());
+            return super.visitRecord_declaration(ctx);
         }
 
         @Override
         public Void visitMethod_declaration(CSharpParser.Method_declarationContext ctx) {
-            methods.add(ctx.method_member_name().getText());
+            methods.add(ctx.IDENTIFIER_TOKEN().getText());
             return super.visitMethod_declaration(ctx);
         }
     }
@@ -139,7 +142,7 @@ class CSharpParserTest {
         assertThat(result.errors()).isNotEmpty();
     }
 
-    /** Validates the local record extension (C# 9+) added on top of the v7 grammar. */
+    /** A positional record (C# 9+) must parse and be recognized as a record. */
     @Test
     void parsesRecord() throws IOException {
         ParseResult result = parseFixture("Record.cs");

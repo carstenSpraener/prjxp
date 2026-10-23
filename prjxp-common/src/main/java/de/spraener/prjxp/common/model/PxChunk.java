@@ -72,7 +72,9 @@ public class PxChunk {
         ifNotNull(chunk.embeddingPrefix, ()->map.put(PXCHUNK_EMBEDDING_PREFIX, chunk.embeddingPrefix));
         ifNotNull(chunk.project, () -> map.put(PXCHUNK_PROJECT, chunk.project));
         for (var e : chunk.getMetadata().entrySet()) {
-            map.put(PXCHUNK_METADATA + "." + e.getKey(), e.getValue());
+            if (e.getValue() != null) {
+                map.put(PXCHUNK_METADATA + "." + e.getKey(), e.getValue());
+            }
         }
         return map;
     }

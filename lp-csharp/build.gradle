@@ -3,7 +3,7 @@
  *
  * Standalone build: consumes prjxp-common from the local Maven repository and
  * bundles a C# parser generated from the MIT-licensed ANTLR grammar
- * (antlr/grammars-v4, csharp/v7). See README.md for the license and the
+ * (dotnet/roslyn, CSharp.Generated.g4). See README.md for the license and the
  * generation steps.
  */
 plugins {
@@ -63,13 +63,11 @@ dependencies {
 // ---------------------------------------------------------------------------
 // ANTLR grammar generation
 //
-// The C# grammar is a SEPARATED lexer + parser pair (CSharpLexer.g4 /
-// CSharpParser.g4) where the parser references the lexer via `tokenVocab` and
-// uses string literals that must resolve against the lexer's token vocabulary.
-// The built-in `antlr` plugin generates each .g4 in an isolated ANTLR
-// invocation, which breaks that resolution. So we run the ANTLR tool once on
-// BOTH files, with -lib pointing at the grammar directory so the parser can
-// find CSharpLexer.g4 while it is being generated.
+// The C# grammar is a single COMBINED grammar (CSharp.g4, derived from the
+// Roslyn compiler grammar): one ANTLR invocation generates both the lexer and
+// the parser. String literals in parser rules resolve against the grammar's
+// own lexer rules (contextual keywords such as `record` or `union` resolve to
+// identifier_token).
 // ---------------------------------------------------------------------------
 def antlrPackage = 'de.spraener.prjxp.lpcsharp.grammar'
 def antlrSourceDir = file("src/main/antlr/${antlrPackage.replace('.', '/')}")
@@ -77,18 +75,22 @@ def antlrOutputDir = file("build/generated-src/antlr/main")
 
 tasks.register('generateCSharpGrammar', JavaExec) {
     group = 'generation'
-    description = 'Generates the C# lexer and parser from the ANTLR grammar.'
+    description = 'Generates the C# lexer and parser from the Roslyn ANTLR grammar.'
     classpath = configurations.antlrTool
     mainClass = 'org.antlr.v4.Tool'
     inputs.dir antlrSourceDir
     outputs.dir antlrOutputDir
+    // Delete the output dir before generating so stale files from a previous
+    // grammar (e.g. the old separated CSharpParser.g4) cannot linger and break
+    // compilation with dangling references to removed context classes.
+    doFirst {
+        delete antlrOutputDir
+    }
     args = [
             '-o', antlrOutputDir.absolutePath,
             '-package', antlrPackage,
             '-visitor',
-            '-lib', antlrSourceDir.absolutePath,
-            "${antlrSourceDir}/CSharpLexer.g4",
-            "${antlrSourceDir}/CSharpParser.g4",
+            "${antlrSourceDir}/CSharp.g4",
     ]
 }
 

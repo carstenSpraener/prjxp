@@ -3,14 +3,23 @@ package de.spraener.prjxp.lpcsharp;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SymbolMetadata;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+/**
+ * C# grammar upgrade Phase 02: chunker tests against the Roslyn-derived parse
+ * tree. The 17 C# 7 fixtures must identify the same symbols as the v7 chunker
+ * (same sections, same FQNs); chunk line boundaries may shift.
+ */
 class CSharpCodeChunkerTest {
 
     private final CSharpCodeChunker chunker = new CSharpCodeChunker();
@@ -19,6 +28,16 @@ class CSharpCodeChunkerTest {
         File f = new File("src/test/resources/fixtures/" + name);
         assertThat(f).exists();
         return chunker.chunk(f).collect(Collectors.toList());
+    }
+
+    @TempDir
+    Path tempDir;
+
+    /** Writes {@code content} to a new {@code .cs} file in the temp dir and returns its path. */
+    private Path tempFile(String name, String content) throws IOException {
+        Path f = tempDir.resolve(name);
+        Files.writeString(f, content);
+        return f;
     }
 
     private static List<PxChunk> sections(List<PxChunk> chunks, CSharpCodeSection section) {
@@ -325,6 +344,101 @@ class CSharpCodeChunkerTest {
         assertThat(byId).containsKey("Acme.CrlfClass.Get()");
         assertThat(byId.get("Acme.CrlfClass.Value").getContent()).doesNotContain("\r");
         assertThat(byId.get("Acme.CrlfClass.Get()").getContent()).doesNotContain("\r");
+    }
+
+    // ------------------------------------------------------------------
+    // C# 8-14 modern syntax (must chunk without crashing)
+    // ------------------------------------------------------------------
+
+    @Test
+    void fileScopedNamespace_producesChunksWithDottedFqn() {
+        List<PxChunk> chunks = chunkFixture("FileScopedNamespace.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.Modern.Widget");
+        assertThat(byId.get("Acme.Modern.Widget").getParent()).isNull();
+        assertThat(byId).containsKey("Acme.Modern.Widget.Value");
+        assertThat(byId.get("Acme.Modern.Widget.Value").getParent()).isEqualTo("Acme.Modern.Widget");
+        assertThat(byId).containsKey("Acme.Modern.Widget.usings");
+    }
+
+    @Test
+    void union_producesTypeFrameAndFieldChunks() {
+        List<PxChunk> chunks = chunkFixture("Union.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.Shape");
+        assertThat(byId.get("Acme.Shape").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.TYPE_FRAME.getName());
+        assertThat(byId).containsKey("Acme.Shape.I");
+        assertThat(byId).containsKey("Acme.Shape.S");
+        assertThat(byId.get("Acme.Shape.I").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.FIELD.getName());
+    }
+
+    @Test
+    void delegate_producesTypeFrameAndDoc() {
+        List<PxChunk> chunks = chunkFixture("Delegate.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.Calculator");
+        assertThat(byId.get("Acme.Calculator").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.TYPE_FRAME.getName());
+        assertThat(byId).containsKey("Acme.Calculator.doc");
+        assertThat(byId.get("Acme.Calculator.doc").getContent()).contains("A delegate that adds.");
+    }
+
+    @Test
+    void eventWithAccessors_producesEventChunk() {
+        List<PxChunk> chunks = chunkFixture("EventAccessors.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.Publisher");
+        assertThat(byId).containsKey("Acme.Publisher.Changed");
+        assertThat(byId.get("Acme.Publisher.Changed").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.EVENT.getName());
+        assertThat(byId.get("Acme.Publisher.Changed").getParent()).isEqualTo("Acme.Publisher");
+    }
+
+    @Test
+    void recordWithBody_producesTypeFrameAndMethodChunks() {
+        List<PxChunk> chunks = chunkFixture("RecordWithBody.cs");
+        Map<String, PxChunk> byId = byId(chunks);
+
+        assertThat(byId).containsKey("Acme.Point");
+        assertThat(byId.get("Acme.Point").getMetadata().get(CSharpCodeSection.METADATA_KEY))
+                .isEqualTo(CSharpCodeSection.TYPE_FRAME.getName());
+        assertThat(byId).containsKey("Acme.Point.Sum()");
+        assertThat(byId.get("Acme.Point.Sum()").getParent()).isEqualTo("Acme.Point");
+    }
+
+    // ------------------------------------------------------------------
+    // Edge cases / fallback
+    // ------------------------------------------------------------------
+
+    @Test
+    void blankFile_producesNoChunks() throws IOException {
+        Path f = tempFile("Blank.cs", "");
+        assertThat(chunker.chunk(f.toFile())).isEmpty();
+    }
+
+    @Test
+    void unreadableFile_producesNoChunks() {
+        // A path that does not exist: Files.readString throws (an IOException),
+        // so the chunker must fall back to an empty stream rather than crash.
+        Path f = tempDir.resolve("DoesNotExist.cs");
+        assertThat(chunker.chunk(f.toFile())).isEmpty();
+    }
+
+    @Test
+    void usingsOnlyFile_usesFileNameForUsingsId() throws IOException {
+        Path f = tempFile("OrphanUsings.cs", "using System;\nusing System.IO;\n");
+        List<PxChunk> chunks = chunker.chunk(f.toFile()).collect(Collectors.toList());
+
+        List<PxChunk> usings = sections(chunks, CSharpCodeSection.USINGS);
+        assertThat(usings).hasSize(1);
+        assertThat(usings.get(0).getId()).isEqualTo("OrphanUsings.cs.usings");
+        assertThat(usings.get(0).getContent()).contains("using System;");
     }
 
     // ------------------------------------------------------------------
