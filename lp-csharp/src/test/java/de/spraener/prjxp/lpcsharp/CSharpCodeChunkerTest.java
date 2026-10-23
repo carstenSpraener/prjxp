@@ -187,11 +187,25 @@ class CSharpCodeChunkerTest {
     // ------------------------------------------------------------------
 
     @Test
-    void syntaxError_fallsBackToRawFile() {
+    void syntaxError_emitsBestEffortSemanticChunks() {
         List<PxChunk> chunks = chunkFixture("SyntaxError.cs");
 
-        assertThat(sections(chunks, CSharpCodeSection.RAW_FILE)).isNotEmpty();
-        assertThat(sections(chunks, CSharpCodeSection.TYPE_FRAME)).isEmpty();
+        // The recovered tree still yields the top-level type, so we get a
+        // best-effort semantic cut rather than a raw fallback.
+        assertThat(sections(chunks, CSharpCodeSection.TYPE_FRAME)).isNotEmpty();
+        assertThat(sections(chunks, CSharpCodeSection.RAW_FILE)).isEmpty();
+    }
+
+    @Test
+    void contextualKeywordAsIdentifier_stillGetsSemanticCuts() throws IOException {
+        // `get` is a contextual keyword; used as an identifier it used to break the
+        // parse and (with the old all-or-nothing fallback) lose the whole file.
+        Path f = tempFile("CtxKeyword.cs",
+                "class C {\n    void M() {\n        var get = 1;\n    }\n}\n");
+        List<PxChunk> chunks = chunker.chunk(f.toFile()).collect(Collectors.toList());
+
+        assertThat(byId(chunks)).containsKey("C");
+        assertThat(sections(chunks, CSharpCodeSection.RAW_FILE)).isEmpty();
     }
 
     // ------------------------------------------------------------------

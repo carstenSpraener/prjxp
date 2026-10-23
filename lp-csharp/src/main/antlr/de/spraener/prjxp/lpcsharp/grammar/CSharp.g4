@@ -422,7 +422,7 @@ array_type
   ;
 
 array_rank_specifier
-  : '[' (expression (',' expression)*)? ']'
+  : '[' (expression? (',' expression?)* )? ']'
   ;
 
 function_pointer_type
@@ -782,7 +782,6 @@ expression
   | declaration_expression
   | default_expression
   | element_binding_expression
-  | field_expression
   | implicit_array_creation_expression
   | implicit_element_access
   | implicit_stack_alloc_array_creation_expression
@@ -926,9 +925,12 @@ element_binding_expression
   : bracketed_argument_list
   ;
 
-field_expression
-  : 'field'
-  ;
+// NOTE: no field_expression rule. The C# 11 `field` keyword (readonly struct
+// constructors) is a contextual keyword: in a combined grammar the 'field'
+// literal would resolve to an implicit lexer token that shadows IDENTIFIER_TOKEN,
+// so `field` could no longer be used as an identifier (e.g. `var field = …`).
+// We drop the dedicated rule — `field` lexes as IDENTIFIER_TOKEN and the keyword
+// usage parses as a plain identifier expression. Good enough for chunking.
 
 implicit_array_creation_expression
   : 'new' '[' ','* ']' initializer_expression

@@ -38,8 +38,10 @@ import java.util.stream.Stream;
  *
  * <p>Chunk text is extracted by line range from the source (CRLF-safe), so
  * {@code #} preprocessor lines and doc comments flow into chunk text 1:1
- * wherever they lie inside a chunk's range. On any parse error or exception
- * the whole file is emitted as {@code rawFile} chunks instead (no semantics).
+ * wherever they lie inside a chunk's range. On parse errors the recovered tree
+ * is still walked for best-effort semantic cuts (ANTLR error recovery keeps the
+ * top-level structure intact); the whole file is emitted as {@code rawFile}
+ * chunks only when the walk yields nothing or an exception is thrown.
  *
  * <p>Not thread-safe: one file per {@link #chunk(File)} invocation.
  */
@@ -101,12 +103,21 @@ public class CSharpCodeChunker implements PxChunker {
             ErrorCountingListener listener = new ErrorCountingListener();
             parser.addErrorListener(listener);
             CSharpParser.Compilation_unitContext tree = parser.compilation_unit();
+            // Best-effort: even with parse errors (e.g. a contextual keyword such
+            // as `field`/`get` used as an identifier), walk the recovered tree for
+            // semantic cuts. ANTLR's error recovery keeps the top-level structure
+            // (types, methods) intact, so we still get good cuts. We only fall back
+            // to raw when the walk yields nothing (or throws, handled below).
+            List<PxChunk> chunks = walkCompilationUnit(tree);
             if (listener.errorCount > 0) {
-                log.warning("Parse errors while chunking " + absPath + " (" + listener.errorCount
-                        + "); falling back to raw file chunks.");
+                log.warning("Parse errors while chunking " + absPath + " (" + listener.errorCount + "); "
+                        + (chunks.isEmpty() ? "falling back to raw file chunks."
+                                            : "emitting best-effort semantic chunks."));
+            }
+            if (chunks.isEmpty()) {
                 return rawFallback(text);
             }
-            return walkCompilationUnit(tree);
+            return chunks.stream();
         } catch (Exception e) {
             log.warning("Exception while chunking " + absPath + ": " + e.getMessage());
             return rawFallback(text);
@@ -117,7 +128,7 @@ public class CSharpCodeChunker implements PxChunker {
     // Tree walk
     // ------------------------------------------------------------------
 
-    private Stream<PxChunk> walkCompilationUnit(CSharpParser.Compilation_unitContext tree) {
+    private List<PxChunk> walkCompilationUnit(CSharpParser.Compilation_unitContext tree) {
         List<PxChunk> chunks = new ArrayList<>();
         for (CSharpParser.Member_declarationContext m : tree.member_declaration()) {
             walkMember(m, chunks);
@@ -126,7 +137,7 @@ public class CSharpCodeChunker implements PxChunker {
         if (!usings.isEmpty()) {
             chunks.addAll(0, createUsingsChunks(usings));
         }
-        return chunks.stream();
+        return chunks;
     }
 
     /**
