@@ -19,6 +19,12 @@ public class HubProperties {
     private String liveJsonlDir = "/data/chunks";
     /** Poller interval in milliseconds (default 5000). */
     private long pollIntervalMs = 5_000;
+    /** Master switch for live updates (default true). */
+    private boolean liveUpdateEnabled = true;
+    /** Base interval for adaptive polling (default 5 min). */
+    private long liveUpdateBaseIntervalMs = 300_000;
+    /** Max interval for adaptive polling (default 60 min). */
+    private long liveUpdateMaxIntervalMs = 3_600_000;
     /** Max tar file size in bytes (default 2 GiB). */
     private long maxTarBytes = 2L * 1024 * 1024 * 1024;
     /** Max total extracted size in bytes (default 4 GiB, compression-bomb guard). */

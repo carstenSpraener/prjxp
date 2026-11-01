@@ -28,6 +28,22 @@ public class ProjectEntry {
     @Getter(lombok.AccessLevel.NONE)
     private volatile int embeddingPhase = 1;
 
+    /** Next scheduled live-update scan (epoch millis; 0 = not yet scheduled). */
+    @Getter(lombok.AccessLevel.NONE)
+    private volatile long nextScanAt;
+
+    /** Adaptive polling interval for live updates (base → cap). */
+    @Getter(lombok.AccessLevel.NONE)
+    private volatile long currentIntervalMs;
+
+    /** Set on live-update completion, consumed by the scheduler. */
+    @Getter(lombok.AccessLevel.NONE)
+    private volatile boolean rescanRequested;
+
+    /** A live update is queued/running. */
+    @Getter(lombok.AccessLevel.NONE)
+    private volatile boolean embeddingInFlight;
+
     public ProjectEntry(String name, Path rootDir, Kind kind, ProjectDefinition definition, PrjXPEmbeddingStoreReference storeRef) {
         this.name = name;
         this.rootDir = rootDir;
@@ -51,4 +67,13 @@ public class ProjectEntry {
 
     public int getEmbeddingPhase() { return embeddingPhase; }
     public synchronized void setEmbeddingPhase(int phase) { this.embeddingPhase = Math.max(1, phase); }
+
+    public long getNextScanAt() { return nextScanAt; }
+    public void setNextScanAt(long t) { this.nextScanAt = t; }
+    public long getCurrentIntervalMs() { return currentIntervalMs; }
+    public void setCurrentIntervalMs(long ms) { this.currentIntervalMs = ms; }
+    public boolean isRescanRequested() { return rescanRequested; }
+    public void setRescanRequested(boolean b) { this.rescanRequested = b; }
+    public boolean isEmbeddingInFlight() { return embeddingInFlight; }
+    public void setEmbeddingInFlight(boolean b) { this.embeddingInFlight = b; }
 }

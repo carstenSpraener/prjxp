@@ -40,6 +40,8 @@ public class ProjectDefinition {
     /** Optional path to a JSONL file containing pre-computed embeddings (EmbeddedChunkRecord format).
      * When set, the pipeline skips chunking and imports these embeddings directly. Relative paths are resolved against rootDir. */
     private String embeddingsFile;
+    /** Per-project opt-out for live updates (prjxp.yaml {@code liveUpdate: false}). Default true. */
+    private boolean liveUpdate = true;
 
     /** embeddingsFile resolved against rootDir (absolute paths pass through; null/blank -> null). */
     public String resolvedEmbeddingsFile() {

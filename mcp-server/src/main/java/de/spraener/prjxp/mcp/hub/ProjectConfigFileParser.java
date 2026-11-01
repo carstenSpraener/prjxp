@@ -60,6 +60,7 @@ public class ProjectConfigFileParser {
             def.setTibedBatchSize(intOf(map.get("tibedBatchSize"), 32));
             def.setFulltext(boolOf(map.get("fulltext"), false));
             def.setEmbeddingsFile(stringOf(map.get("embeddingsFile"), null));
+            def.setLiveUpdate(boolOf(map.get("liveUpdate"), true));
             def.setPrompt(normalizePrompt(stringOf(map.get("prompt"), null)));
             return def;
         } catch (Exception e) {
@@ -157,6 +158,9 @@ public class ProjectConfigFileParser {
             }
             if (definition.isFulltext()) {
                 yaml.append("fulltext: true\n");
+            }
+            if (!definition.isLiveUpdate()) {
+                yaml.append("liveUpdate: false\n");
             }
             appendPrompt(yaml, definition.getPrompt());
 
