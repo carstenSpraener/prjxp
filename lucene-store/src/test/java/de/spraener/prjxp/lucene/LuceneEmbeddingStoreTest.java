@@ -9,6 +9,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.logical.And;
+import de.spraener.prjxp.common.model.PxChunk;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexableField;
@@ -368,9 +369,43 @@ class LuceneEmbeddingStoreTest {
         assertThat(reopened.hasMatch(new IsEqualTo("pxchunk_id", "persist-2"))).isTrue();
     }
 
+    @Test
+    void listFilesByProject_returnsDistinctFiles() {
+        addChunk("p", "a.java", "c1");
+        addChunk("p", "a.java", "c2");
+        addChunk("p", "b.java", "c3");
+
+        assertThat(store.listFilesByProject("p", null)).containsExactlyInAnyOrder("a.java", "b.java");
+    }
+
+    @Test
+    void listFilesByProject_scopesByProject() {
+        addChunk("p", "a.java", "c1");
+        addChunk("q", "b.java", "c2");
+
+        assertThat(store.listFilesByProject("p", null)).containsExactly("a.java");
+    }
+
+    @Test
+    void listFilesByProject_appliesFilter() {
+        addChunk("p", "a.java", "c1");
+        addChunk("p", "b.java", "c2");
+
+        assertThat(store.listFilesByProject("p", new IsEqualTo(PxChunk.PXCHUNK_FILE, "a.java")))
+                .containsExactly("a.java");
+    }
+
     private void addWithContent(String id, float[] vector) {
         Metadata m = new Metadata();
         m.put("_name", id);
         store.add(Embedding.from(vector), TextSegment.from("content-for-" + id, m));
+    }
+
+    private void addChunk(String project, String file, String id) {
+        Metadata m = new Metadata();
+        m.put("pxchunk_id", id);
+        m.put("pxchunk_project", project);
+        m.put("pxchunk_file", file);
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content-" + id, m));
     }
 }

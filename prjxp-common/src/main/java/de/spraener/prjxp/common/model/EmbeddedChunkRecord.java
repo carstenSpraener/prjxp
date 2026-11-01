@@ -20,13 +20,25 @@ public record EmbeddedChunkRecord(
         String content,
         float[] vector,
         String embeddingPrefix,
-        String project
+        String project,
+        Long generatedAt
 ) {
+    /** Metadata key stamped on the PxChunk when generatedAt is present (drives the LLM freshness line). */
+    public static final String GENERATED_AT = "generated_at";
+
     public EmbeddedChunkRecord {
         metadata = metadata == null ? new HashMap<>() : new HashMap<>(metadata);
     }
 
     public static EmbeddedChunkRecord from(PxChunk chunk, float[] vector) {
+        Long generatedAt = null;
+        String ga = chunk.getMetadata().get(GENERATED_AT);
+        if (ga != null && !ga.isBlank()) {
+            try {
+                generatedAt = Long.parseLong(ga);
+            } catch (NumberFormatException ignored) {
+            }
+        }
         return new EmbeddedChunkRecord(
                 chunk.getId(),
                 chunk.getMimeType(),
@@ -42,7 +54,8 @@ public record EmbeddedChunkRecord(
                 chunk.getContent(),
                 vector,
                 chunk.getEmbeddingPrefix(),
-                chunk.getProject()
+                chunk.getProject(),
+                generatedAt
         );
     }
 
@@ -66,6 +79,9 @@ public record EmbeddedChunkRecord(
             if (project != null) {
                 c.setProject(project);
             }
+            if (generatedAt != null && generatedAt > 0) {
+                c.getMetadata().put(GENERATED_AT, String.valueOf(generatedAt));
+            }
         });
     }
 
@@ -87,11 +103,12 @@ public record EmbeddedChunkRecord(
                 && Objects.equals(content, other.content)
                 && Objects.equals(embeddingPrefix, other.embeddingPrefix)
                 && Objects.equals(project, other.project)
+                && Objects.equals(generatedAt, other.generatedAt)
                 && Arrays.equals(vector, other.vector);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(id, mimeType, file, parent, part, total, fromLine, toLine, size, overlap, metadata, content, Arrays.hashCode(vector), embeddingPrefix, project);
+        return Objects.hash(id, mimeType, file, parent, part, total, fromLine, toLine, size, overlap, metadata, content, Arrays.hashCode(vector), embeddingPrefix, project, generatedAt);
     }
 }

@@ -28,7 +28,8 @@ class EmbeddedChunkRecordTest {
                 "# Hello\nWorld",
                 new float[]{0.5f, -0.25f, 1.0f},
                 "pkg Foo",
-                "test-project"
+                "test-project",
+                null
         );
     }
 
@@ -43,7 +44,7 @@ class EmbeddedChunkRecordTest {
         assertThat(fieldNames).containsExactly(
                 "id", "mimeType", "file", "parent", "part", "total",
                 "fromLine", "toLine", "size", "overlap", "metadata",
-                "content", "vector", "embeddingPrefix", "project"
+                "content", "vector", "embeddingPrefix", "project", "generatedAt"
         );
         assertThat(node.get("id").asText()).isEqualTo("chunk-1");
         assertThat(node.get("mimeType").asText()).isEqualTo("text/markdown");
@@ -69,7 +70,7 @@ class EmbeddedChunkRecordTest {
     @Test
     void serialize_withNullOptionalFields_writesJsonNulls() throws Exception {
         EmbeddedChunkRecord record = new EmbeddedChunkRecord(
-                "chunk-2", null, "f.java", null, 1, 1, null, null, 10, 0, Map.of(), "code", new float[]{0.1f}, null, null
+                "chunk-2", null, "f.java", null, 1, 1, null, null, 10, 0, Map.of(), "code", new float[]{0.1f}, null, null, null
         );
 
         JsonNode node = objMapper.readTree(objMapper.writeValueAsString(record));
@@ -92,7 +93,7 @@ class EmbeddedChunkRecordTest {
     @Test
     void roundTrip_withNullOptionalFields_preservesNulls() throws Exception {
         EmbeddedChunkRecord original = new EmbeddedChunkRecord(
-                "chunk-3", null, "f.java", null, 1, 1, null, null, 10, 0, Map.of(), "code", new float[]{0.25f}, null, null
+                "chunk-3", null, "f.java", null, 1, 1, null, null, 10, 0, Map.of(), "code", new float[]{0.25f}, null, null, null
         );
 
         EmbeddedChunkRecord copy = objMapper.readValue(objMapper.writeValueAsString(original), EmbeddedChunkRecord.class);

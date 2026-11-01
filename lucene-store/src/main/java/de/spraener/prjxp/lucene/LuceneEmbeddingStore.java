@@ -433,6 +433,51 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
         }
     }
 
+    /**
+     * Returns the distinct {@code pxchunk_file} values for a project, optionally further filtered.
+     * Paged (no arbitrary cap). {@code filter} may be null (all files of the project).
+     */
+    public java.util.Set<String> listFilesByProject(String projectName, Filter filter) {
+        ensureOpen();
+        try {
+            IndexSearcher searcher = getSearcher();
+            try {
+                Query query = new org.apache.lucene.search.TermQuery(
+                    new org.apache.lucene.index.Term(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_PROJECT, projectName));
+                if (filter != null) {
+                    query = new BooleanQuery.Builder()
+                            .add(new BooleanClause(query, BooleanClause.Occur.FILTER))
+                            .add(LuceneFilterConverter.convert(filter), BooleanClause.Occur.FILTER)
+                            .build();
+                }
+                java.util.Set<String> files = new java.util.HashSet<>();
+                int maxDoc = searcher.getIndexReader().maxDoc();
+                int from = 0;
+                final int pageSize = 5000;
+                while (from < maxDoc) {
+                    int size = Math.min(pageSize, maxDoc - from);
+                    TopDocs docs = searcher.search(query, from + size);
+                    int sliceEnd = Math.min(from + size, docs.scoreDocs.length);
+                    for (int i = from; i < sliceEnd; i++) {
+                        Document d = searcher.storedFields().document(docs.scoreDocs[i].doc);
+                        String file = d.get(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_FILE);
+                        if (file != null) files.add(file);
+                    }
+                    if (sliceEnd < docs.totalHits.value) {
+                        from += size;
+                    } else {
+                        break;
+                    }
+                }
+                return files;
+            } finally {
+                releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to list files for project " + projectName, e);
+        }
+    }
+
     public int getVectorDimension() {
         return vectorDimension;
     }
