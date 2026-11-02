@@ -2,6 +2,7 @@ import { Component, signal, computed, OnInit, OnDestroy } from '@angular/core';
 import { ProjectDetailCardComponent } from '../../components/project-detail-card/project-detail-card.component';
 import { YamlEditorDialogComponent } from '../../components/yaml-editor-dialog/yaml-editor-dialog.component';
 import { ReindexConfirmationDialogComponent } from '../../components/reindex-confirmation-dialog/reindex-confirmation-dialog.component';
+import { LiveUpdateIndicatorComponent } from '../../components/live-update-indicator/live-update-indicator.component';
 import { ProjectManagementService } from '../../services/project-management.service';
 import { ProjectInfo } from '../../models/project-info.model';
 import { PrjxpYamlConfig } from '../../models/prjxp-yaml-config.model';
@@ -9,7 +10,7 @@ import { PrjxpYamlConfig } from '../../models/prjxp-yaml-config.model';
 @Component({
   selector: 'app-projects',
   standalone: true,
-  imports: [ProjectDetailCardComponent, YamlEditorDialogComponent, ReindexConfirmationDialogComponent],
+  imports: [ProjectDetailCardComponent, YamlEditorDialogComponent, ReindexConfirmationDialogComponent, LiveUpdateIndicatorComponent],
   templateUrl: './projects.component.html',
   styleUrl: './projects.component.css'
 })
@@ -26,6 +27,8 @@ export class ProjectsComponent implements OnInit, OnDestroy {
 
   // Polling for reindex progress
   private pollingInterval: ReturnType<typeof setInterval> | null = null;
+  // Periodic list refresh so the live-update indicator stays fresh (backend is the source of truth)
+  private listRefreshInterval: ReturnType<typeof setInterval> | null = null;
 
   // Derived signals - always get fresh objects from the projects list
   selectedProject = computed(() => {
@@ -42,10 +45,16 @@ export class ProjectsComponent implements OnInit, OnDestroy {
 
   ngOnInit(): void {
     this.loadProjects();
+    // Refresh the list periodically so live-update status (and counts) stay current
+    this.listRefreshInterval = setInterval(() => this.loadProjects(), 10000);
   }
 
   ngOnDestroy(): void {
     this.stopPolling();
+    if (this.listRefreshInterval !== null) {
+      clearInterval(this.listRefreshInterval);
+      this.listRefreshInterval = null;
+    }
   }
 
   loadProjects(): void {

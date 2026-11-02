@@ -56,7 +56,7 @@ class ProjectLifecycleServiceTest {
         luceneStore = new LuceneEmbeddingStore(indexDir, 8);
         embeddingModel = mock(EmbeddingModel.class);
         parser = new ProjectConfigFileParser();
-        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser);
+        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser, mock(LiveUpdateScanner.class));
         lifecycle = new ProjectLifecycleService(registry, luceneStore, hub);
     }
 

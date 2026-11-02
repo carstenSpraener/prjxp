@@ -35,7 +35,7 @@ describe('ProjectDetailCardComponent', () => {
 
   it('should display project name', () => {
     const nameEl = fixture.nativeElement.querySelector('.project-name');
-    expect(nameEl.textContent).toBe('test-project');
+    expect(nameEl.textContent.trim()).toBe('test-project');
   });
 
   it('should display status badge', () => {
@@ -137,6 +137,29 @@ describe('ProjectDetailCardComponent', () => {
     expect(statValues[0].textContent).toBe('500');
     expect(statValues[1].textContent).toBe('500');
     expect(statValues[2].textContent).toBe('120');
+  });
+
+  it('should display freshness stat when liveUpdate.lastGeneratedAt is set', () => {
+    fixture.componentRef.setInput('project', { ...mockProject, liveUpdate: { status: 'IDLE', lastGeneratedAt: 1700000000000 } });
+    fixture.detectChanges();
+
+    const labels = Array.from(fixture.nativeElement.querySelectorAll('.stat-label')).map((el: any) => el.textContent.trim());
+    expect(labels).toContain('Freshness');
+    const values = Array.from(fixture.nativeElement.querySelectorAll('.stat-value')).map((el: any) => el.textContent);
+    expect(values.some((v: string) => v.includes('Index stand:'))).toBe(true);
+  });
+
+  it('should not display freshness stat when liveUpdate is absent', () => {
+    const labels = Array.from(fixture.nativeElement.querySelectorAll('.stat-label')).map((el: any) => el.textContent.trim());
+    expect(labels).not.toContain('Freshness');
+  });
+
+  it('should not display freshness stat when lastGeneratedAt is missing', () => {
+    fixture.componentRef.setInput('project', { ...mockProject, liveUpdate: { status: 'IDLE' } });
+    fixture.detectChanges();
+
+    const labels = Array.from(fixture.nativeElement.querySelectorAll('.stat-label')).map((el: any) => el.textContent.trim());
+    expect(labels).not.toContain('Freshness');
   });
 
   it('should display kind badge when project has kind', () => {

@@ -1,5 +1,7 @@
 package de.spraener.prjxp.mcp.hub;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
@@ -42,6 +44,7 @@ class HubProjectRegistryTest {
     private PxChunkDaoProvider daoProvider;
     private LuceneEmbeddingStore luceneStore;
     private PrjXPConfig cfg;
+    private HubProperties hub;
     private HubProjectRegistry registry;
 
     @BeforeEach
@@ -58,7 +61,7 @@ class HubProjectRegistryTest {
 
         daoProvider = new PxChunkDaoProvider(List.of());
 
-        HubProperties hub = new HubProperties();
+        hub = new HubProperties();
         hub.setProjectsRoot(projectsRoot.toString());
         hub.setImportDir(importDir.toString());
 
@@ -69,7 +72,8 @@ class HubProjectRegistryTest {
         cfg.setProjects(List.of(alpha));
 
         registry = new HubProjectRegistry(cfg, hub, daoProvider, luceneStore, embeddingModel,
-                new ProjectConfigFileParser());
+                new ProjectConfigFileParser(),
+                new LiveUpdateScanner(hub, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
     }
 
     @AfterEach
@@ -229,7 +233,8 @@ class HubProjectRegistryTest {
         shallowProps.setScanMaxDepth(3);
         HubProjectRegistry shallowRegistry = new HubProjectRegistry(
                 new PrjXPConfig(), shallowProps, daoProvider, luceneStore,
-                mock(EmbeddingModel.class), new ProjectConfigFileParser());
+                mock(EmbeddingModel.class), new ProjectConfigFileParser(),
+                new LiveUpdateScanner(shallowProps, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
 
         assertThat(shallowRegistry.discoverProjects()).doesNotContain("too-deep");
     }
@@ -248,7 +253,8 @@ class HubProjectRegistryTest {
         shallowProps.setScanMaxDepth(3);
         HubProjectRegistry shallowRegistry = new HubProjectRegistry(
                 new PrjXPConfig(), shallowProps, daoProvider, luceneStore,
-                mock(EmbeddingModel.class), new ProjectConfigFileParser());
+                mock(EmbeddingModel.class), new ProjectConfigFileParser(),
+                new LiveUpdateScanner(shallowProps, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
 
         assertThat(shallowRegistry.discoverProjects()).containsExactly("exact");
     }
@@ -273,7 +279,8 @@ class HubProjectRegistryTest {
         propsWithExclude.getScanExcludeDirNames().add("branches");
         HubProjectRegistry excludingRegistry = new HubProjectRegistry(
                 new PrjXPConfig(), propsWithExclude, daoProvider, luceneStore,
-                mock(EmbeddingModel.class), new ProjectConfigFileParser());
+                mock(EmbeddingModel.class), new ProjectConfigFileParser(),
+                new LiveUpdateScanner(propsWithExclude, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
 
         List<String> discovered = excludingRegistry.discoverProjects();
 
@@ -293,7 +300,8 @@ class HubProjectRegistryTest {
         propsWithExclude.getScanExcludeDirNames().add("branches");
         HubProjectRegistry excludingRegistry = new HubProjectRegistry(
                 new PrjXPConfig(), propsWithExclude, daoProvider, luceneStore,
-                mock(EmbeddingModel.class), new ProjectConfigFileParser());
+                mock(EmbeddingModel.class), new ProjectConfigFileParser(),
+                new LiveUpdateScanner(propsWithExclude, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
 
         assertThat(excludingRegistry.discoverProjects()).isEmpty();
     }
@@ -697,6 +705,174 @@ class HubProjectRegistryTest {
 
         assertThat(infos).hasSize(1);
         assertThat(infos.get(0).kind()).isEqualTo("LIVE");
+    }
+
+    // ------------------------------------------------------------------ Phase 06: liveUpdate freshness block
+
+    @Test
+    void projectInfosForLiveProjectWithJsonlShowsIdleAndWatermark() throws Exception {
+        hub.setLiveJsonlDir(tempDir.resolve("chunks").toString());
+        Files.createDirectories(tempDir.resolve("chunks"));
+        Path live = liveDir("foo");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\n");
+
+        registry.discoverProjects();   // registers the LIVE project
+        Files.writeString(tempDir.resolve("chunks").resolve("foo.live-embedded.jsonl"),
+                "{\"id\":\"c1\",\"file\":\"a.java\",\"project\":\"foo\",\"generatedAt\":42}\n");
+        registry.refreshStats("foo");   // the watermark is cached — refresh to pick up the JSONL written above
+
+        ProjectInfo info = registry.projectInfos().get(0);
+
+        assertThat(info.kind()).isEqualTo("LIVE");
+        assertThat(info.liveUpdate()).isNotNull();
+        assertThat(info.liveUpdate().status()).isEqualTo("IDLE");
+        assertThat(info.liveUpdate().lastGeneratedAt()).isEqualTo(42L);
+    }
+
+    @Test
+    void projectInfosForSnapshotProjectHasNoLiveUpdateBlock() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        ProjectInfo info = registry.projectInfos().get(0);
+
+        assertThat(info.kind()).isEqualTo("SNAPSHOT");
+        assertThat(info.liveUpdate()).isNull();
+    }
+
+    @Test
+    void projectInfosForLiveProjectWithLiveUpdateDisabledShowsDisabled() throws Exception {
+        hub.setLiveJsonlDir(tempDir.resolve("chunks").toString());
+        Path live = liveDir("foo");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\nliveUpdate: false\n");
+
+        registry.discoverProjects();
+
+        ProjectInfo info = registry.projectInfos().get(0);
+
+        assertThat(info.kind()).isEqualTo("LIVE");
+        assertThat(info.liveUpdate()).isNotNull();
+        assertThat(info.liveUpdate().status()).isEqualTo("DISABLED");
+        assertThat(info.liveUpdate().lastGeneratedAt()).isNull();   // no JSONL yet
+    }
+
+    @Test
+    void projectInfosForLiveProjectRunningShowsUpdatingWithProgress() throws Exception {
+        hub.setLiveJsonlDir(tempDir.resolve("chunks").toString());
+        Files.createDirectories(tempDir.resolve("chunks"));
+        Path live = liveDir("foo");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\n");
+
+        registry.discoverProjects();   // registers the LIVE project
+        ProjectEntry entry = registry.entry("foo").orElseThrow();
+        entry.setEmbeddingRunning(true);
+        entry.setLiveUpdateProgress(45);
+
+        ProjectInfo info = registry.projectInfos().get(0);
+
+        assertThat(info.liveUpdate()).isNotNull();
+        assertThat(info.liveUpdate().status()).isEqualTo("UPDATING");
+        assertThat(info.liveUpdate().progress()).isEqualTo(45);
+    }
+
+    @Test
+    void projectInfosForLiveProjectQueuedButNotRunningShowsIdle() throws Exception {
+        hub.setLiveJsonlDir(tempDir.resolve("chunks").toString());
+        Files.createDirectories(tempDir.resolve("chunks"));
+        Path live = liveDir("foo");
+        Files.writeString(live.resolve("prjxp.yaml"), "name: foo\n");
+
+        registry.discoverProjects();   // registers the LIVE project
+        // queued (in-flight) but not yet running on the worker -> IDLE, not UPDATING
+        registry.entry("foo").orElseThrow().setEmbeddingInFlight(true);
+
+        ProjectInfo info = registry.projectInfos().get(0);
+
+        assertThat(info.liveUpdate()).isNotNull();
+        assertThat(info.liveUpdate().status()).isEqualTo("IDLE");
+        assertThat(info.liveUpdate().progress()).isNull();
+    }
+
+    // ------------------------------------------------------------------ In-memory stats cache
+
+    @Test
+    void projectInfosServesCachedStatsUntilRefreshed() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        addEmbeddingForProject("alpha", "/a.java");
+        addEmbeddingForProject("alpha", "/b.java");
+        registry.refreshStats("alpha");   // cache: 2 chunks / 2 files
+
+        addEmbeddingForProject("alpha", "/c.java");   // the index changes behind the cache's back
+
+        ProjectInfo stale = registry.projectInfos().get(0);
+        assertThat(stale.chunkCount()).isEqualTo(2);   // cached — no per-request index scan
+        assertThat(stale.fileCount()).isEqualTo(2);
+
+        registry.refreshStats("alpha");
+
+        ProjectInfo fresh = registry.projectInfos().get(0);
+        assertThat(fresh.chunkCount()).isEqualTo(3);
+        assertThat(fresh.fileCount()).isEqualTo(3);
+    }
+
+    @Test
+    void unregisterAndReRegisterRecomputesStats() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        addEmbeddingForProject("alpha", "/a.java");
+        registry.refreshStats("alpha");   // cache: 1 chunk
+
+        registry.unregisterProject("alpha");   // snapshot: no index wipe, but the cache entry is dropped
+        addEmbeddingForProject("alpha", "/b.java");   // the index now holds 2 chunks
+
+        registry.registerProject("alpha", projectDir("alpha"));   // re-registration recomputes
+
+        assertThat(registry.projectInfos().get(0).chunkCount()).isEqualTo(2);   // not the stale 1
+    }
+
+    @Test
+    void refreshStatsForUnknownProjectIsNoOp() {
+        assertThatCode(() -> registry.refreshStats("ghost")).doesNotThrowAnyException();
+    }
+
+    @Test
+    void scheduledStatsRefreshSkipsWhenDisabled() throws Exception {
+        hub.setStatsRefreshIntervalMs(0);   // disabled via configuration
+        registry.registerProject("alpha", projectDir("alpha"));
+        addEmbeddingForProject("alpha", "/a.java");
+        registry.refreshStats("alpha");   // cache: 1
+
+        addEmbeddingForProject("alpha", "/b.java");   // the index now holds 2
+
+        registry.scheduledStatsRefresh();   // disabled -> no refresh
+
+        assertThat(registry.projectInfos().get(0).chunkCount()).isEqualTo(1);   // still the cached value
+    }
+
+    @Test
+    void scheduledStatsRefreshSkipsWhenNotYetDue() throws Exception {
+        hub.setStatsRefreshIntervalMs(60_000);   // the default 60 s
+        registry.registerProject("alpha", projectDir("alpha"));
+        addEmbeddingForProject("alpha", "/a.java");
+        registry.refreshStats("alpha");   // cache: 1
+
+        registry.scheduledStatsRefresh();   // first call: never refreshed -> due, sets the timestamp
+        addEmbeddingForProject("alpha", "/b.java");   // the index now holds 2
+        registry.scheduledStatsRefresh();   // called immediately -> not yet due (60 s)
+
+        assertThat(registry.projectInfos().get(0).chunkCount()).isEqualTo(1);   // still the previous snapshot
+    }
+
+    @Test
+    void scheduledStatsRefreshUpdatesWhenDue() throws Exception {
+        hub.setStatsRefreshIntervalMs(1);   // 1 ms -> immediately due
+        registry.registerProject("alpha", projectDir("alpha"));
+        addEmbeddingForProject("alpha", "/a.java");
+        registry.refreshStats("alpha");   // cache: 1
+
+        addEmbeddingForProject("alpha", "/b.java");   // the index now holds 2
+
+        registry.scheduledStatsRefresh();
+
+        assertThat(registry.projectInfos().get(0).chunkCount()).isEqualTo(2);
     }
 
     @Test

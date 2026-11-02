@@ -6,6 +6,7 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
+import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.EmbeddingExportService;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import org.junit.jupiter.api.AfterEach;
@@ -63,7 +64,7 @@ class PipelineListenerDispatchTest {
         luceneStore = new LuceneEmbeddingStore(indexDir, 8);
         embeddingModel = mock(EmbeddingModel.class);
         parser = new ProjectConfigFileParser();
-        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser);
+        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser, mock(LiveUpdateScanner.class));
 
         chunkProcess = mock(ChunkProcess.class);
         exportService = mock(EmbeddingExportService.class);
@@ -134,7 +135,7 @@ class PipelineListenerDispatchTest {
     @Test
     void rootRunTriggersListenerOnce() throws Exception {
         registry.registerProject("p1", projectDir("p1"));
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, mock(EmbeddingExecutor.class), mock(LiveUpdateScanner.class));
 
         RecordingListener listener = new RecordingListener(null);   // no retrigger
         orchestrator.setPipelineListeners(List.of(listener));
@@ -150,7 +151,7 @@ class PipelineListenerDispatchTest {
     @Test
     void retriggerRunSkipsTriggeredListener() throws Exception {
         registry.registerProject("p1", projectDir("p1"));
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, mock(EmbeddingExecutor.class), mock(LiveUpdateScanner.class));
 
         RecordingListener listener = new RecordingListener((n, d) -> { });   // no-op retrigger
         orchestrator.setPipelineListeners(List.of(listener));
@@ -166,7 +167,7 @@ class PipelineListenerDispatchTest {
     @Test
     void phaseStatusDuringRetriggerRun() throws Exception {
         registry.registerProject("p1", projectDir("p1"));
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, mock(EmbeddingExecutor.class), mock(LiveUpdateScanner.class));
 
         CountDownLatch retriggerStarted = new CountDownLatch(1);
         CountDownLatch release = new CountDownLatch(1);
@@ -194,7 +195,7 @@ class PipelineListenerDispatchTest {
     void failedRunDoesNotDispatchFinish() throws Exception {
         registry.registerProject("p1", projectDir("p1"));
         doThrow(new RuntimeException("boom")).when(chunkProcess).executeForProject(org.mockito.ArgumentMatchers.any());
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, mock(EmbeddingExecutor.class), mock(LiveUpdateScanner.class));
 
         RecordingListener listener = new RecordingListener(null);
         orchestrator.setPipelineListeners(List.of(listener));
@@ -209,7 +210,7 @@ class PipelineListenerDispatchTest {
     @Test
     void noListenersKeepsCurrentBehavior() throws Exception {
         registry.registerProject("p1", projectDir("p1"));
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, mock(EmbeddingExecutor.class), mock(LiveUpdateScanner.class));
         // no setPipelineListeners call — the default empty list must preserve current behavior
 
         orchestrator.enqueue("p1");
@@ -219,7 +220,7 @@ class PipelineListenerDispatchTest {
     @Test
     void scheduleRetriggerOutsideRunIsIgnored() throws Exception {
         registry.registerProject("p1", projectDir("p1"));
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, mock(EmbeddingExecutor.class), mock(LiveUpdateScanner.class));
 
         // no run in flight — scheduleRetrigger must be a safe no-op (no exception)
         assertThatCode(() -> orchestrator.scheduleRetrigger("p1", (n, d) -> { })).doesNotThrowAnyException();

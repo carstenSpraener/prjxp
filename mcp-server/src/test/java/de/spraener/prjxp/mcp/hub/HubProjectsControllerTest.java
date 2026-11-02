@@ -24,10 +24,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyFloat;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
@@ -71,7 +74,7 @@ class HubProjectsControllerTest {
         hub.setImportDir(importDir.toString());
         luceneStore = new LuceneEmbeddingStore(indexDir, 8);
         registry = new HubProjectRegistry(new PrjXPConfig(), hub, new PxChunkDaoProvider(List.of()),
-                luceneStore, mock(EmbeddingModel.class), new ProjectConfigFileParser());
+                luceneStore, mock(EmbeddingModel.class), new ProjectConfigFileParser(), mock(LiveUpdateScanner.class));
         lifecycle = new ProjectLifecycleService(registry, luceneStore, hub);
         orchestrator = mock(PipelineOrchestrator.class);
         compatibilityChecker = mock(EmbeddingCompatibilityChecker.class);
@@ -317,6 +320,42 @@ class HubProjectsControllerTest {
 
         assertThat(response.getStatusCode().value()).isEqualTo(200);   // OK
         assertThat(response.getBody()).contains("Imported");
+    }
+
+    // ------------------------------------------------------------------ Phase 05: single-source rule (live JSONL after import)
+
+    @Test
+    void importEmbeddings_live_publishesLiveJsonl() throws Exception {
+        hub.setLiveJsonlDir(tempRoot.resolve("live").toString());
+        registry.registerProject("alpha", projectDir("alpha"), ProjectEntry.Kind.LIVE);
+
+        when(compatibilityChecker.check(any(List.class), any(EmbeddingModel.class), anyInt(), anyFloat(), anyFloat()))
+                .thenReturn(new EmbeddingCompatibilityChecker.CheckReport(0.99f, 4, EmbeddingCompatibilityChecker.Verdict.COMPATIBLE));
+        when(objMapper.readValue(anyString(), any(Class.class)))
+                .thenReturn(createEmbeddedChunkRecord("c1", "test content", new float[8]));
+
+        var response = controller.importEmbeddings("alpha", new MockMultipartFile("file", "test.jsonl", "application/json",
+                "{\"id\":\"c1\",\"content\":\"test\"}".getBytes()));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        verify(orchestrator, times(1)).publishLiveJsonl(eq("alpha"), any(List.class), anyLong());   // once, after the import
+    }
+
+    @Test
+    void importEmbeddings_snapshot_doesNotPublish() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));   // SNAPSHOT (default kind)
+
+        when(compatibilityChecker.check(any(List.class), any(EmbeddingModel.class), anyInt(), anyFloat(), anyFloat()))
+                .thenReturn(new EmbeddingCompatibilityChecker.CheckReport(0.99f, 4, EmbeddingCompatibilityChecker.Verdict.COMPATIBLE));
+        when(objMapper.readValue(anyString(), any(Class.class)))
+                .thenReturn(createEmbeddedChunkRecord("c1", "test content", new float[8]));
+
+        var response = controller.importEmbeddings("alpha", new MockMultipartFile("file", "test.jsonl", "application/json",
+                "{\"id\":\"c1\",\"content\":\"test\"}".getBytes()));
+
+        assertThat(response.getStatusCode().value()).isEqualTo(200);
+        // the controller calls publishLiveJsonl unconditionally; the SNAPSHOT no-op is asserted in PipelineOrchestratorTest
+        verify(orchestrator, times(1)).publishLiveJsonl(eq("alpha"), any(List.class), anyLong());
     }
 
     private EmbeddedChunkRecord createEmbeddedChunkRecord(String id, String content, float[] vector) {

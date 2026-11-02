@@ -16,6 +16,7 @@ import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
@@ -50,6 +51,7 @@ public class HubProjectRegistry implements ProjectRegistry {
     private final LuceneEmbeddingStore luceneStore;       // shared bean (hub requires store type LUCENE)
     private final EmbeddingModel embeddingModel;          // from prjxp-common EmbeddingModelConfig
     private final ProjectConfigFileParser configParser;
+    private final LiveUpdateScanner scanner;             // read-only watermark source for the liveUpdate block
 
     private final Map<String, ProjectEntry> projects = new ConcurrentHashMap<>();
     /** Throttles the "import dir missing" warning to once per outage instead of once per 5s poll. */
@@ -59,6 +61,23 @@ public class HubProjectRegistry implements ProjectRegistry {
     private final Map<String, ReindexStatus> reindexStatuses = new ConcurrentHashMap<>();
     /** Percentage progress 0-100 per project. */
     private final Map<String, Integer> reindexProgress = new ConcurrentHashMap<>();
+
+    /**
+     * In-memory snapshot of the expensive per-project stats: the Lucene chunk count, the distinct
+     * file count, and the live-update watermark (0 for SNAPSHOT projects). The Web UI polls the
+     * project list frequently, but computing these per request would scan the index per project
+     * (the file count loads every stored field). The cache is refreshed after every pipeline run,
+     * after embedding imports, on registration/unregistration, and periodically (safety net for
+     * index changes made outside the hub, e.g. a standalone tibed run).
+     */
+    public record ProjectStats(long chunkCount, int fileCount, long watermark, long computedAt) {
+        /** Fallback when a refresh fails: zeroed stats, never null. */
+        public static final ProjectStats EMPTY = new ProjectStats(0, 0, 0, 0);
+    }
+
+    private final Map<String, ProjectStats> statsCache = new ConcurrentHashMap<>();
+    /** Epoch millis of the last periodic stats refresh (0 = not yet). */
+    private volatile long lastStatsRefreshAt;
 
     /** Registers a snapshot project directory (tar import flow). */
     public void registerProject(String name, Path dir) {
@@ -81,6 +100,7 @@ public class HubProjectRegistry implements ProjectRegistry {
         storeRef.setProjectName(name);
         daoProvider.register(new LucenePxChunkDao(luceneStore, embeddingModel, storeRef));
         projects.put(name, new ProjectEntry(name, dir, kind, definition, storeRef));
+        refreshStats(name);   // warm the in-memory stats cache (cheap for a fresh/empty index)
         log.info("Registered {} project '{}' at {}", kind, name, dir);
     }
 
@@ -122,7 +142,70 @@ public class HubProjectRegistry implements ProjectRegistry {
     public void unregisterProject(String name) {
         daoProvider.unregisterByProject(name);
         projects.remove(name);
+        statsCache.remove(name);   // drop the stale stats snapshot
         log.info("Unregistered project '{}'", name);
+    }
+
+    // ------------------------------------------------------------------ In-memory stats cache
+
+    /**
+     * Recomputes the expensive per-project stats (Lucene chunk/file counts + live watermark) and
+     * atomically replaces the cached snapshot. Never throws: on failure the previous snapshot is
+     * kept, so a Web UI request must not fail because of a stats refresh. For an unknown name it
+     * drops any stale snapshot (deregistered project).
+     */
+    public void refreshStats(String name) {
+        ProjectEntry entry = projects.get(name);
+        if (entry == null) {
+            statsCache.remove(name);
+            return;
+        }
+        try {
+            long chunkCount = luceneStore.countByProject(name);
+            int fileCount = luceneStore.countFilesByProject(name);
+            long watermark = entry.getKind() == ProjectEntry.Kind.LIVE ? scanner.watermarkOf(entry) : 0;
+            statsCache.put(name, new ProjectStats(chunkCount, fileCount, watermark, System.currentTimeMillis()));
+        } catch (Exception e) {
+            log.warn("Could not refresh stats for project '{}': {} — keeping the previous snapshot", name, e.toString());
+        }
+    }
+
+    /** Refreshes the stats of all registered projects (periodic safety net). */
+    public void refreshStatsAll() {
+        for (String name : projects.keySet()) {
+            refreshStats(name);
+        }
+    }
+
+    /**
+     * Periodic safety-net refresh of the in-memory stats cache on a fixed 30 s tick (like
+     * {@link LiveUpdateScheduler}): the effective interval is
+     * {@code prjxp.hub.stats-refresh-interval-ms} (default 60 s). Catches index changes made
+     * outside the hub (e.g. a standalone tibed run against the same index). A non-positive
+     * interval disables the periodic refresh.
+     */
+    @Scheduled(fixedDelay = 30_000)
+    public void scheduledStatsRefresh() {
+        long interval = hub.getStatsRefreshIntervalMs();
+        if (interval <= 0) {
+            return;   // disabled via configuration
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastStatsRefreshAt < interval) {
+            return;   // not yet due
+        }
+        lastStatsRefreshAt = now;
+        refreshStatsAll();
+    }
+
+    /** The cached stats snapshot for a project, computing (and caching) it on a cache miss. Never returns null. */
+    private ProjectStats statsOfOrCompute(ProjectEntry entry) {
+        ProjectStats stats = statsCache.get(entry.getName());
+        if (stats == null) {
+            refreshStats(entry.getName());
+            stats = statsCache.get(entry.getName());
+        }
+        return stats != null ? stats : ProjectStats.EMPTY;
     }
 
     /** Updates the lifecycle status of a known project; no-op for unknown names. */
@@ -456,19 +539,32 @@ public class HubProjectRegistry implements ProjectRegistry {
         return projects.values().stream()
                 .sorted(Comparator.comparing(ProjectEntry::getName))
                 .map(e -> {
-                    long chunkCount = luceneStore.countByProject(e.getName());
-                    int fileCount = luceneStore.countFilesByProject(e.getName());
+                    // In-memory stats cache — the Web UI polls this endpoint frequently and must
+                    // not trigger a per-project index scan on every request.
+                    ProjectStats stats = statsOfOrCompute(e);
                     de.spraener.prjxp.common.config.ProjectDefinition def = e.getDefinition();
                     String reindexStatus = getReindexStatus(e.getName()).name();
                     int reindexProgress = getReindexProgress(e.getName());
+                    ProjectInfo.LiveUpdateInfo liveUpdate = null;
+                    if (e.getKind() == ProjectEntry.Kind.LIVE) {
+                        // UPDATING only while the update is actively running on the pipeline worker
+                        // (embeddingRunning); a queued-but-not-yet-running update stays IDLE so the
+                        // Web UI's indicator marks only the project actually being updated.
+                        String st = !def.isLiveUpdate() ? "DISABLED"
+                                : e.isEmbeddingRunning() ? "UPDATING" : "IDLE";
+                        long wm = stats.watermark();
+                        liveUpdate = new ProjectInfo.LiveUpdateInfo(
+                                st, wm > 0 ? wm : null, e.getNextScanAt() > 0 ? e.getNextScanAt() : null,
+                                e.isEmbeddingRunning() ? e.getLiveUpdateProgress() : null);
+                    }
                     return new ProjectInfo(
                         e.getName(),
                         e.getStatus().name(),
                         e.getKind().name(),
                         e.getLastError(),
-                        chunkCount,
-                        chunkCount, // embeddingCount == chunkCount (1:1)
-                        fileCount,
+                        stats.chunkCount(),
+                        stats.chunkCount(), // embeddingCount == chunkCount (1:1)
+                        stats.fileCount(),
                         def.getRootDir(),
                         def.getJsonlFile(),
                         def.getChunoWhiteList(),
@@ -478,7 +574,8 @@ public class HubProjectRegistry implements ProjectRegistry {
                         reindexStatus,
                         reindexProgress,
                         def.getPrompt(),
-                        def.isFulltext()
+                        def.isFulltext(),
+                        liveUpdate
                     );
                 })
                 .toList();

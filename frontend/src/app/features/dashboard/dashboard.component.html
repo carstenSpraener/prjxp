@@ -90,7 +90,10 @@
             <tbody>
               @for (project of projects; track project.name) {
                 <tr>
-                  <td class="text-cyan">{{ project.name }}</td>
+                  <td class="text-cyan">
+                    {{ project.name }}
+                    <live-update-indicator [liveUpdate]="project.liveUpdate"></live-update-indicator>
+                  </td>
                   <td>
                     <span [class]="'status-badge status-' + project.status.toLowerCase()">
                       {{ project.status }}

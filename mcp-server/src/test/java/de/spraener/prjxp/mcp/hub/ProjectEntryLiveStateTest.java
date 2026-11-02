@@ -41,4 +41,33 @@ class ProjectEntryLiveStateTest {
         assertThat(entry.isRescanRequested()).isTrue();
         assertThat(entry.isEmbeddingInFlight()).isTrue();
     }
+
+    @Test
+    void embeddingRunningAndProgressDefaultToFalseAndZero() {
+        ProjectEntry entry = entry();
+
+        assertThat(entry.isEmbeddingRunning()).isFalse();
+        assertThat(entry.getLiveUpdateProgress()).isZero();
+    }
+
+    @Test
+    void embeddingRunningAndProgressRoundTrip() {
+        ProjectEntry entry = entry();
+
+        entry.setEmbeddingRunning(true);
+        entry.setLiveUpdateProgress(45);
+
+        assertThat(entry.isEmbeddingRunning()).isTrue();
+        assertThat(entry.getLiveUpdateProgress()).isEqualTo(45);
+    }
+
+    @Test
+    void liveUpdateProgressIsClampedTo0to100() {
+        ProjectEntry entry = entry();
+
+        entry.setLiveUpdateProgress(-5);
+        assertThat(entry.getLiveUpdateProgress()).isZero();
+        entry.setLiveUpdateProgress(150);
+        assertThat(entry.getLiveUpdateProgress()).isEqualTo(100);
+    }
 }

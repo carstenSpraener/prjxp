@@ -97,12 +97,17 @@ public class PrjxpMcpTool {
     }
 
     @McpTool(name = "listProjects", description = """
-            DISCOVERY TOOL: Lists all project names that have a searchable index in this server.
+            DISCOVERY TOOL: Lists all projects that have a searchable index in this server,
+            together with the timestamp of each project's last index update (epoch millis; null when the project has no live-update watermark, e.g. SNAPSHOT projects).
             USE BEFORE calling vectorSearch/grep/readFile/readBySignature when you don't know which 'project' values are valid.
+            Pass the 'name' field verbatim as the 'project' argument of the search tools.
             """)
-    public List<String> listProjects() {
-        return projectRegistry.availableProjects().stream()
-                .filter(projectRegistry::isSearchable)   // hub: READY only; static mode: all (unchanged result)
+    public List<ProjectSummary> listProjects() {
+        return projectRegistry.projectInfos().stream()
+                .filter(info -> projectRegistry.isSearchable(info.name()))   // hub: READY only; static mode: all (unchanged result)
+                .map(info -> new ProjectSummary(
+                        info.name(),
+                        info.liveUpdate() != null ? info.liveUpdate().lastGeneratedAt() : null))
                 .toList();
     }
 

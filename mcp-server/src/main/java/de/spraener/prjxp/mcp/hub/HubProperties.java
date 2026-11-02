@@ -25,6 +25,13 @@ public class HubProperties {
     private long liveUpdateBaseIntervalMs = 300_000;
     /** Max interval for adaptive polling (default 60 min). */
     private long liveUpdateMaxIntervalMs = 3_600_000;
+    /**
+     * Interval in milliseconds for the periodic refresh of the in-memory project-stats cache
+     * (default 60 s). The Web UI reads the project list from this cache, so the counts are at
+     * most this stale. A non-positive value disables the periodic refresh — stats are then only
+     * updated after pipeline runs, embedding imports, and project registration.
+     */
+    private long statsRefreshIntervalMs = 60_000;
     /** Max tar file size in bytes (default 2 GiB). */
     private long maxTarBytes = 2L * 1024 * 1024 * 1024;
     /** Max total extracted size in bytes (default 4 GiB, compression-bomb guard). */

@@ -1,9 +1,11 @@
 import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { ProjectInfo } from '../../models/project-info.model';
+import { LiveUpdateIndicatorComponent } from '../live-update-indicator/live-update-indicator.component';
 
 @Component({
   selector: 'project-detail-card',
   standalone: true,
+  imports: [LiveUpdateIndicatorComponent],
   templateUrl: './project-detail-card.component.html',
   styleUrl: './project-detail-card.component.css'
 })
@@ -47,5 +49,12 @@ export class ProjectDetailCardComponent {
       case 'FAILED': return 'status-failed';
       default: return 'status-default';
     }
+  }
+
+  freshnessLabel(): string | null {
+    const lu = this.project.liveUpdate;
+    if (!lu || !lu.lastGeneratedAt) { return null; }
+    const d = new Date(lu.lastGeneratedAt);
+    return `Index stand: ${d.toLocaleDateString()} ${d.toLocaleTimeString()}`;
   }
 }

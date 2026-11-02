@@ -2,6 +2,7 @@ import { Component, OnInit, signal } from '@angular/core';
 import { AsyncPipe } from '@angular/common';
 import { MetricCardComponent } from '../../components/metric-card/metric-card.component';
 import { ChartPanelComponent, ChartDataPoint } from '../../components/chart-panel/chart-panel.component';
+import { LiveUpdateIndicatorComponent } from '../../components/live-update-indicator/live-update-indicator.component';
 import { DashboardService } from '../../services/dashboard.service';
 import { SystemHealth } from '../../models/system-health.model';
 import { QueryStats } from '../../models/query-stats.model';
@@ -11,7 +12,7 @@ import { Observable, catchError, map, of, tap } from 'rxjs';
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [AsyncPipe, MetricCardComponent, ChartPanelComponent],
+  imports: [AsyncPipe, MetricCardComponent, ChartPanelComponent, LiveUpdateIndicatorComponent],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.css'
 })
@@ -40,8 +41,9 @@ export class DashboardComponent implements OnInit {
       )
     );
 
+    // Poll so the live-update indicator (and counts) stay fresh without a reload
     this.projects$.set(
-      this.dashboardService.getProjectStats().pipe(catchError(() => of([])))
+      this.dashboardService.pollProjects(10000).pipe(catchError(() => of([])))
     );
   }
 

@@ -6,6 +6,7 @@ import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
+import de.spraener.prjxp.mcp.ProjectSummary;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import jakarta.annotation.PostConstruct;
@@ -14,8 +15,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 /**
  * Registers the six prjxp tools in the central {@link ToolRegistry} so that they are
@@ -188,16 +191,22 @@ public class PrjxpToolRegistration {
     private ToolDefinition listProjectsTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("listProjects")
-                .description("DISCOVERY TOOL: Lists all project names that have a searchable index in this server.")
+                .description("DISCOVERY TOOL: Lists all projects that have a searchable index in this server, "
+                        + "with the timestamp of each project's last index update.")
                 .parameters(JsonObjectSchema.builder().build())
                 .build();
 
         return new ToolDefinition("listProjects", spec.description(), Map.of(),
                 params -> {
-                    List<String> projects = mcpTool.listProjects();
-                    return projects.isEmpty()
-                            ? "No searchable projects available."
-                            : String.join(", ", projects);
+                    List<ProjectSummary> projects = mcpTool.listProjects();
+                    if (projects.isEmpty()) {
+                        return "No searchable projects available.";
+                    }
+                    return projects.stream()
+                            .map(p -> p.lastGeneratedAt() != null
+                                    ? p.name() + " (last updated: " + Instant.ofEpochMilli(p.lastGeneratedAt()).toString() + ")"
+                                    : p.name())
+                            .collect(Collectors.joining(", "));
                 }, spec);
     }
 

@@ -77,6 +77,11 @@ public class LiveUpdateScanner {
         return Path.of(props.getLiveJsonlDir(), entry.getName() + ".live-embedded.jsonl");
     }
 
+    /** The current watermark ({@code generatedAt} of the first live-JSONL line); 0 when absent. */
+    public long watermarkOf(ProjectEntry entry) {
+        return readWatermark(entry);
+    }
+
     /** Watermark = {@code generatedAt} of the first JSONL line; 0 when the file is absent/unreadable. */
     private long readWatermark(ProjectEntry entry) {
         Path jsonl = liveJsonlPath(entry);

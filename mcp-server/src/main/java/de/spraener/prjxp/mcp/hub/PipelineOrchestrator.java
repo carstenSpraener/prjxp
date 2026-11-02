@@ -9,6 +9,7 @@ import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker.CheckReport;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker.Verdict;
+import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.EmbeddingExportService;
 import de.spraener.prjxp.tibed.EmbeddingService;
 import dev.langchain4j.data.embedding.Embedding;
@@ -30,6 +31,7 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -77,6 +79,8 @@ public class PipelineOrchestrator implements ImportHandler {
     private final LuceneEmbeddingStore luceneStore;   // shared bean
     private final HubProperties hubProps;              // compatibility thresholds & sample size
     private final ObjectMapper objMapper;               // for reading EmbeddedChunkRecord from JSONL
+    private final EmbeddingExecutor embedder;           // compute-only embed() (no store write) — live updates
+    private final LiveUpdateScanner scanner;            // Phase 02: read-only change detection — live updates
 
     /** FIFO: single worker — the Lucene index allows only one writer at a time. */
     private final ExecutorService worker = Executors.newSingleThreadExecutor(r -> {
@@ -167,6 +171,21 @@ public class PipelineOrchestrator implements ImportHandler {
         Object token = new Object();
         inFlight.put(name, token);
         submit(PipelineRun.root(name), token);
+    }
+
+    /**
+     * Queues a live update for a registered LIVE project. Idempotent per name via the shared
+     * {@code inFlight} map: a full reindex or another live update already in flight is never
+     * superseded. Sets {@code embeddingInFlight} so the scheduler skips the project until done.
+     */
+    public void enqueueLiveUpdate(String name) {
+        Object token = new Object();
+        if (inFlight.putIfAbsent(name, token) != null) {
+            return;   // a run is already in flight for this name — skip
+        }
+        registry.entry(name).ifPresent(e -> e.setEmbeddingInFlight(true));
+        submit(new PipelineRun(name, 1, new HashSet<>(),
+                (runName, def) -> runLiveUpdate(runName, def), true), token);
     }
 
     /**
@@ -323,7 +342,14 @@ public class PipelineOrchestrator implements ImportHandler {
             }
 
             registry.setEmbeddingPhase(name, run.phase());
-            dispatchStart(run);
+            if (run.isLiveUpdate()) {
+                registry.entry(name).ifPresent(e -> {
+                    e.setEmbeddingRunning(true);   // the Web UI's update indicator shows only for the running project
+                    e.setLiveUpdateProgress(0);
+                });
+            } else {
+                dispatchStart(run);   // live updates fire no PipelineListener (no DocPipe)
+            }
 
             boolean success;
             try {
@@ -337,8 +363,13 @@ public class PipelineOrchestrator implements ImportHandler {
                 }
             } catch (Exception e) {
                 log.error("Pipeline failed for project '{}': {}", name, e.toString());
-                registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
-                registry.setReindexStatus(name, ReindexStatus.FAILED);
+                if (run.isLiveUpdate()) {
+                    // keep the old index: the project stays searchable, the scheduler retries next cycle
+                    registry.setStatus(name, ProjectStatus.READY, "Live update failed: " + e.getMessage());
+                } else {
+                    registry.setStatus(name, ProjectStatus.FAILED, String.valueOf(e.getMessage()));
+                    registry.setReindexStatus(name, ReindexStatus.FAILED);
+                }
                 return;   // no finish dispatch on failure — listeners must not act on a broken run
             }
 
@@ -346,9 +377,14 @@ public class PipelineOrchestrator implements ImportHandler {
                 return;   // keep-old-index soft failure: the terminal status was set inside the pipeline; no finish dispatch
             }
 
-            dispatchFinished(run);
+            if (!run.isLiveUpdate()) {
+                dispatchFinished(run);   // live updates fire no PipelineListener (no DocPipe)
+            }
 
-            if (run.retriggersScheduled() == 0) {
+            if (run.isLiveUpdate()) {
+                registry.setStatus(name, ProjectStatus.READY, null);   // stays searchable; no reindex status churn
+                registry.entry(name).ifPresent(e -> e.setRescanRequested(true));   // scheduler rescans <= 30 s (Phase 04)
+            } else if (run.retriggersScheduled() == 0) {
                 registry.setStatus(name, ProjectStatus.READY, null);
                 registry.setReindexStatus(name, ReindexStatus.COMPLETE);
                 registry.setReindexProgress(name, STORING_END);
@@ -357,7 +393,12 @@ public class PipelineOrchestrator implements ImportHandler {
             }
         } finally {
             currentRun = null;
+            registry.entry(name).ifPresent(e -> {
+                e.setEmbeddingInFlight(false);   // release the scheduler's skip
+                e.setEmbeddingRunning(false);    // release the Web UI's update indicator
+            });
             wipeIfDeregistered(name);   // race guard: marker removed mid-run -> the entry is gone, wipe what we wrote
+            registry.refreshStats(name);   // the index may have changed — refresh the in-memory stats for the Web UI
         }
     }
 
@@ -408,6 +449,7 @@ public class PipelineOrchestrator implements ImportHandler {
      * false on a keep-old-index failure (the terminal status is set here, inside the catch).
      */
     private boolean runStandardPipeline(String name, ProjectDefinition def) {
+        long runStart = System.currentTimeMillis();   // content-capture time for the live JSONL watermark
         boolean hadIndex = hasIndexedChunks(name);
         boolean swapStarted = false;
         Path embeddedFile = null;
@@ -440,7 +482,11 @@ public class PipelineOrchestrator implements ImportHandler {
             importEmbeddedFile(name, def, embeddedFile.toString(),
                     (done, total) -> registry.setReindexProgress(name, mapPhaseProgress(done, total, EMBEDDING_END, STORING_END)));
 
-            // 4. Done — the terminal READY/COMPLETE/100 status is set centrally by runPipeline
+            // 4. Single-source rule: rewrite the live JSONL for LIVE projects (no-op for SNAPSHOT) so the
+            // scanner's watermark matches the freshly swapped index.
+            publishLiveJsonl(name, readJsonl(embeddedFile), runStart);
+
+            // 5. Done — the terminal READY/COMPLETE/100 status is set centrally by runPipeline
             // (gated on whether a listener scheduled a retrigger, so the chain can continue).
             return true;
         } catch (Exception e) {
@@ -527,6 +573,9 @@ public class PipelineOrchestrator implements ImportHandler {
             importEmbeddedFile(name, def, embeddingsPath,
                     (done, total) -> registry.setReindexProgress(name, mapPhaseProgress(done, total, EMBEDDING_END, STORING_END)));
 
+            // Single-source rule: rewrite the live JSONL for LIVE projects (no-op for SNAPSHOT).
+            publishLiveJsonl(name, readFirstN(embeddingsPath, Integer.MAX_VALUE), System.currentTimeMillis());
+
             // Done — the terminal READY/COMPLETE/100 status is set centrally by runPipeline.
             return true;
         } catch (Exception e) {
@@ -540,6 +589,131 @@ public class PipelineOrchestrator implements ImportHandler {
             }
             return false;
         }
+    }
+
+    /**
+     * Two-phase live update. Re-verifies the file sets at execution (files may have moved since
+     * the scheduler's scan). Phase 1: chunk + embed the toEmbed files in memory -> .tmp JSONL
+     * (generatedAt = run start). Phase 2: read .tmp, scoped removeAll (toEmbed + toDelete),
+     * addAllBatched (1 commit), then atomically rename .tmp -> final. On failure the .tmp is
+     * discarded and the old index + old JSONL are kept (the run re-throws -> runPipeline keeps
+     * the project READY and the scheduler retries next cycle).
+     */
+    private void runLiveUpdate(String name, ProjectDefinition def) throws Exception {
+        ProjectEntry entry = registry.entry(name).orElseThrow(
+                () -> new IllegalStateException("Unknown project " + name));
+        LiveUpdateScanner.ScanResult scan = scanner.scan(entry);   // re-verify at execution
+        if (scan.isEmpty()) {
+            log.info("Live update for '{}': no changes on re-scan — nothing to do", name);
+            return;   // success no-op
+        }
+        long generatedAt = System.currentTimeMillis();   // content-capture time = run start
+        Path finalPath = scanner.liveJsonlPath(entry);
+        Path tmp = finalPath.resolveSibling(entry.getName() + ".live-embedded.jsonl.tmp");
+        try {
+            // ---- Phase 1: chunk + embed (in-memory) -> .tmp ----
+            Path root = Path.of(def.getRootDir()).toAbsolutePath().normalize();
+            List<Path> files = scan.toEmbed().stream()
+                    .map(f -> root.resolve(f).normalize())
+                    .filter(Files::isRegularFile)
+                    .toList();
+            List<PxChunk> chunks = chunkProcess.executeForFiles(def, files);
+            chunks.forEach(c -> c.setProject(name));   // stamp (multi-project store separation)
+            entry.setLiveUpdateProgress(CHUNKING_END);   // chunking done — the embedding band begins
+            // Batch the embedding calls exactly like the full-reindex path (EmbeddingExportService):
+            // a first scan is a FULL update, so `chunks` can be thousands of entries. Sending them
+            // in one embedAll() would be a single giant request that a local model times out on
+            // (and langchain4j's 2048 maxSegmentsPerBatch default would not split it). Batching at
+            // tibedBatchSize keeps every request small enough to complete within the timeout.
+            int batchSize = Math.max(1, def.getTibedBatchSize());
+            int total = chunks.size();
+            List<EmbeddedChunkRecord> records = new ArrayList<>(total);
+            for (int i = 0; i < total; i += batchSize) {
+                List<PxChunk> batch = chunks.subList(i, Math.min(i + batchSize, total));
+                for (EmbeddedChunkRecord r : embedder.embed(batch)) {
+                    records.add(withGeneratedAt(r, generatedAt));
+                }
+                entry.setLiveUpdateProgress(mapPhaseProgress(Math.min(i + batchSize, total), total, CHUNKING_END, EMBEDDING_END));
+            }
+            writeJsonl(tmp, records);
+            entry.setLiveUpdateProgress(EMBEDDING_END);   // embedding done — the storing band begins
+
+            // ---- Phase 2: read .tmp -> update index -> rename ----
+            List<EmbeddedChunkRecord> toImport = readJsonl(tmp);
+            if (!scan.toEmbed().isEmpty()) {
+                luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name)
+                        .and(new IsIn(PxChunk.PXCHUNK_FILE, scan.toEmbed())));
+            }
+            if (!scan.toDelete().isEmpty()) {
+                luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name)
+                        .and(new IsIn(PxChunk.PXCHUNK_FILE, scan.toDelete())));
+            }
+            if (!toImport.isEmpty()) {
+                List<Embedding> embeddings = toImport.stream().map(r -> Embedding.from(r.vector())).toList();
+                List<TextSegment> segments = toImport.stream()
+                        .map(r -> de.spraener.prjxp.tibed.PxChunk2TextSegmentConverter.convert(r.toPxChunk()))
+                        .toList();
+                luceneStore.addAllBatched(embeddings, segments);   // single commit
+            }
+            Files.move(tmp, finalPath, StandardCopyOption.REPLACE_EXISTING);   // atomic publish
+            entry.setLiveUpdateProgress(STORING_END);   // done
+            log.info("Live update for '{}': embedded {} chunk(s), deleted {} file(s)",
+                    name, toImport.size(), scan.toDelete().size());
+        } catch (Exception e) {
+            try { Files.deleteIfExists(tmp); } catch (IOException ignored) { }
+            throw e;   // runPipeline catches -> keeps old index, READY, retry next cycle
+        }
+    }
+
+    /**
+     * Single-source rule: rewrites the project's {@code live-embedded.jsonl} from the given
+     * records, stamping {@code generatedAt}. No-op for SNAPSHOT projects or unknown names.
+     * Called after ANY path that writes source chunks into a LIVE project (full reindex,
+     * pre-embedded pipeline, importEmbeddings) so the scanner's watermark matches the index.
+     * Failures are logged, not thrown (the index is already updated).
+     */
+    public void publishLiveJsonl(String name, List<EmbeddedChunkRecord> records, long generatedAt) {
+        ProjectEntry entry = registry.entry(name).orElse(null);
+        if (entry == null || entry.getKind() != ProjectEntry.Kind.LIVE) {
+            return;   // SNAPSHOT / unknown — no live JSONL
+        }
+        try {
+            Path target = scanner.liveJsonlPath(entry);
+            List<EmbeddedChunkRecord> stamped = records.stream()
+                    .map(r -> withGeneratedAt(r, generatedAt))
+                    .toList();
+            writeJsonl(target, stamped);
+            log.info("Published live JSONL for '{}' ({} records, generatedAt={})", name, stamped.size(), generatedAt);
+        } catch (IOException e) {
+            log.warn("Could not rewrite live JSONL for '{}': {}", name, e.toString());
+        }
+    }
+
+    /** Copies the record with the run's {@code generatedAt} watermark (content-capture time). */
+    private EmbeddedChunkRecord withGeneratedAt(EmbeddedChunkRecord r, long generatedAt) {
+        return new EmbeddedChunkRecord(r.id(), r.mimeType(), r.file(), r.parent(), r.part(), r.total(),
+                r.fromLine(), r.toLine(), r.size(), r.overlap(), r.metadata(), r.content(),
+                r.vector(), r.embeddingPrefix(), r.project(), generatedAt);
+    }
+
+    /** Writes records as JSONL (one per line), creating parent directories as needed. */
+    private void writeJsonl(Path path, List<EmbeddedChunkRecord> records) throws IOException {
+        if (path.getParent() != null) { Files.createDirectories(path.getParent()); }
+        try (var w = Files.newBufferedWriter(path)) {
+            for (EmbeddedChunkRecord r : records) { w.write(objMapper.writeValueAsString(r)); w.write('\n'); }
+        }
+    }
+
+    /** Reads EmbeddedChunkRecord JSONL, skipping unparseable lines. */
+    private List<EmbeddedChunkRecord> readJsonl(Path path) throws IOException {
+        List<EmbeddedChunkRecord> out = new ArrayList<>();
+        try (var lines = Files.lines(path)) {
+            lines.filter(l -> !l.isBlank()).forEach(l -> {
+                try { out.add(objMapper.readValue(l, EmbeddedChunkRecord.class)); }
+                catch (Exception e) { log.warn("Skipping unparseable line in {}: {}", path, e.getMessage()); }
+            });
+        }
+        return out;
     }
 
     /**

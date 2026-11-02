@@ -18,6 +18,7 @@ import de.spraener.prjxp.docpipe.content.ContentCreationService;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
+import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.EmbeddingExportService;
 import de.spraener.prjxp.tibed.EmbeddingService;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -93,7 +94,7 @@ class DocPipePipelineIntegrationTest {
         luceneStore = new LuceneEmbeddingStore(indexDir, 8);
         embeddingModel = mock(EmbeddingModel.class);
         parser = new ProjectConfigFileParser();
-        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser);
+        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser, mock(LiveUpdateScanner.class));
 
         chunkProcess = mock(ChunkProcess.class);
         exportService = mock(EmbeddingExportService.class);
@@ -115,7 +116,8 @@ class DocPipePipelineIntegrationTest {
         listener = new DocPipePipelineListener(jobCreationService, docPipeRunner, registry, objMapper);
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService,
-                compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+                compatibilityChecker, embeddingModel, luceneStore, hub, objMapper,
+                mock(EmbeddingExecutor.class), mock(LiveUpdateScanner.class));
         orchestrator.setEmbeddingService(embeddingService);
         orchestrator.setPipelineListeners(List.of(listener));
 

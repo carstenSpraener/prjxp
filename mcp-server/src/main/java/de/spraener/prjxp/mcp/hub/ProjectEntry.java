@@ -40,9 +40,21 @@ public class ProjectEntry {
     @Getter(lombok.AccessLevel.NONE)
     private volatile boolean rescanRequested;
 
-    /** A live update is queued/running. */
+    /** A live update is queued/running (drives the scheduler's skip). */
     @Getter(lombok.AccessLevel.NONE)
     private volatile boolean embeddingInFlight;
+
+    /**
+     * A live update is actively running on the pipeline worker (a subset of {@link #embeddingInFlight}:
+     * queued-but-not-yet-running is in-flight but not running). Drives the {@code UPDATING} status and
+     * the Web UI's update indicator, so only the project actually being updated shows the icon.
+     */
+    @Getter(lombok.AccessLevel.NONE)
+    private volatile boolean embeddingRunning;
+
+    /** 0-100 progress of the running live update (meaningful only while {@link #embeddingRunning}). */
+    @Getter(lombok.AccessLevel.NONE)
+    private volatile int liveUpdateProgress;
 
     public ProjectEntry(String name, Path rootDir, Kind kind, ProjectDefinition definition, PrjXPEmbeddingStoreReference storeRef) {
         this.name = name;
@@ -76,4 +88,8 @@ public class ProjectEntry {
     public void setRescanRequested(boolean b) { this.rescanRequested = b; }
     public boolean isEmbeddingInFlight() { return embeddingInFlight; }
     public void setEmbeddingInFlight(boolean b) { this.embeddingInFlight = b; }
+    public boolean isEmbeddingRunning() { return embeddingRunning; }
+    public void setEmbeddingRunning(boolean b) { this.embeddingRunning = b; }
+    public int getLiveUpdateProgress() { return liveUpdateProgress; }
+    public void setLiveUpdateProgress(int p) { this.liveUpdateProgress = Math.max(0, Math.min(100, p)); }
 }

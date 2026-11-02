@@ -94,11 +94,28 @@ class PrjxpMcpToolTest {
 
     @Test
     void listProjectsFiltersToSearchableOnly() {
-        when(projectRegistry.availableProjects()).thenReturn(List.of("alpha", "beta"));
+        when(projectRegistry.projectInfos()).thenReturn(List.of(
+                new ProjectInfo("alpha", "READY", null),
+                new ProjectInfo("beta", "EMBEDDING", null)));
         when(projectRegistry.isSearchable("alpha")).thenReturn(true);
         when(projectRegistry.isSearchable("beta")).thenReturn(false);
 
-        assertThat(tool.listProjects()).containsExactly("alpha");
+        assertThat(tool.listProjects()).containsExactly(new ProjectSummary("alpha", null));
+    }
+
+    @Test
+    void listProjectsCarriesLiveUpdateWatermark() {
+        when(projectRegistry.projectInfos()).thenReturn(List.of(
+                new ProjectInfo("alpha", "READY", null, null, 10L, 10L, 3,
+                        null, null, null, null, null, false, "IDLE", 0, null, null,
+                        new ProjectInfo.LiveUpdateInfo("IDLE", 1700000000000L, null, null)),
+                new ProjectInfo("snapshot", "READY", null)));
+        when(projectRegistry.isSearchable("alpha")).thenReturn(true);
+        when(projectRegistry.isSearchable("snapshot")).thenReturn(true);
+
+        assertThat(tool.listProjects()).containsExactly(
+                new ProjectSummary("alpha", 1700000000000L),
+                new ProjectSummary("snapshot", null));
     }
 
     @Test

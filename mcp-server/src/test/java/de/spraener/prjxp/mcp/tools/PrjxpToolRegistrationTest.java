@@ -9,6 +9,7 @@ import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
+import de.spraener.prjxp.mcp.ProjectSummary;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -16,6 +17,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 
@@ -213,9 +215,21 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void listProjectsJoinsNames() {
-        when(mcpTool.listProjects()).thenReturn(List.of("a", "b"));
+        when(mcpTool.listProjects()).thenReturn(List.of(
+                new ProjectSummary("a", null),
+                new ProjectSummary("b", null)));
 
         assertThat(execute("listProjects", Map.of())).isEqualTo("a, b");
+    }
+
+    @Test
+    void listProjectsFormatsTimestamp() {
+        when(mcpTool.listProjects()).thenReturn(List.of(
+                new ProjectSummary("a", 1700000000000L),
+                new ProjectSummary("b", null)));
+
+        assertThat(execute("listProjects", Map.of()))
+                .isEqualTo("a (last updated: " + Instant.ofEpochMilli(1700000000000L).toString() + "), b");
     }
 
     @Test

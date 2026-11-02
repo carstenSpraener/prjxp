@@ -18,7 +18,8 @@ describe('DashboardComponent', () => {
     const mockDashboardService = {
       pollHealth: vi.fn().mockReturnValue(of({} as SystemHealth)),
       pollQueryStats: vi.fn().mockReturnValue(of({} as QueryStats)),
-      getProjectStats: vi.fn().mockReturnValue(of([]))
+      getProjectStats: vi.fn().mockReturnValue(of([])),
+      pollProjects: vi.fn().mockReturnValue(of([] as ProjectInfo[]))
     };
 
     await TestBed.configureTestingModule({
@@ -43,7 +44,7 @@ describe('DashboardComponent', () => {
     const dashboardService = TestBed.inject(DashboardService);
     expect(dashboardService.pollHealth).toHaveBeenCalled();
     expect(dashboardService.pollQueryStats).toHaveBeenCalled();
-    expect(dashboardService.getProjectStats).toHaveBeenCalled();
+    expect(dashboardService.pollProjects).toHaveBeenCalled();
   });
 
   it('should render metric cards', () => {

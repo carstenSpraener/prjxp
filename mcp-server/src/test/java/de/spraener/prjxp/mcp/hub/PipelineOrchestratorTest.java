@@ -10,6 +10,7 @@ import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
+import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.EmbeddingExportService;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
@@ -24,11 +25,15 @@ import org.mockito.ArgumentCaptor;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.BiConsumer;
@@ -47,6 +52,7 @@ import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 /**
  * Tests the hub pipeline with a REAL registry + real Lucene index (8-dim) and
@@ -71,6 +77,8 @@ class PipelineOrchestratorTest {
     private EmbeddingExportService exportService;  // mocked — stub writes a valid embedded JSONL file
     private EmbeddingCompatibilityChecker compatibilityChecker;  // mocked
     private ObjectMapper objMapper;          // REAL — importEmbeddedFile deserializes the temp file
+    private EmbeddingExecutor embedder;      // mocked — compute-only embed() (live updates)
+    private LiveUpdateScanner scanner;       // mocked — read-only change detection (live updates)
 
     private PipelineOrchestrator orchestrator;
 
@@ -86,12 +94,14 @@ class PipelineOrchestratorTest {
         luceneStore = new LuceneEmbeddingStore(indexDir, 8);
         embeddingModel = mock(EmbeddingModel.class);
         parser = new ProjectConfigFileParser();
-        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser);
+        scanner = mock(LiveUpdateScanner.class);
+        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser, scanner);
 
         chunkProcess = mock(ChunkProcess.class);
         exportService = mock(EmbeddingExportService.class);
         compatibilityChecker = mock(EmbeddingCompatibilityChecker.class);
         objMapper = new ObjectMapper();
+        embedder = mock(EmbeddingExecutor.class);
     }
 
     @AfterEach
@@ -162,7 +172,7 @@ class PipelineOrchestratorTest {
     @Test
     void onImportedWalksStatusFromImportingToReady() throws Exception {
         HubProjectRegistry spied = spy(registry);
-        orchestrator = new PipelineOrchestrator(spied, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(spied, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         CountDownLatch embedded = new CountDownLatch(1);
         AtomicReference<ProjectDefinition> defAtExport = new AtomicReference<>();
@@ -198,10 +208,32 @@ class PipelineOrchestratorTest {
     }
 
     @Test
+    void pipelineRunRefreshesInMemoryStatsCache() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));   // cache: 0 chunks (empty index)
+        indexOldChunk("alpha", "old-1");   // the index now holds 1 chunk, but the cache still says 0
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        stubExportWritesRecord("new-1", "fresh content");
+
+        orchestrator.enqueue("alpha");
+
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+
+        // The pipeline swapped the index (old chunk gone, new chunk in) — the Web UI's stats must
+        // reflect the new index. The refresh happens in the run's finally block, so poll briefly.
+        long deadline = System.currentTimeMillis() + 10_000;
+        while (System.currentTimeMillis() < deadline
+                && registry.projectInfos().get(0).chunkCount() != 1) {
+            Thread.sleep(10);
+        }
+        assertThat(registry.projectInfos().get(0).chunkCount()).isEqualTo(1);
+    }
+
+    @Test
     void reImportDoesNotLeaveDuplicateDaoInProvider() throws Exception {
         PxChunkDaoProvider spiedProvider = spy(new PxChunkDaoProvider(List.of()));
-        HubProjectRegistry reg = new HubProjectRegistry(cfg, hub, spiedProvider, luceneStore, embeddingModel, parser);
-        orchestrator = new PipelineOrchestrator(reg, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        HubProjectRegistry reg = new HubProjectRegistry(cfg, hub, spiedProvider, luceneStore, embeddingModel, parser, scanner);
+        orchestrator = new PipelineOrchestrator(reg, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         CountDownLatch firstExportStarted = new CountDownLatch(1);
         CountDownLatch releaseFirst = new CountDownLatch(1);
@@ -252,7 +284,7 @@ class PipelineOrchestratorTest {
     @Test
     void chunkFailureMarksProjectFailedAndSkipsEmbedding() throws Exception {
         doThrow(new RuntimeException("chunking exploded")).when(chunkProcess).executeForProject(any());
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         orchestrator.onImported("alpha", projectDir("alpha"));
 
@@ -283,7 +315,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(exportService).exportForProject(any(), any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.enqueue("a");
         orchestrator.enqueue("b");
 
@@ -303,7 +335,7 @@ class PipelineOrchestratorTest {
         // index already contains a chunk stamped for 'foo' (e.g. from a previous run)
         indexOldChunk("foo", "old-1");
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.selfHeal();   // synchronous
 
         assertThat(registry.entry("foo").orElseThrow().getStatus()).isEqualTo(ProjectStatus.READY);
@@ -314,7 +346,7 @@ class PipelineOrchestratorTest {
     void onImportedSkipsPipelineWhenIndexAlreadyHasProjectChunks() throws Exception {
         indexOldChunk("foo", "old-1");
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.onImported("foo", projectDir("foo"));
 
         assertThat(registry.entry("foo").orElseThrow().getStatus()).isEqualTo(ProjectStatus.READY);
@@ -339,7 +371,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(exportService).exportForProject(any(), any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.selfHeal();   // enqueues the pipeline asynchronously
 
         assertThat(embedded.await(10, TimeUnit.SECONDS)).isTrue();
@@ -350,7 +382,7 @@ class PipelineOrchestratorTest {
     @Test
     void onFailedMarksKnownProjectAsFailed() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         orchestrator.onFailed("alpha", "tar extraction exploded");   // synchronous
 
@@ -361,7 +393,7 @@ class PipelineOrchestratorTest {
 
     @Test
     void onFailedForUnregisteredProjectIsIgnored() {
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         orchestrator.onFailed("ghost", "tar extraction exploded");   // must not throw
 
@@ -391,7 +423,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(exportService).exportForProject(any(), any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.enqueue("foo");
 
         assertThat(embedded.await(10, TimeUnit.SECONDS)).isTrue();   // export done, import follows
@@ -403,7 +435,7 @@ class PipelineOrchestratorTest {
 
     @Test
     void enqueueForDeregisteredProjectIsSafeNoOp() throws Exception {
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         assertThatCode(() -> orchestrator.enqueue("ghost")).doesNotThrowAnyException();   // entry gone before the run
 
@@ -412,7 +444,7 @@ class PipelineOrchestratorTest {
 
     @Test
     void enqueueIsIdempotentWhilePipelineInFlight() throws Exception {
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         registry.registerProject("a", projectDir("a"));
 
         CountDownLatch started = new CountDownLatch(1);
@@ -455,7 +487,7 @@ class PipelineOrchestratorTest {
         Path dir = projectDir("alpha");
         registry.registerProject("alpha", dir);
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         CountDownLatch chunkingDone = new CountDownLatch(1);
         doAnswer(inv -> {
@@ -521,7 +553,7 @@ class PipelineOrchestratorTest {
         Path dir = projectDir("alpha");
         registry.registerProject("alpha", dir);
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         AtomicReference<ReindexStatus> statusAtFinish = new AtomicReference<>();
         orchestrator.setPipelineListeners(List.of(new PipelineListener() {
@@ -552,7 +584,7 @@ class PipelineOrchestratorTest {
         Path dir = projectDir("alpha");
         registry.registerProject("alpha", dir);
 
-        orchestrator = new PipelineOrchestrator(spied, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(spied, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         // The export stub fires the progress callback like the real service does: (done, total) per record
         doAnswer(inv -> {
@@ -597,7 +629,7 @@ class PipelineOrchestratorTest {
         Path dir = projectDir("alpha");
         registry.registerProject("alpha", dir);
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
 
         doThrow(new RuntimeException("chunking failed"))
                 .when(chunkProcess).executeForProject(any());
@@ -632,7 +664,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(exportService).exportForProject(any(), any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.enqueue("alpha");
 
         assertThat(embedStarted.await(10, TimeUnit.SECONDS)).isTrue();
@@ -656,7 +688,7 @@ class PipelineOrchestratorTest {
             throw new RuntimeException("embed exploded");
         }).when(exportService).exportForProject(any(), any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.enqueue("alpha");
 
         awaitReindexStatus(registry, "alpha", ReindexStatus.FAILED);
@@ -671,7 +703,7 @@ class PipelineOrchestratorTest {
 
         doThrow(new RuntimeException("embed exploded")).when(exportService).exportForProject(any(), any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.enqueue("alpha");
 
         awaitStatus(registry, "alpha", ProjectStatus.FAILED);
@@ -685,7 +717,7 @@ class PipelineOrchestratorTest {
 
         stubExportWritesRecord("new-1", "new content");
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.enqueue("alpha");
 
         awaitReindexStatus(registry, "alpha", ReindexStatus.COMPLETE);
@@ -712,7 +744,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(exportService).exportForProject(any(), any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.enqueue("alpha");
 
         awaitReindexStatus(registry, "alpha", ReindexStatus.COMPLETE);
@@ -734,7 +766,7 @@ class PipelineOrchestratorTest {
             return null;
         }).when(exportService).exportForProject(any(), any(), any());
 
-        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
         orchestrator.enqueue("alpha");
         assertThat(embedStarted.await(10, TimeUnit.SECONDS)).isTrue();
 
@@ -744,5 +776,352 @@ class PipelineOrchestratorTest {
         assertThat(registry.entry("alpha").orElseThrow().getStatus()).isEqualTo(ProjectStatus.IMPORTING);
 
         release.countDown();
+    }
+
+    // ------------------------------------------------------------------ Phase 03: live update (runLiveUpdate two-phase flow)
+
+    /** Stubs the (mocked) scanner to report the given three-way split and a live JSONL under the temp root. */
+    private void stubScanner(String name, Set<String> toEmbed, Set<String> toDelete) {
+        when(scanner.scan(any())).thenReturn(new LiveUpdateScanner.ScanResult(toEmbed, toDelete, 0));
+        when(scanner.liveJsonlPath(any())).thenReturn(tempRoot.resolve("live").resolve(name + ".live-embedded.jsonl"));
+    }
+
+    /** Indexes one chunk stamped with project + id + file (for seeding the shared index). */
+    private void indexFileChunk(String project, String id, String file) {
+        TextSegment stamped = TextSegment.from(
+                "old content of " + id,
+                Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, project, PxChunk.PXCHUNK_ID, id, PxChunk.PXCHUNK_FILE, file)));
+        luceneStore.addAll(List.of(Embedding.from(new float[8])), List.of(stamped));
+    }
+
+    private PxChunk chunk(String id, String file, String content) {
+        return PxChunk.create(cc -> {
+            cc.setId(id);
+            cc.setFile(file);
+            cc.setContent(content);
+        });
+    }
+
+    private float[] vec() {
+        float[] v = new float[8];
+        Arrays.fill(v, 0.1f);
+        return v;
+    }
+
+    /** Reads EmbeddedChunkRecord JSONL lines (test-side mirror of the orchestrator's reader). */
+    private List<EmbeddedChunkRecord> readJsonlLines(Path path) throws Exception {
+        List<EmbeddedChunkRecord> out = new ArrayList<>();
+        try (var lines = Files.lines(path)) {
+            lines.filter(l -> !l.isBlank()).forEach(l -> {
+                try {
+                    out.add(objMapper.readValue(l, EmbeddedChunkRecord.class));
+                } catch (Exception e) {
+                    throw new RuntimeException("Unparseable JSONL line in " + path, e);
+                }
+            });
+        }
+        return out;
+    }
+
+    /** Awaits the run's completion: {@code embeddingInFlight} is cleared in the pipeline's finally block. */
+    private void awaitEmbeddingInFlight(HubProjectRegistry reg, String name, boolean expected) throws InterruptedException {
+        long deadline = System.currentTimeMillis() + 10_000;
+        boolean actual = !expected;
+        while (System.currentTimeMillis() < deadline) {
+            var entry = reg.entry(name);
+            if (entry.isPresent()) {
+                actual = entry.get().isEmbeddingInFlight();
+                if (actual == expected) {
+                    return;
+                }
+            }
+            Thread.sleep(10);
+        }
+        assertThat(actual).as("embeddingInFlight of '%s'", name).isEqualTo(expected);
+    }
+
+    @Test
+    void enqueueLiveUpdate_idempotent_whenReindexInFlight() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+        // hold the single worker busy with a full reindex
+        CountDownLatch reindexStarted = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        doAnswer(inv -> {
+            reindexStarted.countDown();
+            release.await(10, TimeUnit.SECONDS);
+            return null;
+        }).when(chunkProcess).executeForProject(any());
+        stubExportWritesRecord("chunk-a", "content a");
+
+        orchestrator.enqueue("alpha");   // full reindex in flight
+        assertThat(reindexStarted.await(10, TimeUnit.SECONDS)).isTrue();
+
+        orchestrator.enqueueLiveUpdate("alpha");   // must be deduplicated (a run is already in flight)
+
+        // the live update must NOT have started: no scan, embeddingInFlight stays false
+        verify(scanner, never()).scan(any());
+        assertThat(registry.entry("alpha").orElseThrow().isEmbeddingInFlight()).isFalse();
+
+        release.countDown();
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+    }
+
+    @Test
+    void runLiveUpdate_embedsChangedAndPublishesJsonl() throws Exception {
+        Path dir = projectDir("alpha");
+        Files.writeString(dir.resolve("a.java"), "public class A {}");
+        registry.registerProject("alpha", dir);
+        indexFileChunk("alpha", "old-a", "a.java");   // the file is in the index (stale)
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        stubScanner("alpha", Set.of("a.java"), Set.of());
+        when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of(chunk("new-a", "a.java", "new content of a")));
+        when(embedder.embed(any())).thenReturn(List.of(EmbeddedChunkRecord.from(chunk("new-a", "a.java", "new content of a"), vec())));
+
+        orchestrator.enqueueLiveUpdate("alpha");
+        awaitEmbeddingInFlight(registry, "alpha", false);   // run completed
+
+        // the .tmp was renamed to the final live JSONL, which carries the generatedAt watermark
+        Path finalJsonl = tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl");
+        Path tmp = tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl.tmp");
+        assertThat(Files.exists(finalJsonl)).isTrue();
+        assertThat(Files.exists(tmp)).isFalse();
+        List<EmbeddedChunkRecord> published = readJsonlLines(finalJsonl);
+        assertThat(published).hasSize(1);
+        assertThat(published.get(0).generatedAt()).isNotNull();
+
+        // the new a.java chunk is in the index (the stale one was removed first)
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_FILE, "a.java"))).isTrue();
+        assertThat(registry.entry("alpha").orElseThrow().isEmbeddingInFlight()).isFalse();
+    }
+
+    @Test
+    void runLiveUpdate_setsEmbeddingRunningWhileExecuting() throws Exception {
+        Path dir = projectDir("alpha");
+        Files.writeString(dir.resolve("a.java"), "public class A {}");
+        registry.registerProject("alpha", dir);
+        indexFileChunk("alpha", "old-a", "a.java");   // the file is in the index (stale)
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        stubScanner("alpha", Set.of("a.java"), Set.of());
+        when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of(chunk("new-a", "a.java", "new content of a")));
+        AtomicBoolean runningDuringEmbed = new AtomicBoolean(false);
+        when(embedder.embed(any())).thenAnswer(inv -> {
+            runningDuringEmbed.set(registry.entry("alpha").orElseThrow().isEmbeddingRunning());
+            return List.of(EmbeddedChunkRecord.from(chunk("new-a", "a.java", "new content of a"), vec()));
+        });
+
+        orchestrator.enqueueLiveUpdate("alpha");
+        awaitEmbeddingInFlight(registry, "alpha", false);   // run completed
+
+        assertThat(runningDuringEmbed).as("embeddingRunning while the update is executing").isTrue();
+        assertThat(registry.entry("alpha").orElseThrow().isEmbeddingRunning()).isFalse();   // cleared after
+    }
+
+    @Test
+    void runLiveUpdate_batchesEmbeddingCalls() throws Exception {
+        Path dir = projectDir("alpha");
+        Files.writeString(dir.resolve("a.java"), "public class A {}");
+        registry.registerProject("alpha", dir);
+        registry.definitionOf("alpha").setTibedBatchSize(2);   // force small batches
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        stubScanner("alpha", Set.of("a.java"), Set.of());
+
+        // 5 chunks with batchSize 2 -> embed() must be called 3 times (2 + 2 + 1), never with > 2.
+        // Regression: a first scan is a FULL update, so `chunks` can be thousands of entries. Sending
+        // them in one embedAll() is a single giant request a local model times out on (langchain4j's
+        // OpenAiEmbeddingModel defaults maxSegmentsPerBatch to 2048, so it would NOT split them).
+        List<PxChunk> chunks = List.of(
+                chunk("c1", "a.java", "content 1"),
+                chunk("c2", "a.java", "content 2"),
+                chunk("c3", "a.java", "content 3"),
+                chunk("c4", "a.java", "content 4"),
+                chunk("c5", "a.java", "content 5"));
+        when(chunkProcess.executeForFiles(any(), any())).thenReturn(chunks);
+        when(embedder.embed(any())).thenAnswer(inv -> {
+            List<PxChunk> batch = inv.getArgument(0);
+            return batch.stream().map(c -> EmbeddedChunkRecord.from(c, vec())).toList();
+        });
+
+        orchestrator.enqueueLiveUpdate("alpha");
+        awaitEmbeddingInFlight(registry, "alpha", false);   // run completed
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PxChunk>> captor = ArgumentCaptor.forClass(List.class);
+        verify(embedder, times(3)).embed(captor.capture());
+        assertThat(captor.getAllValues().stream().map(List::size).toList())
+                .as("every embedding request stays within tibedBatchSize")
+                .containsExactly(2, 2, 1);
+    }
+
+    @Test
+    void runLiveUpdate_deletesRemovedFiles() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        indexFileChunk("alpha", "old-1", "old.java");   // in the index, gone from disk
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        stubScanner("alpha", Set.of(), Set.of("old.java"));   // nothing to embed, one file to delete
+        when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of());
+        when(embedder.embed(any())).thenReturn(List.of());
+
+        orchestrator.enqueueLiveUpdate("alpha");
+        awaitEmbeddingInFlight(registry, "alpha", false);
+
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_FILE, "old.java"))).isFalse();   // deleted
+    }
+
+    @Test
+    void runLiveUpdate_noChanges_noOp() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        stubScanner("alpha", Set.of(), Set.of());   // empty scan -> no-op
+
+        orchestrator.enqueueLiveUpdate("alpha");
+        awaitEmbeddingInFlight(registry, "alpha", false);
+
+        // no-op: no chunking, no embedding, no .tmp, no final JSONL
+        verify(chunkProcess, never()).executeForFiles(any(), any());
+        verify(embedder, never()).embed(any());
+        assertThat(Files.exists(tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl"))).isFalse();
+        assertThat(Files.exists(tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl.tmp"))).isFalse();
+    }
+
+    @Test
+    void runLiveUpdate_failure_discardsTmpKeepsIndex() throws Exception {
+        Path dir = projectDir("alpha");
+        Files.writeString(dir.resolve("a.java"), "public class A {}");
+        registry.registerProject("alpha", dir);
+        indexFileChunk("alpha", "old-a", "a.java");   // the old index data that must survive
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        stubScanner("alpha", Set.of("a.java"), Set.of());
+        when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of(chunk("new-a", "a.java", "new content of a")));
+        when(embedder.embed(any())).thenThrow(new RuntimeException("embed exploded"));
+
+        orchestrator.enqueueLiveUpdate("alpha");
+        awaitEmbeddingInFlight(registry, "alpha", false);
+
+        // the failure (in Phase 1) discards the .tmp and keeps the old index intact
+        assertThat(Files.exists(tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl.tmp"))).isFalse();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "old-a"))).isTrue();   // old chunk intact
+        assertThat(registry.entry("alpha").orElseThrow().getStatus()).isEqualTo(ProjectStatus.READY);   // stays searchable
+    }
+
+    @Test
+    void runLiveUpdate_firesNoListeners() throws Exception {
+        Path dir = projectDir("alpha");
+        Files.writeString(dir.resolve("a.java"), "public class A {}");
+        registry.registerProject("alpha", dir);
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        AtomicInteger listenerCalls = new AtomicInteger();
+        orchestrator.setPipelineListeners(List.of(new PipelineListener() {
+            @Override
+            public void onPipelineStart(PipelineOrchestrator o, String n, PipelineRun r) {
+                listenerCalls.incrementAndGet();
+            }
+
+            @Override
+            public void onPipelineFinished(PipelineOrchestrator o, String n, PipelineRun r) {
+                listenerCalls.incrementAndGet();
+            }
+        }));
+        stubScanner("alpha", Set.of("a.java"), Set.of());
+        when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of(chunk("new-a", "a.java", "new content of a")));
+        when(embedder.embed(any())).thenReturn(List.of(EmbeddedChunkRecord.from(chunk("new-a", "a.java", "new content of a"), vec())));
+
+        orchestrator.enqueueLiveUpdate("alpha");
+        awaitEmbeddingInFlight(registry, "alpha", false);
+
+        assertThat(listenerCalls.get()).as("a live update must fire no PipelineListener").isZero();
+    }
+
+    // ------------------------------------------------------------------ Phase 05: single-source rule (live JSONL after full rewrites)
+
+    @Test
+    void publishLiveJsonl_live_writesStampedJsonl() throws Exception {
+        hub.setLiveJsonlDir(tempRoot.resolve("live").toString());
+        registry.registerProject("alpha", projectDir("alpha"), ProjectEntry.Kind.LIVE);
+        when(scanner.liveJsonlPath(any())).thenReturn(tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl"));
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+        orchestrator.publishLiveJsonl("alpha", List.of(EmbeddedChunkRecord.from(chunk("c1", "a.java", "content"), vec())), 42L);   // synchronous
+
+        Path jsonl = tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl");
+        assertThat(Files.exists(jsonl)).isTrue();
+        List<EmbeddedChunkRecord> published = readJsonlLines(jsonl);
+        assertThat(published).hasSize(1);
+        assertThat(published.get(0).generatedAt()).isEqualTo(42L);
+    }
+
+    @Test
+    void publishLiveJsonl_snapshot_noWrite() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));   // SNAPSHOT (default kind)
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+        orchestrator.publishLiveJsonl("alpha", List.of(EmbeddedChunkRecord.from(chunk("c1", "a.java", "content"), vec())), 42L);
+
+        assertThat(Files.exists(tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl"))).isFalse();
+        verify(scanner, never()).liveJsonlPath(any());   // SNAPSHOT never resolves a live JSONL path
+    }
+
+    @Test
+    void publishLiveJsonl_unknownName_noWrite() throws Exception {
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+        assertThatCode(() -> orchestrator.publishLiveJsonl("ghost", List.of(EmbeddedChunkRecord.from(chunk("c1", "a.java", "content"), vec())), 42L))
+                .doesNotThrowAnyException();
+        verify(scanner, never()).liveJsonlPath(any());
+    }
+
+    @Test
+    void publishLiveJsonl_writeFailureIsLoggedNotThrown() throws Exception {
+        hub.setLiveJsonlDir(tempRoot.resolve("live").toString());
+        registry.registerProject("alpha", projectDir("alpha"), ProjectEntry.Kind.LIVE);
+        Path blocker = tempRoot.resolve("blocker");
+        Files.writeString(blocker, "x");   // a regular file where the parent directory must be
+        when(scanner.liveJsonlPath(any())).thenReturn(blocker.resolve("alpha.live-embedded.jsonl"));
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+        assertThatCode(() -> orchestrator.publishLiveJsonl("alpha", List.of(EmbeddedChunkRecord.from(chunk("c1", "a.java", "content"), vec())), 42L))
+                .doesNotThrowAnyException();   // the index is already updated — a JSONL failure must not fail the run
+        assertThat(Files.exists(blocker.resolve("alpha.live-embedded.jsonl"))).isFalse();
+    }
+
+    @Test
+    void runStandardPipeline_live_rewritesLiveJsonl() throws Exception {
+        hub.setLiveJsonlDir(tempRoot.resolve("live").toString());
+        registry.registerProject("alpha", projectDir("alpha"), ProjectEntry.Kind.LIVE);
+        when(scanner.liveJsonlPath(any())).thenReturn(tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl"));
+        stubExportWritesRecord("new-1", "new content");
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        long before = System.currentTimeMillis();
+        orchestrator.enqueue("alpha");
+        awaitReindexStatus(registry, "alpha", ReindexStatus.COMPLETE);
+
+        Path jsonl = tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl");
+        assertThat(Files.exists(jsonl)).isTrue();
+        List<EmbeddedChunkRecord> published = readJsonlLines(jsonl);
+        assertThat(published).hasSize(1);
+        assertThat(published.get(0).generatedAt()).isNotNull();
+        assertThat(published.get(0).generatedAt()).isBetween(before, System.currentTimeMillis());   // ≈ run start
+    }
+
+    @Test
+    void runStandardPipeline_snapshot_noLiveJsonl() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));   // SNAPSHOT (default kind)
+        stubExportWritesRecord("new-1", "new content");
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        orchestrator.enqueue("alpha");
+        awaitReindexStatus(registry, "alpha", ReindexStatus.COMPLETE);
+
+        assertThat(Files.exists(tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl"))).isFalse();
+        verify(scanner, never()).liveJsonlPath(any());   // a SNAPSHOT reindex never touches the live JSONL
     }
 }

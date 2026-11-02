@@ -85,7 +85,7 @@ class ImportPollerTest {
         luceneStore = new LuceneEmbeddingStore(storeDir, 8);
 
         registry = new HubProjectRegistry(new PrjXPConfig(), props, new PxChunkDaoProvider(List.of()),
-                luceneStore, mock(EmbeddingModel.class), new ProjectConfigFileParser());
+                luceneStore, mock(EmbeddingModel.class), new ProjectConfigFileParser(), mock(LiveUpdateScanner.class));
 
         orchestrator = mock(PipelineOrchestrator.class);
 

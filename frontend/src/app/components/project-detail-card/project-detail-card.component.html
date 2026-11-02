@@ -1,6 +1,9 @@
 <div class="detail-card glass-panel">
   <div class="card-header">
-    <h2 class="project-name text-cyan neon-glow">{{ project.name }}</h2>
+    <h2 class="project-name text-cyan neon-glow">
+      {{ project.name }}
+      <live-update-indicator [liveUpdate]="project.liveUpdate"></live-update-indicator>
+    </h2>
     <div class="badges">
       @if (project.kind) {
         <span class="badge badge-kind">{{ project.kind }}</span>
@@ -28,6 +31,12 @@
       <span class="stat-label text-secondary">Files</span>
       <span class="stat-value">{{ project.fileCount ?? 0 }}</span>
     </div>
+    @if (freshnessLabel()) {
+      <div class="stat-item">
+        <span class="stat-label text-secondary">Freshness</span>
+        <span class="stat-value">{{ freshnessLabel() }}</span>
+      </div>
+    }
   </div>
 
   @if (project.reindexStatus && project.reindexStatus !== 'IDLE' && project.reindexStatus !== 'COMPLETE') {

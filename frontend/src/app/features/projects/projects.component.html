@@ -17,7 +17,10 @@
                (click)="selectProject(project)">
             <div class="project-item-content">
               <div class="project-item-row">
-                <span class="project-item-name">{{ project.name }}</span>
+                <span class="project-item-name">
+                  {{ project.name }}
+                  <live-update-indicator [liveUpdate]="project.liveUpdate"></live-update-indicator>
+                </span>
                 <span class="badge {{ getStatusBadgeClass(project.status) }}">{{ project.status }}</span>
               </div>
               @if (isReindexActive(project)) {

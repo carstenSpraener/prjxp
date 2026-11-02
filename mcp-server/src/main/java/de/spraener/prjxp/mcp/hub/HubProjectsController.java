@@ -201,6 +201,8 @@ public class HubProjectsController {
         }
 
         log.info("Imported {} pre-embedded chunks for project '{}'", importedCount, name);
+        hubRegistry.refreshStats(name);   // the index just changed — refresh the in-memory stats for the Web UI
+        orchestrator.publishLiveJsonl(name, allRecords, System.currentTimeMillis());   // single-source rule (no-op for SNAPSHOT)
         return ResponseEntity.ok("Imported " + importedCount + "/" + allRecords.size() + " chunks for project '" + name + "'");
     }
 
@@ -276,7 +278,7 @@ public class HubProjectsController {
         orchestrator.enqueue(request.name());
 
         return new ProjectInfo(request.name(), "IMPORTING", kind.name(), null, 0L, 0L, 0,
-            null, null, null, null, null, false, "IDLE", 0, null, null);
+            null, null, null, null, null, false, "IDLE", 0, null, null, null);
     }
 
     /** Updates an existing project's configuration. */
@@ -314,7 +316,8 @@ public class HubProjectsController {
             hubRegistry.getReindexStatus(name).name(),
             hubRegistry.getReindexProgress(name),
             def.getPrompt(),
-            def.isFulltext()
+            def.isFulltext(),
+            null
         );
     }
 
@@ -335,7 +338,7 @@ public class HubProjectsController {
 
         String projectName = fileName.replaceFirst("\\.[^.]+$", "");
         return new ProjectInfo(projectName, "IMPORTING", null, null, 0L, 0L, 0,
-            null, null, null, null, null, false, "IDLE", 0, null, null);
+            null, null, null, null, null, false, "IDLE", 0, null, null, null);
     }
 
     /** Uploads a pre-embedded archive (JSONL, GZ, TGZ, ZIP) for import. */
