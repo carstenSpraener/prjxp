@@ -5,6 +5,8 @@ import dev.langchain4j.model.ollama.OllamaEmbeddingModel;
 import dev.langchain4j.model.openai.OpenAiEmbeddingModel;
 import org.junit.jupiter.api.Test;
 
+import java.lang.reflect.Field;
+
 import static org.assertj.core.api.Assertions.assertThat;
 
 class EmbeddingModelConfigTest {
@@ -33,5 +35,21 @@ class EmbeddingModelConfigTest {
         Object model = new EmbeddingModelConfig().embeddingModel(cfg(PrjXPConfig.EmbeddingModelType.OLLAMA));
 
         assertThat(model).isInstanceOf(OllamaEmbeddingModel.class);
+    }
+
+    /**
+     * Regression: langchain4j's OpenAiEmbeddingModel defaults maxSegmentsPerBatch to 2048, which
+     * makes a large embedAll() a single giant request that a local model times out on. The config
+     * must cap it so every request stays small enough to finish within the timeout.
+     */
+    @Test
+    void openAiType_appliesMaxSegmentsPerBatch() throws Exception {
+        PrjXPConfig cfg = cfg(PrjXPConfig.EmbeddingModelType.OPEN_AI);
+        cfg.getEmbedding().setMaxSegmentsPerBatch(16);
+        OpenAiEmbeddingModel model = (OpenAiEmbeddingModel) new EmbeddingModelConfig().embeddingModel(cfg);
+
+        Field f = OpenAiEmbeddingModel.class.getDeclaredField("maxSegmentsPerBatch");
+        f.setAccessible(true);
+        assertThat((int) f.get(model)).isEqualTo(16);
     }
 }

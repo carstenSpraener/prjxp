@@ -29,6 +29,10 @@ public class EmbeddingModelConfig {
                     .baseUrl(apiBaseUrl)
                     .modelName(modelName)
                     .timeout(Duration.ofSeconds(ebCfg.getTimeout()))
+                    // langchain4j defaults maxSegmentsPerBatch to 2048 -> a large embedAll() becomes
+                    // one giant request that a local model times out on. Cap it so every request
+                    // stays small enough to finish within the timeout (split into many requests).
+                    .maxSegmentsPerBatch(Math.max(1, ebCfg.getMaxSegmentsPerBatch()))
                     .build();
         }
 

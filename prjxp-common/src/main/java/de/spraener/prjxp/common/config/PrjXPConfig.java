@@ -49,6 +49,13 @@ public class PrjXPConfig {
         private String apiKey = "lm-studio";
         private String modelName = "mxbai-embed-large-v1";
         private int timeout = 20;
+        /**
+         * Max texts per single embedding HTTP request. langchain4j's OpenAiEmbeddingModel
+         * defaults this to 2048, which makes a large embedAll() a single giant request that a
+         * local model (LM-Studio/Ollama) times out on. Capping it keeps every request small
+         * enough to complete within {@link #timeout}. Only applies to the OpenAI-compatible model.
+         */
+        private int maxSegmentsPerBatch = 32;
     }
 
     // --- Transfer Sektion (externes Embedding) ---
