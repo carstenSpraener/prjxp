@@ -108,6 +108,25 @@ class TextRetrieverTest {
     }
 
     @Test
+    void textChunkWithGeneratedAtShowsFreshnessNote() {
+        PxChunk chunk = textChunk("foo.rst:text", "docs/foo.rst", "Hello world", 0, 1);
+        chunk.getMetadata().put("generated_at", "1700000000000");
+
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), sp).toString();
+
+        assertThat(prompt).contains("Index-Stand");
+    }
+
+    @Test
+    void textChunkWithoutGeneratedAtHasNoFreshnessNote() {
+        PxChunk chunk = textChunk("foo.rst:text", "docs/foo.rst", "Hello world", 0, 1);
+
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), sp).toString();
+
+        assertThat(prompt).doesNotContain("Index-Stand");
+    }
+
+    @Test
     void contentOverBudgetIsTruncatedWithNotice() {
         SearchParams tinyBudget = new SearchParams(20, 0.85);
         tinyBudget.setMaxContentLength(20);   // tiny budget

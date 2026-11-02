@@ -51,6 +51,14 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                     break;
             }
         }
+        String ga = pxChunk.getMetadata().get("generated_at");
+        if (ga != null && !ga.isBlank()) {
+            try {
+                nextPrompt += "\n\n[Index-Stand " + java.time.Instant.ofEpochMilli(Long.parseLong(ga))
+                        .atZone(java.time.ZoneId.systemDefault())
+                        .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) + "]";
+            } catch (NumberFormatException ignored) { }
+        }
         return nextPrompt;
     }
 

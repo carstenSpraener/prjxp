@@ -59,7 +59,20 @@ public class TextRetriever implements GoldenRetriever {
     }
 
     private String formatChunk(PxChunk chunk) {
-        return "\n## Textauszug aus " + chunk.getFile() + ":\n" + chunk.getContent() + "\n";
+        String freshness = freshnessNote(chunk);
+        return "\n## Textauszug aus " + chunk.getFile() + (freshness == null ? "" : " " + freshness) + ":\n"
+                + chunk.getContent() + "\n";
+    }
+
+    /** A "(Index-Stand ...)" freshness note when the chunk carries a {@code generated_at} watermark; null otherwise. */
+    private String freshnessNote(PxChunk chunk) {
+        String ga = chunk.getMetadata().get("generated_at");
+        if (ga == null || ga.isBlank()) { return null; }
+        try {
+            return "(Index-Stand " + java.time.Instant.ofEpochMilli(Long.parseLong(ga))
+                    .atZone(java.time.ZoneId.systemDefault())
+                    .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")) + ")";
+        } catch (NumberFormatException e) { return null; }
     }
 
     @Override
