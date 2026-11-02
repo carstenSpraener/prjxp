@@ -46,6 +46,7 @@ public class PrjXPConfig {
     public static class EmbeddingConfig {
         private EmbeddingModelType type = EmbeddingModelType.OPEN_AI;
         private String apiBaseURL = "http://host.docker.internal:1234";
+        @lombok.ToString.Exclude
         private String apiKey = "lm-studio";
         private String modelName = "mxbai-embed-large-v1";
         private int timeout = 20;
