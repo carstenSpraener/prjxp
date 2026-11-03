@@ -154,6 +154,30 @@ class LiveUpdateScannerTest {
     }
 
     @Test
+    void scan_futureMtimeAlreadyCaptured_isNotRepeated() throws Exception {
+        writeDiskFile("a.java", System.currentTimeMillis() + 86_400_000); // one day ahead (clock skew)
+        addChunk("p", "a.java", "c1", null);
+        ProjectEntry entry = entry("p");
+        scanner.publishSourceState(entry, scanner.captureSourceState(entry));
+
+        LiveUpdateScanner.ScanResult result = scanner.scan(entry);
+
+        assertThat(result.toEmbed()).isEmpty();
+        assertThat(result.toDelete()).isEmpty();
+    }
+
+    @Test
+    void scan_publishedEmptyState_doesNotBecomeFullUpdate() throws Exception {
+        ProjectEntry entry = entry("p");
+        scanner.publishSourceState(entry, Map.of());
+
+        LiveUpdateScanner.ScanResult result = scanner.scan(entry);
+
+        assertThat(result.generatedAt()).isZero();
+        assertThat(result.isEmpty()).isTrue();
+    }
+
+    @Test
     void scan_deletedFile_deleted() throws Exception {
         writeJsonlWatermark("p", 1_000);
         addChunk("p", "a.java", "c1", null);   // in index, not on disk

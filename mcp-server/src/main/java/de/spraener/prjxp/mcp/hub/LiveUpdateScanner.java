@@ -17,17 +17,22 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.LinkedHashMap;
 import java.util.HashSet;
+import java.util.Map;
 import java.util.Set;
 
 /**
  * Stateless, read-only change detector for LIVE projects. Computes the three-way split
- * against the {@code generatedAt} watermark (content-capture time of the last run):
+ * against a persisted per-file state. Existing installations without that state temporarily
+ * fall back to the {@code generatedAt} watermark from the live JSONL:
  * <ul>
  *   <li>{@code toEmbed} — on-disk files with {@code mtime > generatedAt} OR not yet in the index (new).</li>
  *   <li>{@code toDelete} — in-index files no longer on disk, veto-passing, and NOT docpipe-generated.</li>
  * </ul>
- * Never writes. The watermark is read from the FIRST line of the live JSONL (one run = one timestamp).
+ * State is published only after a successful index update. This avoids an endless update loop when
+ * a bind-mounted file has an mtime ahead of the container clock, and also supports empty indexes.
  */
 @Component
 @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
@@ -41,8 +46,18 @@ public class LiveUpdateScanner {
     private final LuceneEmbeddingStore luceneStore;
     private final ObjectMapper objMapper;
 
-    /** Result of a scan. {@code generatedAt} is the watermark used (0 = first scan / full update). */
-    public record ScanResult(Set<String> toEmbed, Set<String> toDelete, long generatedAt) {
+    /** A lightweight, persisted file version. */
+    public record FileState(long modifiedAt, long size) { }
+
+    /** Persisted state of a successfully indexed source-tree view. */
+    public record SourceState(long capturedAt, Map<String, FileState> files) { }
+
+    /** Result of a scan. {@code generatedAt} is the legacy watermark used (0 = first scan / state mode). */
+    public record ScanResult(Set<String> toEmbed, Set<String> toDelete, long generatedAt,
+                             Map<String, FileState> sourceState) {
+        public ScanResult(Set<String> toEmbed, Set<String> toDelete, long generatedAt) {
+            this(toEmbed, toDelete, generatedAt, Map.of());
+        }
         public boolean isEmpty() { return toEmbed.isEmpty() && toDelete.isEmpty(); }
     }
 
@@ -51,15 +66,23 @@ public class LiveUpdateScanner {
         if (!def.isLiveUpdate()) {
             return new ScanResult(Set.of(), Set.of(), 0);   // per-project opt-out
         }
-        long generatedAt = readWatermark(entry);
-        Set<String> diskFiles = walkSourceTree(entry);
+        SourceState previousState = readSourceState(entry);
+        long generatedAt = previousState == null ? readWatermark(entry) : 0;
+        Map<String, FileState> diskState = captureSourceState(entry);
+        Set<String> diskFiles = diskState.keySet();
         Set<String> indexFiles = luceneStore.listFilesByProject(entry.getName(), null);
         Set<String> docPipeFiles = luceneStore.listFilesByProject(entry.getName(),
                 new IsEqualTo(PxChunk.metadataFieldKey(DocumentSource.DOCPIPE_GENERATED), "true"));
 
         Set<String> toEmbed = new HashSet<>();
         for (String file : diskFiles) {
-            if (mtimeOf(entry, file) > generatedAt || !indexFiles.contains(file)) {
+            boolean changed = previousState != null
+                    ? !diskState.get(file).equals(previousState.files().get(file))
+                    : mtimeOf(entry, file) > generatedAt;
+            // After a successful state publication, a missing index entry can be intentional (for
+            // example an unsupported or empty file that produced no chunks). Only the first scan
+            // uses the index as a completeness signal; later scans follow the source state.
+            if (changed || (previousState == null && !indexFiles.contains(file))) {
                 toEmbed.add(file);
             }
         }
@@ -69,12 +92,49 @@ public class LiveUpdateScanner {
                 toDelete.add(file);
             }
         }
-        return new ScanResult(toEmbed, toDelete, generatedAt);
+        return new ScanResult(toEmbed, toDelete, generatedAt, Map.copyOf(diskState));
     }
 
     /** The live-embedded JSONL path: {@code <liveJsonlDir>/<name>.live-embedded.jsonl}. */
     public Path liveJsonlPath(ProjectEntry entry) {
         return Path.of(props.getLiveJsonlDir(), entry.getName() + ".live-embedded.jsonl");
+    }
+
+    /** Sidecar state path, deliberately independent of the (possibly empty) embedded JSONL. */
+    public Path liveStatePath(ProjectEntry entry) {
+        return Path.of(props.getLiveJsonlDir(), entry.getName() + ".live-state.json");
+    }
+
+    /** Captures all veto-passing source files and their lightweight versions. */
+    public Map<String, FileState> captureSourceState(ProjectEntry entry) {
+        Path root = entry.getRootDir().toAbsolutePath().normalize();
+        ProjectDefinition def = entry.getDefinition();
+        Map<String, FileState> files = new LinkedHashMap<>();
+        if (!Files.isDirectory(root)) { return files; }
+        try (var stream = Files.walk(root)) {
+            stream.filter(Files::isRegularFile)
+                    .filter(p -> !vetoRegistry.shouldVeto(p, def))
+                    .forEach(p -> {
+                        try {
+                            files.put(toProjectRelativePath(root, p), new FileState(
+                                    Files.getLastModifiedTime(p).toMillis(), Files.size(p)));
+                        } catch (IOException e) {
+                            log.debug("Skipping unreadable source file {} while scanning {}: {}", p, entry.getName(), e.toString());
+                        }
+                    });
+        } catch (IOException e) {
+            log.warn("Could not walk source tree of {}: {}", entry.getName(), e.toString());
+        }
+        return files;
+    }
+
+    /** Atomically records the source view that was successfully submitted for indexing. */
+    public void publishSourceState(ProjectEntry entry, Map<String, FileState> files) throws IOException {
+        Path target = liveStatePath(entry);
+        Path tmp = target.resolveSibling(target.getFileName() + ".tmp");
+        if (target.getParent() != null) { Files.createDirectories(target.getParent()); }
+        objMapper.writeValue(tmp.toFile(), new SourceState(System.currentTimeMillis(), files == null ? Map.of() : files));
+        Files.move(tmp, target, StandardCopyOption.REPLACE_EXISTING);
     }
 
     /** The current watermark ({@code generatedAt} of the first live-JSONL line); 0 when absent. */
@@ -99,20 +159,18 @@ public class LiveUpdateScanner {
         }
     }
 
-    /** Veto-passing source files as project-relative paths (mirrors the chunker's selection). */
-    private Set<String> walkSourceTree(ProjectEntry entry) {
-        Path root = entry.getRootDir().toAbsolutePath().normalize();
-        ProjectDefinition def = entry.getDefinition();
-        Set<String> files = new HashSet<>();
-        if (!Files.isDirectory(root)) { return files; }
-        try (var stream = Files.walk(root)) {
-            stream.filter(Files::isRegularFile)
-                  .filter(p -> !vetoRegistry.shouldVeto(p, def))
-                  .forEach(p -> files.add(toProjectRelativePath(root, p)));
-        } catch (IOException e) {
-            log.warn("Could not walk source tree of {}: {}", entry.getName(), e.toString());
+    private SourceState readSourceState(ProjectEntry entry) {
+        Path state = liveStatePath(entry);
+        if (!Files.isRegularFile(state)) {
+            return null;
         }
-        return files;
+        try {
+            SourceState result = objMapper.readValue(state.toFile(), SourceState.class);
+            return result.files() == null ? null : result;
+        } catch (Exception e) {
+            log.warn("Could not read live source state from {} — using legacy watermark once: {}", state, e.toString());
+            return null;
+        }
     }
 
     private long mtimeOf(ProjectEntry entry, String relFile) {

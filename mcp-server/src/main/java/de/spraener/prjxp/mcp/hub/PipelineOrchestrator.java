@@ -485,6 +485,7 @@ public class PipelineOrchestrator implements ImportHandler {
             // 4. Single-source rule: rewrite the live JSONL for LIVE projects (no-op for SNAPSHOT) so the
             // scanner's watermark matches the freshly swapped index.
             publishLiveJsonl(name, readJsonl(embeddedFile), runStart);
+            publishLiveSourceState(name);
 
             // 5. Done — the terminal READY/COMPLETE/100 status is set centrally by runPipeline
             // (gated on whether a listener scheduled a retrigger, so the chain can continue).
@@ -575,6 +576,7 @@ public class PipelineOrchestrator implements ImportHandler {
 
             // Single-source rule: rewrite the live JSONL for LIVE projects (no-op for SNAPSHOT).
             publishLiveJsonl(name, readFirstN(embeddingsPath, Integer.MAX_VALUE), System.currentTimeMillis());
+            publishLiveSourceState(name);
 
             // Done — the terminal READY/COMPLETE/100 status is set centrally by runPipeline.
             return true;
@@ -656,6 +658,9 @@ public class PipelineOrchestrator implements ImportHandler {
                 luceneStore.addAllBatched(embeddings, segments);   // single commit
             }
             Files.move(tmp, finalPath, StandardCopyOption.REPLACE_EXISTING);   // atomic publish
+            // Persist the source view captured by the re-scan at run start. Capturing again here
+            // would acknowledge edits made while embedding and silently lose their follow-up update.
+            scanner.publishSourceState(entry, scan.sourceState());
             entry.setLiveUpdateProgress(STORING_END);   // done
             log.info("Live update for '{}': embedded {} chunk(s), deleted {} file(s)",
                     name, toImport.size(), scan.toDelete().size());
@@ -686,6 +691,14 @@ public class PipelineOrchestrator implements ImportHandler {
             log.info("Published live JSONL for '{}' ({} records, generatedAt={})", name, stamped.size(), generatedAt);
         } catch (IOException e) {
             log.warn("Could not rewrite live JSONL for '{}': {}", name, e.toString());
+        }
+    }
+
+    /** Publishes the complete current source view after a successful full LIVE-project swap. */
+    private void publishLiveSourceState(String name) throws IOException {
+        ProjectEntry entry = registry.entry(name).orElse(null);
+        if (entry != null && entry.getKind() == ProjectEntry.Kind.LIVE) {
+            scanner.publishSourceState(entry, scanner.captureSourceState(entry));
         }
     }
 
