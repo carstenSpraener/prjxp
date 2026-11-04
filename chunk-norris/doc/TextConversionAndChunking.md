@@ -1,189 +1,613 @@
-# Document Conversion Mechanism – Chunk Norris
+# Document Conversion in Chunk Norris
+
+This document explains the document conversion mechanism used in Chunk Norris.
+
+The conversion system is implemented around `DocConversionRouter`. It discovers available conversion agents, builds a directed conversion graph, selects the best route from a source document format to a target format, executes the selected conversions, and finally collects the converted content.
 
 ## Overview
 
-The document conversion system in Chunk Norris is a **graph-based routing engine** that transforms a document from one format (e.g. PDF) to another (e.g. Markdown) by chaining together individual **conversion agents**. The router selects the most cost-efficient chain of agents and then executes the conversion recursively over the document's artifact tree.
+The document conversion mechanism converts documents between different `DocArtifaktType`s, for example:
 
-All core classes live in the package `de.spraener.prjxp.chuno.docs` and its subpackages (`docs.model`, `docs.pdf`, `docs.html`, `docs.poi`, `docs.txt`, `docs.rtf`, `docs.config`).
+- `PDF`
+- `DOC`
+- `HTML`
+- `TEXT`
+- `MARK_DOWN`
 
----
+Conversions are performed by Spring-managed `DocConversionAgent`s. Each agent knows how to convert from exactly one source format to one target format.
 
-## Key Concepts
+Example:
 
-| Term | Description |
-|---|---|
-| **`DocArtifaktType`** | An enum representing a document format (PDF, HTML, MARK_DOWN, TEXT, DOC, …). Acts as a **vertex** in the conversion graph. |
-| **`DocConversionAgent<S, T>`** | A Spring bean that knows how to convert from source format `S` to target format `T`. Acts as a **directed edge** in the graph. |
-| **`DocArtifakt`** | The in-memory representation of a document (or a sub-document). Carries a `format`, a `data` payload, and an optional list of **child artifacts**. |
-| **`ConversionAccuracy`** | An enum with an explicit `rank` (ANALYTIC=4, AI_DRIVEN=3, LOCAL_AI_DRIVEN=2, INFORMATION_LOST=1) expressing how lossy a conversion may be. |
-| **`ConversionRoutesConfig`** | Holds **predefined routes** (a list of `ConversionRoute`) that bypass the graph search. Currently inactive by default — the list is not bound from the shipped `application.yaml`. |
-| **`DocContentCollector`** | Utility that walks the final artifact tree and extracts the text/structured content in the target format. |
-
----
-
-## The Conversion Graph
-
-```
-        ┌──────────┐   pdf2text    ┌──────────┐   text2md    ┌────────────┐
-        │   PDF    │ ────────────► │   TEXT   │ ────────────► │ MARK_DOWN  │
-        └──────────┘               └──────────┘              └────────────┘
-              │
-              └── pdf2md-tika ───────────────────────────────►
+```text
+PDF -> HTML
+HTML -> MARK_DOWN
+MARK_DOWN -> TEXT
 ```
 
-* **Vertices** – every `DocArtifaktType` that appears as a source or target of at least one agent.
-* **Directed edges** – one per `DocConversionAgent` bean. The edge weight is the **estimated conversion cost** (see below).
-* The graph is built at runtime by `DocConversionRouter#buildGraph()` using JGraphT's `SimpleDirectedWeightedGraph`.
+The router can combine multiple agents into a conversion chain if no direct conversion exists.
 
-The diagram above shows two real paths from a PDF source: `pdf2md-tika` goes straight to Markdown (for text-based PDFs), while `pdf2text` → `text2md` is the two-step analytic path. Other registered agents include `pdf2image` → `image2md`, `html2md`, `doc2html`/`docx2html` → `html2md`, and `rtf2html` → `html2md`.
+## Main Components
 
----
+### `DocConversionRouter`
 
-## Path Selection – `findBestPath`
+`DocConversionRouter` is the central service for document conversion.
 
-The method `DocConversionRouter#findBestPath(File, DocArtifaktType, DocArtifaktType, ConversionAccuracy)` determines the ordered list of agents to apply. It follows a two-tier strategy:
+It is responsible for:
 
-1. **Predefined route (fast path).**
-   `ConversionRoutesConfig#findPredefinedRouteAgents(start, end)` is consulted first. If the configuration supplies an explicit agent chain for the given format pair, that chain is returned immediately and the graph is never built. *(Currently inactive by default — no routes are bound from the shipped `application.yaml`, so this tier always falls through to Dijkstra.)*
+- discovering all available `DocConversionAgent`s
+- building a directed weighted graph of possible conversions
+- finding the best conversion path
+- applying conversion agents in sequence
+- collecting the final converted content
 
-2. **Dijkstra shortest path (general path).**
-   If no predefined route exists, the router:
-   1. Builds the conversion graph from all registered `DocConversionAgent` beans.
-   2. Calls `estimateConversionCosts(…)` to assign a **weight** to every edge (see *Cost Estimation* below).
-   3. Runs `DijkstraShortestPath` from `start` to `end`.
-   4. Returns the edge list of the resulting `GraphPath`, or an empty list if no path exists.
+### `DocConversionAgent`
 
-If `start == end` the method short-circuits and returns an empty list (no conversion needed).
+A `DocConversionAgent` represents one conversion step.
 
----
+Conceptually, an agent provides:
 
-## Cost Estimation – `estimateConversionCosts`
+- source format
+- target format
+- conversion logic
+- estimated conversion cost
+- estimated output quantity
+- conversion accuracy
 
-This private recursive method walks the graph **from the source format toward the target format**, assigning a weight to each edge it encounters.
+An agent is represented as an edge in the conversion graph.
 
-For every agent whose `sourceFormat` matches the current artifact's format (and that has not yet been visited in this branch):
+### `DocArtifakt`
 
-```
-totalCosts = agent.estimateCosts(artifakt)  ×  agent.estimateQuantity(artifakt)
-```
+`DocArtifakt` represents a document artifact during conversion.
 
-* `estimateCosts` – a per-unit cost (e.g. CPU time, API call cost) the agent reports for the given artifact.
-* `estimateQuantity` – a multiplier reflecting the artifact's size/complexity (e.g. number of pages, number of child elements).
+A conversion may produce one or multiple child artifacts. Therefore, the conversion result is not just a linear value but a tree of artifacts.
 
-**Accuracy surcharge.** If the agent's own `accuracy()` rank is *lower* (more lossy) than the `ConversionAccuracy` requested by the caller, a configurable penalty is added:
+Example:
 
-```
-totalCosts += inaccurateSurcharge   // default: 1 000 000.0
-```
-
-The value is read from the property `prjxp.conversion.inaccurateSurcharge`. This makes Dijkstra strongly prefer routes that meet the requested accuracy, while still allowing a lossy route if it is the *only* path.
-
-The method then creates a **synthetic child artifact** (same content, format changed to the agent's target, quantity propagated) and recurses. A `visited` set prevents infinite cycles in the graph.
-
----
-
-## Execution – `doConversion`
-
-Two public overloads exist:
-
-| Signature | Returns |
-|---|---|
-| `doConversion(File, start, end, accuracy)` | `String` – the final text content |
-| `doConversion(File, start, end, accuracy, Consumer<DocArtifakt>)` | `void` – streams each artifact to the consumer |
-
-Both follow the same pipeline:
-
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  1. findBestPath(…)  →  List<DocConversionAgent>                   │
-│  2. DocArtifakt.createRoot(file)  →  root artifact                 │
-│  3. root.setFormat(start)                                            │
-│  4. loadTextContent(root, file, start)                              │
-│       • text-based formats (HTML, TEXT, MARK_DOWN):                 │
-│         read the file into a UTF-8 String → root.setData(…)         │
-│       • binary formats (PDF, DOC, …):                               │
-│         no-op – the File reference stays on disk                    │
-│  5. doConversion(root, agents)   ← recursive agent application      │
-│  6. DocContentCollector.collectTextContent / collectContent          │
-└─────────────────────────────────────────────────────────────────────┘
+```text
+root.pdf
+└── page-1.html
+    └── page-1.md
+└── page-2.html
+    └── page-2.md
 ```
 
-### Recursive agent application
+### `DocArtifaktType`
 
-The private `doConversion(DocArtifakt, List<DocConversionAgent>)` method:
+`DocArtifaktType` describes the format of an artifact.
 
-1. Takes the **first** agent in the list and calls `agent.convert(artifakt)`.
-   The agent mutates the artifact in place (changes its format, rewrites its data, and may produce **child artifacts**).
-2. Recurses into every child artifact with the **remaining** agents.
-3. If the agent list is empty, the recursion stops.
+Examples:
 
-This design means a single top-level document can fan out into a tree of sub-artifacts (e.g. a PDF with multiple pages), and each branch of the tree is converted independently through the same agent chain.
+```text
+PDF
+HTML
+TEXT
+MARK_DOWN
+```
 
----
+### `ConversionAccuracy`
 
-## Text vs. Binary Handling
+`ConversionAccuracy` describes the expected quality of a conversion.
+
+When searching for a route, the router can prefer agents that meet the requested accuracy level.
+
+If an agent has lower accuracy than requested, an additional surcharge is added to its estimated cost.
+
+## Conversion Flow
+
+A typical conversion flow looks like this:
+
+```text
+Input File
+   |
+   v
+DocArtifakt root
+   |
+   v
+Find best conversion path
+   |
+   v
+Execute conversion agents
+   |
+   v
+Collect target content
+   |
+   v
+Result
+```
+
+## Route Discovery
+
+When the application starts, Spring injects all known `DocConversionAgent`s into the `DocConversionRouter`.
+
+The router logs all known agents:
+
+```text
+The conversion system knows the following DocConversionAgents:
+   - pdfToHtmlAgent converts (from PDF to HTML)
+   - htmlToMarkdownAgent converts (from HTML to MARK_DOWN)
+   - markdownToTextAgent converts (from MARK_DOWN to TEXT)
+```
+
+Each agent defines one directed conversion route:
+
+```text
+SOURCE_FORMAT -> TARGET_FORMAT
+```
+
+The router uses these agents to build a directed weighted graph.
+
+## Conversion Graph
+
+Internally, the router builds a graph using JGraphT:
 
 ```java
-private static boolean isTextBasedFormat(DocArtifaktType type) {
-    return type == DocArtifaktType.HTML
-            || type == DocArtifaktType.TEXT
-            || type == DocArtifaktType.MARK_DOWN;
+Graph<DocArtifaktType, DocConversionAgent<?, ?>> conversionGraph =
+    new SimpleDirectedWeightedGraph(DocConversionAgent.class);
+```
+
+In this graph:
+
+- vertices are `DocArtifaktType`s
+- edges are `DocConversionAgent`s
+- edge weights are estimated conversion costs
+
+Example graph:
+
+```text
+PDF ───────────────> HTML ───────────────> MARK_DOWN ───────────────> TEXT
+ │                    │
+ │                    └──────────────────> TEXT
+ │
+ └──────────────────> TEXT
+```
+
+Each arrow represents a `DocConversionAgent`.
+
+## Finding the Best Path
+
+The router uses Dijkstra's shortest path algorithm to find the cheapest route from the source format to the target format.
+
+```java
+DijkstraShortestPath<DocArtifaktType, DocConversionAgent<?, ?>> dijkstra =
+    new DijkstraShortestPath<>(conversionGraph);
+
+GraphPath<DocArtifaktType, DocConversionAgent<?, ?>> path =
+    dijkstra.getPath(start, end);
+```
+
+The selected path is the list of conversion agents that should be executed.
+
+Example:
+
+```text
+PDF -> HTML -> MARK_DOWN
+```
+
+The corresponding agent list may be:
+
+```text
+pdfToHtmlAgent
+htmlToMarkdownAgent
+```
+
+## Predefined Routes
+
+Before calculating the best route dynamically, the router checks whether a predefined route exists.
+
+```java
+List<DocConversionAgent<?, ?>> predefinedAgents =
+    conversionRoutesConfig.findPredefinedRouteAgents(start, end);
+```
+
+If a predefined route is configured, it is used immediately.
+
+Dynamic graph routing is skipped in that case.
+
+This allows the application to force a specific route, even if another route would appear cheaper according to cost estimation.
+
+Example:
+
+```text
+PDF -> HTML -> MARK_DOWN
+```
+
+A predefined route is useful when:
+
+- a specific conversion chain gives better practical results
+- a cheaper route is known to produce poor output
+- route behavior must be deterministic
+- route selection should be controlled by configuration
+
+## Cost Estimation
+
+If no predefined route exists, the router estimates the cost of all possible conversion steps.
+
+For every possible agent, the router calculates:
+
+```text
+total cost = estimated cost * estimated quantity
+```
+
+The values are provided by the agent:
+
+```java
+var costs = agent.estimateCosts(f);
+var quantity = agent.estimateQuantity(f);
+var totalCosts = costs * quantity;
+```
+
+### Quantity Estimation
+
+`estimateQuantity` is used to model conversions that split one artifact into many child artifacts.
+
+For example:
+
+```text
+PDF -> HTML
+```
+
+may produce one HTML artifact per page.
+
+If a PDF has 20 pages, the quantity estimate may be `20`.
+
+This makes the route more realistic because subsequent conversion steps may have to process all generated children.
+
+### Accuracy Surcharge
+
+Each agent declares its conversion accuracy:
+
+```java
+var agentAccuracy = agent.accuracy();
+```
+
+If the agent accuracy is lower than the requested accuracy, the router adds a surcharge:
+
+```java
+if (agentAccuracy.getRank() < accuracy.getRank()) {
+    totalCosts += inaccurateSurcharge;
 }
 ```
 
-* **Text-based formats** are held as a `String` in `DocArtifakt.data`. The router reads the file into memory before the first agent runs, because agents and the content collector expect a `String` payload.
-* **Binary formats** (PDF, DOC, …) keep the `File` reference on disk; agents read/write the file directly.
+The default surcharge is:
 
----
+```properties
+prjxp.conversion.inaccurateSurcharge=1000000.0
+```
+
+This does not completely forbid inaccurate conversions, but it makes them very expensive.
+
+As a result, the router will usually prefer a more accurate route if one exists.
+
+## Cost Example
+
+Assume the requested accuracy is `HIGH`.
+
+Available routes:
+
+```text
+PDF -> TEXT
+PDF -> HTML -> MARK_DOWN -> TEXT
+```
+
+Estimated costs:
+
+| Route | Agent Accuracy | Estimated Cost |
+|---|---:|---:|
+| `PDF -> TEXT` | low | `10 + inaccurateSurcharge` |
+| `PDF -> HTML -> MARK_DOWN -> TEXT` | high | `150` |
+
+Even though the direct conversion has a lower base cost, the surcharge makes it less attractive.
+
+The router chooses:
+
+```text
+PDF -> HTML -> MARK_DOWN -> TEXT
+```
+
+## Artifact Tree Conversion
+
+The router converts artifacts recursively.
+
+First, the selected agent is applied to the current artifact:
+
+```java
+agent.convert(artifakt);
+```
+
+Then the remaining agents are applied to all child artifacts:
+
+```java
+for (var child : artifakt.getChilds()) {
+    doConversion((DocArtifakt) child, remainingAgents);
+}
+```
+
+This means conversions naturally support branching.
+
+Example:
+
+```text
+PDF
+└── HTML page 1
+    └── Markdown page 1
+└── HTML page 2
+    └── Markdown page 2
+└── HTML page 3
+    └── Markdown page 3
+```
+
+The route is linear, but the artifact structure can be a tree.
+
+## Text-Based and Binary Formats
+
+The root artifact is initially created from a `File`.
+
+For binary formats, the file remains the artifact data.
+
+For text-based formats, the router reads the file content into memory as a `String`.
+
+Text-based formats are:
+
+- `HTML`
+- `TEXT`
+- `MARK_DOWN`
+
+The file is read as UTF-8:
+
+```java
+Files.readString(f.toPath(), StandardCharsets.UTF_8)
+```
+
+This is necessary because text-based conversion agents and content collection expect the artifact data to be a `String`.
+
+Binary formats such as `PDF` or `DOC` stay represented by a `File`.
+
+## Conversion API
+
+### Convert and Return Text
+
+```java
+public String doConversion(
+    File f,
+    DocArtifaktType start,
+    DocArtifaktType end,
+    ConversionAccuracy accuracy
+)
+```
+
+This method:
+
+1. finds the best conversion path
+2. creates the root `DocArtifakt`
+3. loads text content if required
+4. executes all conversion agents
+5. collects text content for the requested target format
+6. returns the collected text as `String`
+
+Example:
+
+```java
+String markdown = docConversionRouter.doConversion(
+    new File("document.pdf"),
+    DocArtifaktType.PDF,
+    DocArtifaktType.MARK_DOWN,
+    ConversionAccuracy.HIGH
+);
+```
+
+### Convert and Collect Artifacts
+
+```java
+public void doConversion(
+    File f,
+    DocArtifaktType start,
+    DocArtifaktType end,
+    ConversionAccuracy accuracy,
+    Consumer<DocArtifakt> artifaktCollector
+)
+```
+
+This method performs the same conversion, but instead of returning collected text, it calls the given consumer for matching artifacts.
+
+Example:
+
+```java
+docConversionRouter.doConversion(
+    new File("document.pdf"),
+    DocArtifaktType.PDF,
+    DocArtifaktType.HTML,
+    ConversionAccuracy.HIGH,
+    artifakt -> {
+        System.out.println(artifakt.getData());
+    }
+);
+```
+
+Use this variant when the caller needs access to individual artifacts instead of one collected text result.
+
+## Path Logging
+
+The selected conversion path is logged in a readable format.
+
+Example:
+
+```text
+Selected conversion path is: pdfToHtmlAgent[PDF>>HTML] -> htmlToMarkdownAgent[HTML>>MARK_DOWN]
+```
+
+If the Spring bean name cannot be resolved, the class name of the agent is used as fallback.
+
+## Behavior for Identical Source and Target Formats
+
+If source and target format are identical, no conversion is necessary.
+
+```java
+if (start == end) {
+    return Collections.emptyList();
+}
+```
+
+The router returns an empty agent list.
+
+The root artifact may still be loaded and collected.
+
+## Behavior When No Route Exists
+
+If no route can be found, the router returns an empty agent list.
+
+```java
+return (path != null) ? path.getEdgeList() : Collections.emptyList();
+```
+
+In that case, no conversion agents are executed.
+
+Depending on the requested target format and the collector behavior, the result may be empty or only contain matching already-existing artifacts.
 
 ## Configuration
 
-| Property | Default | Purpose |
-|---|---|---|
-| `prjxp.conversion.inaccurateSurcharge` | `1000000.0` | Cost penalty added to any agent whose accuracy is below the requested level. Effectively makes lossy routes "very expensive" so Dijkstra avoids them unless no accurate path exists. |
+### Inaccurate Conversion Surcharge
 
-Predefined routes are modeled by `ConversionRoute` (annotated `@ConfigurationProperties(prefix = "prjxp.conversion.routes")`) and held in `ConversionRoutesConfig.predefinedRoutes`. Each entry maps a `(sourceFormat, targetFormat)` pair to an ordered list of agent bean names, bypassing the graph search entirely. **Note:** the `predefinedRoutes` list is not currently bound from the shipped `application.yaml`, so this fast path is inactive by default until routes are registered (e.g. via a `@Bean` or by adding `@ConfigurationProperties` to `ConversionRoutesConfig`).
+The surcharge for agents that do not meet the requested accuracy is configurable:
 
----
-
-## Extending the System
-
-To add a new conversion capability:
-
-1. Create a new `DocArtifaktType` enum constant if the format does not yet exist.
-2. Implement a `DocConversionAgent<Source, Target>` bean:
-   * `getSourceFormat()` / `getTargetFormat()` – the edge endpoints.
-   * `convert(DocArtifakt)` – perform the actual transformation.
-   * `estimateCosts(DocArtifakt)` – return a per-unit cost.
-   * `estimateQuantity(DocArtifakt)` – return a size/complexity multiplier.
-   * `accuracy()` – declare the `ConversionAccuracy` this agent achieves.
-3. Register the bean with Spring. The `DocConversionRouter` picks it up automatically via constructor injection of `List<DocConversionAgent>`.
-4. (Optional) Add a predefined route in `ConversionRoutesConfig` if you want to force a specific chain for a format pair.
-
-No changes to the router itself are required.
-
----
-
-## Class Diagram (simplified)
-
+```properties
+prjxp.conversion.inaccurateSurcharge=1000000.0
 ```
-DocConversionRouter
- ├── List<DocConversionAgent>          (all registered agents)
- ├── BeanNameFinder                    (Spring bean-name lookup for logging)
- ├── ConversionRoutesConfig            (predefined routes)
- ├── double inaccurateSurcharge        (configurable penalty)
- │
- ├── buildGraph()                      → SimpleDirectedWeightedGraph
- ├── findBestPath(…)                  → List<DocConversionAgent>
- │    ├── ConversionRoutesConfig       (fast path)
- │    ├── estimateConversionCosts(…)   (weight assignment)
- │    └── DijkstraShortestPath         (shortest path)
- ├── doConversion(…)                  → String | void
- │    ├── loadTextContent(…)
- │    ├── doConversion(artifakt, agents)   (recursive)
- │    └── DocContentCollector
- └── listAgentPath(…)                 (logging helper)
+
+Default:
+
+```text
+1000000.0
 ```
+
+A higher value makes inaccurate conversions less likely to be selected.
+
+A lower value makes cost more important than accuracy.
+
+### Predefined Conversion Routes
+
+Predefined routes are handled by `ConversionRoutesConfig`.
+
+If a route from source format to target format is configured there, it takes precedence over dynamic graph routing.
+
+Conceptually:
+
+```text
+PDF -> MARK_DOWN = pdfToHtmlAgent, htmlToMarkdownAgent
+```
+
+The exact configuration format depends on `ConversionRoutesConfig`.
+
+## Implementation Summary
+
+The core routing algorithm is:
+
+1. If source and target are equal, return an empty path.
+2. Check for a predefined route.
+3. Build a directed graph from all available conversion agents.
+4. Estimate edge weights using cost, quantity, and accuracy.
+5. Use Dijkstra's algorithm to find the cheapest path.
+6. Execute the selected agents recursively on the artifact tree.
+7. Collect the requested output format.
+
+## Important Design Decisions
+
+### Agents Are Edges
+
+Each `DocConversionAgent` is an edge in the graph.
+
+This keeps routing independent from the concrete implementation of individual conversions.
+
+### Formats Are Vertices
+
+Each `DocArtifaktType` is a graph vertex.
+
+This allows the router to reason about possible format transitions without knowing conversion internals.
+
+### Cost Is Dynamic
+
+Costs are estimated for the actual input artifact.
+
+This is important because converting a small document and a large document may have very different costs.
+
+### Quantity Matters
+
+Some conversions multiply the number of artifacts.
+
+The router includes quantity estimation so that routes producing many intermediate artifacts can be rated more realistically.
+
+### Accuracy Is a Routing Criterion
+
+Accuracy does not directly remove agents from the graph.
+
+Instead, inaccurate agents receive a high cost penalty.
+
+This allows fallback routes when no accurate route exists.
+
+### Conversion Supports Trees
+
+The conversion path is linear, but artifacts can branch into children.
+
+This allows Chunk Norris to model document structures such as pages, sections, images, or extracted chunks.
+
+## Example
+
+Given these agents:
+
+| Agent | Source | Target | Accuracy |
+|---|---|---|---|
+| `pdfToHtmlAgent` | `PDF` | `HTML` | high |
+| `htmlToMarkdownAgent` | `HTML` | `MARK_DOWN` | high |
+| `pdfToTextAgent` | `PDF` | `TEXT` | low |
+| `markdownToTextAgent` | `MARK_DOWN` | `TEXT` | high |
+
+Request:
+
+```java
+String text = docConversionRouter.doConversion(
+    new File("manual.pdf"),
+    DocArtifaktType.PDF,
+    DocArtifaktType.TEXT,
+    ConversionAccuracy.HIGH
+);
+```
+
+Possible routes:
+
+```text
+PDF -> TEXT
+PDF -> HTML -> MARK_DOWN -> TEXT
+```
+
+If `pdfToTextAgent` has low accuracy, the router applies the inaccurate surcharge.
+
+The selected route may become:
+
+```text
+PDF -> HTML -> MARK_DOWN -> TEXT
+```
+
+The router then executes:
+
+```text
+pdfToHtmlAgent
+htmlToMarkdownAgent
+markdownToTextAgent
+```
+
+Finally, `DocContentCollector` collects all `TEXT` artifacts and returns the combined text.
+
+## Related Classes
+
+| Class | Responsibility |
+|---|---|
+| `DocConversionRouter` | Finds and executes conversion routes |
+| `DocConversionAgent` | Converts one format into another |
+| `DocArtifakt` | Represents a document artifact and its children |
+| `DocArtifaktType` | Describes artifact formats |
+| `ConversionAccuracy` | Describes desired or provided conversion quality |
+| `ConversionRoutesConfig` | Provides predefined conversion routes |
+| `DocContentCollector` | Collects converted content from the artifact tree |
+| `BeanNameFinder` | Resolves Spring bean names for logging |
 
 _This document was generated with Doc|Pipe and gemini-3-flash-preview_
 

@@ -10,6 +10,8 @@ dependencies {
     testFixturesImplementation project(':prjxp-common')
     // End-to-End-Tests: echter chunk-norris-Abschnitt der Transfer-Pipeline
     testImplementation project(':chunk-norris')
+    // Azure integration test: JDK HttpClient with the Windows root-certificate store
+    testImplementation libs.langchain4j.http.client.jdk
 
     // Spring Boot & JSON (Versionen kommen aus dem Katalog via Root-Projekt)
     implementation libs.spring.boot.starter.json

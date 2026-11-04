@@ -1,46 +1,36 @@
 /**
- * Domain model for the PrjXP documentation pipeline (docpipe) module.
+ * Data model for documentation pipeline job definitions.
  *
- * <p>This package defines the core data structures that represent documentation
- * generation jobs and the individual content-creation tasks they contain.
- * It serves as the model layer of the docpipe component, decoupling the
- * business logic of document generation from the persistence and processing
- * layers.</p>
+ * <p>
+ * This package contains the configuration objects used to describe documentation generation
+ * work performed by the DocPipe component. The model focuses on representing a documentation
+ * job, its project-level configuration, and the individual content creation tasks that make up
+ * the job.
+ * </p>
  *
- * <h2>Architectural Overview</h2>
- * <p>The package is organized around two primary classes that form a
- * one-to-many relationship:</p>
+ * <p>
+ * The central aggregate is {@link de.spraener.prjxp.docpipe.model.DPJob}. A job defines:
+ * </p>
  * <ul>
- *   <li>{@link de.spraener.prjxp.docpipe.model.DPJob} – the top-level
- *       container representing a complete documentation job. It aggregates
- *       a root directory, a {@code PrjXPConfig} (which holds the available
- *       LLM chat-model references), and an ordered list of content-creation
- *       tasks. A static {@code EMPTY_JOB} constant is provided as a safe
- *       fallback to prevent processing halts on misconfiguration.</li>
- *   <li>{@link de.spraener.prjxp.docpipe.model.DPContentCreation} – a single
- *       content-creation task within a job. It specifies the target output
- *       location, the LLM model stereotype to invoke, the prompt template,
- *       optional post-processing scripts, filter expressions, and arbitrary
- *       key-value arguments. A Jackson-based {@code clone} method supports
- *       lightweight duplication of task definitions.</li>
+ *   <li>the root directory against which documentation generation is executed,</li>
+ *   <li>the project configuration, including available chat model references, and</li>
+ *   <li>a list of {@link de.spraener.prjxp.docpipe.model.DPContentCreation} tasks.</li>
  * </ul>
  *
- * <h2>Primary Use Cases</h2>
- * <ul>
- *   <li>Defining a documentation generation job by composing a
- *       {@code DPJob} with one or more {@code DPContentCreation} entries.</li>
- *   <li>Resolving the appropriate LLM model for a given stereotype via
- *       {@link DPJob#getModelForStereotype(String)}.</li>
- *   <li>Serializing / deserializing job and task definitions (both classes
- *       are Lombok-annotated POJOs compatible with Jackson).</li>
- * </ul>
+ * <p>
+ * Each {@code DPContentCreation} describes one content generation step, including the target
+ * output location, the model stereotype to use, the prompt template, optional post-script
+ * content, filters, persisted prompt settings, iteration configuration, and task-specific
+ * arguments.
+ * </p>
  *
- * <h2>Dependencies</h2>
- * <p>The model depends on {@code de.spraener.prjxp.common.config} for the
- * project configuration and chat-model reference types, and on
- * {@code com.fasterxml.jackson.databind} for object cloning. It has no
- * dependency on the docpipe processing or I/O layers, keeping the model
- * purely declarative.</p>
+ * <p>
+ * The package is primarily used by higher-level pipeline components that load job definitions,
+ * resolve the configured chat model stereotype through
+ * {@link de.spraener.prjxp.docpipe.model.DPJob#getModelForStereotype(String)}, and execute each
+ * configured content creation task. {@link de.spraener.prjxp.docpipe.model.DPJob#EMPTY_JOB}
+ * provides a safe fallback object for misconfigured or missing job definitions.
+ * </p>
  */
 package de.spraener.prjxp.docpipe.model;
 

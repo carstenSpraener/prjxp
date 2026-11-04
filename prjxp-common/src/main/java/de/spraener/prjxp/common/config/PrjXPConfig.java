@@ -7,7 +7,9 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Component
@@ -49,7 +51,13 @@ public class PrjXPConfig {
         @lombok.ToString.Exclude
         private String apiKey = "lm-studio";
         private String modelName = "mxbai-embed-large-v1";
+        /** Optional output vector dimension for models such as text-embedding-3-large. */
+        private Integer dimensions;
         private int timeout = 20;
+        /** Additional HTTP headers for OpenAI-compatible embedding providers. */
+        private Map<String, String> customHeaders = new LinkedHashMap<>();
+        /** Additional query parameters for OpenAI-compatible embedding providers. */
+        private Map<String, String> customQueryParams = new LinkedHashMap<>();
         /**
          * Max texts per single embedding HTTP request. langchain4j's OpenAiEmbeddingModel
          * defaults this to 2048, which makes a large embedAll() a single giant request that a

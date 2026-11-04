@@ -52,4 +52,15 @@ class EmbeddingModelConfigTest {
         f.setAccessible(true);
         assertThat((int) f.get(model)).isEqualTo(16);
     }
+
+    @Test
+    void openAiType_appliesConfiguredDimensions() throws Exception {
+        PrjXPConfig cfg = cfg(PrjXPConfig.EmbeddingModelType.OPEN_AI);
+        cfg.getEmbedding().setDimensions(1024);
+        OpenAiEmbeddingModel model = (OpenAiEmbeddingModel) new EmbeddingModelConfig().embeddingModel(cfg);
+
+        Field f = OpenAiEmbeddingModel.class.getDeclaredField("dimensions");
+        f.setAccessible(true);
+        assertThat((Integer) f.get(model)).isEqualTo(1024);
+    }
 }

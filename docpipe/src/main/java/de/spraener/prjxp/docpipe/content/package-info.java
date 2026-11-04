@@ -1,65 +1,55 @@
 /**
- * Documentation content creation and post-processing.
+ * Provides the content-generation orchestration layer for DocPipe documentation jobs.
  *
- * <p>This package provides the core machinery for generating, caching, filtering, and
- * persisting documentation content produced by a large language model (LLM). It is the
- * execution layer of the DocPipe pipeline: given a configured task, it resolves the
- * prompt, decides whether regeneration is necessary, invokes the LLM, applies optional
- * post-processing filters, and writes the final text to the designated output file.</p>
+ * <p>
+ * This package is responsible for turning a configured content creation entry into an
+ * output document. It coordinates prompt resolution, change detection, LLM invocation,
+ * optional post-processing, and writing the generated content to its configured output
+ * location.
+ * </p>
  *
- * <h2>Architectural Overview</h2>
- * <p>The classes in this package interact as follows:</p>
+ * <p>
+ * The central entry point is {@link ContentCreationService}. It receives a
+ * {@link ContentCreationTask}, resolves the prompt for that task, delegates update
+ * decisions to {@link ContentUpdateRequiredController}, invokes the configured LLM
+ * service when regeneration is required, applies matching {@link ContentFilter}
+ * implementations, and finally writes the result through the DocPipe output
+ * infrastructure.
+ * </p>
+ *
+ * <p>
+ * The main types collaborate as follows:
+ * </p>
  * <ul>
- *   <li><b>{@link ContentCreationService}</b> – The primary orchestrator (Spring
- *       {@code @Service}). It coordinates the full lifecycle of a content-creation
- *       request: prompt resolution, update-requirement check, LLM invocation,
- *       filter application, and output-sink writing. This is the main entry point
- *       for external callers.</li>
- *   <li><b>{@link ContentCreationTask}</b> – An immutable value object that pairs a
- *       {@code DPJob} with a {@code DPContentCreation} configuration. It serves as
- *       the unit of work passed through the pipeline.</li>
- *   <li><b>{@link ContentUpdateRequiredController}</b> – A Spring {@code @Component}
- *       that implements a hash-based invalidation strategy. It stores a SHA-256 hash
- *       of the last-used prompt per output file in a flat {@code .properties} file.
- *       If the current prompt hash differs from the stored one (or no entry exists),
- *       the supplied updater {@link Runnable} is executed, thereby avoiding redundant
- *       LLM calls.</li>
- *   <li><b>{@link ContentFilter}</b> – A strategy interface for post-processing
- *       generated text. Implementations are registered as Spring beans and applied
- *       sequentially by name, as configured in the task's filter list.</li>
- *   <li><b>{@link NoSurroundingCodeBlock}</b> – A built-in {@link ContentFilter}
- *       implementation that strips enclosing Markdown code-fence delimiters
- *       ({@code ```}) from LLM output.</li>
+ *   <li>{@link ContentCreationTask} combines a DocPipe job with one content creation
+ *       configuration and represents a single unit of work.</li>
+ *   <li>{@link ContentCreationService} orchestrates the complete creation pipeline.</li>
+ *   <li>{@link ContentUpdateRequiredController} avoids unnecessary regeneration by
+ *       storing and comparing SHA-256 hashes of resolved prompts per output file.</li>
+ *   <li>{@link ContentFilter} defines the extension point for post-processing generated
+ *       text before it is written.</li>
+ *   <li>{@link NoSurroundingCodeBlock} is a built-in filter that removes surrounding
+ *       Markdown code fences from LLM responses.</li>
  * </ul>
  *
- * <h2>Typical Execution Flow</h2>
- * <ol>
- *   <li>A {@link ContentCreationTask} is assembled with its job and content-creation
- *       configuration.</li>
- *   <li>{@link ContentCreationService#createContent(ContentCreationTask)} is invoked.</li>
- *   <li>The prompt is resolved from a template via the prompt-resolving service.</li>
- *   <li>{@link ContentUpdateRequiredController#onUpdateRequired} compares the prompt
- *       hash against the stored hash; if unchanged, the LLM call is skipped entirely.</li>
- *   <li>On a cache miss, the LLM service generates the content.</li>
- *   <li>Configured {@link ContentFilter} instances are applied in order.</li>
- *   <li>The final text is written through an {@code OutputSink} to the target file,
- *       and the new hash is persisted.</li>
- * </ol>
- *
- * <h2>Primary Use Cases</h2>
+ * <p>
+ * Typical use cases are:
+ * </p>
  * <ul>
- *   <li>Generating or regenerating documentation files (Markdown, HTML, etc.) from
- *       LLM prompts defined in project configuration.</li>
- *   <li>Incremental builds: only re-invoking the LLM when the underlying prompt has
- *       actually changed, reducing cost and latency.</li>
- *   <li>Post-processing LLM output to remove artifacts (e.g., code fences) before
- *       the content is persisted.</li>
+ *   <li>Generate documentation files from configured prompt templates and job context.</li>
+ *   <li>Skip expensive LLM calls when the resolved prompt for an output file has not
+ *       changed since the previous run.</li>
+ *   <li>Post-process LLM output using named filters configured on the content creation
+ *       model.</li>
+ *   <li>Record generated outputs and failures during in-process DocPipe runs.</li>
  * </ul>
  *
- * <h2>Dependencies</h2>
- * <p>This package depends on sibling DocPipe packages for prompt resolution
- * ({@code .prompt}), LLM interaction ({@code .llm}), output I/O ({@code .io}),
- * file-path management ({@code .config}), and domain models ({@code .model}).</p>
+ * <p>
+ * Classes in this package are designed for use with Spring dependency injection. Custom
+ * post-processing can be added by registering additional {@link ContentFilter} beans and
+ * referencing their {@link ContentFilter#name()} values from the content creation
+ * configuration.
+ * </p>
  */
 package de.spraener.prjxp.docpipe.content;
 
