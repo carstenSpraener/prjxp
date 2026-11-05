@@ -67,8 +67,9 @@ public class DocPipeCliApp {
      */
     @Bean
     @Profile(("!test"))
+    // Active only in CLI mode (hub disabled); the hub app runs the pipeline in-process instead.
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(
-            name = "prjxp.cli.enabled", havingValue = "true", matchIfMissing = true)
+            name = "prjxp.hub.enabled", havingValue = "false", matchIfMissing = true)
     public CommandLineRunner commandLineRunner(
             PrjXPConfig pxCfg,
             DocPipeArgsParser argsParser,

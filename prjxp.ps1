@@ -307,6 +307,19 @@ function Cmd-Mcp() {
         Copy-IfMissing -Source $sourceEnvExample -Target $envFile
     }
 
+    # Hub live-project discovery: a directory containing prjxp.yaml (or prjxp.yml)
+    # is a live project. Only create the marker if no marker (yaml or yml) exists.
+    $prjxpYaml = Join-Path $ProjectPath "prjxp.yaml"
+    $prjxpYml = Join-Path $ProjectPath "prjxp.yml"
+    if (-not (Test-Path -LiteralPath $prjxpYaml) -and -not (Test-Path -LiteralPath $prjxpYml)) {
+        Log-Info "Creating prjxp.yaml (hub live-project marker) in project directory..."
+        $yamlLines = @(
+            "# prjxp project marker - tells the hub this directory is a live project.",
+            "name: `"$ProjectName`""
+        )
+        Set-Content -LiteralPath $prjxpYaml -Value $yamlLines -Encoding utf8
+    }
+
     Cmd-Chunk
     Cmd-Embed
 
@@ -319,15 +332,23 @@ function Cmd-Mcp() {
         Invoke-Docker @("rm", $containerName)
     }
 
+    # Hub mode: the project is mounted under /import (live-project discovery via
+    # prjxp.yaml), the shared Lucene index is the project's .prjxp-data dir (same
+    # host directory the chunk/embed steps write to), and the hub's JSONL output
+    # persists inside the project tree. .env is single-file mounted at
+    # /app-source/.env: readDotEnv loads it from WORKDIR /app-source, keeping
+    # custom embedding credentials working for hub live-update re-embedding.
     Invoke-Docker @(
         "run", "-d",
         "--name", $containerName,
-        "-v", "${ProjectPath}:/app-source",
-        "-v", "$($paths.DataDir):/app-source/.prjxp-data/lucene-index",
+        "-v", "${ProjectPath}:/import/$ProjectName",
+        "-v", "$($paths.DataDir):/data/lucene-index",
+        "-v", "${ProjectPath}/.env:/app-source/.env",
         "-p", "$Port`:7007",
-        "-e", "PRJXP_ROOT_DIR=/app-source",
+        "-e", "LUCENE_INDEX_PATH=/data/lucene-index",
+        "-e", "PRJXP_HUB_LIVE_JSONL_DIR=/import/$ProjectName/.prjxp-data/chunks",
         "-e", "SERVER_PORT=7007",
-        $script:ImageRef, "serve"
+        $script:ImageRef, "hub"
     )
 
     Log-Info "Waiting for MCP server to start..."

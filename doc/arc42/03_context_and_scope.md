@@ -59,7 +59,7 @@ flowchart LR
             CN["chunk-norris-all.jar"]
             TIB["tibed-all.jar"]
             MS["mcp-server-all.jar<br/>Tomcat :7007/:7008"]
-            ENTRY["entry.sh<br/>chunk embed serve hub"]
+            ENTRY["entry.sh<br/>chunk embed hub"]
         end
         V1[("Volume: project source<br/>/app-source")]
         V2[("Volume: Lucene index<br/>.prjxp-data/lucene-index")]

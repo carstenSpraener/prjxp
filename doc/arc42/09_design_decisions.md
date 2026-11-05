@@ -64,13 +64,13 @@ reflected in code and the phase documents under `doc/Tasks/` and `docs/`).
 - **Consequences:** (+) coherent, bounded context; (−) deterministic heuristics can still
   miss intent — mitigated by the fallback iteration and transparency reporting.
 
-## D7 — One Docker image, four modes; hub pipeline in-process
+## D7 — One Docker image, three modes; hub pipeline in-process
 
 - **Context:** per-project containers are operationally heavy for many projects; separate
   pipeline processes would need IPC and multi-writer index access (impossible in Lucene).
-- **Decision:** one image with `entry.sh` modes `chunk|embed|serve|hub`; in hub mode the
-  mcp-server process hosts chunk-norris/tibed as beans (CLI runners disabled via
-  `prjxp.cli.enabled=false`); a single FIFO worker serializes all pipeline runs.
+- **Decision:** one image with `entry.sh` modes `chunk|embed|hub`; in hub mode the
+  mcp-server process hosts chunk-norris/tibed as beans (CLI runners disabled because they are
+  gated on `prjxp.hub.enabled=false`); a single FIFO worker serializes all pipeline runs.
 - **Consequences:** (+) one deployment unit, no IPC; (−) pipeline runs are serialized
   (accepted: embedding is I/O-bound on the external model server anyway).
 

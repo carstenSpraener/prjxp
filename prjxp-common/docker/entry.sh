@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-MODE="${1:-serve}"
+MODE="${1:-hub}"
 EMBEDDING_SERVER_PID=""
 
 trap 'stop_embedding_server' EXIT
@@ -108,20 +108,19 @@ case "${MODE}" in
     shift
     run_with_embedding_server run_java /app/tibed-all.jar "$@"
     ;;
-  serve)
-    shift
-    run_with_embedding_server run_java /app/mcp-server-all.jar "$@"
-    ;;
   hub)
     shift
-    # Hub mode: in-process pipeline, import watcher; CLI runners stay off.
+    # Hub mode is the ONLY server mode: in-process pipeline, import watcher.
+    # When PRJXP_HUB_ENABLED is not set, the same mcp-server-all.jar runs as a
+    # CLI pipeline (chunk + embed + docpipe) and exits. The CLI runners of
+    # chunk-norris/tibed/docpipe are gated on prjxp.hub.enabled=false, so
+    # enabling the hub switches them off automatically.
     export PRJXP_HUB_ENABLED=true
-    export PRJXP_CLI_ENABLED=false
     run_with_embedding_server run_java /app/mcp-server-all.jar "$@"
     ;;
   *)
     echo "Unknown mode: ${MODE}" >&2
-    echo "Supported modes: chunk, embed, serve, hub" >&2
+    echo "Supported modes: chunk, embed, hub" >&2
     exit 1
     ;;
 esac

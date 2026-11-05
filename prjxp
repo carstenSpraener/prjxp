@@ -154,6 +154,16 @@ ensure_config_files() {
         log_info "Copying .env.example to project directory as .env..."
         cp "$SCRIPT_DIR/.env.example" "$PROJECT_PATH/.env"
     fi
+
+    # Hub live-project discovery: a directory containing prjxp.yaml (or prjxp.yml)
+    # is a live project. Only create the marker if no marker (yaml or yml) exists.
+    if [[ ! -f "$PROJECT_PATH/prjxp.yaml" && ! -f "$PROJECT_PATH/prjxp.yml" ]]; then
+        log_info "Creating prjxp.yaml (hub live-project marker) in project directory..."
+        cat > "$PROJECT_PATH/prjxp.yaml" <<EOF
+# prjxp project marker — tells the hub this directory is a live project.
+name: "${PROJECT_NAME}"
+EOF
+    fi
 }
 
 # =============================================================================
@@ -277,7 +287,7 @@ cmd_rebuild() {
 }
 
 # =============================================================================
-# Command: mcp (chunk + embed + serve)
+# Command: mcp (chunk + embed + hub)
 # =============================================================================
 cmd_mcp() {
     ensure_config_files
@@ -293,14 +303,22 @@ cmd_mcp() {
         docker stop "mcp-${PROJECT_NAME}" && docker rm "mcp-${PROJECT_NAME}"
     fi
 
+    # Hub mode: the project is mounted under /import (live-project discovery via
+    # prjxp.yaml), the shared Lucene index is the project's .prjxp-data dir (same
+    # host directory the chunk/embed steps write to), and the hub's JSONL output
+    # persists inside the project tree. .env is single-file mounted at
+    # /app-source/.env: readDotEnv loads it from WORKDIR /app-source, keeping
+    # custom embedding credentials working for hub live-update re-embedding.
     docker run -d \
         --name "mcp-${PROJECT_NAME}" \
-        -v "$PROJECT_PATH:/app-source" \
-        -v "$PROJECT_PATH/.prjxp-data:/app-source/.prjxp-data/lucene-index" \
+        -v "$PROJECT_PATH:/import/${PROJECT_NAME}" \
+        -v "$PROJECT_PATH/.prjxp-data:/data/lucene-index" \
+        -v "$PROJECT_PATH/.env:/app-source/.env" \
         -p "${PORT}:7007" \
-        -e PRJXP_ROOT_DIR=/app-source \
+        -e LUCENE_INDEX_PATH=/data/lucene-index \
+        -e PRJXP_HUB_LIVE_JSONL_DIR=/import/${PROJECT_NAME}/.prjxp-data/chunks \
         -e SERVER_PORT=7007 \
-        "$IMAGE_REF" serve
+        "$IMAGE_REF" hub
 
     # Wait for server to be ready
     log_info "Waiting for MCP server to start..."

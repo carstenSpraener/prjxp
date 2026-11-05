@@ -27,7 +27,7 @@
 | **JSONL** | JSON Lines — the pipeline transfer format: one `PxChunk` per line, streamable and pipe-able; optionally AES-256-GCM encrypted. |
 | **Transfer (modes)** | Tibed's `STORE` / `EXPORT` / `IMPORT` modes; EXPORT/IMPORT move (optionally encrypted) records between machines for offline embedding. |
 | **Project stamp** | The `pxchunk_project` metadata value set at embed time; the mechanism that separates multiple projects inside one shared Lucene index. |
-| **Project registry** | The addressing facade of the mcp-server: `StaticProjectRegistry` (config-driven) or `HubProjectRegistry` (directory-driven, runtime registration, lifecycle tracking). |
+| **Project registry** | The addressing facade of the mcp-server: `HubProjectRegistry` (directory-driven, runtime registration, lifecycle tracking) — the only registry. |
 | **Hub** | The multi-project deployment mode of the mcp-server: one container, shared project-stamped index, import watcher (tars + `prjxp.yaml` markers), in-process pipeline on a single FIFO worker, web UI. |
 | **Marker file** (`prjxp.yaml`) | A per-project configuration/marker file; in the hub, its presence registers a *live* project for in-place embedding. |
 | **Lifecycle status** | Hub project states: `importing → chunking → embedding → ready` (or `failed`). Only `ready` projects are searchable/listed. |

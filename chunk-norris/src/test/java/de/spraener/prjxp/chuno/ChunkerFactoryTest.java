@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * while document-chunkers (Markdown/Text/PDF) remain on the annotation-scan path.
  */
 @SpringBootTest(properties = {
-        "prjxp.cli.enabled=false"
+        "prjxp.hub.enabled=true"
 })
 class ChunkerFactoryTest {
 

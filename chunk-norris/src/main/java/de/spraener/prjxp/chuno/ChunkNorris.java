@@ -29,7 +29,8 @@ public class ChunkNorris {
 
     @Bean("chunoRun")   // unique name: the hub app scans multiple modules that each define a 'run' bean
     @Profile("!test")
-    @ConditionalOnProperty(name = "prjxp.cli.enabled", havingValue = "true", matchIfMissing = true)
+    // Active only in CLI mode (hub disabled); the hub app runs the pipeline in-process instead.
+    @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "false", matchIfMissing = true)
     public CommandLineRunner run(
             PrjXPConfig cfg,
             ChunkProcess chunkProcess

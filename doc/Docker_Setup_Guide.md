@@ -244,7 +244,7 @@ When you update your source code, re-run the pipeline:
 
 ```bash
 cd /path/to/prjxp
-./prjxp /path/to/your-project mcp   # Full re-run: chunk + embed + serve
+./prjxp /path/to/your-project mcp   # Full re-run: chunk + embed + hub
 ```
 
 The control script skips chunking if `px-chunks.jsonl` exists and skips embedding if `.prjxp-data` has content. To force a full re-index, clean first:
@@ -468,7 +468,7 @@ Docker Volume: prjxp-data
 Control Script (./prjxp)
 ├── chunk   → Run chunker, produce JSONL
 ├── embed   → Embed chunks into Lucene
-├── mcp     → chunk + embed + start server (default)
+├── mcp     → chunk + embed + hub (default)
 ├── stop    → Stop the MCP container
 ├── clean   → Remove all artifacts and Docker image
 └── rebuild → Rebuild the Docker image from scratch
@@ -480,7 +480,7 @@ Control Script (./prjxp)
 
 | Action | Command |
 |---|---|
-| Full setup (chunk+embed+serve) | `./prjxp /your/project mcp` |
+| Full setup (chunk+embed+hub) | `./prjxp /your/project mcp` |
 | Setup with custom port | `./prjxp /your/project mcp --port 8090` |
 | Stop server | `./prjxp /your/project stop` |
 | Clean all artifacts | `./prjxp /your/project clean` |

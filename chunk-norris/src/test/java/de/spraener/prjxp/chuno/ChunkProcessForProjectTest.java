@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * independent of the configured active project (hub in-process use).
  */
 @SpringBootTest(properties = {
-        "prjxp.cli.enabled=false"
+        "prjxp.hub.enabled=true"
 })
 class ChunkProcessForProjectTest {
 

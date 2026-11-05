@@ -6,7 +6,7 @@
 flowchart TB
     subgraph host ["Host machine (Docker)"]
         subgraph single ["Single-project mode: one container per project"]
-            C1["prjxp image<br/>entry.sh serve<br/>:7007"]
+            C1["prjxp image<br/>entry.sh hub<br/>:7007"]
             M1[("/app-source = project dir")]
             I1[(".prjxp-data/lucene-index<br/>volume prjxp-data")]
         end
@@ -32,7 +32,7 @@ flowchart TB
     AI["AI clients: opencode, Copilot"] <-->|"MCP / REST"| C1 & C2
 ```
 
-**Single image, four entry modes** (`entry.sh`): `chunk`, `embed`, `serve`, `hub`.
+**Single image, three entry modes** (`entry.sh`): `chunk`, `embed`, `hub`.
 The image contains the three fat JARs (`chunk-norris-all.jar`, `tibed-all.jar`,
 `mcp-server-all.jar`) plus the entry script; `application.yaml.docker` is baked in as
 fallback configuration (a project-provided `application.yml/.yaml` under `/app-source`
@@ -61,7 +61,7 @@ takes precedence via `SPRING_CONFIG_LOCATION`).
 | `LUCENE_INDEX_PATH` | `.prjxp-data/lucene-index` (single) / `/data/lucene-index` (hub) | Index directory |
 | `LUCENE_VECTOR_DIMENSION` | `1024` | Must match the embedding model (mxbai-embed-large-v1) |
 | `SERVER_PORT` | `7007` (hub: `7008` recommended) | HTTP port for MCP/REST/UI |
-| `EMBEDDING_API_BASE_URL` / `PRJXP_EMBEDDING_API_BASE_URL` | `http://host.docker.internal:1234/v1` | OpenAI-compatible embedding endpoint |
+| `EMBEDDING_API_BASE_URL` / `PRJXP_EMBEDDING_API_BASE_URL` | `${LM_STUDIO_URL}` | OpenAI-compatible embedding endpoint |
 | `PRJXP_EMBEDDING_MODEL_NAME` / `EMBEDDING_API_KEY` | `mxbai-embed-large-v1` / — | Model + key for the embedding endpoint |
 | `SKIP_EMBEDDING_SERVER` | — (`false`) | Skip starting the in-container TEI server |
 | `PRJXP_HUB_IMPORT_DIR` / `PRJXP_HUB_PROJECTS_ROOT` | `/import` / `/projects` | Hub directories |

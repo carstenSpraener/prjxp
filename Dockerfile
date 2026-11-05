@@ -101,4 +101,4 @@ ENV SERVER_PORT=7007
 WORKDIR /app-source
 
 ENTRYPOINT ["/app/entry.sh"]
-CMD ["serve"]
+CMD ["hub"]

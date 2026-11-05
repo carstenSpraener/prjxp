@@ -131,7 +131,7 @@ Key interfaces:
 
 ```mermaid
 flowchart LR
-    MAIN["ChunkNorris<br/>@SpringBootApplication<br/>bean 'chunoRun'<br/>prjxp.cli.enabled gate"]
+    MAIN["ChunkNorris<br/>@SpringBootApplication<br/>bean 'chunoRun'<br/>prjxp.hub.enabled gate"]
     ARGS["CliArgsParser<br/>+ PrjXPConfig binding"]
     PROC["ChunkProcess<br/>walk   vetoes   dispatch<br/>JSONL writer (± encrypted)<br/>post-walk"]
     FACT["ChunkerFactory<br/>extends AnnotationBasedChunkerBrokerImpl<br/>+ ServiceLoader brokers"]
@@ -279,7 +279,7 @@ flowchart LR
         RS["ReaderService<br/>lenient path   paging   100k cap"]
         SRS["SymbolReaderService<br/>readBySignature (language-agnostic)"]
         FVR["FileViewRegistry<br/>mime → provider"]
-        REG["ProjectRegistry:<br/>StaticProjectRegistry (config)<br/>HubProjectRegistry (dirs, runtime)"]
+        REG["ProjectRegistry:<br/>HubProjectRegistry (dirs, runtime)"]
         SCR2["SearchCapabilitiesRegistry<br/>+ JavaSearchCapabilitiesProvider"]
         LPR2["LanguagePackRegistry<br/>plugin packs: grep MIME filter<br/>+ retriever view"]
     end
@@ -305,7 +305,7 @@ flowchart LR
 - `McpServer` scans the **whole** `de.spraener.prjxp` root — this is how all module beans
   (chunkers, retrievers, readers, the Lucene store) become visible in one process.
 - Bean-name discipline: CLI runners are named `chunoRun`/`tibedRun` and gated by
-  `prjxp.cli.enabled` (hub sets it to `false`).
+  `prjxp.hub.enabled` (active only when the hub is disabled; the hub runs the pipeline in-process).
 
 ### 5.2.7 docpipe
 
@@ -316,7 +316,6 @@ flowchart LR
     RUN["DocPipeRunner<br/>jobs → tasks   fixed pool (maxthreads 5)<br/>SEVERE errors → exit 1"]
     subgraph cfg ["config package"]
         JOBS["JobCreationService<br/>.dp/documents.json → DPJob"]
-        MODELS["ModelConfigLoader<br/>chat-model stereotypes"]
         DOT["DotDPFilesService   EnvResolver"]
     end
     subgraph content ["content package"]
