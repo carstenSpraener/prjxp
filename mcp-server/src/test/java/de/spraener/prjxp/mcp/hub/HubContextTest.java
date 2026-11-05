@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp.hub;
 
+import de.spraener.prjxp.mcp.McpRestController;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -19,8 +20,7 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * {@code hub} service rely on (gated by properties, no Spring profile).
  */
 @SpringBootTest(properties = {
-        "prjxp.hub.enabled=true",
-        "prjxp.cli.enabled=false"
+        "prjxp.hub.enabled=true"
 })
 class HubContextTest {
 
@@ -46,6 +46,14 @@ class HubContextTest {
         assertThat(context.getBean(HubProjectRegistry.class)).isNotNull();
         assertThat(context.getBean(PipelineOrchestrator.class)).isNotNull();
         assertThat(context.getBean(HubProjectsController.class)).isNotNull();
+    }
+
+    @Test
+    void hubModeExposesWebStackBeans() {
+        assertThat(context.getBean(McpRestController.class))
+                .as("The MCP REST controller is part of the hub web stack")
+                .isNotNull();
+        assertThat(context.getBean(HubProjectRegistry.class)).isNotNull();
     }
 
     @Test

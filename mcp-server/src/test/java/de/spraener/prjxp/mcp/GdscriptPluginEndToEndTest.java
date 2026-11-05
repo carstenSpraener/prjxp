@@ -50,7 +50,6 @@ import static org.mockito.Mockito.when;
  * and break bean registration).
  */
 @SpringBootTest(properties = {
-        "prjxp.cli.enabled=false",
         "prjxp.hub.enabled=true",
         "prjxp.embeddingStoreLucene.vectorDimension=8"
 })

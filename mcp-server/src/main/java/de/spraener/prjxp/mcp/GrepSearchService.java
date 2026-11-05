@@ -9,11 +9,13 @@ import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
 
 @Service
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class GrepSearchService {
     public static final String SOURCE = "grep";

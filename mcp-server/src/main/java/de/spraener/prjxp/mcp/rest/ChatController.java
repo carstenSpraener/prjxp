@@ -5,6 +5,7 @@ import de.spraener.prjxp.mcp.rest.dto.ChatResponse;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -13,6 +14,7 @@ import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 import java.util.List;
 
 @RestController
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequestMapping("/api/chat")
 @RequiredArgsConstructor
 public class ChatController {

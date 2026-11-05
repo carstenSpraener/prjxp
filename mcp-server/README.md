@@ -346,34 +346,30 @@ Returns known projects with lifecycle status.
 
 All search tools use `ProjectRegistry`.
 
-There are two registry modes:
+There are two runtime modes, selected by a single switch:
 
 | Mode | Enabled when | Behavior |
 |---|---|---|
-| Static mode | `prjxp.hub.enabled=false` or missing | Projects come from configured embedding stores |
-| Hub mode | `prjxp.hub.enabled=true` | Projects are discovered dynamically and have lifecycle states |
+| Hub mode | `prjxp.hub.enabled=true` | MCP server (WebMVC, `/mcp`), REST API, directory-driven project registry (`HubProjectRegistry`), in-process pipeline, import watcher |
+| CLI mode | `prjxp.hub.enabled=false` or missing | The same `mcp-server-all.jar` runs the full pipeline (chunk + embed + docpipe) and exits; no web server |
+
+The hub registry is the only registry: projects are discovered dynamically and have lifecycle states.
 
 If a requested project is not searchable, tools fail explicitly with an error listing available projects.
 
-In hub mode, a project is searchable only when its status is `READY`.
+A project is searchable only when its status is `READY`.
 
-## Static Mode
+## CLI Mode
 
-Static mode is the default.
+CLI mode is the default.
 
-It uses configured embedding stores from the prjxp configuration.
+The same `mcp-server-all.jar` runs the full pipeline (chunk + embed + docpipe) and exits.
 
 Behavior:
 
-- all configured projects with embedding store references are considered available
-- searchable projects report status `READY`
+- no web server, no MCP endpoint, no REST API
 - no hub lifecycle, import polling, or live update is active
-
-Project resolution:
-
-- blank project resolves to the active project
-- `default` resolves to the configured default embedding store
-- unknown projects produce `UnknownProjectException`
+- the pipeline runs once and the process terminates
 
 ## Hub Mode
 

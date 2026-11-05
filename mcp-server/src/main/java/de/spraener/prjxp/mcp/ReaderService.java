@@ -9,6 +9,7 @@ import de.spraener.prjxp.common.reader.ReaderSupport;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  * MIME-specific reader, paged line output and a character cap.
  */
 @Service
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class ReaderService {
     private static final int FILE_LOOKUP_LIMIT = 10_000;

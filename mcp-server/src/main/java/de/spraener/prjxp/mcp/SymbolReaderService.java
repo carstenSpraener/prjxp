@@ -9,6 +9,7 @@ import de.spraener.prjxp.common.reader.ReaderSupport;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -27,6 +28,7 @@ import java.util.Map;
  * {@code .javadoc}); both are understood here.
  */
 @Service
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class SymbolReaderService {
     private static final int LOOKUP_LIMIT = 10_000;

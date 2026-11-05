@@ -11,11 +11,13 @@ import lombok.extern.java.Log;
 import org.apache.commons.lang3.StringUtils;
 import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequiredArgsConstructor
 @Log
 public class PrjxpMcpTool {

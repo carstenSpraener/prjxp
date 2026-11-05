@@ -85,8 +85,10 @@ tasks.register('stageLpGdscriptPlugin', Copy) {
 
 test {
     // Phase 01 (DockerHub): chunk-norris/tibed sind jetzt auf der Classpath — ihre CLI-Runner
-    // duerfen in Hub-Tests nicht feuern (matchIfMissing=true wuerde sie sonst starten lassen).
-    systemProperty 'prjxp.cli.enabled', 'false'
+    // sind an prjxp.hub.enabled=false gebunden und duerfen in Hub-Tests nicht feuern.
+    // Die mcp-server-Tests laufen mit Hub (application.yaml: prjxp.hub.enabled=true),
+    // daher hier explizit als Sicherheitsnetz.
+    systemProperty 'prjxp.hub.enabled', 'true'
     // WP-2 Phase 04: the C# E2E test loads the staged lp-csharp plugin JAR
     // (the property is only consumed by that test, via @DynamicPropertySource).
     dependsOn 'stageLpCsharpPlugin'

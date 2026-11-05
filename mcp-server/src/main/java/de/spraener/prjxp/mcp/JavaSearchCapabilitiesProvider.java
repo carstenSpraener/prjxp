@@ -5,12 +5,14 @@ import de.spraener.prjxp.common.capability.IdentifierRules;
 import de.spraener.prjxp.common.capability.LanguageCapability;
 import de.spraener.prjxp.common.capability.SearchParamDef;
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.Arrays;
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 public class JavaSearchCapabilitiesProvider implements ChunkerSearchCapabilitiesProvider {
 
     public static final String JAVA_MIME_TYPE = "text/x-java-code";

@@ -17,6 +17,7 @@ import de.spraener.prjxp.mcp.rest.dto.ToolCall;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
@@ -49,6 +50,7 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 @Service
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 public class ChatService {
 
     private static final Logger log = LoggerFactory.getLogger(ChatService.class);
@@ -150,8 +152,7 @@ public class ChatService {
     private final LuceneEmbeddingStore luceneStore;
     private final PrjXPConfig prjXPConfig;
     private final ObjectMapper objectMapper;
-    @Autowired(required = false)
-    private HubProjectRegistry hubProjectRegistry;
+    private final HubProjectRegistry hubProjectRegistry;
 
     /** Central tool registry: prjxp tools, external MCP tools and Groovy tools. */
     @Autowired(required = false)
@@ -161,12 +162,14 @@ public class ChatService {
                        EmbeddingModel embeddingModel,
                        LuceneEmbeddingStore luceneStore,
                        PrjXPConfig prjXPConfig,
-                       ObjectMapper objectMapper) {
+                       ObjectMapper objectMapper,
+                       HubProjectRegistry hubProjectRegistry) {
         this.kiChatProvider = kiChatProvider;
         this.embeddingModel = embeddingModel;
         this.luceneStore = luceneStore;
         this.prjXPConfig = prjXPConfig;
         this.objectMapper = objectMapper;
+        this.hubProjectRegistry = hubProjectRegistry;
     }
 
     /** Send a chat message and return the assistant response. */
@@ -1047,10 +1050,7 @@ public class ChatService {
         if (projectName == null || projectName.isBlank()) {
             return null;
         }
-        ProjectDefinition def = null;
-        if (hubProjectRegistry != null) {
-            def = hubProjectRegistry.entry(projectName).map(ProjectEntry::getDefinition).orElse(null);
-        }
+        ProjectDefinition def = hubProjectRegistry.entry(projectName).map(ProjectEntry::getDefinition).orElse(null);
         if (def == null) {
             def = prjXPConfig.getProjectDefinition(projectName).orElse(null);
         }
@@ -1108,19 +1108,9 @@ public class ChatService {
         }
     }
 
-    /** Get list of available project names for RAG context. */
+    /** Get list of available project names for RAG context (hub registry is the source of truth). */
     public List<String> getAvailableProjects() {
-        // Prefer hub projects if HubProjectRegistry is available (hub mode)
-        if (hubProjectRegistry != null) {
-            return hubProjectRegistry.availableProjects();
-        }
-        // Fallback to PrjXPConfig projects (null-safe)
-        if (prjXPConfig.getProjects() == null || prjXPConfig.getProjects().isEmpty()) {
-            return List.of();
-        }
-        return prjXPConfig.getProjects().stream()
-                .map(p -> p.getName())
-                .toList();
+        return hubProjectRegistry.availableProjects();
     }
 
     /** Get the names of all tools available to the chat (prjxp, external MCP servers and Groovy). */

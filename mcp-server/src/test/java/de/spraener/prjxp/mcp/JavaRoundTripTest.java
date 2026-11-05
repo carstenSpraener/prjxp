@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * drift between the two modules would fail this test, which the unit tests on either
  * side (hand-crafted units / structural assertions) cannot catch.
  */
-@SpringBootTest(properties = "prjxp.cli.enabled=false")
+@SpringBootTest(properties = "prjxp.hub.enabled=true")
 class JavaRoundTripTest {
 
     @TempDir

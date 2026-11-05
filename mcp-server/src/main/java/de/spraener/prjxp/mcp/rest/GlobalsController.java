@@ -3,6 +3,7 @@ package de.spraener.prjxp.mcp.rest;
 import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingModelReference;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -12,6 +13,7 @@ import java.util.Map;
 import java.util.regex.Pattern;
 
 @RestController
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequestMapping("/api/globals")
 @RequiredArgsConstructor
 public class GlobalsController {

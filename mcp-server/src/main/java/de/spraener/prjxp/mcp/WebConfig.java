@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp;
 
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.web.servlet.config.annotation.CorsRegistry;
@@ -8,6 +9,7 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 import java.util.List;
 
 @Configuration
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 public class WebConfig implements WebMvcConfigurer {
 
     @Value("#{'${mcp.cors.allowed-patterns:http://localhost:*}'.split(',')}")

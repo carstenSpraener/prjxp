@@ -63,6 +63,9 @@ class ChatServiceTest {
     @Mock
     private SseEmitter sseEmitter;
 
+    @Mock
+    private HubProjectRegistry hubProjectRegistry;
+
     private ToolRegistry toolRegistry;
     private final List<ExecutedTool> executedTools = new ArrayList<>();
 
@@ -76,7 +79,7 @@ class ChatServiceTest {
     void setUp() {
         lenient().when(prjXPConfig.getProjects()).thenReturn(new ArrayList<>());
         objectMapper = new ObjectMapper();
-        chatService = new ChatService(kiChatProvider, embeddingModel, luceneStore, prjXPConfig, objectMapper);
+        chatService = new ChatService(kiChatProvider, embeddingModel, luceneStore, prjXPConfig, objectMapper, hubProjectRegistry);
         toolRegistry = new ToolRegistry(new GroovyToolExecutor());
         registerRecordingTools();
         injectField("toolRegistry", toolRegistry);
@@ -136,10 +139,6 @@ class ChatServiceTest {
         Method method = ChatService.class.getDeclaredMethod("buildEnrichedPrompt", ChatRequest.class);
         method.setAccessible(true);
         return (String) method.invoke(chatService, request);
-    }
-
-    private void injectHubRegistry(HubProjectRegistry registry) {
-        injectField("hubProjectRegistry", registry);
     }
 
     @Test
@@ -224,9 +223,7 @@ class ChatServiceTest {
 
         ProjectEntry entry = new ProjectEntry("my-project", Path.of("/tmp/x"),
                 ProjectEntry.Kind.LIVE, def, null);
-        HubProjectRegistry registry = mock(HubProjectRegistry.class);
-        when(registry.entry("my-project")).thenReturn(Optional.of(entry));
-        injectHubRegistry(registry);
+        when(hubProjectRegistry.entry("my-project")).thenReturn(Optional.of(entry));
 
         ChatRequest request = new ChatRequest();
         request.setMessage("Hello");

@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.language.LanguagePack;
 import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.reader.FileViewProvider;
 import de.spraener.prjxp.common.reader.GenericFileViewProvider;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -13,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 public class FileViewRegistry {
     private final Map<String, FileViewProvider> byMime = new LinkedHashMap<>();
     private final GenericFileViewProvider generic = new GenericFileViewProvider();

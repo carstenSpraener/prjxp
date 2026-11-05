@@ -2,6 +2,7 @@ package de.spraener.prjxp.mcp.rest;
 
 import de.spraener.prjxp.mcp.QueryStatEntry;
 import de.spraener.prjxp.mcp.QueryStats;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
@@ -12,6 +13,7 @@ import java.util.concurrent.atomic.AtomicLong;
 
 /** Collects query statistics for the dashboard. */
 @Component
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 public class QueryStatsCollector {
 
     private final List<QueryStatEntry> recentQueries = Collections.synchronizedList(new ArrayList<>());

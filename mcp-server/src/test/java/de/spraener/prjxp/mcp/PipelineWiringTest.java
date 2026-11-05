@@ -17,11 +17,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Phase 01 (DockerHub): the hub app must be able to run chunk-norris and tibed
- * in-process. With {@code prjxp.cli.enabled=false} the pipeline beans are present,
- * but no CLI runner from those modules fires.
+ * in-process. With {@code prjxp.hub.enabled=true} the pipeline beans are present,
+ * but no CLI runner from those modules fires (they are gated on hub being disabled).
  */
 @SpringBootTest(properties = {
-        "prjxp.cli.enabled=false"
+        "prjxp.hub.enabled=true"
 })
 class PipelineWiringTest {
 
@@ -47,7 +47,7 @@ class PipelineWiringTest {
         assertThat(context.getBeansOfType(CommandLineRunner.class).values())
                 .filteredOn(runner -> runner.getClass().getName().startsWith("de.spraener.prjxp.chuno.")
                         || runner.getClass().getName().startsWith("de.spraener.prjxp.tibed."))
-                .as("CLI runners of chunk-norris/tibed must be disabled via prjxp.cli.enabled=false")
+                .as("CLI runners of chunk-norris/tibed must be disabled via prjxp.hub.enabled=true")
                 .isEmpty();
     }
 }
