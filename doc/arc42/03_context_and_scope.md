@@ -48,20 +48,20 @@ flowchart LR
 | Web UI (`/`) | humans → prjxp | Hub project list with lifecycle status (static `index.html` + vanilla JS). |
 | Embedding API (OpenAI-compatible `/v1/embeddings`, Ollama) | prjxp → external | Batched embedding of chunk content. |
 | Chat LLM API (OpenAI-compatible, Gemini, …) | prjxp → external | Used by docpipe and the golden-retriever questioner. |
-| File system / tar archives | external → prjxp | The indexed project: mounted directory (single mode) or dropped tar / live marker dir (hub). |
+| File system / tar archives | external → prjxp | The indexed project: live marker dir under `/import` (single project via `prjxp mcp`) or dropped tar / live marker dir (multi-project hub). |
 
 ## 3.2 Technical Context
 
 ```mermaid
 flowchart LR
     subgraph host ["Host machine"]
-        subgraph docker ["prjxp image (single or hub)"]
+        subgraph docker ["prjxp image (CLI or hub)"]
             CN["chunk-norris-all.jar"]
             TIB["tibed-all.jar"]
             MS["mcp-server-all.jar<br/>Tomcat :7007/:7008"]
             ENTRY["entry.sh<br/>chunk embed hub"]
         end
-        V1[("Volume: project source<br/>/app-source")]
+        V1[("Volume: project source<br/>/import/<name>")]
         V2[("Volume: Lucene index<br/>.prjxp-data/lucene-index")]
         V3[("Hub volumes:<br/>/import /projects /data")]
         V4[("Language pack plugins<br/>/app-source/language-packs")]
@@ -107,8 +107,9 @@ flowchart LR
 - **Document formats:** Markdown, plain text, PDF (chapter chunking + Tika conversion),
   DOCX/DOC, HTML, RTF — via the doc-conversion router (agents per format).
 - **Interfaces:** MCP streamable HTTP, REST API, CLI (`chunk`/`embed` modes), hub web UI.
-- **Deployment:** single-project container (one index per project) and multi-project hub
-  (shared, project-stamped Lucene index).
+- **Deployment:** single-project hub container (one project, index in the project's
+  `.prjxp-data`) and multi-project hub (shared, project-stamped Lucene index) — both hub
+  mode; CLI mode is the non-server runtime form of the same image.
 - **Multi-project addressing:** every chunk is stamped with its `project`; all searches are
   project-scoped.
 

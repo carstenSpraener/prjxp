@@ -5,10 +5,10 @@
 ```mermaid
 flowchart TB
     subgraph host ["Host machine (Docker)"]
-        subgraph single ["Single-project mode: one container per project"]
+        subgraph single ["Single project (hub mode): one container per project"]
             C1["prjxp image<br/>entry.sh hub<br/>:7007"]
-            M1[("/app-source = project dir")]
-            I1[(".prjxp-data/lucene-index<br/>volume prjxp-data")]
+            M1[("/import/<name> = project dir")]
+            I1[("/data/lucene-index<br/>= project .prjxp-data (bind mount)")]
         end
 
         subgraph hub ["Hub mode: one container, many projects"]
@@ -40,15 +40,15 @@ takes precedence via `SPRING_CONFIG_LOCATION`).
 
 ## 7.2 Container Anatomy & Assignment of Building Blocks
 
-| Element | Single-project mode | Hub mode |
+| Element | Single project (hub) | Multi-project hub |
 |---|---|---|
-| `chunk-norris-all.jar` | run as separate process (`entry.sh chunk`) | **in-process** bean of mcp-server (CLI runner off) |
-| `tibed-all.jar` | separate process (`entry.sh embed`) | **in-process** bean of mcp-server (CLI runner off) |
-| `mcp-server-all.jar` | serves MCP/REST on `SERVER_PORT` (7007) | same + hub beans (`prjxp.hub.enabled=true`) on 7008 (recommended) |
+| `chunk-norris-all.jar` | separate process (`entry.sh chunk`) — pre-builds the index, the hub then serves it (self-heal → READY) | **in-process** bean of mcp-server (CLI runner off) |
+| `tibed-all.jar` | separate process (`entry.sh embed`) — same as above | **in-process** bean of mcp-server (CLI runner off) |
+| `mcp-server-all.jar` | serves MCP/REST on `SERVER_PORT` (7007) | same, on 7008 (recommended) |
 | Embedding server | optional in-container TEI (`SKIP_EMBEDDING_SERVER=false`) or external on host (compose default: `true` → LM Studio) | same |
-| Project source | `/app-source` (bind mount of the project dir) | `/import` (tars / live dirs) + `/projects` (extracted snapshots) |
-| Lucene index | `.prjxp-data/lucene-index` under `/app-source` (volume) | shared: `/data/lucene-index` (named volume), project-stamped chunks |
-| JSONL artifacts | `px-chunks.jsonl` in the project dir | hub-managed: `/data/chunks/<name>.jsonl` (never into live trees) |
+| Project source | `/import/<name>` (bind mount of the project dir, `prjxp.yaml` marker) | `/import` (tars / live dirs) + `/projects` (extracted snapshots) |
+| Lucene index | `.prjxp-data` (bind-mounted at `/data/lucene-index`) | shared: `/data/lucene-index` (named volume), project-stamped chunks |
+| JSONL artifacts | `.prjxp-data/chunks` in the project dir | hub-managed: `/data/chunks/<name>.jsonl` (never into live trees) |
 | Language pack plugins | `/app-source/language-packs` (volume; default of `prjxp.language-packs.dir`) | same — plugins are mounted at runtime, **never baked into the image** |
 
 **JVM tuning:** `JAVA_OPTS="-XX:+UseG1GC -XX:MaxRAMPercentage=75.0 --add-modules jdk.incubator.vector"`
@@ -58,7 +58,7 @@ takes precedence via `SPRING_CONFIG_LOCATION`).
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `LUCENE_INDEX_PATH` | `.prjxp-data/lucene-index` (single) / `/data/lucene-index` (hub) | Index directory |
+| `LUCENE_INDEX_PATH` | `/data/lucene-index` (both) — backing store differs: project's `.prjxp-data` bind mount (single) vs named volume (hub) | Index directory |
 | `LUCENE_VECTOR_DIMENSION` | `1024` | Must match the embedding model (mxbai-embed-large-v1) |
 | `SERVER_PORT` | `7007` (hub: `7008` recommended) | HTTP port for MCP/REST/UI |
 | `EMBEDDING_API_BASE_URL` / `PRJXP_EMBEDDING_API_BASE_URL` | `${LM_STUDIO_URL}` | OpenAI-compatible embedding endpoint |
