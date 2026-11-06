@@ -1,6 +1,5 @@
 package de.spraener.prjxp.docpipe.config;
 
-import de.spraener.prjxp.docpipe.DocPipeConfig;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import org.springframework.stereotype.Component;
 
@@ -12,7 +11,7 @@ import java.nio.file.Path;
  * Service for managing paths and files related to the {@code .dp} configuration directories.
  * <p>
  * This class provides utility methods to locate the documentation pipeline directory,
- * configuration files (like {@code documents.json} and {@code models.json}), and content hash properties.
+ * configuration files (like {@code documents.json}), and content hash properties.
  * </p>
  */
 public class DotDPFilesService {
@@ -27,16 +26,6 @@ public class DotDPFilesService {
      */
     public File dotPipeDir(ContentCreationTask cct) {
         return new File(cct.getDpJob().getRootDir(), DP_DIR);
-    }
-
-    /**
-     * Returns the path to the global models configuration file.
-     *
-     * @param cfg the documentation pipeline configuration
-     * @return the absolute path to the {@code models.json} file
-     */
-    public String globalModelsFileName(DocPipeConfig cfg) {
-        return cfg.getProjectDir().resolve(DP_DIR).resolve("models.json").toString();
     }
 
     /**
@@ -57,16 +46,6 @@ public class DotDPFilesService {
      */
     public File getDotPipeDir(File directory) {
         return new File(directory, DP_DIR);
-    }
-
-    /**
-     * Resolves the {@code models.json} file within a given directory's {@code .dp} folder.
-     *
-     * @param directory the parent directory
-     * @return the {@link File} object representing the models configuration file
-     */
-    public File getModelsJsonFrom(File directory) {
-        return new File(getDotPipeDir(directory), "models.json");
     }
 
     /**

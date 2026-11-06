@@ -9,10 +9,6 @@ Create a MarkDown-File as a Readme to explain how the Doc|Pipe is actually worki
 ```
 
 ```java
-{{#URL this file:../../src/main/java/de/spraener/prjxp/docpipe/model/DPModelConfig.java}}{{/URL}}
-```
-
-```java
 {{#URL this file:../../src/main/java/de/spraener/prjxp/docpipe/model/DPContentCreation.java}}{{/URL}}
 ```
 

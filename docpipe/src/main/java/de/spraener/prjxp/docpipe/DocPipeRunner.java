@@ -5,7 +5,6 @@ import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogMessage;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.config.JobCreationService;
-import de.spraener.prjxp.docpipe.config.ModelConfigLoader;
 import de.spraener.prjxp.docpipe.content.ContentCreationService;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import lombok.RequiredArgsConstructor;
@@ -41,7 +40,6 @@ public class DocPipeRunner {
     private int maxThreads;
     private final JobCreationService jobCreationService;
     private final ContentCreationService contentCreationService;
-    private final ModelConfigLoader modelConfigLoader;
     private final DotDPFilesService dpFilesService;
     private final de.spraener.prjxp.common.errorlog.PxLogService logService;
 
@@ -50,7 +48,7 @@ public class DocPipeRunner {
     /** Test seam: replaces the process-exit callback (defaults to {@code System::exit}). */
     void setExitHandler(IntConsumer exitHandler) { this.exitHandler = exitHandler; }
 
-    /** Setter-injected (keeps the 5-arg constructor stable for existing tests). */
+    /** Setter-injected (keeps the 4-arg constructor stable for existing tests). */
     private DocPipeManifestWriter manifestWriter;
 
     @Autowired(required = false)

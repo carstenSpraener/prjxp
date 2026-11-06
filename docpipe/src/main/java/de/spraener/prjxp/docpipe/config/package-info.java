@@ -2,8 +2,8 @@
  * Provides configuration support for the DocPipe documentation pipeline.
  *
  * <p>
- * This package is responsible for locating DocPipe configuration files, loading model
- * and document definitions, resolving simple configuration placeholders, and creating
+ * This package is responsible for locating DocPipe configuration files, loading document
+ * definitions, resolving simple configuration placeholders, and creating
  * executable documentation jobs from project-local configuration directories.
  * The configuration convention used by the package is a {@code .dp} directory placed
  * below a project or job root directory.
@@ -14,7 +14,6 @@
  * </p>
  * <ul>
  *   <li>{@code .dp/documents.json} &mdash; defines document/content creation tasks.</li>
- *   <li>{@code .dp/models.json} &mdash; defines chat model references used by the pipeline.</li>
  *   <li>{@code .dp/content-hashes.properties} &mdash; stores content hash metadata.</li>
  * </ul>
  *
@@ -25,9 +24,10 @@
  * configuration, read {@code documents.json}, and create {@code DPJob} instances with
  * their associated content creation definitions. When a content creation definition
  * contains a {@code forEach} glob pattern, the job creation service expands it into
- * one content creation task per matching file. {@link ModelConfigLoader} loads model
- * references from {@code models.json}, while {@link EnvResolver} provides lightweight
- * environment variable substitution for string configuration values.
+ * one content creation task per matching file. {@link EnvResolver} provides lightweight
+ * environment variable substitution for string configuration values. Chat model
+ * configuration is not read from files here; it lives exclusively in
+ * {@code application.yaml} ({@code prjxp.chatModels[]}).
  * </p>
  *
  * <p>
@@ -36,8 +36,6 @@
  * <ul>
  *   <li>{@link JobCreationService#readJobs(java.util.Optional)} for discovering and
  *       constructing documentation jobs for a project definition.</li>
- *   <li>{@link ModelConfigLoader#listFrom(String)} for loading chat model configuration
- *       from a JSON file.</li>
  *   <li>{@link DotDPFilesService} for resolving well-known DocPipe configuration and
  *       output paths.</li>
  * </ul>

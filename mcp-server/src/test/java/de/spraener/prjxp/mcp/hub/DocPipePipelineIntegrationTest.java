@@ -13,7 +13,6 @@ import de.spraener.prjxp.docpipe.DocPipeRunResult;
 import de.spraener.prjxp.docpipe.DocPipeRunner;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.config.JobCreationService;
-import de.spraener.prjxp.docpipe.config.ModelConfigLoader;
 import de.spraener.prjxp.docpipe.content.ContentCreationService;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
@@ -109,7 +108,7 @@ class DocPipePipelineIntegrationTest {
         manifestWriter = new DocPipeManifestWriter(objMapper);
         contentCreationService = mock(ContentCreationService.class);
         docPipeRunner = new DocPipeRunner(jobCreationService, contentCreationService,
-                mock(ModelConfigLoader.class), dpFilesService, logService);
+                dpFilesService, logService);
         ReflectionTestUtils.setField(docPipeRunner, "maxThreads", 2);
         docPipeRunner.setManifestWriter(manifestWriter);
 

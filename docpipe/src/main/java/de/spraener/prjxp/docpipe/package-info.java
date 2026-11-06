@@ -1,58 +1,75 @@
 /**
- * Command-line and in-process orchestration package for the DocPipe documentation
- * generation pipeline.
+ * Documentation pipeline ("DocPipe") for the PrjXP project.
  *
- * <p>
- * This package provides the Spring Boot entry point, argument parsing, run
- * coordination, per-run result tracking, and manifest writing needed to execute
- * DocPipe against a configured project. DocPipe discovers documentation jobs,
- * converts them into content-creation tasks, executes those tasks concurrently,
- * records produced output files, and reports failures in a form suitable for both
- * CLI execution and embedding by other application modules.
- * </p>
+ * <p>This package implements a pluggable, job-driven documentation generation pipeline.
+ * It discovers documentation jobs defined in a project, flattens them into individual
+ * content-creation tasks, and executes those tasks in parallel using a configurable
+ * fixed thread pool. Generated artifacts are tracked per run and recorded in a JSON
+ * manifest that downstream consumers (e.g. the PrjXP hub) can read.</p>
  *
- * <p>
- * The main architectural flow is:
- * </p>
+ * <h2>Architecture and Key Components</h2>
+ * <p>The package is organized around the following responsibilities:</p>
  * <ul>
- *   <li>{@link DocPipeCliApp} starts the Spring Boot application, loads optional
- *       {@code .env} properties, parses command-line arguments, and invokes the
- *       runner when CLI execution is enabled.</li>
- *   <li>{@link DocPipeArgsParser} extends the common project argument parser and
- *       logs parsing errors without terminating the application immediately.</li>
- *   <li>{@link DocPipeRunner} is the central coordinator. It uses services from
- *       the configuration and content subpackages to read DocPipe jobs, create
- *       content-creation tasks, and execute them with a fixed-size thread pool.</li>
- *   <li>{@link DocPipeRunResult} collects generated output paths and task failures
- *       in a thread-safe structure during in-process runs.</li>
- *   <li>{@link DocPipeManifestWriter} writes a JSON manifest of generated files
- *       below {@code .prjxp-data/docpipe/manifest.json}, allowing downstream
- *       components to discover and consume generated documentation.</li>
- *   <li>{@link DocPipeRunException} reports in-process run failures without
- *       calling {@code System.exit}.</li>
+ *   <li><b>Application entry point</b> – {@link DocPipeCliApp} bootstraps a Spring
+ *       application, loads environment variables from a {@code .env} file, and wires
+ *       the {@link CommandLineRunner} that drives the pipeline in CLI mode.</li>
+ *   <li><b>Argument parsing</b> – {@link DocPipeArgsParser} extends the shared
+ *       {@code PxDefaultArgsParser} to handle DocPipe-specific CLI arguments and
+ *       reports parse errors through the project's logging service.</li>
+ *   <li><b>Pipeline orchestration</b> – {@link DocPipeRunner} is the central
+ *       coordinator. It reads jobs (via {@code JobCreationService}), maps them to
+ *       {@code ContentCreationTask} instances, and submits them to a thread pool
+ *       for parallel execution (via {@code ContentCreationService}).</li>
+ *   <li><b>Run state</b> – {@link DocPipeRunResult} is a thread-safe accumulator
+ *       that collects absolute output paths and failure records produced during a
+ *       single pipeline run.</li>
+ *   <li><b>Manifest output</b> – {@link DocPipeManifestWriter} serializes the
+ *       collected outputs as a sorted JSON array of project-relative paths
+ *       (forward-slash separated) into {@code .prjxp-data/docpipe/manifest.json}.</li>
+ *   <li><b>Configuration</b> – {@link DocPipeConfig} holds global settings such as
+ *       the project root directory.</li>
+ *   <li><b>Error signaling</b> – {@link DocPipeRunException} is thrown (rather than
+ *       calling {@code System.exit}) when the pipeline is invoked in-process by the
+ *       hub and one or more tasks fail.</li>
  * </ul>
  *
- * <p>
- * Primary use cases are:
- * </p>
+ * <h2>Execution Modes</h2>
+ * <p>DocPipe supports two invocation contexts:</p>
  * <ul>
- *   <li>Running DocPipe as a command-line Spring Boot application via
- *       {@link DocPipeCliApp#main(String[])}.</li>
- *   <li>Executing the pipeline for the active configured project through
- *       {@link DocPipeRunner#run(de.spraener.prjxp.common.config.PrjXPConfig)}.</li>
- *   <li>Embedding DocPipe in another module by invoking
- *       {@link DocPipeRunner#runForProject(de.spraener.prjxp.common.config.ProjectDefinition)},
- *       which avoids process termination and writes a manifest even when partial
- *       failures occur.</li>
+ *   <li><b>CLI mode</b> (default): Launched via {@code DocPipeCliApp.main()}.
+ *       The {@code CommandLineRunner} bean is active when the property
+ *       {@code prjxp.hub.enabled} is {@code false} (or absent). On severe errors
+ *       the process exits with status&nbsp;1.</li>
+ *   <li><b>In-process / hub mode</b>: The hub calls
+ *       {@link DocPipeRunner#runForProject(de.spraener.prjxp.common.config.ProjectDefinition)}
+ *       directly. Failures are surfaced by throwing {@link DocPipeRunException};
+ *       the manifest is written in all cases (including partial failure or timeout)
+ *       so the hub can embed whatever documents were produced.</li>
  * </ul>
  *
- * <p>
- * Configuration is supplied primarily through the shared
- * {@link de.spraener.prjxp.common.config.PrjXPConfig} and
- * {@link de.spraener.prjxp.common.config.ProjectDefinition} model, Spring
- * properties such as {@code prjxp.docpipe.maxthreads}, and optional values loaded
- * from a local {@code .env} file before the Spring context is initialized.
- * </p>
+ * <h2>Sub-packages</h2>
+ * <ul>
+ *   <li>{@code de.spraener.prjxp.docpipe.config} – Job discovery and file-service
+ *       components ({@code JobCreationService}, {@code DotDPFilesService}).</li>
+ *   <li>{@code de.spraener.prjxp.docpipe.content} – Content-creation logic
+ *       ({@code ContentCreationService}, {@code ContentCreationTask}).</li>
+ * </ul>
+ *
+ * <h2>Typical Flow (CLI)</h2>
+ * <ol>
+ *   <li>{@code DocPipeCliApp.main} loads {@code .env} and starts Spring.</li>
+ *   <li>The {@code CommandLineRunner} bean invokes {@code DocPipeArgsParser.parseArgs}
+ *       to populate the {@code PrjXPConfig}.</li>
+ *   <li>{@code DocPipeRunner.run} reads jobs, creates tasks, and executes them
+ *       concurrently.</li>
+ *   <li>On completion, if any SEVERE log entries exist, a summary is printed and
+ *       the JVM exits with code&nbsp;1.</li>
+ * </ol>
+ *
+ * @see DocPipeCliApp
+ * @see DocPipeRunner
+ * @see DocPipeManifestWriter
+ * @see DocPipeRunResult
  */
 package de.spraener.prjxp.docpipe;
 

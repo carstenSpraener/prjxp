@@ -1,6 +1,7 @@
 prjxp:
   hub:
     enabled: true
+    importDir: ${HUB_IMPORT_DIR:/import}
 
   # Embedding model type: ollama or open_ai
   embeddingStoreLucene:
@@ -11,14 +12,14 @@ prjxp:
   chatModels:
     - stereotype: detailed
       serverType: lm-studio
-      providerUrl: http://host.docker.internal:1234/v1
+      providerUrl: ${LM_STUDIO_URL}
       modelName: qwen3.8-27b-splash
       timeoutSecs: 240
       apiKey: ${EMBEDDING_API_KEY}
 
     - stereotype: documentation
       serverType: lm-studio
-      providerUrl: http://host.docker.internal:1234/v1
+      providerUrl: ${LM_STUDIO_URL}
       modelName: qwen3.8-27b-splash
       timeoutSecs: 240
       apiKey: ${EMBEDDING_API_KEY}
@@ -29,7 +30,7 @@ prjxp:
 
     - stereotype: javadoc
       serverType: lm-studio
-      providerUrl: http://host.docker.internal:1234/v1
+      providerUrl: ${LM_STUDIO_URL}
       modelName: qwen3.8-27b-splash
       timeoutSecs: 240
       apiKey: ${EMBEDDING_API_KEY}
@@ -69,3 +70,25 @@ spring:
   devtools:
     restart:
       additional-exclude: "**/package-info.java"
+
+---
+spring:
+  config:
+    activate:
+      on-profile: local_debug
+  devtools:
+    restart:
+      enabled: true
+
+prjxp:
+  hub:
+    enabled: true
+    import-dir: .
+
+  embeddingStoreLucene:
+    indexPath: .prjxp-data/lucene-index
+
+  mcp-servers:
+    - name: prjxp
+      type: http
+      url: http://localhost:7007/mcp

@@ -386,6 +386,13 @@ public class HubProjectRegistry implements ProjectRegistry {
             log.warn("Could not list hub import dir {}: {}", root, e.toString());
             return null;   // the import dir root itself is unlistable -> skip live sync entirely (volume-glitch protection)
         }
+        if (configParser.isExcluded(root)) {
+            return found;   // .prjxp-exclude at the import root — nothing to scan (empty, not null: the dir exists)
+        }
+        if (configParser.markerFile(root).isPresent()) {
+            registerLiveDir(root, found);
+            return found; // outermost marker wins — never descend into a project tree
+        }
         for (Path dir : subDirs) {
             collectLiveDirSafely(dir, 1, visitedReal, found);
         }

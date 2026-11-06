@@ -66,20 +66,14 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
                 try {
                     writer = new IndexWriter(directory, config);
                 } catch (org.apache.lucene.store.LockObtainFailedException e) {
-                    // Stale lock from previous run — remove and retry
-                    Path lockFile = indexPath.resolve("write.lock");
-                    if (java.nio.file.Files.exists(lockFile)) {
-                        long size = java.nio.file.Files.size(lockFile);
-                        if (size == 0) {
-                            java.nio.file.Files.delete(lockFile);
-                            log.info("Removed stale lock file, retrying...");
-                            writer = new IndexWriter(directory, config);
-                        } else {
-                            throw new RuntimeException("Failed to open Lucene index at " + indexPath, e);
-                        }
-                    } else {
-                        throw new RuntimeException("Failed to open Lucene index at " + indexPath, e);
-                    }
+                    // flock is released by the OS when a process dies, so a stale lock file is
+                    // never the real cause — the lock is held by another LIVE writer. Deleting
+                    // write.lock here would let a second writer open the same index and corrupt
+                    // it, so we fail fast instead.
+                    throw new IllegalStateException(
+                            "Lucene index at " + indexPath + " is locked by another process. "
+                                    + "Stop the other process (a running mcp-server / tibed / golden-retriever, "
+                                    + "or a previous instance) and try again.", e);
                 }
                 try {
                     searcherManager = new SearcherManager(writer, null);

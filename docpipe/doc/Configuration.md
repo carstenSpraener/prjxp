@@ -11,7 +11,7 @@ The process begins in `DocPipeCliApp`:
 - Spring Boot binds all `prjxp.*` properties from `application.yaml` to `PrjXPConfig` (prjxp-common): the active project (`prjxp.activeProject`, default `cwd`), the project list (`prjxp.projects[]`), the chat model references (`prjxp.chatModels[]`), and the MCP server references (`prjxp.mcp-servers[]`).
 - `McpClientManager` (prjxp-common) connects all configured MCP servers at startup (`stdio`, `http`, or `groovy` tool scripts) and registers their tools in the `ToolRegistry`.
 
-> **Note:** an earlier version loaded per-directory `.dp/models.json` files via `ModelConfigLoader`. That code path is no longer used by the pipeline — model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`). `ModelConfigLoader` and the `models.json` helpers in `DotDPFilesService` remain as unused legacy.
+> **Note:** an earlier version loaded per-directory `.dp/models.json` files via `ModelConfigLoader`. That code path has been removed — model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`).
 
 ### 2. Job Discovery (`JobCreationService`)
 The system recursively scans the active project's root directory to identify "Jobs":

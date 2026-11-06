@@ -37,7 +37,6 @@ A minimal structure looks like this:
 my-project/
   .dp/
     documents.json
-    models.json
     architecture-assessment.prompt.txt
   src/
     main/

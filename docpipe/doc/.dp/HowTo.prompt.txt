@@ -27,11 +27,7 @@ The generated HowTo must follow this structure:
 
 ### Example of configuration
 
-A _master_ model.json which describes the available models on a top level and links it to _stereotypes_:
-
-```json
-{{#URL this file:../../../.dp/models.json}}{{/URL}}
-```
+Chat models are configured in `application.yaml` (`prjxp.chatModels[]`), each entry carrying a stereotype. (An earlier version used a per-directory `.dp/models.json` file; that has been removed.)
 
 ```json
 {{#URL this file:../../.dp/documents.json}}{{/URL}}

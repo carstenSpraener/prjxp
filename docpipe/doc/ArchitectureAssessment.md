@@ -42,7 +42,6 @@ The project follows a Spring-Boot-idiomatic service architecture with a lightwei
 - **Configuration/discovery layer**
   - `JobCreationService`
   - `DotDPFilesService`
-  - `ModelConfigLoader`
   - `DocPipeConfig`
 
 - **Content generation layer**
@@ -181,7 +180,6 @@ Recommendation: Standardize terminology throughout code, documentation, and conf
 
 Some components appear unused or architecturally stale:
 
-- `ModelConfigLoader` is injected into `DocPipeRunner` but not used.
 - `DPJob#getModelForStereotype()` is not used by `LLMService`.
 - `EnvResolver` is not used in the shown code.
 - `DPGroovyTool` exists but is not wired into `GroovyResolver`.
@@ -288,16 +286,9 @@ The `SourceSkeletonizer` abstraction supports adding language-specific skeletoni
 chatProvider.getByStereotype(stereotype)
 ```
 
-This is clean from DocPipe’s perspective, but the shown code does not clarify how `models.json` participates. `ModelConfigLoader` exists but is unused in `DocPipeRunner`, and `DPJob#getModelForStereotype()` is also unused.
+This is clean from DocPipe’s perspective. Model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`); the earlier `.dp/models.json` / `ModelConfigLoader` path has been removed. `DPJob#getModelForStereotype()` is also unused.
 
-As a result, model configuration responsibility is ambiguous:
-
-- Is `models.json` loaded somewhere else?
-- Is `PrjXPConfig.chatModels` already populated before DocPipe starts?
-- Should job-local `.dp/models.json` override global models?
-- Should `ModelConfigLoader` merge model configurations?
-
-This should be clarified architecturally.
+As a result, model configuration responsibility is now unambiguous: `PrjXPConfig.chatModels` (bound from `application.yaml`) is the single source of truth, resolved by stereotype via `KIChatProvider`.
 
 ##### 2. Prompt resolver interface is powerful but very broad
 
@@ -695,13 +686,10 @@ Risk level: **Medium**
 
 ### 5.8 Medium: Model configuration path is unclear
 
-`ModelConfigLoader` is present but unused by the runner. `DPJob#getModelForStereotype()` is also unused. `LLMService` uses `KIChatProvider` directly.
+Model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`); the earlier `.dp/models.json` / `ModelConfigLoader` path has been removed. `DPJob#getModelForStereotype()` is also unused. `LLMService` uses `KIChatProvider` directly.
 
 This creates uncertainty around:
 
-- whether `.dp/models.json` is supported
-- whether global models are loaded
-- whether project-local models override global ones
 - how stereotypes are registered
 
 Risk level: **Medium**
@@ -912,18 +900,9 @@ Introduce a config shape like:
 
 This supports evolution and better validation messages.
 
-#### 2.3 Normalize local and global model configuration
+#### 2.3 Model configuration (resolved)
 
-Clarify and document the model-loading architecture.
-
-Options:
-
-1. Remove `ModelConfigLoader` if model configuration is handled elsewhere.
-2. Use `ModelConfigLoader` explicitly in `JobCreationService` or `DocPipeRunner`.
-3. Define precedence:
-   - global config
-   - project config
-   - job-local `.dp/models.json`
+Model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`), resolved by stereotype via `KIChatProvider`. The earlier `.dp/models.json` / `ModelConfigLoader` path has been removed, so there is a single authoritative source.
 
 ### Priority 3: Harden Groovy integration while preserving flexibility
 
@@ -1110,7 +1089,6 @@ For `forEach` expansion and source scanning, consider a per-run file index.
 
 Decide the fate of:
 
-- `ModelConfigLoader`
 - `DPJob#getModelForStereotype()`
 - `EnvResolver`
 - `DPGroovyTool`

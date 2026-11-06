@@ -130,7 +130,7 @@ Do not put full MCP server definitions into every document. Define reusable prof
 
 Possible future locations:
 
-1. Extend PrjXP model config / `models.json`.
+1. Extend PrjXP model config (`application.yaml` `prjxp.chatModels[]`).
 2. Add a DocPipe-specific tool config file under `.dp`, e.g. `.dp/tools.json`.
 
 Recommended first concept: `.dp/tools.json`, because it avoids overloading model references too early while still being central.
@@ -546,7 +546,7 @@ Mitigation:
 
 ## Open Questions
 
-1. Should `.dp/tools.json` be the central config file, or should tool profiles live in existing `models.json`/PrjXP config?
+1. Should `.dp/tools.json` be the central config file, or should tool profiles live in PrjXP config (`application.yaml`)?
 
 2. Should a tool-enabled document fail if selected model does not support tools, or silently fall back to normal `chat(String)`?
 
