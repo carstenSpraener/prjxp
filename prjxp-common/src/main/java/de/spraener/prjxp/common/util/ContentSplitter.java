@@ -42,29 +42,65 @@ public class ContentSplitter {
             int total = 0;
             int chunkStart = 0;
             int chunkStartLine = fromLine;
+            int previousEnd = 0;
             for (int i = 0; chunkStart < content.length(); i++) {
-                String chunkContent = content.substring(chunkStart, Math.min(chunkStart + chunkSize, content.length()));
+                int chunkEnd = alignEnd(content, chunkStart, Math.min(chunkStart + chunkSize, content.length()));
+                String chunkContent = content.substring(chunkStart, chunkEnd);
                 PxChunk chunk = chunkSupplier.get();
                 chunk.setContent(chunkContent);
                 chunk.setTotal(total);
                 chunk.setPart(i);
                 chunk.setSize(chunk.getContent().length());
-                chunk.setOverlap(this.overlap);
+                // The real overlap can differ by one when a boundary had to be moved away
+                // from the middle of a surrogate pair; store the actual shared prefix so
+                // that unsplit() reconstructs the content losslessly.
+                chunk.setOverlap(i == 0 ? this.overlap : Math.max(0, previousEnd - chunkStart));
                 int lineCount = StringUtils.countOccurrencesOf(chunkContent, "\n");
                 chunk.setFromLine("" + chunkStartLine);
                 chunk.setToLine("" + (chunkStartLine + lineCount));
                 chunkStartLine += lineCount;
 
                 chunks.add(chunk);
-                chunkStart += chunkSize - overlap;
+                previousEnd = chunkEnd;
                 total++;
-                if (chunkStart > content.length()) {
+                if (chunkEnd >= content.length()) {
                     break;
                 }
+                int nextStart = alignStart(content, chunkEnd - this.overlap);
+                chunkStart = Math.max(nextStart, chunkStart + 1);   // never stop making progress
             }
             chunks.stream().forEach(c -> c.setTotal(chunks.size()));
         }
         return chunks;
+    }
+
+    /**
+     * Moves a chunk end that would split a surrogate pair one character to the left (or, for
+     * degenerate chunk sizes, one to the right) so every chunk stays valid UTF-16.
+     */
+    private static int alignEnd(CharSequence content, int start, int end) {
+        if (end >= content.length()) {
+            return content.length();
+        }
+        if (end <= start) {
+            return Math.min(content.length(), start + 1);
+        }
+        boolean splitsPair = Character.isHighSurrogate(content.charAt(end - 1))
+                && Character.isLowSurrogate(content.charAt(end));
+        if (!splitsPair) {
+            return end;
+        }
+        return end - 1 > start ? end - 1 : end + 1;
+    }
+
+    /** Moves a chunk start that points at the second half of a surrogate pair back onto the pair. */
+    private static int alignStart(CharSequence content, int start) {
+        if (start > 0 && start < content.length()
+                && Character.isHighSurrogate(content.charAt(start - 1))
+                && Character.isLowSurrogate(content.charAt(start))) {
+            return start - 1;
+        }
+        return start;
     }
 
     public String unsplit(List<PxChunk> chunks) {

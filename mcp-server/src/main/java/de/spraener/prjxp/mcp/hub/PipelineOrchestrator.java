@@ -29,6 +29,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
@@ -362,6 +363,7 @@ public class PipelineOrchestrator implements ImportHandler {
                     success = runStandardPipeline(name, def);
                 }
             } catch (Exception e) {
+                e.printStackTrace();
                 log.error("Pipeline failed for project '{}': {}", name, e.toString());
                 if (run.isLiveUpdate()) {
                     // keep the old index: the project stays searchable, the scheduler retries next cycle
@@ -491,6 +493,7 @@ public class PipelineOrchestrator implements ImportHandler {
             // (gated on whether a listener scheduled a retrigger, so the chain can continue).
             return true;
         } catch (Exception e) {
+            e.printStackTrace();
             log.error("Pipeline failed for project '{}': {}", name, e.toString());
             registry.setReindexStatus(name, ReindexStatus.FAILED);
             if (hadIndex && !swapStarted) {
@@ -581,6 +584,7 @@ public class PipelineOrchestrator implements ImportHandler {
             // Done — the terminal READY/COMPLETE/100 status is set centrally by runPipeline.
             return true;
         } catch (Exception e) {
+            e.printStackTrace();
             log.error("Pipeline failed for project '{}': {}", name, e.toString());
             registry.setReindexStatus(name, ReindexStatus.FAILED);
             if (hadIndex && !swapStarted) {
@@ -709,12 +713,38 @@ public class PipelineOrchestrator implements ImportHandler {
                 r.vector(), r.embeddingPrefix(), r.project(), generatedAt);
     }
 
-    /** Writes records as JSONL (one per line), creating parent directories as needed. */
+    /**
+     * Writes records as JSONL (one per line), creating parent directories as needed.
+     * Every line is validated before it reaches the writer: a string containing an unpaired
+     * surrogate cannot be encoded as UTF-8 and, worse, a failed flush leaves the underlying
+     * {@link java.io.BufferedWriter} unusable — poisoning every following record. Skipping the
+     * offending record before the write keeps the rest of the file intact.
+     */
     private void writeJsonl(Path path, List<EmbeddedChunkRecord> records) throws IOException {
         if (path.getParent() != null) { Files.createDirectories(path.getParent()); }
         try (var w = Files.newBufferedWriter(path)) {
-            for (EmbeddedChunkRecord r : records) { w.write(objMapper.writeValueAsString(r)); w.write('\n'); }
+            for (EmbeddedChunkRecord r : records) {
+                String line;
+                try {
+                    line = objMapper.writeValueAsString(r);
+                } catch (Exception e) {
+                    log.warn("Skipping unserializable record {} for {}: {}", r.id(), path, e.getMessage());
+                    continue;
+                }
+                if (!canEncodeUtf8(line)) {
+                    log.warn("Skipping unwriteable record {} for {}: content contains an unpaired surrogate",
+                            r.id(), path);
+                    continue;
+                }
+                w.write(line);
+                w.write('\n');
+            }
         }
+    }
+
+    /** True when {@code chars} can be encoded as UTF-8 (i.e. contains no unpaired surrogates). */
+    private static boolean canEncodeUtf8(CharSequence chars) {
+        return StandardCharsets.UTF_8.newEncoder().canEncode(chars);
     }
 
     /** Reads EmbeddedChunkRecord JSONL, skipping unparseable lines. */

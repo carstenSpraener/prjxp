@@ -3,6 +3,7 @@ package de.spraener.prjxp.common.util;
 import de.spraener.prjxp.common.model.PxChunk;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.function.Supplier;
 
@@ -87,6 +88,49 @@ class ContentSplitterTest {
         assertThat(chunk.getPart()).isZero();
         assertThat(chunk.getFromLine()).isEqualTo("0");
         assertThat(chunk.getToLine()).isEqualTo("1");
+    }
+
+    @Test
+    void splitContent_emojiOnChunkEnd_neverSplitsSurrogatePair() {
+        // 🧱 occupies chars 9 and 10 — exactly where the first 10-char chunk would end.
+        String content = "abcdefghi\uD83E\uDDF1jklmnopqrstuvwxyz";
+
+        List<PxChunk> chunks = splitter.splitContent(content, 1, 2, supplier);
+
+        assertNoUnpairedSurrogates(chunks);
+        assertThat(splitter.unsplit(chunks)).isEqualTo(content);
+    }
+
+    @Test
+    void splitContent_emojiOnChunkStart_neverStartsWithLowSurrogate() {
+        // 🧱 occupies chars 6 and 7; with chunkSize 10 / overlap 3 the next chunk would start at 7.
+        String content = "abcdef\uD83E\uDDF1hijklmnopqrstuvwxyz";
+
+        List<PxChunk> chunks = splitter.splitContent(content, 1, 2, supplier);
+
+        assertNoUnpairedSurrogates(chunks);
+        assertThat(splitter.unsplit(chunks)).isEqualTo(content);
+    }
+
+    /** Every chunk must be valid UTF-16 and encodable as UTF-8 (no lone surrogate halves). */
+    private static void assertNoUnpairedSurrogates(List<PxChunk> chunks) {
+        for (PxChunk chunk : chunks) {
+            String content = chunk.getContent();
+            for (int i = 0; i < content.length(); i++) {
+                char c = content.charAt(i);
+                if (Character.isHighSurrogate(c)) {
+                    assertThat(i + 1).as("high surrogate at end of chunk '%s'", content).isLessThan(content.length());
+                    assertThat(Character.isLowSurrogate(content.charAt(i + 1)))
+                            .as("unpaired high surrogate in chunk '%s'", content).isTrue();
+                    i++;
+                } else {
+                    assertThat(Character.isLowSurrogate(c))
+                            .as("unpaired low surrogate in chunk '%s'", content).isFalse();
+                }
+            }
+            assertThat(StandardCharsets.UTF_8.newEncoder().canEncode(content))
+                    .as("chunk '%s' must be UTF-8 encodable", content).isTrue();
+        }
     }
 
     @Test

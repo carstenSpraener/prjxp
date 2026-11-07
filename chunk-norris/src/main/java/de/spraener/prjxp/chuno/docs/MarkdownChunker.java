@@ -19,6 +19,7 @@ import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -86,7 +87,7 @@ public class MarkdownChunker {
                     c -> c.setContent(""),
                     c->c.getMetadata().put("pxchunk_type", "FILE")
             ));
-            LineScanner scanner = new LineScanner(new ByteArrayInputStream(markdown.getBytes()), originalFile, 4);
+            LineScanner scanner = new LineScanner(new ByteArrayInputStream(markdown.getBytes(StandardCharsets.UTF_8)), originalFile, 4);
 
             List<String> currentHeaders = new ArrayList<>();
             int[] sectionCounters = new int[10];

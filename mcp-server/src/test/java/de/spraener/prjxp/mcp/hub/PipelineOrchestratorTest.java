@@ -23,6 +23,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -1056,6 +1057,26 @@ class PipelineOrchestratorTest {
         List<EmbeddedChunkRecord> published = readJsonlLines(jsonl);
         assertThat(published).hasSize(1);
         assertThat(published.get(0).generatedAt()).isEqualTo(42L);
+    }
+
+    @Test
+    void publishLiveJsonl_unpairedSurrogate_recordSkippedRestWritten() throws Exception {
+        hub.setLiveJsonlDir(tempRoot.resolve("live").toString());
+        registry.registerProject("alpha", projectDir("alpha"), ProjectEntry.Kind.LIVE);
+        Path jsonl = tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl");
+        when(scanner.liveJsonlPath(any())).thenReturn(jsonl);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+        EmbeddedChunkRecord good1 = EmbeddedChunkRecord.from(chunk("c1", "a.java", "before"), vec());
+        // lone high surrogate (half an emoji) — not encodable as UTF-8
+        EmbeddedChunkRecord broken = EmbeddedChunkRecord.from(chunk("c2", "b.java", "broken \uD83C"), vec());
+        EmbeddedChunkRecord good2 = EmbeddedChunkRecord.from(chunk("c3", "c.java", "after \uD83E\uDDF1"), vec());
+
+        orchestrator.publishLiveJsonl("alpha", List.of(good1, broken, good2), 42L);
+
+        List<EmbeddedChunkRecord> published = readJsonlLines(jsonl);
+        assertThat(published).extracting(EmbeddedChunkRecord::id).containsExactly("c1", "c3");
+        assertThat(Files.readString(jsonl, StandardCharsets.UTF_8)).contains("after \uD83E\uDDF1");
     }
 
     @Test

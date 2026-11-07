@@ -7,6 +7,7 @@ import org.springframework.util.StringUtils;
 import javax.script.CompiledScript;
 import javax.script.ScriptException;
 import java.io.*;
+import java.nio.charset.StandardCharsets;
 import java.util.function.Predicate;
 
 @Log
@@ -40,7 +41,7 @@ public class LineScanner implements AutoCloseable {
         this.windowSize = n;
         this.bufferCapacity = (2 * n) + 1;
         this.ringBuffer = new String[bufferCapacity];
-        this.reader = new BufferedReader(new InputStreamReader(input));
+        this.reader = new BufferedReader(new InputStreamReader(input, StandardCharsets.UTF_8));
         this.state = STATE.INIT;
 
         // Initialisierung: Die ersten n "Zukunftzeilen" füllen
