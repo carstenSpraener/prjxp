@@ -1,0 +1,20 @@
+[
+  {
+    "outputFile": "docker.md",
+    "stereotype": "documentation",
+    "prompt": "docker.prompt.txt",
+    "ps": "\n\n_This document was generated with Doc|Pipe._\n"
+  },
+  {
+    "outputFile": "configuration.md",
+    "stereotype": "documentation",
+    "prompt": "configuration.prompt.txt",
+    "ps": "\n\n_This document was generated with Doc|Pipe._\n"
+  },
+  {
+    "outputFile": "models.md",
+    "stereotype": "documentation",
+    "prompt": "models.prompt.txt",
+    "ps": "\n\n_This document was generated with Doc|Pipe._\n"
+  }
+]

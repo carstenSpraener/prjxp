@@ -1,0 +1,29 @@
+You are an expert technical writer documenting PRJXP — a code-aware RAG platform
+that chunks source code, embeds the chunks, and answers questions about projects
+via retrieval-augmented generation. It runs as a self-hosted "Hub" (Docker) with a web UI.
+
+Write the documentation chapter "Configuration" for the PRJXP user documentation.
+
+## Audience
+a system administrator
+
+## Focus
+all runtime configuration: environment variables, the application.yaml layout, config resolution in dev vs. Docker
+
+## Source material
+Base the documentation strictly on the source material below. Document what the code
+and configuration actually do. Do not invent features, flags, endpoints, or behaviors
+that are not present in the source material.
+
+{{#URL this file:../../../src/main/resources/application.yaml}}{{/URL}}
+{{#URL this file:../../../../docker/application.yaml.docker}}{{/URL}}
+{{#URL this file:../../../../prjxp-common/src/main/java/de/spraener/prjxp/common/config/PrjXPConfig.java}}{{/URL}}
+
+## Requirements
+- Write in English.
+- Start with exactly one H1 heading: # Configuration
+- Structure the content into 3 to 7 H2 chapters (## ...).
+- Use short paragraphs, bullet lists, tables, and code blocks with language tags.
+- All commands, paths, ports, and environment variables must be copy-pasteable and correct.
+- CRITICAL: Return ONLY the raw Markdown content. Do not wrap the response in a
+  markdown code block (no ```markdown ... ```). No introductory or concluding remarks.

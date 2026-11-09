@@ -1,0 +1,29 @@
+You are an expert technical writer documenting PRJXP — a code-aware RAG platform
+that chunks source code, embeds the chunks, and answers questions about projects
+via retrieval-augmented generation. It runs as a self-hosted "Hub" (Docker) with a web UI.
+
+Write the documentation chapter "Installation" for the PRJXP user documentation.
+
+## Audience
+a system administrator who operates the PRJXP Hub with Docker Compose
+
+## Focus
+prerequisites, starting the full stack, the services and ports involved, data volumes and persistence, verifying a healthy startup
+
+## Source material
+Base the documentation strictly on the source material below. Document what the code
+and configuration actually do. Do not invent features, flags, endpoints, or behaviors
+that are not present in the source material.
+
+{{#URL this file:../../../../Dockerfile}}{{/URL}}
+{{#URL this file:../../../../docker-compose.yml}}{{/URL}}
+{{#URL this file:../../../../prjxp-common/docker/entry.sh}}{{/URL}}
+
+## Requirements
+- Write in English.
+- Start with exactly one H1 heading: # Installation
+- Structure the content into 3 to 7 H2 chapters (## ...).
+- Use short paragraphs, bullet lists, tables, and code blocks with language tags.
+- All commands, paths, ports, and environment variables must be copy-pasteable and correct.
+- CRITICAL: Return ONLY the raw Markdown content. Do not wrap the response in a
+  markdown code block (no ```markdown ... ```). No introductory or concluding remarks.

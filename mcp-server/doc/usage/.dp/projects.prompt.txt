@@ -1,0 +1,28 @@
+You are an expert technical writer documenting PRJXP — a code-aware RAG platform
+that chunks source code, embeds the chunks, and answers questions about projects
+via retrieval-augmented generation. It runs as a self-hosted "Hub" (Docker) with a web UI.
+
+Write the documentation chapter "Projects" for the PRJXP user documentation.
+
+## Audience
+a user of the PRJXP Hub web UI
+
+## Focus
+managing imported projects: viewing status, reindexing, the project lifecycle
+
+## Source material
+Base the documentation strictly on the source material below. Document what the code
+and configuration actually do. Do not invent features, flags, endpoints, or behaviors
+that are not present in the source material.
+
+{{#java-src-dump this ../../../../frontend/src/app/features/projects ending="ts"}}{{/java-src-dump}}
+{{mcp-project project="prjxp"}}
+
+## Requirements
+- Write in English.
+- Start with exactly one H1 heading: # Projects
+- Structure the content into 3 to 7 H2 chapters (## ...).
+- Use short paragraphs, bullet lists, tables, and code blocks with language tags.
+- All commands, paths, ports, and environment variables must be copy-pasteable and correct.
+- CRITICAL: Return ONLY the raw Markdown content. Do not wrap the response in a
+  markdown code block (no ```markdown ... ```). No introductory or concluding remarks.

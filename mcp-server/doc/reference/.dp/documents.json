@@ -1,0 +1,14 @@
+[
+  {
+    "outputFile": "architecture.md",
+    "stereotype": "documentation",
+    "prompt": "architecture.prompt.txt",
+    "ps": "\n\n_This document was generated with Doc|Pipe._\n"
+  },
+  {
+    "outputFile": "api.md",
+    "stereotype": "documentation",
+    "prompt": "api.prompt.txt",
+    "ps": "\n\n_This document was generated with Doc|Pipe._\n"
+  }
+]
