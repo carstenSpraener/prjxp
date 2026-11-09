@@ -1,0 +1,44 @@
+.tree-row {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.5rem;
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  cursor: pointer;
+  user-select: none;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.tree-row:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
+.tree-row.active {
+  color: var(--accent-cyan);
+  background: rgba(0, 245, 255, 0.1);
+}
+
+.caret {
+  width: 0.8rem;
+  font-size: 0.7rem;
+}
+
+.row-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.chapter {
+  padding-left: 1.6rem;
+  font-size: 0.78rem;
+}
+
+.children {
+  margin-left: 0.75rem;
+  padding-left: 0.25rem;
+  border-left: 1px solid var(--border-color);
+}

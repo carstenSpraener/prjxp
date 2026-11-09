@@ -120,3 +120,14 @@
     height: 24px;
   }
 }
+
+/* Documentation button (top bar) */
+.docs-button {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 28px; height: 28px; margin-left: 0.75rem;
+  border: 1px solid var(--border-color); border-radius: 6px;
+  color: var(--text-secondary); text-decoration: none; font-weight: 700;
+  transition: all 0.2s ease;
+}
+.docs-button:hover { color: var(--accent-cyan); border-color: var(--accent-cyan); }
+.docs-button.active { color: var(--accent-cyan); border-color: var(--accent-cyan); box-shadow: 0 0 8px rgba(0, 245, 255, 0.25); }

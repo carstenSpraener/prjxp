@@ -1,12 +1,12 @@
 import { Component, signal, OnInit, OnDestroy } from '@angular/core';
-import { RouterOutlet, Router } from '@angular/router';
+import { RouterOutlet, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { PrjxpApiService } from './services/prjxp-api.service';
 import { NavSidebarComponent } from './components/nav-sidebar/nav-sidebar.component';
 
 @Component({
   selector: 'app-root',
   standalone: true,
-  imports: [RouterOutlet, NavSidebarComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, NavSidebarComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
 })

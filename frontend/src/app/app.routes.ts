@@ -4,6 +4,7 @@ import { DashboardComponent } from './features/dashboard/dashboard.component';
 import { ProjectsComponent } from './features/projects/projects.component';
 import { GlobalsComponent } from './features/globals/globals.component';
 import { ChatComponent } from './features/chat/chat.component';
+import { DocsComponent } from './features/docs/docs.component';
 
 export const routes: Routes = [
   { path: 'dashboard', component: DashboardComponent },
@@ -11,6 +12,7 @@ export const routes: Routes = [
   { path: 'projects', component: ProjectsComponent },
   { path: 'globals', component: GlobalsComponent },
   { path: 'chat', component: ChatComponent },
+  { path: 'docs', component: DocsComponent },
   { path: '', redirectTo: '/dashboard', pathMatch: 'full' },
   { path: '**', redirectTo: '/dashboard' }
 ];
