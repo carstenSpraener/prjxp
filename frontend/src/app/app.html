@@ -6,11 +6,13 @@
       <img src="assets/favicon.svg" alt="prjxp" height="32">
       <span class="title neon-glow">PRJXP HUB</span>
     </div>
-    <a class="docs-button" routerLink="/docs" routerLinkActive="active"
-       aria-label="Documentation" title="Documentation">?</a>
-    <div class="status-indicator">
-      <span class="dot" [class.online]="isOnline()"></span>
-      {{ isOnline() ? 'Connected' : 'Disconnected' }}
+    <div class="top-bar-right">
+      <a class="docs-button" routerLink="/docs" routerLinkActive="active"
+         aria-label="Documentation" title="Documentation">?</a>
+      <div class="status-indicator">
+        <span class="dot" [class.online]="isOnline()"></span>
+        {{ isOnline() ? 'Connected' : 'Disconnected' }}
+      </div>
     </div>
   </header>
 
