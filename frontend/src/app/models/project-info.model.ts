@@ -18,6 +18,10 @@ export interface ProjectInfo {
   reindexProgress?: number; // 0-100 (10% chunking, 70% embedding, 20% storing)
   prompt?: string | null;   // standing instructions (from prjxp.yaml)
   fulltext?: boolean;       // lossless fulltext copy switch (from prjxp.yaml)
+  embedDependencies?: boolean;   // dependency-embedding switch (from prjxp.yaml)
+  mavenDependency?: string | null;  // origin marker: "g:a:v" for hub-generated libraries
+  gitUrl?: string | null;           // origin marker: git URL for hub-cloned GitHub projects
+  gitTokenPresent?: boolean | null; // true when an encrypted PAT is stored (private repository)
   // Live-update freshness block (null for SNAPSHOT projects).
   // status UPDATING = a live update is actively running (icon + progress bar shown);
   // IDLE = up to date, including a queued-but-not-yet-running update; DISABLED = per-project opt-out.

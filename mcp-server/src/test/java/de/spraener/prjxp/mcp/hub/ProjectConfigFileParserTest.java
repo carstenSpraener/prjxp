@@ -343,4 +343,164 @@ class ProjectConfigFileParserTest {
         assertThat(parser.parse(projectDir, "alpha").getSourceDirNames())
                 .isEqualTo("code");
     }
+
+    // ------------------------------------------------------------------ dependency embedding config
+
+    @Test
+    void dependencyConfigKeysAreParsed() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), """
+                name: demo
+                embedDependencies: true
+                dependencyDepth: 3
+                dependencyWhitelist: org.springframework,com.google
+                mavenDependency: org.x:y:1
+                """);
+
+        ProjectDefinition def = parser.parse(projectDir, "demo");
+
+        assertThat(def.isEmbedDependencies()).isTrue();
+        assertThat(def.getDependencyDepth()).isEqualTo(3);
+        assertThat(def.getDependencyWhitelist()).isEqualTo("org.springframework,com.google");
+        assertThat(def.getMavenDependency()).isEqualTo("org.x:y:1");
+    }
+
+    @Test
+    void missingDependencyKeysYieldDefaults() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: demo\n");
+
+        ProjectDefinition def = parser.parse(projectDir, "demo");
+
+        assertThat(def.isEmbedDependencies()).isFalse();
+        assertThat(def.getDependencyDepth()).isEqualTo(2);
+        assertThat(def.getDependencyWhitelist()).isEmpty();
+        assertThat(def.getMavenDependency()).isNull();
+    }
+
+    @Test
+    void saveOmitsDefaultDependencyValues() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("demo");
+        def.setEmbedDependencies(true);
+        def.setDependencyDepth(2);       // default — must be omitted
+        def.setDependencyWhitelist("");  // default — must be omitted
+        def.setMavenDependency("org.x:y:1");
+
+        parser.save(projectDir, def);
+        String file = Files.readString(projectDir.resolve("prjxp.yaml"));
+
+        assertThat(file).contains("embedDependencies: true");
+        // the GAV contains a colon, so escapeYamlValue quotes it
+        assertThat(file).contains("mavenDependency: \"org.x:y:1\"");
+        assertThat(file).doesNotContain("dependencyDepth");
+        assertThat(file).doesNotContain("dependencyWhitelist");
+
+        ProjectDefinition reparsed = parser.parse(projectDir, "demo");
+        assertThat(reparsed.isEmbedDependencies()).isTrue();
+        assertThat(reparsed.getDependencyDepth()).isEqualTo(2);
+        assertThat(reparsed.getDependencyWhitelist()).isEmpty();
+        assertThat(reparsed.getMavenDependency()).isEqualTo("org.x:y:1");
+    }
+
+    @Test
+    void saveWritesNonDefaultDependencyValues() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("demo");
+        def.setEmbedDependencies(true);
+        def.setDependencyDepth(3);
+        def.setDependencyWhitelist("org.x");
+
+        parser.save(projectDir, def);
+        String file = Files.readString(projectDir.resolve("prjxp.yaml"));
+
+        assertThat(file).contains("embedDependencies: true");
+        assertThat(file).contains("dependencyDepth: 3");
+        assertThat(file).contains("dependencyWhitelist: org.x");
+
+        ProjectDefinition reparsed = parser.parse(projectDir, "demo");
+        assertThat(reparsed.isEmbedDependencies()).isTrue();
+        assertThat(reparsed.getDependencyDepth()).isEqualTo(3);
+        assertThat(reparsed.getDependencyWhitelist()).isEqualTo("org.x");
+    }
+
+    // ------------------------------------------------------------------ gitUrl (GitHub origin marker)
+
+    @Test
+    void gitUrlIsParsed() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"),
+                "name: demo\ngitUrl: \"https://github.com/foo/bar\"\n");
+
+        assertThat(parser.parse(projectDir, "demo").getGitUrl()).isEqualTo("https://github.com/foo/bar");
+    }
+
+    @Test
+    void missingGitUrlKeyYieldsNull() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: demo\n");
+
+        assertThat(parser.parse(projectDir, "demo").getGitUrl()).isNull();
+    }
+
+    @Test
+    void saveWritesGitUrlQuotedAndRoundTrips() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("demo");
+        def.setGitUrl("https://github.com/foo/bar");
+
+        parser.save(projectDir, def);
+        String file = Files.readString(projectDir.resolve("prjxp.yaml"));
+
+        // the URL contains a colon, so escapeYamlValue quotes it
+        assertThat(file).contains("gitUrl: \"https://github.com/foo/bar\"");
+        assertThat(parser.parse(projectDir, "demo").getGitUrl()).isEqualTo("https://github.com/foo/bar");
+    }
+
+    @Test
+    void saveOmitsGitUrlWhenNull() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("demo");
+
+        parser.save(projectDir, def);
+
+        assertThat(Files.readString(projectDir.resolve("prjxp.yaml"))).doesNotContain("gitUrl");
+    }
+
+    // ------------------------------------------------------------------ gitToken (encrypted PAT)
+
+    @Test
+    void gitTokenIsParsed() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"),
+                "name: demo\ngitToken: \"v1:aa:bb:cc\"\n");
+
+        assertThat(parser.parse(projectDir, "demo").getGitToken()).isEqualTo("v1:aa:bb:cc");
+    }
+
+    @Test
+    void missingGitTokenKeyYieldsNull() throws Exception {
+        Files.writeString(projectDir.resolve("prjxp.yaml"), "name: demo\n");
+
+        assertThat(parser.parse(projectDir, "demo").getGitToken()).isNull();
+    }
+
+    @Test
+    void saveWritesGitTokenQuotedAndRoundTrips() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("demo");
+        def.setGitToken("v1:aa:bb:cc");
+
+        parser.save(projectDir, def);
+        String file = Files.readString(projectDir.resolve("prjxp.yaml"));
+
+        // the ciphertext contains colons, so escapeYamlValue quotes it
+        assertThat(file).contains("gitToken: \"v1:aa:bb:cc\"");
+        assertThat(parser.parse(projectDir, "demo").getGitToken()).isEqualTo("v1:aa:bb:cc");
+    }
+
+    @Test
+    void saveOmitsGitTokenWhenNull() throws Exception {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setName("demo");
+
+        parser.save(projectDir, def);
+
+        assertThat(Files.readString(projectDir.resolve("prjxp.yaml"))).doesNotContain("gitToken");
+    }
 }

@@ -24,6 +24,7 @@ This guide explains how to set up **prjxp** as a project-expert MCP server using
 
 - **Docker** installed and running
 - **Git** for cloning the repository
+  - The `prjxp-hub` image bundles git itself for the GitHub-import feature — host git is only needed for cloning the prjxp repo / building the image.
 - A source code project you want to index (e.g., your own Java/TypeScript project)
 - **Apple Silicon (M-series Macs):** the image is built for `linux/amd64` (the embedded TEI
   embedding server only ships an x86_64 build) and runs via **Rosetta** — make sure
@@ -290,12 +291,17 @@ server on 7007) and mounts:
 |---|---|
 | `./import` → `/import` | Drop tar archives here to import projects — or mount a directory of live projects (see below) |
 | named volume `prjxp-projects` → `/projects` | Extracted project directories (persistent) |
+| named volume `prjxp-github` → `/github` | Cloned GitHub projects (persistent) |
 | named volume `prjxp-hub-data` → `/data` | Shared Lucene index (persistent) |
 | `./language-packs` → `/app-source/language-packs` | External Language Pack plugin JARs (e.g. `lp-csharp-plugin.jar`) — loaded at startup, never baked into the image |
 
 The hub uses the Lucene index unconditionally (no store-type switch since the
 LuceneOnlyStorage cleanup). All projects share one index; chunks are stamped
 with their project name.
+
+> **Private GitHub repositories:** importing a private repo via the Web UI requires
+> `PRJXP_HUB_GITHUB_TOKEN_KEY` to be set in `.env` (see
+> [Docker_Compose_Installation_Guide.md](./Docker_Compose_Installation_Guide.md) for details).
 
 ### Using an External Embedding Provider (e.g. LM Studio)
 

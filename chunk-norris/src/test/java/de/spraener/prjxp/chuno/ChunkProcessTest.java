@@ -51,6 +51,10 @@ class ChunkProcessTest {
     }
 
     private PrjXPConfig configWith(String passwordEnvKey) throws Exception {
+        return configWith(passwordEnvKey, tempDir.resolve("out.jsonl").toString());
+    }
+
+    private PrjXPConfig configWith(String passwordEnvKey, String jsonlFile) throws Exception {
         Path rootDir = tempDir.resolve("src");
         Files.createDirectories(rootDir);
         Files.writeString(rootDir.resolve("src.txt"), "some source text");
@@ -58,7 +62,7 @@ class ChunkProcessTest {
         ProjectDefinition pd = new ProjectDefinition();
         pd.setName("cwd");
         pd.setRootDir(rootDir.toString());
-        pd.setJsonlFile(tempDir.resolve("out.jsonl").toString());
+        pd.setJsonlFile(jsonlFile);
 
         PrjXPConfig cfg = new PrjXPConfig();
         cfg.setActiveProject("cwd");
@@ -147,6 +151,35 @@ class ChunkProcessTest {
         String content = Files.readString(tempDir.resolve("out.jsonl"));
         assertThat(content).doesNotStartWith("PRJXPENC");
         assertThat(content).contains("\"content\":\"hello world content\"");
+    }
+
+    // ------------------------------------------------------------------ JSONL output dir creation (Phase 08)
+
+    @Test
+    void execute_withMissingParentDir_createsDirAndWritesFile() throws Exception {
+        Path jsonlFile = tempDir.resolve("nested/deep/out.jsonl");   // parent dirs do NOT exist
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ", jsonlFile.toString());
+
+        uut(cfg, null).execute();
+
+        assertThat(jsonlFile).exists();
+        assertThat(Files.readString(jsonlFile)).contains("\"content\":\"hello world content\"");
+        assertThat(capturedOut.toString()).isEmpty();   // no JSONL leak to stdout
+    }
+
+    @Test
+    void execute_withParentIsAFile_fallsBackToStdout() throws Exception {
+        Path blocker = tempDir.resolve("blocker");
+        Files.writeString(blocker, "i am a file, not a directory");
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ", blocker.resolve("out.jsonl").toString());
+
+        uut(cfg, null).execute();
+
+        // createDirectories(parent) throws FileAlreadyExistsException (parent is a regular file) -> stdout fallback.
+        // Assert via Files.exists (NOT doesNotExist): Files.notExists cannot resolve a path whose parent is a
+        // regular file (ENOTDIR) and would falsely report "exists".
+        assertThat(Files.exists(blocker.resolve("out.jsonl"))).isFalse();
+        assertThat(capturedOut.toString()).contains("\"content\":\"hello world content\"");   // stdout fallback preserved
     }
 
     private ChunkerFactory stubFactory() {

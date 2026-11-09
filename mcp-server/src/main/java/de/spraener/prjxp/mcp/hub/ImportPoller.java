@@ -56,7 +56,7 @@ public class ImportPoller {
         Path importDir = Path.of(props.getImportDir());
         if (!Files.isDirectory(importDir)) {
             return; // silently — the directory may not exist yet (e.g. before a volume mount);
-            // HubProjectRegistry.listLiveDirs() logs a throttled warning for this same condition
+            // LiveSource logs a throttled warning for this same condition
         }
 
         List<Path> tarFiles;

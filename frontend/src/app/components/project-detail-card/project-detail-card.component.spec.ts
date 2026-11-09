@@ -221,4 +221,217 @@ describe('ProjectDetailCardComponent', () => {
     const progressEl = fixture.nativeElement.querySelector('.reindex-progress');
     expect(progressEl).toBeNull();
   });
+
+  // ------------------------------------------------------------------ Embed Deps / Reimport (Phase 07)
+
+  it('embed deps button should render and be enabled when reindexStatus is IDLE', () => {
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.btn-secondary')) as HTMLButtonElement[];
+    const embedBtn = buttons.find(b => b.textContent.includes('Embed Deps'));
+    expect(embedBtn).toBeTruthy();
+    expect(embedBtn!.disabled).toBe(false);
+  });
+
+  it('embed deps button should emit embedDeps when clicked', () => {
+    const embedSpy = vi.fn();
+    component.embedDeps.subscribe(embedSpy);
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.btn-secondary')) as HTMLButtonElement[];
+    buttons.find(b => b.textContent.includes('Embed Deps'))!.click();
+
+    expect(embedSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('embed deps button should be disabled while reindexing (CHUNKING)', () => {
+    // setInput (not direct assignment) so the template re-evaluates the [disabled] binding
+    fixture.componentRef.setInput('project', { ...mockProject, reindexStatus: 'CHUNKING', reindexProgress: 25 });
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('.btn-secondary')) as HTMLButtonElement[];
+    // 3rd secondary button in template order: Reindex, DocPipe, Embed Deps
+    expect(buttons[2].disabled).toBe(true);
+  });
+
+  it('reimport button should render only for library projects (mavenDependency set)', () => {
+    // setInput (not direct assignment) so the @if (isLibrary()) block re-evaluates
+    fixture.componentRef.setInput('project', { ...mockProject, mavenDependency: 'org.example:lib:1.0.0' });
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons.some(b => b.textContent.includes('Reimport'))).toBe(true);
+  });
+
+  it('reimport button should be absent for normal projects (no mavenDependency)', () => {
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons.some(b => b.textContent.includes('Reimport'))).toBe(false);
+  });
+
+  it('reimport button should emit reimport when confirm returns true', () => {
+    // setInput (not direct assignment) so the @if (isLibrary()) block renders the button
+    fixture.componentRef.setInput('project', { ...mockProject, mavenDependency: 'org.example:lib:1.0.0' });
+    fixture.detectChanges();
+
+    const reimportSpy = vi.fn();
+    component.reimport.subscribe(reimportSpy);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    buttons.find(b => b.textContent.includes('Reimport'))!.click();
+
+    expect(window.confirm).toHaveBeenCalledWith('Re-import library "test-project"?');
+    expect(reimportSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('reimport button should not emit when confirm returns false', () => {
+    // setInput (not direct assignment) so the @if (isLibrary()) block renders the button
+    fixture.componentRef.setInput('project', { ...mockProject, mavenDependency: 'org.example:lib:1.0.0' });
+    fixture.detectChanges();
+
+    const reimportSpy = vi.fn();
+    component.reimport.subscribe(reimportSpy);
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    buttons.find(b => b.textContent.includes('Reimport'))!.click();
+
+    expect(reimportSpy).not.toHaveBeenCalled();
+  });
+
+  it('isLibrary() should return true when mavenDependency is set', () => {
+    component.project = { ...mockProject, mavenDependency: 'org.example:lib:1.0.0' };
+    expect(component.isLibrary()).toBe(true);
+  });
+
+  it('isLibrary() should return false when mavenDependency is absent', () => {
+    expect(component.isLibrary()).toBe(false);
+  });
+
+  // ------------------------------------------------------------------ GitHub badge / Update (Phase 04)
+
+  it('github badge should render when gitUrl is set', () => {
+    // setInput (not direct assignment) so the @if (isGithub()) block re-evaluates
+    fixture.componentRef.setInput('project', { ...mockProject, gitUrl: 'https://github.com/foo/bar.git' });
+    fixture.detectChanges();
+
+    const badges = Array.from(fixture.nativeElement.querySelectorAll('.badge')).map((el: any) => el.textContent);
+    expect(badges.some((t: string) => t.includes('GitHub'))).toBe(true);
+  });
+
+  it('github badge should be absent when gitUrl is not set', () => {
+    const badges = Array.from(fixture.nativeElement.querySelectorAll('.badge')).map((el: any) => el.textContent);
+    expect(badges.some((t: string) => t.includes('GitHub'))).toBe(false);
+  });
+
+  it('update button should render only for github projects (gitUrl set)', () => {
+    // setInput (not direct assignment) so the @if (isGithub()) block renders the button
+    fixture.componentRef.setInput('project', { ...mockProject, gitUrl: 'https://github.com/foo/bar.git' });
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons.some(b => b.textContent.includes('Update'))).toBe(true);
+  });
+
+  it('update button should be absent for non-github projects (no gitUrl)', () => {
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    expect(buttons.some(b => b.textContent.includes('Update'))).toBe(false);
+  });
+
+  it('update button should emit updateGithub when confirm returns true', () => {
+    // setInput (not direct assignment) so the @if (isGithub()) block renders the button
+    fixture.componentRef.setInput('project', { ...mockProject, gitUrl: 'https://github.com/foo/bar.git' });
+    fixture.detectChanges();
+
+    const updateSpy = vi.fn();
+    component.updateGithub.subscribe(updateSpy);
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    buttons.find(b => b.textContent.includes('Update'))!.click();
+
+    expect(window.confirm).toHaveBeenCalledWith('Update GitHub project "test-project"?');
+    expect(updateSpy).toHaveBeenCalledTimes(1);
+  });
+
+  it('update button should not emit when confirm returns false', () => {
+    // setInput (not direct assignment) so the @if (isGithub()) block renders the button
+    fixture.componentRef.setInput('project', { ...mockProject, gitUrl: 'https://github.com/foo/bar.git' });
+    fixture.detectChanges();
+
+    const updateSpy = vi.fn();
+    component.updateGithub.subscribe(updateSpy);
+    vi.spyOn(window, 'confirm').mockReturnValue(false);
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    buttons.find(b => b.textContent.includes('Update'))!.click();
+
+    expect(updateSpy).not.toHaveBeenCalled();
+  });
+
+  it('update button should be disabled while reindexing', () => {
+    // setInput (not direct assignment) so the @if block renders the button and the [disabled] binding re-evaluates
+    fixture.componentRef.setInput('project', { ...mockProject, gitUrl: 'https://github.com/foo/bar.git', reindexStatus: 'CHUNKING', reindexProgress: 25 });
+    fixture.detectChanges();
+
+    const buttons = Array.from(fixture.nativeElement.querySelectorAll('button')) as HTMLButtonElement[];
+    const updateBtn = buttons.find(b => b.textContent.includes('Update'));
+    expect(updateBtn).toBeTruthy();
+    expect(updateBtn!.disabled).toBe(true);
+  });
+
+  it('isGithub() should return true when gitUrl is set', () => {
+    component.project = { ...mockProject, gitUrl: 'https://github.com/foo/bar.git' };
+    expect(component.isGithub()).toBe(true);
+  });
+
+  it('isGithub() should return false when gitUrl is absent', () => {
+    expect(component.isGithub()).toBe(false);
+  });
+
+  // ------------------------------------------------------------------ Private badge (Phase 07)
+
+  it('private badge should render when gitUrl is set and gitTokenPresent is true', () => {
+    // setInput (not direct assignment) so the @if (isPrivate()) block re-evaluates
+    fixture.componentRef.setInput('project', { ...mockProject, gitUrl: 'https://github.com/foo/bar.git', gitTokenPresent: true });
+    fixture.detectChanges();
+
+    const badges = Array.from(fixture.nativeElement.querySelectorAll('.badge')).map((el: any) => el.textContent);
+    expect(badges.some((t: string) => t.includes('Private'))).toBe(true);
+  });
+
+  it('private badge should be absent when gitTokenPresent is false', () => {
+    fixture.componentRef.setInput('project', { ...mockProject, gitUrl: 'https://github.com/foo/bar.git', gitTokenPresent: false });
+    fixture.detectChanges();
+
+    const badges = Array.from(fixture.nativeElement.querySelectorAll('.badge')).map((el: any) => el.textContent);
+    expect(badges.some((t: string) => t.includes('Private'))).toBe(false);
+  });
+
+  it('private badge should be absent when gitTokenPresent is null', () => {
+    fixture.componentRef.setInput('project', { ...mockProject, gitUrl: 'https://github.com/foo/bar.git', gitTokenPresent: null });
+    fixture.detectChanges();
+
+    const badges = Array.from(fixture.nativeElement.querySelectorAll('.badge')).map((el: any) => el.textContent);
+    expect(badges.some((t: string) => t.includes('Private'))).toBe(false);
+  });
+
+  it('private badge should be absent for non-github projects even when gitTokenPresent is true', () => {
+    fixture.componentRef.setInput('project', { ...mockProject, gitTokenPresent: true });
+    fixture.detectChanges();
+
+    const badges = Array.from(fixture.nativeElement.querySelectorAll('.badge')).map((el: any) => el.textContent);
+    expect(badges.some((t: string) => t.includes('Private'))).toBe(false);
+  });
+
+  it('isPrivate() should return true only when gitTokenPresent is true', () => {
+    component.project = { ...mockProject, gitTokenPresent: true };
+    expect(component.isPrivate()).toBe(true);
+
+    component.project = { ...mockProject, gitTokenPresent: false };
+    expect(component.isPrivate()).toBe(false);
+
+    component.project = { ...mockProject, gitTokenPresent: null };
+    expect(component.isPrivate()).toBe(false);
+
+    component.project = { ...mockProject };
+    expect(component.isPrivate()).toBe(false);
+  });
 });

@@ -6,6 +6,10 @@ import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.mcp.UnknownProjectException;
+import de.spraener.prjxp.mcp.hub.dep.EmbedDependencyService;
+import de.spraener.prjxp.mcp.hub.github.GithubImporter;
+import de.spraener.prjxp.mcp.hub.github.GithubOperationTracker;
+import de.spraener.prjxp.mcp.hub.github.GithubUpdater;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import jakarta.servlet.ServletException;
@@ -13,6 +17,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
@@ -61,6 +66,10 @@ class HubProjectsControllerTest {
     private ObjectMapper objMapper;          // mocked
     private HubProjectsController controller;  // for direct method calls (multipart tests)
     private EmbeddedArchiveImporter embeddedImporter;   // mocked — validation/processing stubbed per test
+    private EmbedDependencyService embedDependencyService;   // mocked — materialization triggers captured
+    private GithubImporter githubImporter;   // mocked — async import triggers captured
+    private GithubUpdater githubUpdater;   // mocked — async update triggers captured
+    private GithubOperationTracker githubOperationTracker;   // real — the async feedback record
     private MockMvc mockMvc;
 
     @BeforeEach
@@ -82,9 +91,13 @@ class HubProjectsControllerTest {
         objMapper = mock(ObjectMapper.class);
 
         embeddedImporter = mock(EmbeddedArchiveImporter.class);
+        embedDependencyService = mock(EmbedDependencyService.class);
+        githubImporter = mock(GithubImporter.class);
+        githubUpdater = mock(GithubUpdater.class);
+        githubOperationTracker = new GithubOperationTracker();
         controller = new HubProjectsController(
                 registry, lifecycle, orchestrator, registry, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, new ProjectConfigFileParser(),
-                embeddedImporter);
+                embeddedImporter, embedDependencyService, githubImporter, githubUpdater, githubOperationTracker);
         mockMvc = standaloneSetup(controller).build();
     }
 
@@ -173,6 +186,149 @@ class HubProjectsControllerTest {
                 .hasMessageContaining("ghost");
 
         verify(orchestrator, never()).enqueue(anyString());
+    }
+
+    // ------------------------------------------------------------------ Phase 06: embed-dependencies + reimport
+
+    @Test
+    void embedDependenciesOfKnownProjectTriggersSyncAndReturns202() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        mockMvc.perform(post("/api/projects/alpha/embed-dependencies"))
+                .andExpect(status().isAccepted());
+
+        verify(embedDependencyService).syncFor("alpha");
+    }
+
+    @Test
+    void embedDependenciesOfUnknownProjectSurfacesAs500() throws Exception {
+        // same error behavior as reindex: UnknownProjectException propagates unhandled
+        assertThatThrownBy(() -> mockMvc.perform(post("/api/projects/ghost/embed-dependencies")))
+                .isInstanceOf(ServletException.class)
+                .hasRootCauseInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("ghost");
+
+        verify(embedDependencyService, never()).syncFor(anyString());
+    }
+
+    @Test
+    void reimportOfLibraryProjectTriggersReimportAndReturns202() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.definitionOf("alpha").setMavenDependency("com.example:lib:1.0");   // hub-generated library
+
+        mockMvc.perform(post("/api/projects/alpha/reimport"))
+                .andExpect(status().isAccepted());
+
+        verify(embedDependencyService).reimport("alpha");
+    }
+
+    @Test
+    void reimportOfNonLibraryProjectReturns404() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));   // no mavenDependency marker
+
+        mockMvc.perform(post("/api/projects/alpha/reimport"))
+                .andExpect(status().isNotFound());
+
+        verify(embedDependencyService, never()).reimport(anyString());
+    }
+
+    // ------------------------------------------------------------------ Phase 04: GitHub import + update
+
+    @Test
+    void importGithubWithUrlReturns202AndTriggersImporter() throws Exception {
+        mockMvc.perform(post("/api/projects/import-github")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"url\":\"https://github.com/foo/bar.git\"}"))
+                .andExpect(status().isAccepted());
+
+        verify(githubImporter).importFromUrlAsync("https://github.com/foo/bar.git", null);   // no token -> public
+    }
+
+    @Test
+    void importGithubWithBlankUrlReturns400AndDoesNotTriggerImporter() throws Exception {
+        mockMvc.perform(post("/api/projects/import-github")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"url\":\"   \"}"))
+                .andExpect(status().isBadRequest());
+
+        verify(githubImporter, never()).importFromUrlAsync(anyString(), any());
+    }
+
+    @Test
+    void importGithubWithNullUrlReturns400AndDoesNotTriggerImporter() throws Exception {
+        mockMvc.perform(post("/api/projects/import-github")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{}"))
+                .andExpect(status().isBadRequest());
+
+        verify(githubImporter, never()).importFromUrlAsync(anyString(), any());
+    }
+
+    // ------------------------------------------------------------------ Phase 06: PAT token
+
+    @Test
+    void importGithubWithTokenTriggersImporterWithToken() throws Exception {
+        mockMvc.perform(post("/api/projects/import-github")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"url\":\"https://github.com/foo/bar.git\",\"token\":\"ghp_secret123\"}"))
+                .andExpect(status().isAccepted());
+
+        verify(githubImporter).importFromUrlAsync("https://github.com/foo/bar.git", "ghp_secret123");
+    }
+
+    @Test
+    void updateGithubOfGithubProjectTriggersUpdaterAndReturns202() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.definitionOf("alpha").setGitUrl("https://github.com/foo/bar.git");   // GitHub origin marker
+
+        mockMvc.perform(post("/api/projects/alpha/update-github"))
+                .andExpect(status().isAccepted());
+
+        verify(githubUpdater).updateAsync("alpha");
+    }
+
+    @Test
+    void updateGithubOfNonGithubProjectReturns400() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));   // no gitUrl marker
+
+        mockMvc.perform(post("/api/projects/alpha/update-github"))
+                .andExpect(status().isBadRequest());
+
+        verify(githubUpdater, never()).updateAsync(anyString());
+    }
+
+    @Test
+    void updateGithubOfUnknownProjectSurfacesAs500() throws Exception {
+        // same error behavior as reindex: UnknownProjectException propagates unhandled
+        assertThatThrownBy(() -> mockMvc.perform(post("/api/projects/ghost/update-github")))
+                .isInstanceOf(ServletException.class)
+                .hasRootCauseInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("ghost");
+
+        verify(githubUpdater, never()).updateAsync(anyString());
+    }
+
+    // ------------------------------------------------------------------ Phase 05: github-operations (poll endpoint)
+
+    @Test
+    void githubOperationsReturnsRecentOperations() throws Exception {
+        githubOperationTracker.start("https://github.com/foo/bar");
+        githubOperationTracker.complete("https://github.com/foo/bar", true, "Imported bar");
+
+        mockMvc.perform(get("/api/projects/github-operations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(1))
+                .andExpect(jsonPath("$[0].key").value("https://github.com/foo/bar"))
+                .andExpect(jsonPath("$[0].status").value("SUCCESS"))
+                .andExpect(jsonPath("$[0].message").value("Imported bar"))
+                .andExpect(jsonPath("$[0].timestamp").isNumber());
+    }
+
+    @Test
+    void githubOperationsReturnsEmptyListWhenNothingRecorded() throws Exception {
+        mockMvc.perform(get("/api/projects/github-operations"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.length()").value(0));
     }
 
     // ------------------------------------------------------------------ DocPipe
@@ -373,6 +529,8 @@ class HubProjectsControllerTest {
 
         assertThat(result.name()).isEqualTo("new-project");
         assertThat(result.status()).isEqualTo("IMPORTING");
+        assertThat(result.gitUrl()).isNull();   // behavior-preserving: no GitHub origin marker yet
+        assertThat(result.gitTokenPresent()).isNull();   // behavior-preserving: no PAT marker yet
         assertThat(registry.entry("new-project")).isPresent();
         verify(orchestrator).enqueue("new-project");
     }
@@ -395,18 +553,20 @@ class HubProjectsControllerTest {
     void updateProjectUpdatesConfig() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));
 
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go,rs", 64, null, null);
-        controller.updateProject("alpha", updates);
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go,rs", 64, null, null, null);
+        var result = controller.updateProject("alpha", updates);
 
         var def = registry.definitionOf("alpha");
         assertThat(def).isNotNull();
         assertThat(def.getChunoWhiteList()).isEqualTo("go,rs");
         assertThat(def.getTibedBatchSize()).isEqualTo(64);
+        assertThat(result.gitUrl()).isNull();   // behavior-preserving: no GitHub origin marker yet
+        assertThat(result.gitTokenPresent()).isFalse();   // behavior-preserving: no gitUrl -> no PAT marker
     }
 
     @Test
     void updateProjectOfUnknownThrowsNotFound() {
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go", null, null, null);
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go", null, null, null, null);
 
         assertThatThrownBy(() -> controller.updateProject("ghost", updates))
                 .isInstanceOf(org.springframework.web.server.ResponseStatusException.class)
@@ -504,7 +664,7 @@ class HubProjectsControllerTest {
     void updateProjectPersistsPrompt() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));
 
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, "Focus on payments.", null);
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, "Focus on payments.", null, null);
         var result = controller.updateProject("alpha", updates);
 
         assertThat(registry.definitionOf("alpha").getPrompt()).isEqualTo("Focus on payments.");
@@ -517,7 +677,7 @@ class HubProjectsControllerTest {
         Files.writeString(dir.resolve("prjxp.yaml"), "name: alpha\nprompt: \"Focus on payments.\"\n");
         registry.registerProject("alpha", dir);
 
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, "   ", null);
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, "   ", null, null);
         controller.updateProject("alpha", updates);
 
         assertThat(registry.definitionOf("alpha").getPrompt()).isNull();
@@ -540,7 +700,7 @@ class HubProjectsControllerTest {
     void updateProjectPersistsFulltextAndDoesNotEnqueueReindex() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));
 
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, null, true);
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, null, true, null);
         var result = controller.updateProject("alpha", updates);
 
         assertThat(registry.definitionOf("alpha").isFulltext()).isTrue();
@@ -553,7 +713,7 @@ class HubProjectsControllerTest {
     void updateProjectWithoutFulltextLeavesSwitchUntouched() throws Exception {
         registry.registerProject("alpha", projectDir("alpha"));
 
-        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go", null, null, null);
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, "go", null, null, null, null);
         var result = controller.updateProject("alpha", updates);
 
         assertThat(registry.definitionOf("alpha").isFulltext()).isFalse();
@@ -570,5 +730,20 @@ class HubProjectsControllerTest {
         mockMvc.perform(get("/api/projects"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[0].fulltext").value(true));
+    }
+
+    // ------------------------------------------------------------------ embedDependencies switch
+
+    @Test
+    void updateProjectPersistsEmbedDependenciesAndDoesNotEnqueueReindex() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        var updates = new de.spraener.prjxp.mcp.ProjectUpdateRequest(null, null, null, null, null, true);
+        var result = controller.updateProject("alpha", updates);
+
+        assertThat(registry.definitionOf("alpha").isEmbedDependencies()).isTrue();
+        assertThat(result.embedDependencies()).isTrue();
+        assertThat(Files.readString(projectDir("alpha").resolve("prjxp.yaml"))).contains("embedDependencies: true");
+        verify(orchestrator, never()).enqueue(anyString());   // embedDependencies change never triggers auto-reindex
     }
 }

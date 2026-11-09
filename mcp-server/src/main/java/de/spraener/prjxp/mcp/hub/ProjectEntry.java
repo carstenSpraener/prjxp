@@ -15,6 +15,8 @@ public class ProjectEntry {
     private final String name;
     private final Path rootDir;
     private final Kind kind;
+    /** The source that registered this project: "snapshot" | "live" | "library" | "github". Drives the source-based vanish filter. */
+    private final String source;
     private final ProjectDefinition definition;
     private final PrjXPEmbeddingStoreReference storeRef;
 
@@ -56,10 +58,11 @@ public class ProjectEntry {
     @Getter(lombok.AccessLevel.NONE)
     private volatile int liveUpdateProgress;
 
-    public ProjectEntry(String name, Path rootDir, Kind kind, ProjectDefinition definition, PrjXPEmbeddingStoreReference storeRef) {
+    public ProjectEntry(String name, Path rootDir, Kind kind, String source, ProjectDefinition definition, PrjXPEmbeddingStoreReference storeRef) {
         this.name = name;
         this.rootDir = rootDir;
         this.kind = kind;
+        this.source = source;
         this.definition = definition;
         this.storeRef = storeRef;
     }

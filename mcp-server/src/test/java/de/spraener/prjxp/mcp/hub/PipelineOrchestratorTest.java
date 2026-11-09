@@ -9,6 +9,7 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import de.spraener.prjxp.mcp.hub.dep.EmbedDependencyService;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.EmbeddingExportService;
@@ -1144,5 +1145,75 @@ class PipelineOrchestratorTest {
 
         assertThat(Files.exists(tempRoot.resolve("live").resolve("alpha.live-embedded.jsonl"))).isFalse();
         verify(scanner, never()).liveJsonlPath(any());   // a SNAPSHOT reindex never touches the live JSONL
+    }
+
+    // ------------------------------------------------------------------ Phase 06: dependency-embedding trigger
+
+    @Test
+    void rootRunTriggersDependencySyncExactlyOnce() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        stubExportWritesRecord("new-1", "fresh content");
+
+        EmbedDependencyService depService = mock(EmbedDependencyService.class);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        orchestrator.setEmbedDependencyService(depService);
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.READY);   // the run is fully done — syncFor fired at its start
+
+        verify(depService, times(1)).syncFor("alpha");
+    }
+
+    @Test
+    void rootRunTriggersDependencySyncEvenWhenEmbedDependenciesDisabled() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));   // embedDependencies defaults to false
+        stubExportWritesRecord("new-1", "fresh content");
+
+        EmbedDependencyService depService = mock(EmbedDependencyService.class);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        orchestrator.setEmbedDependencyService(depService);
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+
+        // The orchestrator calls syncFor unconditionally on root runs; the service's own no-op
+        // (embedDependencies=false) is tested in EmbedDependencyServiceTest (Phase 05).
+        verify(depService, times(1)).syncFor("alpha");
+    }
+
+    @Test
+    void retriggerRunDoesNotTriggerDependencySync() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        stubExportWritesRecord("new-1", "fresh content");
+
+        EmbedDependencyService depService = mock(EmbedDependencyService.class);
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        orchestrator.setEmbedDependencyService(depService);
+        orchestrator.setPipelineListeners(List.of(new PipelineListener() {
+            @Override
+            public void onPipelineStart(PipelineOrchestrator o, String n, PipelineRun r) {
+            }
+
+            @Override
+            public void onPipelineFinished(PipelineOrchestrator o, String n, PipelineRun r) {
+                o.scheduleRetrigger(n, (runName, def) -> registry.setReindexStatus(runName, ReindexStatus.DOCPIPE));
+            }
+        }));
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.READY);   // after the whole chain (root + retrigger)
+
+        verify(depService, times(1)).syncFor("alpha");   // only the root run — the retrigger must not re-trigger
+    }
+
+    @Test
+    void rootRunWithoutDependencyServiceRunsNormally() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        stubExportWritesRecord("new-1", "fresh content");
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);   // setter never called -> null
+
+        assertThatCode(() -> orchestrator.enqueue("alpha")).doesNotThrowAnyException();
+        awaitStatus(registry, "alpha", ProjectStatus.READY);   // no NPE — the pipeline completes
     }
 }

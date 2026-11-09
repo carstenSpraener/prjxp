@@ -14,6 +14,52 @@ class ProjectDefinitionTest {
     }
 
     @Test
+    void newDefinitionHasDependencyDefaults() {
+        ProjectDefinition def = new ProjectDefinition();
+        assertThat(def.isEmbedDependencies()).isFalse();
+        assertThat(def.getDependencyDepth()).isEqualTo(2);
+        assertThat(def.getDependencyWhitelist()).isEmpty();
+        assertThat(def.getMavenDependency()).isNull();
+    }
+
+    @Test
+    void dependencyFieldsCanBeSet() {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setEmbedDependencies(true);
+        def.setDependencyDepth(3);
+        def.setDependencyWhitelist("org.springframework,com.google");
+        def.setMavenDependency("org.x:y:1");
+        assertThat(def.isEmbedDependencies()).isTrue();
+        assertThat(def.getDependencyDepth()).isEqualTo(3);
+        assertThat(def.getDependencyWhitelist()).isEqualTo("org.springframework,com.google");
+        assertThat(def.getMavenDependency()).isEqualTo("org.x:y:1");
+    }
+
+    @Test
+    void gitUrlDefaultsToNull() {
+        assertThat(new ProjectDefinition().getGitUrl()).isNull();
+    }
+
+    @Test
+    void gitUrlCanBeSet() {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setGitUrl("https://github.com/foo/bar");
+        assertThat(def.getGitUrl()).isEqualTo("https://github.com/foo/bar");
+    }
+
+    @Test
+    void gitTokenDefaultsToNull() {
+        assertThat(new ProjectDefinition().getGitToken()).isNull();
+    }
+
+    @Test
+    void gitTokenCanBeSet() {
+        ProjectDefinition def = new ProjectDefinition();
+        def.setGitToken("v1:aa:bb:cc");
+        assertThat(def.getGitToken()).isEqualTo("v1:aa:bb:cc");
+    }
+
+    @Test
     void resolvedJsonlFile_relativeResolvesAgainstRootDir() {
         ProjectDefinition pd = new ProjectDefinition();
         pd.setName("foo");

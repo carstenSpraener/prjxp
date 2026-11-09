@@ -7,5 +7,6 @@ public record ProjectUpdateRequest(
     @Nullable String chunoWhiteList,
     @Nullable Integer tibedBatchSize,
     @Nullable String prompt,
-    @Nullable Boolean fulltext
+    @Nullable Boolean fulltext,
+    @Nullable Boolean embedDependencies
 ) {}

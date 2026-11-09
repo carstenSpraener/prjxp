@@ -222,7 +222,7 @@ class ChatServiceTest {
         def.setPrompt("Registry prompt.");
 
         ProjectEntry entry = new ProjectEntry("my-project", Path.of("/tmp/x"),
-                ProjectEntry.Kind.LIVE, def, null);
+                ProjectEntry.Kind.LIVE, "live", def, null);
         when(hubProjectRegistry.entry("my-project")).thenReturn(Optional.of(entry));
 
         ChatRequest request = new ChatRequest();

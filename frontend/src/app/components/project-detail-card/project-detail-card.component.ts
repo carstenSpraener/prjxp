@@ -14,6 +14,9 @@ export class ProjectDetailCardComponent {
   @Output() edit = new EventEmitter<void>();
   @Output() reindexConfirm = new EventEmitter<ProjectInfo>();
   @Output() docpipe = new EventEmitter<void>();
+  @Output() embedDeps = new EventEmitter<void>();
+  @Output() reimport = new EventEmitter<void>();
+  @Output() updateGithub = new EventEmitter<void>();
   @Output() delete = new EventEmitter<string>();
 
   onEdit(): void {
@@ -30,6 +33,39 @@ export class ProjectDetailCardComponent {
     if (!this.isReindexing()) {
       this.docpipe.emit();
     }
+  }
+
+  onEmbedDeps(): void {
+    if (!this.isReindexing()) {
+      this.embedDeps.emit();
+    }
+  }
+
+  onReimport(): void {
+    if (confirm(`Re-import library "${this.project.name}"?`)) {
+      this.reimport.emit();
+    }
+  }
+
+  onUpdateGithub(): void {
+    if (confirm(`Update GitHub project "${this.project.name}"?`)) {
+      this.updateGithub.emit();
+    }
+  }
+
+  /** True when this project is a hub-generated library (has the mavenDependency origin marker). */
+  isLibrary(): boolean {
+    return this.project?.mavenDependency != null;
+  }
+
+  /** True when this project is a hub-cloned GitHub project (has the gitUrl origin marker). */
+  isGithub(): boolean {
+    return this.project?.gitUrl != null;
+  }
+
+  /** True when this GitHub project has an encrypted PAT stored (private repository). */
+  isPrivate(): boolean {
+    return this.project?.gitTokenPresent === true;
   }
 
   onDelete(): void {

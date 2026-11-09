@@ -108,7 +108,8 @@ class PrjxpMcpToolTest {
         when(projectRegistry.projectInfos()).thenReturn(List.of(
                 new ProjectInfo("alpha", "READY", null, null, 10L, 10L, 3,
                         null, null, null, null, null, false, "IDLE", 0, null, null,
-                        new ProjectInfo.LiveUpdateInfo("IDLE", 1700000000000L, null, null)),
+                        new ProjectInfo.LiveUpdateInfo("IDLE", 1700000000000L, null, null),
+                        null, null, null, null),
                 new ProjectInfo("snapshot", "READY", null)));
         when(projectRegistry.isSearchable("alpha")).thenReturn(true);
         when(projectRegistry.isSearchable("snapshot")).thenReturn(true);

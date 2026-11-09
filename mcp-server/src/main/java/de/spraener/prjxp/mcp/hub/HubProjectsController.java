@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import de.spraener.prjxp.mcp.GithubImportRequest;
 import de.spraener.prjxp.mcp.LiveProjectCandidate;
 import de.spraener.prjxp.mcp.ProjectCreateRequest;
 import de.spraener.prjxp.mcp.ProjectInfo;
@@ -12,6 +13,11 @@ import de.spraener.prjxp.mcp.ProjectRegistry;
 import de.spraener.prjxp.mcp.ProjectStats;
 import de.spraener.prjxp.mcp.ProjectUpdateRequest;
 import de.spraener.prjxp.mcp.UnknownProjectException;
+import de.spraener.prjxp.mcp.hub.dep.EmbedDependencyService;
+import de.spraener.prjxp.mcp.hub.github.GithubImporter;
+import de.spraener.prjxp.mcp.hub.github.GithubOperation;
+import de.spraener.prjxp.mcp.hub.github.GithubOperationTracker;
+import de.spraener.prjxp.mcp.hub.github.GithubUpdater;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import de.spraener.prjxp.tibed.PxChunk2TextSegmentConverter;
 import dev.langchain4j.data.embedding.Embedding;
@@ -76,6 +82,10 @@ public class HubProjectsController {
     private final ObjectMapper objMapper;
     private final ProjectConfigFileParser configParser;
     private final EmbeddedArchiveImporter embeddedImporter;
+    private final EmbedDependencyService embedDependencyService;   // hub-conditional like the controller — always present in hub mode
+    private final GithubImporter githubImporter;   // hub-conditional like the controller — always present in hub mode
+    private final GithubUpdater githubUpdater;   // hub-conditional like the controller — always present in hub mode
+    private final GithubOperationTracker githubOperationTracker;   // hub-conditional like the controller — always present in hub mode
 
     @GetMapping
     public List<ProjectInfo> list() {
@@ -117,6 +127,69 @@ public class HubProjectsController {
         }
         orchestrator.enqueueDocPipe(name);
         return ResponseEntity.accepted().build();   // the doc chain runs asynchronously on the single worker
+    }
+
+    /**
+     * Manually trigger dependency materialization for a project (the "Embed Dependencies" button).
+     * Non-blocking: materialization runs on the dedicated executor; the response returns immediately.
+     */
+    @PostMapping("/{name}/embed-dependencies")
+    public ResponseEntity<Void> embedDependencies(@PathVariable("name") String name) {
+        if ("UNKNOWN".equals(projectRegistry.statusOf(name))) {
+            throw new UnknownProjectException(name, projectRegistry.availableProjects());   // same error behavior as reindex
+        }
+        embedDependencyService.syncFor(name);
+        return ResponseEntity.accepted().build();
+    }
+
+    /**
+     * Re-materialize a library project (force re-download + re-extract). Gated on the
+     * {@code mavenDependency} origin marker — only hub-generated libraries can be re-imported.
+     */
+    @PostMapping("/{name}/reimport")
+    public ResponseEntity<Void> reimport(@PathVariable("name") String name) {
+        ProjectDefinition def = hubRegistry.definitionOf(name);
+        if (def == null || def.getMavenDependency() == null) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Not a library project: " + name);
+        }
+        embedDependencyService.reimport(name);
+        return ResponseEntity.accepted().build();
+    }
+
+    /**
+     * Import a GitHub repository as a new project. Non-blocking: the clone runs on a dedicated executor;
+     * the project appears as IMPORTING then READY. 202 Accepted.
+     */
+    @PostMapping("/import-github")
+    public ResponseEntity<Void> importGithub(@RequestBody GithubImportRequest request) {
+        if (request.url() == null || request.url().isBlank()) {
+            return ResponseEntity.badRequest().build();
+        }
+        githubImporter.importFromUrlAsync(request.url().trim(), request.token());
+        return ResponseEntity.accepted().build();
+    }
+
+    /**
+     * Manually update a GitHub project (git pull + re-embed). 202 Accepted when the project is a GitHub
+     * project; 404 (UnknownProjectException) when unknown; 400 when it is not a GitHub project.
+     */
+    @PostMapping("/{name}/update-github")
+    public ResponseEntity<Void> updateGithub(@PathVariable("name") String name) {
+        if ("UNKNOWN".equals(projectRegistry.statusOf(name))) {
+            throw new UnknownProjectException(name, projectRegistry.availableProjects());   // same error behavior as reindex
+        }
+        ProjectDefinition def = hubRegistry.definitionOf(name);
+        if (def == null || def.getGitUrl() == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        githubUpdater.updateAsync(name);
+        return ResponseEntity.accepted().build();
+    }
+
+    /** Recent async GitHub operations (import/update) — polled by the WebUI for feedback. */
+    @GetMapping("/github-operations")
+    public ResponseEntity<List<GithubOperation>> githubOperations() {
+        return ResponseEntity.ok(githubOperationTracker.recent());
     }
 
     /** Returns the current reindex status and progress percentage for a project. */
@@ -278,7 +351,7 @@ public class HubProjectsController {
         orchestrator.enqueue(request.name());
 
         return new ProjectInfo(request.name(), "IMPORTING", kind.name(), null, 0L, 0L, 0,
-            null, null, null, null, null, false, "IDLE", 0, null, null, null);
+            null, null, null, null, null, false, "IDLE", 0, null, null, null, null, null, null, null);
     }
 
     /** Updates an existing project's configuration. */
@@ -296,6 +369,8 @@ public class HubProjectsController {
         if (updates.prompt() != null) def.setPrompt(updates.prompt().isBlank() ? null : updates.prompt());
         // fulltext takes effect on the next reindex — deliberately NO orchestrator.enqueue here
         if (updates.fulltext() != null) def.setFulltext(updates.fulltext());
+        // embedDependencies takes effect on the next reindex — deliberately NO orchestrator.enqueue here
+        if (updates.embedDependencies() != null) def.setEmbedDependencies(updates.embedDependencies());
 
         // Persist changes to YAML file
         configParser.save(entry.getRootDir(), def);
@@ -317,7 +392,11 @@ public class HubProjectsController {
             hubRegistry.getReindexProgress(name),
             def.getPrompt(),
             def.isFulltext(),
-            null
+            null,
+            def.isEmbedDependencies(),
+            def.getMavenDependency(),
+            def.getGitUrl(),
+            def.getGitUrl() != null && def.getGitToken() != null
         );
     }
 
@@ -338,7 +417,7 @@ public class HubProjectsController {
 
         String projectName = fileName.replaceFirst("\\.[^.]+$", "");
         return new ProjectInfo(projectName, "IMPORTING", null, null, 0L, 0L, 0,
-            null, null, null, null, null, false, "IDLE", 0, null, null, null);
+            null, null, null, null, null, false, "IDLE", 0, null, null, null, null, null, null, null);
     }
 
     /** Uploads a pre-embedded archive (JSONL, GZ, TGZ, ZIP) for import. */

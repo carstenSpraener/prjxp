@@ -94,13 +94,18 @@ public class ChunkProcess {
             return System.out;
         }
         try {
+            Path target = Path.of(pd.resolvedJsonlFile());
+            Path parent = target.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             OutputStream out = new FileOutputStream(pd.resolvedJsonlFile());
             if (session.encrypt()) {
                 out = TransferCrypto.openEncryptedOutputStream(out, session.password());
             }
             return new PrintStream(out);
         } catch( FileNotFoundException fnfXC) {
-            log.warning("Coulde not find output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
+            log.warning("Could not find output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
             return System.out;
         } catch( IOException ioXC) {
             log.warning("Could not open output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+ioXC.getMessage());

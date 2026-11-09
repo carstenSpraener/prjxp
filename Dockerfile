@@ -51,10 +51,12 @@ FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
+# git: noetig fuer den GitHub-Import (clone/pull).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     ca-certificates \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
 # 1. Alle drei Fat-JARs aus der Build-Stage (app-builder) kopieren
@@ -72,7 +74,7 @@ RUN chmod +x /app/entry.sh
 COPY docker/application.yaml.docker /app/application.yaml
 
 # 5. Hub-Modus Verzeichnisse (DockerHub Phase 05) — existieren auch ohne Volume-Mounts
-RUN mkdir -p /import /projects
+RUN mkdir -p /import /projects /github
 
 # Data-Volumes (werden zur Laufzeit gemountet)
 VOLUME /app-source

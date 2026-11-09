@@ -8,6 +8,7 @@ export interface PrjxpYamlConfig {
   tibedResetStore?: boolean;  // default false
   prompt?: string | null;   // optional standing instructions, supports ${ENV} placeholders
   fulltext?: boolean;       // default false, lossless fulltext copy for readFile
+  embedDependencies?: boolean;  // default false, resolve & embed build dependencies as libraries
 }
 
 export const DEFAULT_YAML_CONFIG: Omit<PrjxpYamlConfig, 'name'> = {
@@ -18,7 +19,8 @@ export const DEFAULT_YAML_CONFIG: Omit<PrjxpYamlConfig, 'name'> = {
   embeddingsFile: undefined,
   tibedResetStore: false,
   prompt: null,
-  fulltext: false
+  fulltext: false,
+  embedDependencies: false
 };
 
 export interface ProjectUpdateRequest {
@@ -27,6 +29,7 @@ export interface ProjectUpdateRequest {
   tibedBatchSize?: number;
   prompt?: string | null;
   fulltext?: boolean;
+  embedDependencies?: boolean;
 }
 
 export interface ProjectStats {

@@ -60,7 +60,7 @@ class LiveUpdateScannerTest {
         ProjectDefinition def = new ProjectDefinition();
         def.setName(name);
         def.setRootDir(projectRoot.toString());
-        return new ProjectEntry(name, projectRoot, ProjectEntry.Kind.LIVE, def, null);
+        return new ProjectEntry(name, projectRoot, ProjectEntry.Kind.LIVE, "live", def, null);
     }
 
     private Path writeDiskFile(String relPath, long mtimeMillis) throws Exception {

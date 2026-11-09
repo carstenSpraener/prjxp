@@ -52,7 +52,7 @@ class LiveUpdateSchedulerTest {
         ProjectDefinition def = new ProjectDefinition();
         def.setName(name);
         def.setRootDir(tempRoot.resolve(name).toString());
-        ProjectEntry entry = new ProjectEntry(name, tempRoot.resolve(name), ProjectEntry.Kind.LIVE, def, null);
+        ProjectEntry entry = new ProjectEntry(name, tempRoot.resolve(name), ProjectEntry.Kind.LIVE, "live", def, null);
         entry.setStatus(ProjectStatus.READY, null);
         return entry;
     }
@@ -83,7 +83,7 @@ class LiveUpdateSchedulerTest {
     void tick_notLive_noScan() {
         ProjectDefinition def = new ProjectDefinition();
         def.setName("p");
-        ProjectEntry entry = new ProjectEntry("p", tempRoot.resolve("p"), ProjectEntry.Kind.SNAPSHOT, def, null);
+        ProjectEntry entry = new ProjectEntry("p", tempRoot.resolve("p"), ProjectEntry.Kind.SNAPSHOT, "snapshot", def, null);
         entry.setStatus(ProjectStatus.READY, null);
         register(entry);
 

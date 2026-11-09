@@ -8,6 +8,12 @@
       @if (project.kind) {
         <span class="badge badge-kind">{{ project.kind }}</span>
       }
+      @if (isGithub()) {
+        <span class="badge badge-kind">🔗 GitHub</span>
+        @if (isPrivate()) {
+          <span class="badge badge-kind">🔒 Private</span>
+        }
+      }
       <span class="badge {{ getStatusColor() }}">{{ project.status }}</span>
     </div>
   </div>
@@ -70,6 +76,23 @@
         📄 DocPipe
       }
     </button>
+    <button class="btn btn-secondary" (click)="onEmbedDeps()" [disabled]="isReindexing()">
+      @if (isReindexing()) {
+        <span class="spinner"></span> Embedding...
+      } @else {
+        📦 Embed Deps
+      }
+    </button>
+    @if (isLibrary()) {
+      <button class="btn btn-secondary" (click)="onReimport()" [disabled]="isReindexing()">
+        ↺ Reimport
+      </button>
+    }
+    @if (isGithub()) {
+      <button class="btn btn-secondary" (click)="onUpdateGithub()" [disabled]="isReindexing()">
+        ↺ Update
+      </button>
+    }
     <button class="btn btn-danger" (click)="onDelete()">✕ Delete</button>
   </div>
 </div>

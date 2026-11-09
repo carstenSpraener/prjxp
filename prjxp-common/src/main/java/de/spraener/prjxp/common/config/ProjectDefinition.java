@@ -40,6 +40,18 @@ public class ProjectDefinition {
     /** Optional path to a JSONL file containing pre-computed embeddings (EmbeddedChunkRecord format).
      * When set, the pipeline skips chunking and imports these embeddings directly. Relative paths are resolved against rootDir. */
     private String embeddingsFile;
+    /** When true, the hub resolves this project's build dependencies and embeds them as independent library projects. */
+    private boolean embedDependencies = false;
+    /** Max dependency hops to resolve (default 2). */
+    private int dependencyDepth = 2;
+    /** Comma-separated GroupId prefixes to import (empty = no filter). */
+    private String dependencyWhitelist = "";
+    /** Set on hub-generated library project yamls: the GAV this project was materialized from. */
+    private String mavenDependency;
+    /** Origin marker of a hub-cloned GitHub project (the git URL); null for non-GitHub projects. */
+    private String gitUrl = null;
+    /** Encrypted PAT for a private GitHub repo (v1:<b64salt>:<b64iv>:<b64ct>); null for public repos. */
+    private String gitToken = null;
     /** Per-project opt-out for live updates (prjxp.yaml {@code liveUpdate: false}). Default true. */
     private boolean liveUpdate = true;
 

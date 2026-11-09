@@ -8,6 +8,7 @@
         <input type="text" placeholder="Search projects..." class="search-input"
                [value]="searchFilter()" (input)="setSearchFilter($event.target!.value)" />
         <button class="btn btn-primary" (click)="onCreateProject()">+ Create Project</button>
+        <button class="btn btn-secondary" (click)="onImportGithubClick()">🔗 Import GitHub</button>
       </div>
 
       <div class="project-list">
@@ -46,6 +47,9 @@
                               (edit)="onEditProject()"
                               (reindexConfirm)="onReindexConfirm($event)"
                               (docpipe)="onDocPipe()"
+                              (embedDeps)="onEmbedDeps()"
+                              (reimport)="onReimport()"
+                              (updateGithub)="onUpdateGithub()"
                               (delete)="onDeleteProject($event)">
         </project-detail-card>
       } @else {
@@ -69,4 +73,16 @@
       (cancelled)="onReindexCancelled()">
     </reindex-confirmation-dialog>
   }
+
+  <!-- GitHub Import Dialog -->
+  @if (showGithubImport()) {
+    <github-import-dialog
+      [status]="dialogStatus()"
+      [message]="dialogMessage()"
+      (submit)="onImportGithub($event)"
+      (close)="onGithubImportClose()">
+    </github-import-dialog>
+  }
+
+  <toast-container></toast-container>
 </div>

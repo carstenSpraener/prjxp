@@ -9,6 +9,11 @@ import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.mcp.ProjectInfo;
 import de.spraener.prjxp.mcp.UnknownProjectException;
+import de.spraener.prjxp.mcp.hub.source.GithubSource;
+import de.spraener.prjxp.mcp.hub.source.LibrarySource;
+import de.spraener.prjxp.mcp.hub.source.LiveSource;
+import de.spraener.prjxp.mcp.hub.source.MarkerWalker;
+import de.spraener.prjxp.mcp.hub.source.SnapshotSource;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -19,8 +24,10 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
@@ -41,6 +48,8 @@ class HubProjectRegistryTest {
 
     private Path projectsRoot;
     private Path importDir;
+    private Path librariesRoot;
+    private Path githubRoot;
     private PxChunkDaoProvider daoProvider;
     private LuceneEmbeddingStore luceneStore;
     private PrjXPConfig cfg;
@@ -53,6 +62,10 @@ class HubProjectRegistryTest {
         Files.createDirectories(projectsRoot);
         importDir = tempDir.resolve("import");
         Files.createDirectories(importDir);
+        librariesRoot = tempDir.resolve("libraries");
+        Files.createDirectories(librariesRoot);
+        githubRoot = tempDir.resolve("github");
+        Files.createDirectories(githubRoot);
 
         Path storeDir = tempDir.resolve("store");
         Files.createDirectories(storeDir);
@@ -64,6 +77,8 @@ class HubProjectRegistryTest {
         hub = new HubProperties();
         hub.setProjectsRoot(projectsRoot.toString());
         hub.setImportDir(importDir.toString());
+        hub.setLibrariesRoot(librariesRoot.toString());
+        hub.setGithubRoot(githubRoot.toString());
 
         cfg = new PrjXPConfig();
         ProjectDefinition alpha = new ProjectDefinition();
@@ -74,6 +89,9 @@ class HubProjectRegistryTest {
         registry = new HubProjectRegistry(cfg, hub, daoProvider, luceneStore, embeddingModel,
                 new ProjectConfigFileParser(),
                 new LiveUpdateScanner(hub, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
+        MarkerWalker walker = new MarkerWalker(hub, new ProjectConfigFileParser());
+        registry.setSources(List.of(new SnapshotSource(hub, walker), new LiveSource(hub, walker),
+                new LibrarySource(hub, walker), new GithubSource(hub, walker)));
     }
 
     @AfterEach
@@ -235,6 +253,8 @@ class HubProjectRegistryTest {
                 new PrjXPConfig(), shallowProps, daoProvider, luceneStore,
                 mock(EmbeddingModel.class), new ProjectConfigFileParser(),
                 new LiveUpdateScanner(shallowProps, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
+        MarkerWalker walker = new MarkerWalker(shallowProps, new ProjectConfigFileParser());
+        shallowRegistry.setSources(List.of(new SnapshotSource(shallowProps, walker), new LiveSource(shallowProps, walker)));
 
         assertThat(shallowRegistry.discoverProjects()).doesNotContain("too-deep");
     }
@@ -255,6 +275,8 @@ class HubProjectRegistryTest {
                 new PrjXPConfig(), shallowProps, daoProvider, luceneStore,
                 mock(EmbeddingModel.class), new ProjectConfigFileParser(),
                 new LiveUpdateScanner(shallowProps, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
+        MarkerWalker walker = new MarkerWalker(shallowProps, new ProjectConfigFileParser());
+        shallowRegistry.setSources(List.of(new SnapshotSource(shallowProps, walker), new LiveSource(shallowProps, walker)));
 
         assertThat(shallowRegistry.discoverProjects()).containsExactly("exact");
     }
@@ -281,6 +303,8 @@ class HubProjectRegistryTest {
                 new PrjXPConfig(), propsWithExclude, daoProvider, luceneStore,
                 mock(EmbeddingModel.class), new ProjectConfigFileParser(),
                 new LiveUpdateScanner(propsWithExclude, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
+        MarkerWalker walker = new MarkerWalker(propsWithExclude, new ProjectConfigFileParser());
+        excludingRegistry.setSources(List.of(new SnapshotSource(propsWithExclude, walker), new LiveSource(propsWithExclude, walker)));
 
         List<String> discovered = excludingRegistry.discoverProjects();
 
@@ -302,6 +326,8 @@ class HubProjectRegistryTest {
                 new PrjXPConfig(), propsWithExclude, daoProvider, luceneStore,
                 mock(EmbeddingModel.class), new ProjectConfigFileParser(),
                 new LiveUpdateScanner(propsWithExclude, mock(VetoRegistry.class), luceneStore, new ObjectMapper()));
+        MarkerWalker walker = new MarkerWalker(propsWithExclude, new ProjectConfigFileParser());
+        excludingRegistry.setSources(List.of(new SnapshotSource(propsWithExclude, walker), new LiveSource(propsWithExclude, walker)));
 
         assertThat(excludingRegistry.discoverProjects()).isEmpty();
     }
@@ -442,6 +468,197 @@ class HubProjectRegistryTest {
         assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "alpha"))).isTrue();   // no wipe for snapshots
     }
 
+    // ------------------------------------------------------------------ Phase 05: source stamping
+
+    @Test
+    void registerProjectStampsSourceByKind() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.registerProject("foo", liveDir("foo"), ProjectEntry.Kind.LIVE);
+        registry.registerProject("lib", projectDir("lib"), ProjectEntry.Kind.SNAPSHOT, "library");
+
+        assertThat(registry.entry("alpha").orElseThrow().getSource()).isEqualTo("snapshot");
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("live");
+        assertThat(registry.entry("lib").orElseThrow().getSource()).isEqualTo("library");
+    }
+
+    // ------------------------------------------------------------------ Phase 05: library discovery
+
+    private Path libraryDir(String groupPath, String artifact, String version) throws Exception {
+        Path dir = librariesRoot.resolve(groupPath).resolve(artifact).resolve(version);
+        Files.createDirectories(dir);
+        return dir;
+    }
+
+    private void deleteRecursively(Path dir) throws Exception {
+        if (!Files.exists(dir)) {
+            return;
+        }
+        try (var walk = Files.walk(dir)) {
+            walk.sorted(Comparator.reverseOrder()).forEach(p -> {
+                try {
+                    Files.delete(p);
+                } catch (IOException ignored) {
+                    // best-effort cleanup
+                }
+            });
+        }
+    }
+
+    @Test
+    void discoverRegistersLibraryFromMarkerUnderLibrariesRoot() throws Exception {
+        Path lib = libraryDir("com/example", "foo", "1.0");
+        Files.writeString(lib.resolve("prjxp.yaml"), "name: foo-1.0\nmavenDependency: com.example:foo:1.0\n");
+
+        List<String> discovered = registry.discoverProjects();
+
+        assertThat(discovered).contains("foo-1.0");
+        ProjectEntry entry = registry.entry("foo-1.0").orElseThrow();
+        assertThat(entry.getSource()).isEqualTo("library");
+        assertThat(entry.getKind()).isEqualTo(ProjectEntry.Kind.SNAPSHOT);
+        assertThat(entry.getRootDir()).isEqualTo(lib);
+    }
+
+    @Test
+    void vanishedLibraryIsUnregisteredWithoutIndexWipe() throws Exception {
+        Path lib = libraryDir("com/example", "foo", "1.0");
+        Files.writeString(lib.resolve("prjxp.yaml"), "name: foo-1.0\n");
+        registry.discoverProjects();
+        indexChunkFor("foo-1.0");
+
+        deleteRecursively(lib);   // the library directory vanishes
+
+        registry.discoverProjects();
+
+        assertThat(registry.entry("foo-1.0")).isEmpty();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "foo-1.0"))).isTrue();   // no wipe (snapshot semantics)
+    }
+
+    @Test
+    void snapshotVanishDoesNotAffectLibraryWithSameKind() throws Exception {
+        // A library (SNAPSHOT kind, source "library") must survive a vanished projects root —
+        // the source-based vanish filter only unregisters entries of the "snapshot" source.
+        Path lib = libraryDir("com/example", "foo", "1.0");
+        Files.writeString(lib.resolve("prjxp.yaml"), "name: foo-1.0\n");
+        registry.discoverProjects();
+        assertThat(registry.entry("foo-1.0")).isPresent();
+
+        Files.delete(projectsRoot);   // the snapshot root vanishes (no snapshots registered)
+
+        registry.discoverProjects();
+
+        assertThat(registry.entry("foo-1.0")).isPresent();   // NOT unregistered by SnapshotSource
+    }
+
+    @Test
+    void libraryVanishDoesNotAffectSnapshotWithSameKind() throws Exception {
+        // Mirror: a snapshot (source "snapshot") must survive a vanished libraries root.
+        registry.registerProject("alpha", projectDir("alpha"));
+        assertThat(registry.entry("alpha").orElseThrow().getSource()).isEqualTo("snapshot");
+
+        deleteRecursively(librariesRoot);   // the (optional) libraries root vanishes
+
+        registry.discoverProjects();
+
+        assertThat(registry.entry("alpha")).isPresent();   // NOT unregistered by LibrarySource
+    }
+
+    @Test
+    void snapshotAndLibraryWithSameNameDoNotConfoundVanish() throws Exception {
+        // Same name, different sources: the library is registered first; the colliding snapshot dir is skipped.
+        Path lib = libraryDir("com/example", "foo", "1.0");
+        Files.writeString(lib.resolve("prjxp.yaml"), "name: foo\n");
+        registry.discoverProjects();
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("library");
+
+        Path snap = projectDir("foo");   // same name under projectsRoot — collides, must not overwrite the library
+        registry.discoverProjects();
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("library");   // untouched
+
+        Files.delete(snap);   // the colliding snapshot dir vanishes
+        registry.discoverProjects();
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("library");   // still the library
+
+        deleteRecursively(lib);   // now the library itself vanishes
+        registry.discoverProjects();
+        assertThat(registry.entry("foo")).isEmpty();   // unregistered by LibrarySource (unregister-only)
+    }
+
+    // ------------------------------------------------------------------ Phase 03: github discovery
+
+    private Path githubCloneDir(String dirName) throws Exception {
+        Path dir = githubRoot.resolve(dirName);
+        Files.createDirectories(dir);
+        return dir;
+    }
+
+    @Test
+    void discoverRegistersGithubCloneFromMarkerUnderGithubRoot() throws Exception {
+        Path clone = githubCloneDir("bar");
+        Files.writeString(clone.resolve("prjxp.yaml"),
+                "name: bar\ngitUrl: \"https://github.com/foo/bar\"\n");
+
+        List<String> discovered = registry.discoverProjects();
+
+        assertThat(discovered).contains("bar");
+        ProjectEntry entry = registry.entry("bar").orElseThrow();
+        assertThat(entry.getSource()).isEqualTo("github");
+        assertThat(entry.getKind()).isEqualTo(ProjectEntry.Kind.SNAPSHOT);
+        assertThat(entry.getRootDir()).isEqualTo(clone);
+        assertThat(entry.getDefinition().getGitUrl()).isEqualTo("https://github.com/foo/bar");
+    }
+
+    @Test
+    void vanishedGithubCloneIsUnregisteredAndIndexWiped() throws Exception {
+        Path clone = githubCloneDir("bar");
+        Files.writeString(clone.resolve("prjxp.yaml"), "name: bar\n");
+        registry.discoverProjects();
+        indexChunkFor("bar");
+
+        deleteRecursively(clone);   // the clone vanishes (the github root is still listable)
+
+        registry.discoverProjects();
+
+        assertThat(registry.entry("bar")).isEmpty();
+        assertThat(daoProvider.get("bar")).isEmpty();
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "bar"))).isFalse();   // scoped wipe
+    }
+
+    @Test
+    void githubVanishDoesNotAffectSnapshotWithSameName() throws Exception {
+        // Same name, different sources: the snapshot is registered first (source order); the colliding
+        // github clone is skipped. Vanishing the github clone must not touch the snapshot.
+        projectDir("foo");
+        Path clone = githubCloneDir("foo-clone");
+        Files.writeString(clone.resolve("prjxp.yaml"), "name: foo\n");
+        registry.discoverProjects();
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("snapshot");
+
+        deleteRecursively(clone);   // the github clone vanishes
+
+        registry.discoverProjects();
+
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("snapshot");   // untouched
+    }
+
+    @Test
+    void snapshotVanishDoesNotAffectGithubCloneWithSameName() throws Exception {
+        // Mirror: the github clone is registered first; the colliding snapshot dir is skipped.
+        // Vanishing the snapshot must not touch the github clone (source-based vanish filter).
+        Path clone = githubCloneDir("foo-clone");
+        Files.writeString(clone.resolve("prjxp.yaml"), "name: foo\n");
+        registry.discoverProjects();
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("github");
+
+        Path snap = projectDir("foo");   // same name under projectsRoot — collides, must not overwrite
+        registry.discoverProjects();
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("github");   // untouched
+
+        Files.delete(snap);   // the colliding snapshot dir vanishes
+        registry.discoverProjects();
+
+        assertThat(registry.entry("foo").orElseThrow().getSource()).isEqualTo("github");   // still the github clone
+    }
+
     // ------------------------------------------------------------------ setStatus / searchability
 
     @Test
@@ -555,6 +772,13 @@ class HubProjectRegistryTest {
         projectDir("alpha");
 
         assertThat(registry.discoverProjects()).containsExactly("alpha");
+    }
+
+    @Test
+    void discoverWithNoConfiguredSourcesIsSafeNoOp() {
+        registry.setSources(List.of());   // no sources (e.g. hub without any source beans)
+
+        assertThat(registry.discoverProjects()).isEmpty();   // safe no-op — nothing to sync, nothing registered
     }
 
     // ------------------------------------------------------------------ interface contract (resolve / ensureSearchable)
@@ -790,6 +1014,56 @@ class HubProjectRegistryTest {
         assertThat(info.liveUpdate()).isNotNull();
         assertThat(info.liveUpdate().status()).isEqualTo("IDLE");
         assertThat(info.liveUpdate().progress()).isNull();
+    }
+
+    // ------------------------------------------------------------------ gitUrl (GitHub origin marker)
+
+    @Test
+    void projectInfosExposesGitUrlFromDefinition() throws Exception {
+        Path dir = projectDir("ghproj");
+        Files.writeString(dir.resolve("prjxp.yaml"), "name: ghproj\ngitUrl: \"https://github.com/foo/bar\"\n");
+
+        registry.registerProject("ghproj", dir);
+
+        assertThat(registry.projectInfos().get(0).gitUrl()).isEqualTo("https://github.com/foo/bar");
+    }
+
+    @Test
+    void projectInfosGitUrlNullWhenAbsent() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        assertThat(registry.projectInfos().get(0).gitUrl()).isNull();
+    }
+
+    // ------------------------------------------------------------------ gitTokenPresent (encrypted PAT marker)
+
+    @Test
+    void projectInfosGitTokenPresentTrueWhenGitUrlAndGitTokenSet() throws Exception {
+        Path dir = projectDir("ghproj");
+        Files.writeString(dir.resolve("prjxp.yaml"),
+                "name: ghproj\ngitUrl: \"https://github.com/foo/bar\"\ngitToken: \"v1:aa:bb:cc\"\n");
+
+        registry.registerProject("ghproj", dir);
+
+        assertThat(registry.projectInfos().get(0).gitTokenPresent()).isTrue();
+    }
+
+    @Test
+    void projectInfosGitTokenPresentFalseWhenOnlyGitUrl() throws Exception {
+        Path dir = projectDir("ghproj");
+        Files.writeString(dir.resolve("prjxp.yaml"),
+                "name: ghproj\ngitUrl: \"https://github.com/foo/bar\"\n");
+
+        registry.registerProject("ghproj", dir);
+
+        assertThat(registry.projectInfos().get(0).gitTokenPresent()).isFalse();
+    }
+
+    @Test
+    void projectInfosGitTokenPresentFalseWhenNeither() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+
+        assertThat(registry.projectInfos().get(0).gitTokenPresent()).isFalse();
     }
 
     // ------------------------------------------------------------------ In-memory stats cache

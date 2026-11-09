@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ProjectEntryLiveStateTest {
 
     private ProjectEntry entry() {
-        return new ProjectEntry("p", Path.of("/projects/p"), ProjectEntry.Kind.LIVE,
+        return new ProjectEntry("p", Path.of("/projects/p"), ProjectEntry.Kind.LIVE, "live",
                 new ProjectDefinition(), null);
     }
 

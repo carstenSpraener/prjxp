@@ -6,6 +6,7 @@ import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import de.spraener.prjxp.mcp.hub.dep.EmbedDependencyService;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker.CheckReport;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker.Verdict;
@@ -25,6 +26,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Component;
 
@@ -116,6 +118,20 @@ public class PipelineOrchestrator implements ImportHandler {
     @Autowired(required = false)
     public void setEmbeddingService(EmbeddingService embeddingService) {
         this.embeddingService = embeddingService;
+    }
+
+    /**
+     * Dependency-embedding materializer. Setter-injected to keep the constructor stable;
+     * a null value (no bean, e.g. hub disabled) disables dependency materialization gracefully.
+     * {@code @Lazy} breaks the creation cycle orchestrator -> embedDependencyService ->
+     * libraryMaterializer -> orchestrator (LibraryMaterializer enqueues materialized libraries):
+     * a proxy is injected and the real bean resolved on first use, after all beans exist.
+     */
+    private EmbedDependencyService embedDependencyService;
+
+    @Autowired(required = false)
+    public void setEmbedDependencyService(@Lazy EmbedDependencyService embedDependencyService) {
+        this.embedDependencyService = embedDependencyService;
     }
 
     @PreDestroy
@@ -350,6 +366,13 @@ public class PipelineOrchestrator implements ImportHandler {
                 });
             } else {
                 dispatchStart(run);   // live updates fire no PipelineListener (no DocPipe)
+            }
+
+            // Trigger dependency materialization for root runs (non-blocking — dedicated executor).
+            // syncFor is a no-op when embedDependencies=false, so this is safe to call unconditionally.
+            // Retrigger runs (work != null) do NOT re-trigger materialization.
+            if (run.work() == null && embedDependencyService != null) {
+                embedDependencyService.syncFor(name);
             }
 
             boolean success;

@@ -200,4 +200,41 @@ describe('YamlEditorDialogComponent', () => {
     const emittedConfig: PrjxpYamlConfig = saveSpy.mock.calls[0][0];
     expect(emittedConfig.fulltext).toBe(true);
   });
+
+  // ------------------------------------------------------------------ embedDependencies (Phase 07)
+
+  it('form should contain embedDependencies control with default false', () => {
+    expect(component.form.get('embedDependencies')?.value).toBe(DEFAULT_YAML_CONFIG.embedDependencies);
+    expect(component.form.get('embedDependencies')?.value).toBe(false);
+  });
+
+  it('projectToEdit with embedDependencies=true should check the control', () => {
+    component.projectToEdit = { ...mockProject, embedDependencies: true };
+
+    expect(component.form.get('embedDependencies')?.value).toBe(true);
+  });
+
+  it('onSave() should emit config with embedDependencies=true when checked', () => {
+    const saveSpy = vi.fn();
+    component.save.subscribe(saveSpy);
+
+    component.form.patchValue({ name: 'new-project', embedDependencies: true });
+    component.onSave();
+
+    const emittedConfig: PrjxpYamlConfig = saveSpy.mock.calls[0][0];
+    expect(emittedConfig.embedDependencies).toBe(true);
+  });
+
+  it('creating a new project should default embedDependencies to unchecked and emit false on save', () => {
+    component.projectToEdit = null;
+    expect(component.form.get('embedDependencies')?.value).toBe(false);
+
+    const saveSpy = vi.fn();
+    component.save.subscribe(saveSpy);
+    component.form.patchValue({ name: 'new-project' });
+    component.onSave();
+
+    const emittedConfig: PrjxpYamlConfig = saveSpy.mock.calls[0][0];
+    expect(emittedConfig.embedDependencies).toBe(false);
+  });
 });

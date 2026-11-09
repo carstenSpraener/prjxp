@@ -48,6 +48,8 @@ services:
     volumes:
       - ${PROJECTS_HOME:-./import}:/import
       - prjxp-projects:/projects
+      # Cloned GitHub projects (persistent)
+      - prjxp-github:/github
       - prjxp-hub-data:/data
       - ${PRJXP_ENV_FILE:-./.env}:/data/prjxp.env:ro
       # External Language Pack plugin JARs (e.g. lp-csharp-plugin.jar) —
@@ -61,6 +63,8 @@ services:
       PRJXP_HUB_PROJECTS_ROOT: /projects
       PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES: .git,.svn,.hg,node_modules,branches,tags,.idea,.vs
       PRJXP_HUB_SCAN_MAX_DEPTH: "8"
+      # Passphrase for encrypting GitHub PATs (private repos). Only needed for private repos.
+      PRJXP_HUB_GITHUB_TOKEN_KEY: ${PRJXP_HUB_GITHUB_TOKEN_KEY:-}
       SERVER_PORT: "7007"
       # External embedding provider (e.g. LM Studio on the host).
       # NOTE: names must match application.yaml.docker (baked into the image) — no PRJXP_ prefix.
@@ -80,6 +84,7 @@ services:
 
 volumes:
   prjxp-projects:
+  prjxp-github:
   prjxp-hub-data:
 
 networks:

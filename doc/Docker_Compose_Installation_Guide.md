@@ -32,18 +32,18 @@ Three containers on a shared bridge network (`prjxp-network`):
 
 ```
  Host (your machine)
- ┌───────────────┐        ┌──────────────────────── Docker: prjxp-network ────────────────────────┐
- │ Browser       │ :80    │                                                                        │
- │ (Web UI)      ├───────►│  apache-proxy ──/prjxp/*──► frontend (nginx + Angular SPA)            │
- └───────────────┘        │  httpd:2.4-alpine              │ /prjxp/api/* → /api/*                 │
- ┌───────────────┐        │                                ▼ (tools|chat|globals|system|projects)  │
- │ MCP client    │ :7007  │                                hub (mcp-server, Spring Boot)           │
- │ (opencode…)   ├───────►│  direct host port              │ embeddings                            │
- └───────────────┘        │                                ▼                                        │
- ┌───────────────┐        │  LM Studio :1234 ◄── host.docker.internal:1234 ──────────────┐        │
- │ (embedding    │        │  (or any OpenAI-compatible endpoint)                          │        │
- │  provider)    │        └───────────────────────────────────────────────────────────────┴────────┘
- └───────────────┘   Volumes: prjxp-projects → /projects · prjxp-hub-data → /data
+ ┌───────────────┐        ┌──────────────────────── Docker: prjxp-network ───────────────────────────────┐
+ │ Browser       │ :80    │                                                                              │
+ │ (Web UI)      ├───────►│  apache-proxy ──/prjxp/*──► frontend (nginx + Angular SPA)                   │
+ └───────────────┘        │  httpd:2.4-alpine              │ /prjxp/api/* → /api/*                       │
+ ┌───────────────┐        │                                ▼ (tools|chat|globals|system|projects)        │
+ │ MCP client    │ :7007  │                                hub (mcp-server, Spring Boot)                 │
+ │ (opencode…)   ├───────►│  direct host port              │ embeddings                                  │
+ └───────────────┘        │                                ▼                                             │
+ ┌───────────────┐        │  LM Studio :1234 ◄── host.docker.internal:1234 ──────────────┐               │
+ │ (embedding    │        │  (or any OpenAI-compatible endpoint)                          │              │
+ │  provider)    │        └───────────────────────────────────────────────────────────────┴──────────────┘
+ └───────────────┘   Volumes: prjxp-projects → /projects · prjxp-hub-data → /data · prjxp-github → /github
                      Bind mount: $PROJECTS_HOME → /import (live projects + tar drop zone)
 ```
 
@@ -229,12 +229,19 @@ compose file; values marked *from `.env`* are interpolated.
 | `PRJXP_HUB_PROJECTS_ROOT` | `/projects` | Container path where imported archives are extracted (named volume `prjxp-projects`, persistent). |
 | `PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES` | `.git,.svn,.hg,node_modules,branches,tags,.idea,.vs` | Comma-separated, case-insensitive list of directory names the live-project scan never enters. Extend it for your own noise directories (e.g. add `dist,target`). |
 | `PRJXP_HUB_SCAN_MAX_DEPTH` | `8` | Maximum recursion depth (directory levels below `/import`) of the live-project marker scan. Raise only if a real project's `prjxp.yaml` sits deeper than 8 levels below the import root. |
+| `PRJXP_HUB_GITHUB_TOKEN_KEY` | *from `.env`, default empty* | Passphrase used to encrypt GitHub PATs (private repositories) before they are written to `prjxp.yaml`. Only required when importing private repos; public repos work without it. |
 | `SERVER_PORT` | `7007` | Port the Spring Boot app listens on **inside** the container. Keep in sync with `HUB_PORT`'s target and the nginx proxy config; no reason to change. |
 | `EMBEDDING_API_BASE_URL` | *from `.env`, default `http://host.docker.internal:1234/v1`* | See table A. |
 | `EMBEDDING_MODEL_NAME` | *from `.env`, default `mxbai-embed-large-v1`* | See table A. |
 | `SKIP_EMBEDDING_SERVER` | `"true"` | Skip starting an in-container embedding server. **Keep `true`:** the current image does not ship a TEI binary, and you use an external provider. (If set to anything else, `entry.sh` tries to run `text-embeddings-router`, which is not installed and will crash the container.) |
 | `EMBEDDING_API_KEY` | *from `.env`, default `dummy`* | See table A. |
 | `MCP_CORS_ALLOWED_PATTERNS` | *from `.env`, default `http://10.*.*.*,…localhost:*`* | See table A. |
+
+> **Private repositories (PAT):** the Web UI import dialog accepts an optional
+> Personal Access Token for private repositories. It is encrypted (AES-256-GCM) with the
+> passphrase from `PRJXP_HUB_GITHUB_TOKEN_KEY` and stored in `prjxp.yaml`; the key must stay
+> stable across restarts (put it in `.env`). Without the key set, importing a private repo
+> fails with a clear message — public repos work without it.
 
 ### C. Image-level defaults (`Dockerfile` / `entry.sh`)
 
@@ -375,10 +382,11 @@ curl -X DELETE http://localhost/prjxp/projects/your-project
 | Full teardown **including data** | `docker compose down -v` (⚠️ deletes the Lucene index and extracted projects) |
 | Rebuild images from scratch | `docker compose build --no-cache && docker compose up -d` |
 
-**Data persistence:** all state lives in two named volumes —
-`prjxp-hub-data` (`/data`: Lucene index + chunk JSONL) and `prjxp-projects`
-(`/projects`: extracted imports). Your live projects in `PROJECTS_HOME` are never
-modified. Back up by exporting the volumes:
+**Data persistence:** all state lives in three named volumes —
+`prjxp-hub-data` (`/data`: Lucene index + chunk JSONL), `prjxp-projects`
+(`/projects`: extracted imports) and `prjxp-github` (`/github`: cloned GitHub
+projects). Your live projects in `PROJECTS_HOME` are never modified. Back up by
+exporting the volumes:
 
 **Language pack plugins:** mount a directory of plugin JARs (e.g.
 `lp-csharp-plugin.jar`) at `/app-source/language-packs` — the default of

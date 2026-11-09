@@ -62,6 +62,12 @@ public class ProjectConfigFileParser {
             def.setEmbeddingsFile(stringOf(map.get("embeddingsFile"), null));
             def.setLiveUpdate(boolOf(map.get("liveUpdate"), true));
             def.setPrompt(normalizePrompt(stringOf(map.get("prompt"), null)));
+            def.setEmbedDependencies(boolOf(map.get("embedDependencies"), false));
+            def.setDependencyDepth(intOf(map.get("dependencyDepth"), 2));
+            def.setDependencyWhitelist(stringOf(map.get("dependencyWhitelist"), ""));
+            def.setMavenDependency(stringOf(map.get("mavenDependency"), null));
+            def.setGitUrl(stringOf(map.get("gitUrl"), null));
+            def.setGitToken(stringOf(map.get("gitToken"), null));
             return def;
         } catch (Exception e) {
             log.warn("Could not parse {} — falling back to defaults: {}", configFile.get(), e.toString());
@@ -163,6 +169,18 @@ public class ProjectConfigFileParser {
                 yaml.append("liveUpdate: false\n");
             }
             appendPrompt(yaml, definition.getPrompt());
+            if (definition.isEmbedDependencies()) {
+                yaml.append("embedDependencies: true\n");
+                if (definition.getDependencyDepth() != 2) {
+                    yaml.append("dependencyDepth: ").append(definition.getDependencyDepth()).append("\n");
+                }
+                if (definition.getDependencyWhitelist() != null && !definition.getDependencyWhitelist().isBlank()) {
+                    yaml.append("dependencyWhitelist: ").append(escapeYamlValue(definition.getDependencyWhitelist())).append("\n");
+                }
+            }
+            appendLineIfNotBlank(yaml, "mavenDependency", definition.getMavenDependency());
+            appendLineIfNotBlank(yaml, "gitUrl", definition.getGitUrl());
+            appendLineIfNotBlank(yaml, "gitToken", definition.getGitToken());
 
             Files.writeString(target, yaml.toString());
             log.info("Saved project config to {}", target);

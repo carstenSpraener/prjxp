@@ -57,6 +57,14 @@
         <div class="field-hint">Takes effect after the next reindex.</div>
       </div>
 
+      <div class="form-group checkbox-group">
+        <label>
+          <input type="checkbox" formControlName="embedDependencies" />
+          Embed Dependencies
+        </label>
+        <div class="field-hint">Resolve & embed build dependencies as searchable libraries (takes effect on reindex).</div>
+      </div>
+
       @if (isEditing) {
         <div class="form-group">
           <label for="prompt">Prompt</label>

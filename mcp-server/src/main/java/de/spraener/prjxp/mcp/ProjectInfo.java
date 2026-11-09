@@ -25,6 +25,14 @@ public record ProjectInfo(
     , Boolean fulltext
     // Live-update freshness block (null for SNAPSHOT projects)
     , LiveUpdateInfo liveUpdate
+    // Dependency embedding config (from ProjectDefinition)
+    , Boolean embedDependencies
+    // Origin marker of a hub-generated library project (null for non-libraries)
+    , String mavenDependency
+    // Origin marker of a hub-cloned GitHub project (the git URL; null for non-GitHub projects)
+    , String gitUrl
+    // Whether an encrypted PAT is stored for this project (gitUrl + gitToken both present; never the token itself)
+    , Boolean gitTokenPresent
 ) {
     /**
      * Live-update freshness block for LIVE projects: {@code status} is {@code IDLE} (up to date,
@@ -38,13 +46,13 @@ public record ProjectInfo(
 
     /** Backward-compatible constructor for existing code. */
     public ProjectInfo(String name, String status, String lastError) {
-        this(name, status, null, lastError, 0L, 0L, 0, null, null, null, null, null, false, "IDLE", 0, null, null, null);
+        this(name, status, null, lastError, 0L, 0L, 0, null, null, null, null, null, false, "IDLE", 0, null, null, null, null, null, null, null);
     }
 
     /** Constructor with stats but no YAML config (uses defaults). */
     public ProjectInfo(String name, String status, String kind, String lastError,
                        Long chunkCount, Long embeddingCount, Integer fileCount) {
         this(name, status, kind, lastError, chunkCount, embeddingCount, fileCount,
-              null, null, null, null, null, false, "IDLE", 0, null, null, null);
+              null, null, null, null, null, false, "IDLE", 0, null, null, null, null, null, null, null);
     }
 }

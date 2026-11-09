@@ -4,6 +4,9 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import de.spraener.prjxp.mcp.hub.source.LiveSource;
+import de.spraener.prjxp.mcp.hub.source.MarkerWalker;
+import de.spraener.prjxp.mcp.hub.source.SnapshotSource;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -86,6 +89,8 @@ class ImportPollerTest {
 
         registry = new HubProjectRegistry(new PrjXPConfig(), props, new PxChunkDaoProvider(List.of()),
                 luceneStore, mock(EmbeddingModel.class), new ProjectConfigFileParser(), mock(LiveUpdateScanner.class));
+        MarkerWalker walker = new MarkerWalker(props, new ProjectConfigFileParser());
+        registry.setSources(List.of(new SnapshotSource(props, walker), new LiveSource(props, walker)));
 
         orchestrator = mock(PipelineOrchestrator.class);
 

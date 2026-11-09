@@ -27,7 +27,8 @@ export class YamlEditorDialogComponent {
         embeddingsFile: project.embeddingsFile || null,
         tibedResetStore: project.tibedResetStore ?? DEFAULT_YAML_CONFIG.tibedResetStore,
         prompt: project.prompt || '',
-        fulltext: project.fulltext ?? DEFAULT_YAML_CONFIG.fulltext
+        fulltext: project.fulltext ?? DEFAULT_YAML_CONFIG.fulltext,
+        embedDependencies: project.embedDependencies ?? DEFAULT_YAML_CONFIG.embedDependencies
       });
     } else {
       this.isEditing = false;
@@ -53,7 +54,8 @@ export class YamlEditorDialogComponent {
       embeddingsFile: [DEFAULT_YAML_CONFIG.embeddingsFile],
       tibedResetStore: [DEFAULT_YAML_CONFIG.tibedResetStore],
       prompt: [''],
-      fulltext: [DEFAULT_YAML_CONFIG.fulltext]
+      fulltext: [DEFAULT_YAML_CONFIG.fulltext],
+      embedDependencies: [DEFAULT_YAML_CONFIG.embedDependencies]
     });
   }
 
@@ -68,7 +70,8 @@ export class YamlEditorDialogComponent {
         embeddingsFile: this.form.get('embeddingsFile')!.value || undefined,
         tibedResetStore: this.form.get('tibedResetStore')!.value || false,
         prompt: this.form.get('prompt')!.value || null,
-        fulltext: this.form.get('fulltext')!.value || false
+        fulltext: this.form.get('fulltext')!.value || false,
+        embedDependencies: this.form.get('embedDependencies')!.value || false
       };
       this.save.emit(config);
     }
