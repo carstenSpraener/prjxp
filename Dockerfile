@@ -64,6 +64,11 @@ COPY --from=app-builder /app/chunk-norris/build/libs/chunk-norris-all.jar /app/
 COPY --from=app-builder /app/tibed/build/libs/tibed-all.jar /app/
 COPY --from=app-builder /app/mcp-server/build/libs/mcp-server-all.jar /app/
 
+# Documentation for the in-app docs browser (served by the hub from /app/doc).
+# Update without rebuilding: bind-mount your own directory onto /app/doc
+# (e.g. DocPipe output) — see docker-compose.yml.
+COPY mcp-server/doc /app/doc
+
 # 3. Entrypoint-Skript bereitstellen
 COPY prjxp-common/docker/entry.sh /app/entry.sh
 RUN chmod +x /app/entry.sh

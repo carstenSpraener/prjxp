@@ -55,6 +55,9 @@ services:
       # External Language Pack plugin JARs (e.g. lp-csharp-plugin.jar) —
       # loaded at startup, never baked into the image (see Dockerfile VOLUME).
       - ./language-packs:/app-source/language-packs
+      # To update the docs without rebuilding the image, mount your own
+      # directory (e.g. DocPipe output) onto the baked-in docs directory:
+      # - ./my-docs:/app/doc
     environment:
       PRJXP_ENV_FILE: /data/prjxp.env
       LUCENE_INDEX_PATH: /data/lucene-index
@@ -77,6 +80,7 @@ services:
       # Add your public hostname when deploying behind a reverse proxy, e.g.
       # MCP_CORS_ALLOWED_PATTERNS="http://localhost:*,https://my-host.example.com"
       MCP_CORS_ALLOWED_PATTERNS: ${MCP_CORS_ALLOWED_PATTERNS:-http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*}
+      PRJXP_DOCS_DIR: /app/doc
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:
