@@ -50,6 +50,10 @@ prjxp:
       type: http
       url: ${PRJXP_HUB_URL:http://localhost:7007/mcp}
 
+  docs:
+    # Docs browser source dir (baked into the image; override via bind mount on /app/doc).
+    dir: ${PRJXP_DOCS_DIR:/app/doc}
+
 mcp:
   cors:
     # Comma-separated, NO spaces after commas. Browsers send an Origin header on

@@ -22,6 +22,10 @@ prjxp:
     projects-root: ${PRJXP_ROOT_DIR:.}/.prjxp-data/projects
     live-jsonl-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/chunks
 
+  docs:
+    # Source directory for the in-app documentation browser (relative to the working dir = repo root in dev).
+    dir: mcp-server/doc
+
   # Embedding Stores
   embedding-stores:
     - project-name: "prjxp"
