@@ -1,60 +1,185 @@
-# Doc|Pipe Technical Documentation
+# DocPipe
 
-## Overview
-Doc|Pipe is a document generation pipeline that automates the creation of content by scanning a project directory for `.dp` configuration directories, mapping document definitions to LLM configurations, and executing content creation tasks in parallel.
+DocPipe is a documentation generation pipeline that discovers, configures, and executes LLM-driven content creation tasks in parallel across a project tree.
 
-## Architecture & Workflow
+## Architecture Overview
 
-### 1. Initialization and Global Configuration
-The process begins in `DocPipeCliApp`:
-- It loads a `.env` file from the working directory (dotenv-java) and exposes every variable as a system property.
-- Spring Boot binds all `prjxp.*` properties from `application.yaml` to `PrjXPConfig` (prjxp-common): the active project (`prjxp.activeProject`, default `cwd`), the project list (`prjxp.projects[]`), the chat model references (`prjxp.chatModels[]`), and the MCP server references (`prjxp.mcp-servers[]`).
-- `McpClientManager` (prjxp-common) connects all configured MCP servers at startup (`stdio`, `http`, or `groovy` tool scripts) and registers their tools in the `ToolRegistry`.
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│                        DocPipeRunner                                │
+│  (orchestrator: job discovery → task fan-out → parallel execution)  │
+├─────────────────────────────────────────────────────────────────────┤
+│                                                                     │
+│  ┌───────────────────────┐    ┌──────────────────────────────────┐  │
+│  │  JobCreationService   │    │   ContentCreationService         │  │
+│  │  (discovers .docpipe  │───▶│   (executes a single task:       │  │
+│  │   dirs, parses        │    │    prompt → LLM → filters →      │  │
+│  │   documents.json,     │    │    output file)                  │  │
+│  │   expands forEach)    │    └──────────────────────────────────┘  │
+│  └───────────────────────┘                                         │
+│           │                                                         │
+│           ▼                                                         │
+│  ┌───────────────────────┐    ┌──────────────────────────────────┐  │
+│  │  DotDPFilesService    │    │   DocPipeManifestWriter          │  │
+│  │  (locates .docpipe/   │    │   (writes output manifest for    │  │
+│  │   documents.json)     │    │    hub embedding)                │  │
+│  └───────────────────────┘    └──────────────────────────────────┘  │
+│                                                                     │
+│  ┌───────────────────────┐                                         │
+│  │  PxLogService         │  (central error/severity tracking)      │
+│  └───────────────────────┘                                         │
+└─────────────────────────────────────────────────────────────────────┘
+```
 
-> **Note:** an earlier version loaded per-directory `.dp/models.json` files via `ModelConfigLoader`. That code path has been removed — model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`).
+## How It Works
 
-### 2. Job Discovery (`JobCreationService`)
-The system recursively scans the active project's root directory to identify "Jobs":
-- **Directory Scanning**: it walks the file tree looking for directories that contain a `.dp` folder (`DotDPFilesService.hasDocPipeDir`).
-- **Content Definition**: for each such directory it parses `.dp/documents.json` as a JSON array of `DPContentCreation` objects.
-- **`forEach` Expansion**: entries with a `forEach` glob are cloned once per matched file; the clone receives `args.currentFile` (relative path) and a computed `outputFile`/`storePrompt` (output dir + source base name + configured suffix).
-- **Fallback**: a malformed `documents.json` yields `DPJob.EMPTY_JOB` (no content creations) so the pipeline keeps running.
+### 1. Job Discovery
 
-### 3. Task Execution
-`DocPipeRunner` flattens the jobs:
-- Each `DPContentCreation` within a `DPJob` is wrapped into a `ContentCreationTask`.
-- **Parallel Processing**: the runner uses a `FixedThreadPool` (`prjxp.docpipe.maxthreads`, default 5) to execute tasks concurrently.
-- **Content Generation** (`ContentCreationService`), per task:
-  1. `PromptResolvingService` reads the template from `.dp/`, registers every `TemplateResolver` bean as a Handlebars helper, and renders the prompt with the task's `args` as context (optionally persisting it via `storePrompt`).
-  2. `ContentUpdateRequiredController` hashes the resolved prompt (SHA-256) and compares it with `.dp/content-hashes.properties` (keyed by output file). If unchanged, the LLM call is skipped.
-  3. `LLMService` resolves the model by `stereotype` via `KIChatProvider` (prjxp-common), decorates it with `McpClientManager` when MCP clients are active, and sends the prompt.
-  4. Configured `ContentFilter`s (comma-separated `filterList`) clean the response; `ps` is appended.
-  5. The result is written through an `OutputSink` (`FileOutputSink` by default).
+`JobCreationService.readJobs()` walks the project's root directory tree and identifies every sub-directory that contains a `.docpipe` folder (checked via `DotDPFilesService.hasDocPipeDir`). Each such directory becomes a **`DPJob`**.
 
-### 4. Error Handling and Logging
-- **Logging**: `PxLogService` (prjxp-common) captures all messages; individual task failures are logged and recorded without halting the pipeline.
-- **CLI termination**: if any message at level `SEVERE` or higher was recorded, `DocPipeRunner.run()` logs a summary and exits with code `1`.
-- **Hub mode**: `runForProject(ProjectDefinition)` never calls `System.exit`; it awaits task completion (1 h timeout), records outputs/failures in `DocPipeRunResult`, always writes a manifest (`.prjxp-data/docpipe/manifest.json` via `DocPipeManifestWriter`), and throws `DocPipeRunException` on failure.
+### 2. Configuration Parsing
 
-## Data Models
+For every discovered `.docpipe` directory, the service reads the `documents.json` file (located by `DotDPFilesService.getDocumentsJsonFrom`). The JSON is deserialised into a list of **`DPContentCreation`** objects.
 
-### `PrjXPChatModelReference` (prjxp-common)
-Defines one LLM backend configuration:
-- **Stereotype**: `stereoType` — the identifier used to link a content request to this model.
-- **Model details**: `serverType` (`ollama`, `gemini`, `lm-studio`, `openapi`, `custom`), `modelName`, `providerUrl`, `apiKey`.
-- **Parameters**: `timeoutSecs` (default 60), `temperature` (default 0.0), optional standing `prompt`, `supportsTools`, supplier `args`, request `bodyProperties`.
-- `${ENV}` placeholders are resolved at runtime by `EnvPlaceholderResolver`.
+### 3. `forEach` Expansion
 
-### `DPContentCreation`
-Defines a single output requirement:
-- `forEach` – optional glob for per-file expansion.
-- `outputFile` / `outputDir` – destination path(s), relative to the job root.
-- `stereotype` – reference to a `PrjXPChatModelReference`.
-- `prompt` – template file name inside `.dp/`.
-- `ps` – post-script appended to the generated content.
-- `filterList` – comma-separated `ContentFilter` names.
-- `storePrompt` – optional file for the resolved prompt.
-- `args` – Handlebars context map.
+Each `DPContentCreation` entry may declare a `forEach` glob pattern. When present, the service:
 
-### `DPJob` / `ContentCreationTask`
-A `DPJob` pairs a job root directory with the shared `PrjXPConfig` and its list of `DPContentCreation`s. A `ContentCreationTask` pairs one `DPJob` with one `DPContentCreation` and is the unit of work submitted to the thread pool.
+1. Walks the job's root directory.
+2. Matches every regular file against the glob (relative to the job root).
+3. For each match, clones the `DPContentCreation` and:
+   - Sets `args["currentFile"]` to the slash-separated relative path.
+   - Computes the output file name by stripping the extension from the matched file and appending `outputFile` (and optionally prefixing with `outputDir`).
+   - Adjusts `storePrompt` the same way if it is set.
+
+The result is one concrete task per matched file. Entries **without** a `forEach` pass through as a single task.
+
+### 4. Task Execution (Parallel)
+
+`DocPipeRunner` flattens all jobs into a flat list of `ContentCreationTask` objects and submits each to a **fixed thread pool** (size configurable via `prjxp.docpipe.maxthreads`, default **5**). Each task is handed to `ContentCreationService.createContent(task)`, which:
+
+- Resolves the prompt template (substituting `args` such as `currentFile`).
+- Invokes the LLM using the configured `stereotype`.
+- Applies any `filterList` post-processing.
+- Appends the optional `ps` (post-script).
+- Writes the result to the resolved `outputFile` path.
+
+### 5. Error Handling & Exit
+
+| Mode | Trigger | Behaviour |
+|------|---------|-----------|
+| **Standalone** – `run(PrjXPConfig)` | Any `SEVERE` log entry after the pool drains | Logs a summary of all severe messages, calls `System.exit(1)`. |
+| **Hub in-process** – `runForProject(ProjectDefinition)` | Any recorded failure in `DocPipeRunResult` | Throws `DocPipeRunException` with a joined summary. Never calls `System.exit`. |
+
+In hub mode a **1-hour timeout** guards against hung tasks (e.g. an unresponsive LLM). On timeout a `DocPipeRunException` is thrown.
+
+### 6. Manifest Writing (Hub Mode Only)
+
+After the executor shuts down (or times out), `DocPipeManifestWriter.write(pd, result.outputs())` is called in a `finally` block so that **every** produced document is recorded, even on partial failure. A write failure is logged as a warning and does not mask the run's own outcome.
+
+## Project Directory Layout
+
+```
+my-project/
+├── src/
+│   ├── .docpipe/
+│   │   └── documents.json        ← job configuration
+│   ├── module-a/
+│   │   ├── Foo.java
+│   │   └── Bar.java
+│   └── module-b/
+│       └── Baz.java
+├── docs/                         ← generated output (example)
+│   ├── module-a/
+│   │   ├── Foo.md
+│   │   └── Bar.md
+│   └── module-b/
+│       └── Baz.md
+└── ...
+```
+
+A directory is a DocPipe job **iff** it contains a `.docpipe/` sub-directory with a valid `documents.json`.
+
+## `documents.json` Schema
+
+```json
+[
+  {
+    "forEach": "src/**/*.java",
+    "outputDir": "docs",
+    "outputFile": ".md",
+    "stereotype": "code-explainer",
+    "prompt": "Explain the purpose and public API of {{currentFile}}.",
+    "ps": "\n---\n_Generated by DocPipe._",
+    "filterList": "remove-blank-lines,trim-trailing-spaces",
+    "storePrompt": ".prompt.md",
+    "args": {
+      "audience": "new developers"
+    }
+  },
+  {
+    "outputFile": "README.md",
+    "stereotype": "doc-writer",
+    "prompt": "Write a project overview for {{currentFile}}."
+  }
+]
+```
+
+| Field | Required | Description |
+|-------|----------|-------------|
+| `forEach` | no | Glob pattern (relative to job root). When set, one task is created per matched file. |
+| `outputFile` | yes | File name or suffix written to disk. With `forEach`, the matched file's base name is prepended. |
+| `outputDir` | no | Sub-directory (relative to job root) for the output. |
+| `stereotype` | yes | LLM model / prompt-stereotype identifier. |
+| `prompt` | yes | Prompt template; `{{key}}` placeholders are resolved from `args`. |
+| `ps` | no | Post-script text appended after the LLM output. |
+| `filterList` | no | Comma-separated filter names applied to the generated text. |
+| `storePrompt` | no | Optional path to persist the resolved prompt alongside the output. |
+| `args` | no | Key-value map injected into the prompt template. `currentFile` is set automatically during `forEach` expansion. |
+
+## Configuration Properties
+
+| Property | Default | Description |
+|----------|---------|-------------|
+| `prjxp.docpipe.maxthreads` | `5` | Size of the fixed thread pool used for parallel task execution. |
+
+## Execution Flow (Sequence)
+
+```
+DocPipeRunner.run(cfg)
+│
+├─▶ JobCreationService.readJobs(activeProject)
+│     │
+│     ├─ Files.walk(rootDir)
+│     ├─ filter: has .docpipe/ ?
+│     ├─ read .docpipe/documents.json
+│     ├─ deserialize → List<DPContentCreation>
+│     └─ expand forEach globs → N concrete tasks per entry
+│
+├─▶ flatMap → List<ContentCreationTask>
+│
+├─▶ ExecutorService (fixed pool, maxThreads)
+│     │
+│     ├─ task 1 → ContentCreationService.createContent(task)
+│     ├─ task 2 → ContentCreationService.createContent(task)
+│     ├─ ...
+│     └─ task N → ContentCreationService.createContent(task)
+│
+├─▶ pool drains (try-with-resources)
+│
+└─▶ if logService.maxLevel() ≥ SEVERE
+      ├─ log summary
+      └─ System.exit(1)
+```
+
+## Hub In-Process Mode
+
+When DocPipe is invoked from the PrjXP hub (via `runForProject`), the following differences apply:
+
+- **No `System.exit`** – failures surface as a `DocPipeRunException`.
+- **`DocPipeRunResult`** accumulates per-task outputs and failures in-memory.
+- **Manifest is always written** (in `finally`), so the hub can embed whatever documents were produced, even on partial failure or timeout.
+- **1-hour hard timeout** on `executor.awaitTermination` protects against hung LLM calls.
+
+_This document was generated with Doc|Pipe and gemma4:31B_
+

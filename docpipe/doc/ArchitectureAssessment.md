@@ -1,1243 +1,251 @@
-# Software Architecture Assessment: DocPipe CLI Documentation Pipeline
+# Software Architecture Assessment: DocPipe – LLM-Driven Documentation Generation Pipeline
 
 ## 1. Executive Summary
 
-DocPipe is a Spring Boot based CLI tool that discovers `.dp` configuration directories inside a project, resolves prompt templates, invokes LLM chat providers, post-processes generated content, and writes documentation outputs. It is designed for build-pipeline usage and explicitly attempts to continue execution despite local configuration errors.
+DocPipe is a Spring Boot CLI application that automates documentation generation by orchestrating LLM calls against project source code. It discovers `.dp` configuration directories, resolves Handlebars-based prompt templates (with pluggable resolvers including Groovy scripts, source dumps, and MCP tool injection), invokes LLMs, applies post-processing filters, and writes output files. The system supports both standalone CLI execution and in-process invocation from a "hub" application.
 
-The overall architecture is pragmatic and service-oriented. The main flow is clearly separated into job discovery, prompt resolution, LLM invocation, content filtering, output writing, and run-result reporting. Spring dependency injection is used effectively to register extensible components such as template resolvers, content filters, output sinks, and source skeletonizers.
+**Key Strengths:**
+- Well-defined extension points via interfaces (`TemplateResolver`, `ContentFilter`, `SourceSkeletonizer`, `OutputSink`) enabling open/closed compliance.
+- Thoughtful graceful-degradation strategy: `DPJob.EMPTY_JOB`, non-throwing `ContentCreationService`, and a testable `exitHandler` seam ensure the pipeline survives local misconfigurations.
+- Hash-based content caching avoids redundant (and costly) LLM invocations.
+- Clean separation between CLI mode and in-process hub mode via `DocPipeRunResult` and conditional bean activation.
 
-Key strengths include:
+**Most Critical Risks:**
+- **Thread-safety defect in `ContentUpdateRequiredController`**: concurrent read-modify-write of a shared `Properties` file without synchronization will corrupt the hash database under the default 5-thread pool.
+- **Race condition in `DocPipeRunner.run()`**: the `try-with-resources` on `ExecutorService` calls `shutdown()` (non-blocking), so the subsequent `logService.maxLevel()` check and `System.exit(1)` may fire before tasks complete.
+- **Unbounded filesystem traversal**: `Files.walk()` with no depth limit or exclusion patterns in `JobCreationService`, `SourceSkeletonResolver`, and `SourceDumpResolver` will degrade or hang on large repositories.
+- **Groovy script security surface**: the `GroovyResolver` injects the full Spring `ApplicationContext` into script bindings, exposing arbitrary bean access to user-authored templates.
 
-- Clear orchestration through `DocPipeRunner`.
-- Extensible prompt helper mechanism via `TemplateResolver`.
-- Pluggable content filtering via `ContentFilter`.
-- Output abstraction through `OutputSink` and `OutputSinkFactory`.
-- Thread-safe run-result collection for in-process execution.
-- Explicit support for “continue on errors” behavior, which matches the CLI/build-pipeline requirement.
-- Flexible Groovy-based prompt generation, which is architecturally powerful when used in trusted environments.
-
-The most critical risks are:
-
-- Groovy execution exposes the Spring `ApplicationContext`, creating a very broad execution and security surface.
-- Parallel execution writes shared hash state without synchronization or atomicity.
-- Some failures are logged but still mark content as up to date, which can lead to stale or missing generated files.
-- Configuration validation is weak; many malformed configurations fail late at runtime.
-- File path handling is inconsistent and can write files relative to the process working directory instead of the job root.
-- The normal CLI runner can terminate the JVM through `System.exit`, which is acceptable for CLI mode but risky if accidentally reused in embedded contexts.
-- Several injected or defined components are unused, indicating architectural drift.
-
-Overall, the project has a workable modular structure, but it needs stronger boundaries, validation, concurrency control, and safer script/file handling to be reliable in CI/CD pipelines.
+---
 
 ## 2. Architectural Style & Patterns
 
-### 2.1 Primary Architectural Style
+| Pattern / Style | Where Applied | Assessment |
+|---|---|---|
+| **Layered (Spring Boot idiomatic)** | `config` → `content` → `llm` → `io` → `prompt` | Clear vertical layering; dependencies flow downward. |
+| **Pipeline / Orchestrator** | `DocPipeRunner` → `JobCreationService` → `ContentCreationService` | The runner is the top-level orchestrator; each stage is a focused service. |
+| **Strategy** | `TemplateResolver`, `ContentFilter`, `SourceSkeletonizer` | All three use a `List<T>` injection + name/ID lookup, enabling runtime extensibility without modifying callers. |
+| **Factory** | `OutputSinkFactory` | Abstracts `OutputSink` creation; trivially swappable for tests. |
+| **Template Method (implicit)** | `ContentCreationService.createContent()` | Fixed sequence: resolve → check hash → LLM → filter → write. The `Runnable updater` parameter in `ContentUpdateRequiredController` is a partial template-method variant. |
+| **Observer / State Accumulator** | `DocPipeRunResult` | Thread-safe mutable state collected across parallel tasks; consumed after `awaitTermination`. |
+| **Null Object** | `DPJob.EMPTY_JOB` | Prevents NPE cascades on misconfigured jobs. |
+| **Adapter** | `TRHelper` (inner class in `PromptResolvingService`) | Adapts `TemplateResolver` to Handlebars `Helper<Object>`. |
+| **Dependency Injection (constructor)** | All services via `@RequiredArgsConstructor` | Consistent, testable wiring. |
 
-The project follows a Spring-Boot-idiomatic service architecture with a lightweight layered structure:
+**Decoupling & Separation of Concerns:**
+- The `docpipe` module is cleanly separated from `common` (config, error logging, MCP, chat provider) and `gldrtrvr` (GR enrichment). Cross-module coupling is limited to well-defined interfaces.
+- The `prompt` sub-package is the most complex layer, containing 8+ resolvers. It is well-isolated behind the `TemplateResolver` interface.
+- The `io` sub-package is minimal and well-abstracted.
+- **Weakness**: `ContentCreationService` is a "god service" that orchestrates prompt resolution, LLM calls, filtering, I/O, and result recording. It has 7 injected dependencies. This is the primary coupling hotspot.
 
-- **CLI/Application layer**
-  - `DocPipeCliApp`
-  - `DocPipeArgsParser`
-  - `DocPipeRunner`
-
-- **Configuration/discovery layer**
-  - `JobCreationService`
-  - `DotDPFilesService`
-  - `DocPipeConfig`
-
-- **Content generation layer**
-  - `ContentCreationService`
-  - `ContentCreationTask`
-  - `ContentUpdateRequiredController`
-  - `ContentFilter`
-
-- **Prompt/template layer**
-  - `PromptResolvingService`
-  - `TemplateResolver`
-  - Resolver implementations such as `GroovyResolver`, `SourceDumpResolver`, `GRResolver`, `McpProjectResolver`, `URLResolver`
-
-- **LLM integration layer**
-  - `LLMService`
-  - External dependency: `KIChatProvider`
-  - External MCP decoration: `McpClientManager`
-
-- **I/O layer**
-  - `OutputSink`
-  - `FileOutputSink`
-  - `OutputSinkFactory`
-  - `DocPipeManifestWriter`
-
-The architecture is not strictly hexagonal, but it contains some ports/adapters-like abstractions:
-
-- `OutputSink` acts as an output port.
-- `ContentFilter` acts as a plugin extension point.
-- `TemplateResolver` acts as a prompt-generation extension point.
-- `SourceSkeletonizer` acts as a language-specific source abstraction.
-- `KIChatProvider` is an external abstraction for LLM access.
-
-### 2.2 Orchestration Pattern
-
-`DocPipeRunner` acts as the central orchestrator:
-
-1. Reads jobs through `JobCreationService`.
-2. Converts jobs into `ContentCreationTask` instances.
-3. Executes tasks in parallel.
-4. Delegates content generation to `ContentCreationService`.
-5. In embedded mode, writes a manifest and throws `DocPipeRunException` on failures.
-6. In CLI mode, checks global log severity and calls the exit handler.
-
-This orchestration is clear and easy to follow.
-
-However, `DocPipeRunner` currently contains two slightly different execution paths:
-
-- `run(PrjXPConfig cfg)` for CLI mode.
-- `runForProject(ProjectDefinition pd)` for in-process/hub mode.
-
-The two paths share similar task-discovery and execution logic but differ in failure reporting, timeout handling, and manifest writing. This creates duplication and makes behavior drift likely.
-
-### 2.3 Plugin/Extension Patterns
-
-The project makes good use of Spring’s collection injection pattern:
-
-```java
-private final List<ContentFilter> contentFilterList;
-private final List<TemplateResolver> templateResolvers;
-private final List<SourceSkeletonizer> skeletonizers;
-```
-
-This allows new filters, prompt helpers, and skeletonizers to be added without changing the central services. This is one of the strongest architectural choices in the codebase.
-
-### 2.4 Template Resolver Pattern
-
-`PromptResolvingService` registers each `TemplateResolver` as a Handlebars helper. This provides a clean extension model:
-
-- Resolver ID becomes the helper name.
-- Optional aliases are supported through `getAliases()`.
-- Dynamic prompt functionality is isolated in resolver classes.
-
-This is a good separation of concerns. The risk is that the resolvers have unrestricted access to the file system and, in the case of Groovy, potentially the whole Spring application.
-
-### 2.5 Build-Pipeline Resilience Pattern
-
-The project intentionally catches and logs many exceptions to avoid failing the entire run because of a single local misconfiguration. Examples:
-
-- `JobCreationService#createDPJob()` returns `DPJob.EMPTY_JOB` on malformed `documents.json`.
-- `ContentCreationService#createContent()` catches `TemplateException`, `IOException`, and `Throwable`.
-- `DocPipeArgsParser#parseArgs()` catches runtime argument parsing errors.
-- `ContentUpdateRequiredController#readEntry()` returns `null` on read errors, forcing regeneration.
-
-This supports the stated requirement that the CLI tool should keep running even when local configurations are broken. However, this design must be paired with accurate failure reporting. In several areas, errors are swallowed or logged without reliably affecting run outcome.
+---
 
 ## 3. Quality Attribute Evaluation
 
-### 3.1 Maintainability & Readability
-
-#### Positive observations
-
-The codebase is generally readable. Most services have focused responsibilities and descriptive names:
-
-- `JobCreationService`
-- `ContentCreationService`
-- `PromptResolvingService`
-- `ContentUpdateRequiredController`
-- `DocPipeManifestWriter`
-- `OutputSinkFactory`
-
-The main execution path is easy to understand:
-
-```text
-DocPipeRunner
-  -> JobCreationService
-  -> ContentCreationService
-      -> PromptResolvingService
-      -> ContentUpdateRequiredController
-      -> LLMService
-      -> ContentFilter
-      -> OutputSinkFactory
-```
-
-Use of Lombok reduces boilerplate and keeps domain/configuration objects compact.
-
-#### Maintainability issues
-
-##### 1. Inconsistent documentation and naming
-
-Several comments refer to `.docpipe`, while the actual constant is:
-
-```java
-public static final String DP_DIR = ".dp";
-```
-
-This creates confusion about the real configuration directory.
-
-Examples:
-
-- `JobCreationService` Javadocs mention `.docpipe`.
-- `DotDPFilesService` and code use `.dp`.
-
-Recommendation: Standardize terminology throughout code, documentation, and configuration examples.
-
-##### 2. Unused or partially obsolete components
-
-Some components appear unused or architecturally stale:
-
-- `DPJob#getModelForStereotype()` is not used by `LLMService`.
-- `EnvResolver` is not used in the shown code.
-- `DPGroovyTool` exists but is not wired into `GroovyResolver`.
-
-This indicates architectural drift. It is not necessarily harmful, but it increases cognitive load and makes it unclear which model configuration source is authoritative.
-
-##### 3. Mixed error-handling strategies
-
-The code mixes:
-
-- checked exceptions: `ConfigException`
-- runtime exceptions: `TemplateException`, `DocPipeRunException`
-- logging-and-continue behavior
-- logging-and-exit behavior
-- logging-and-swallow behavior
-- throwing `IllegalStateException` from lower-level infrastructure
-
-This makes failure semantics difficult to reason about.
-
-##### 4. Some services contain too much operational policy
-
-`ContentCreationService` currently does all of the following:
-
-- Resolves prompts.
-- Decides whether an update is required.
-- Calls the LLM.
-- Applies filters.
-- Appends postscript text.
-- Writes output.
-- Records run results.
-- Logs failures.
-
-This is acceptable for a small CLI, but if the project grows, this service will become the main maintenance hotspot.
-
-##### 5. Type safety issues in prompt resolvers
-
-`CurrentFileResolver` and `GroovyResolver` cast template context directly:
-
-```java
-((Map<String,String>) context).get("currentFile")
-```
-
-This assumes the Handlebars context is always a `Map<String, String>`. A malformed template invocation or future context model change can cause `ClassCastException`.
-
-##### 6. Javadocs are extensive but occasionally misleading
-
-The code has many Javadocs, which is positive. However, some comments describe intended behavior rather than actual robust behavior. For example, several classes describe safe/resilient operation, but path validation, null validation, and concurrency safeguards are limited.
-
-### 3.2 Extensibility
-
-#### Strong extensibility points
-
-The project is extensible in several important dimensions.
-
-##### Template resolvers
-
-Adding a new prompt helper is simple:
-
-```java
-@Component
-public class MyResolver implements TemplateResolver {
-    public String getID() { return "my-helper"; }
-
-    public String resolve(File baseDir, Object context, Options options) {
-        return "...";
-    }
-}
-```
-
-Spring auto-discovers the resolver and `PromptResolvingService` registers it with Handlebars.
-
-##### Content filters
-
-Adding post-processing is straightforward:
-
-```java
-@Component
-public class MyFilter implements ContentFilter {
-    public String name() { return "myFilter"; }
-
-    public String filter(String content) {
-        return content;
-    }
-}
-```
-
-This is a clean plugin model.
-
-##### Source skeletonizers
-
-The `SourceSkeletonizer` abstraction supports adding language-specific skeletonization without changing `SourceSkeletonResolver`.
-
-##### Output abstraction
-
-`OutputSink` and `OutputSinkFactory` make output writing testable and replaceable.
-
-#### Limitations in extensibility
-
-##### 1. LLM provider extensibility is delegated externally
-
-`LLMService` depends on `KIChatProvider` and asks it for a model by stereotype:
-
-```java
-chatProvider.getByStereotype(stereotype)
-```
-
-This is clean from DocPipe’s perspective. Model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`); the earlier `.dp/models.json` / `ModelConfigLoader` path has been removed. `DPJob#getModelForStereotype()` is also unused.
-
-As a result, model configuration responsibility is now unambiguous: `PrjXPConfig.chatModels` (bound from `application.yaml`) is the single source of truth, resolved by stereotype via `KIChatProvider`.
-
-##### 2. Prompt resolver interface is powerful but very broad
-
-The interface passes low-level Handlebars `Options`, raw `Object context`, and a filesystem `File baseDir`. This maximizes flexibility, but it also exposes implementation details and makes each resolver responsible for validation and type handling.
-
-##### 3. No explicit configuration schema/versioning
-
-`documents.json` maps directly to `List<DPContentCreation>`. This is convenient, but lacks:
-
-- schema validation
-- versioning
-- deprecation support
-- clear error messages
-- required-field validation
-- defaults handling
-
-Extending configuration safely will become harder as features grow.
-
-### 3.3 Robustness & Error Handling
-
-#### Positive robustness mechanisms
-
-The project explicitly supports continuing after errors:
-
-- Malformed job configs produce empty jobs.
-- Prompt/content failures are logged and do not crash all tasks.
-- Embedded runs collect failures in `DocPipeRunResult`.
-- In-process execution does not call `System.exit`.
-- Manifest writing is best-effort and does not mask primary run failures.
-
-These are aligned with the stated build-pipeline use case.
-
-#### Critical robustness issues
-
-##### 1. Hash state can be updated even when output writing fails
-
-In `ContentCreationService`, the update lambda catches `IOException` while writing the output:
-
-```java
-try (OutputSink sink = outputSinkFactory.createSink(Path.of(outputFile))) {
-    sink.println(content);
-    if (result != null) { result.recordOutput(outputFile); }
-} catch (IOException e) {
-    logService.error(e, ...);
-    if (result != null) { result.recordFailure(...); }
-}
-```
-
-The exception is swallowed inside the lambda. Then `ContentUpdateRequiredController#onUpdateRequired()` continues and writes the prompt hash:
-
-```java
-updater.run();
-writeEntry(cct, toHash(prompt), outputFile);
-```
-
-This means a failed output write can still mark the content as up to date. On the next run, DocPipe may skip generation even though the output file is missing or stale.
-
-This is a high-priority correctness issue.
-
-##### 2. Content hash database is not concurrency-safe
-
-`ContentUpdateRequiredController` reads and writes a shared properties file:
-
-```text
-.dp/content-hashes.properties
-```
-
-With parallel task execution, multiple tasks in the same job can concurrently:
-
-1. Read old properties.
-2. Add their own entry.
-3. Write the whole file back.
-
-This creates race conditions and lost updates.
-
-Example:
-
-- Task A reads `{}`.
-- Task B reads `{}`.
-- Task A writes `{a=hashA}`.
-- Task B writes `{b=hashB}`.
-- Final file loses `a=hashA`.
-
-This is a major risk because `DocPipeRunner` executes tasks in parallel by default.
-
-##### 3. Failure reporting is inconsistent between CLI and embedded modes
-
-Embedded mode records failures in `DocPipeRunResult` and throws `DocPipeRunException`.
-
-CLI mode does not collect per-task failures and relies on `logService.maxLevel()`:
-
-```java
-if (logService.maxLevel().intValue() >= Level.SEVERE.intValue()) {
-    exitHandler.accept(1);
-}
-```
-
-This depends on all critical failures being logged as `SEVERE` through the shared log service. However, some code logs through `java.util.logging.Logger` directly, and some warnings/severe logs may not be reflected in `PxLogService`.
-
-This can lead to CLI runs reporting success despite meaningful failures.
-
-##### 4. `DocPipeRunner#run()` has no timeout
-
-Embedded mode has a one-hour timeout:
-
-```java
-executor.awaitTermination(1, TimeUnit.HOURS)
-```
-
-CLI mode uses try-with-resources on `ExecutorService`. Depending on the Java version and runtime behavior, this waits for completion but provides no timeout. A hanging LLM request can hang the build pipeline indefinitely.
-
-##### 5. `runForProject()` submits tasks but does not inspect `Future` objects
-
-Because `ContentCreationService#createContent()` catches broad exceptions, this is mostly safe. However, if an exception escapes before reaching the internal catch block, the executor will capture it in the task `Future`, but the runner never checks it.
-
-A safer design is to collect `Future<?>` objects and call `get()` after termination.
-
-##### 6. `ContentCreationService` catches `Throwable`
-
-```java
-} catch (Throwable t) {
-```
-
-Catching `Throwable` keeps the pipeline alive, but it also catches serious JVM-level problems such as `OutOfMemoryError`, `StackOverflowError`, or linkage errors. In a CLI tool this may be intentional, but it should be used very carefully.
-
-A better approach is to catch `Exception` and only catch selected serious errors if there is a strong reason.
-
-##### 7. Missing validation of required fields
-
-The following fields can be null and cause runtime failures:
-
-- `DPContentCreation.prompt`
-- `DPContentCreation.outputFile`
-- `DPContentCreation.stereotype`
-- `DPContentCreation.args`
-- `DPJob.contentCreationList`
-- active project root
-- source paths in resolvers
-
-Invalid configuration is expected in local setups, so robust validation with actionable messages would improve the user experience significantly.
-
-##### 8. File paths can escape intended directories
-
-Several components resolve paths without normalization or boundary checks:
-
-- `PromptResolvingService#readTemplate()`
-- `SourceDumpResolver`
-- `SourceSkeletonResolver`
-- `URLResolver`
-- `CurrentFileResolver`
-- `FileOutputSink`
-- output file resolution in `DotDPFilesService`
-
-This allows configurations to read or write outside the intended project/job root using `../` paths.
-
-In trusted build environments this may be acceptable, but with Groovy and source-dump helpers, the tool should clearly define its trust model.
-
-##### 9. `storePrompt` handling is inconsistent
-
-`JobCreationService#expandCreation()` sets `storePrompt` relative to an output directory:
-
-```java
-copy.setStorePrompt(outputDir + "/" + baseName + c.getStorePrompt());
-```
-
-But `PromptResolvingService` writes it as:
-
-```java
-new File(ccTask.getDpContentCreation().getStorePrompt())
-```
-
-This resolves relative to the current process working directory, not the job root or `.dp` directory. It also does not create parent directories.
-
-This can lead to prompts being written in unexpected locations or failing when directories are missing.
-
-##### 10. `EnvResolver` may return null
-
-`EnvResolver.resolve()` returns `System.getenv().get(envVar)` for placeholders. If the environment variable is not set, it returns `null`, despite the method documentation saying null input returns empty string.
-
-Also, `DocPipeCliApp#readDotEnv()` stores `.env` entries as system properties, but `EnvResolver` only checks environment variables, not system properties. Therefore `.env` values may not be resolved by `EnvResolver`.
-
-### 3.4 Performance & Resource Efficiency
-
-#### Positive observations
-
-- Tasks are executed in parallel using a fixed thread pool.
-- Expensive LLM calls are avoided when prompt hashes have not changed.
-- Prompt templates can selectively dump source code or skeletonized code.
-- `DocPipeRunResult` uses `CopyOnWriteArrayList`, which is simple and thread-safe for low-to-moderate write volumes.
-
-#### Performance risks
-
-##### 1. Full filesystem traversal is used in several places
-
-Examples:
-
-- `JobCreationService#readJobs()` uses `Files.walk(rootPath)`.
-- `JobCreationService#expandCreation()` uses `Files.walk(rootPath)`.
-- `SourceDumpResolver` uses `Files.walk(srcPath)`.
-- `SourceSkeletonResolver` uses `Files.walk(srcPath)`.
-- `DPGroovyTool#grep()` uses `Files.walk(rootDir)`.
-
-For large repositories, repeated recursive scans can be expensive.
-
-Potential improvements:
-
-- Ignore common directories such as `.git`, `target`, `build`, `node_modules`, `.gradle`.
-- Support include/exclude patterns.
-- Cache discovered files per run.
-- Limit source dump size.
-- Add maximum prompt size controls.
-
-##### 2. Prompt generation can create very large prompts
-
-`SourceDumpResolver` can dump full source files recursively into a prompt. This risks:
-
-- high memory usage
-- large LLM token costs
-- request failures due to context limits
-- slow CI runs
-
-The skeletonizer is a good mitigation, but it currently defaults to Visual Basic-like endings in `SourceSkeletonResolver`.
-
-##### 3. `PromptResolvingService` creates a new `Handlebars` instance per prompt
-
-For each task:
-
-```java
-Handlebars handlebars = new Handlebars();
-```
-
-This is simple and safe, but may be inefficient when many tasks are run. Template compilation and helper registration happen repeatedly.
-
-A cache may be beneficial if prompt templates are reused.
-
-##### 4. `CopyOnWriteArrayList` is safe but not optimal for many writes
-
-`DocPipeRunResult` uses `CopyOnWriteArrayList`. This is fine for small task counts, but for many outputs/failures, a synchronized list or concurrent queue would be more write-efficient.
-
-##### 5. File reading is fully in-memory
-
-Most resolvers read complete files into strings:
-
-- `Files.readString`
-- `IOUtils.toString`
-- `FileUtils.readFileToString`
-
-For prompt generation this is often necessary, but safeguards should exist for very large files.
-
-##### 6. LLM calls have no visible timeout/cancellation abstraction
-
-The runner can timeout embedded execution after one hour, but individual LLM calls are delegated to `KIChatProvider`. There is no visible per-request timeout, retry policy, circuit breaker, or cancellation handling.
-
-In CI/CD, external LLM calls should have explicit timeout policies.
+### Maintainability & Readability
+
+**Positive:**
+- Javadoc is present and thorough on nearly every public method, including `@param`/`@return`/`@throws`.
+- Naming is generally clear (`DotDPFilesService`, `ContentUpdateRequiredController`, `SourceSkeletonResolver`).
+- Use of `@RequiredArgsConstructor` + `final` fields enforces immutability of dependencies.
+- The `@Accept` annotations document intentional design trade-offs (e.g., swallowing `RuntimeException` in `DocPipeArgsParser`).
+
+**Negative:**
+- **Inconsistent logging framework**: `lombok.extern.java.Log` (JUL) is used throughout, while Spring Boot's default is SLF4J/Logback. This makes log aggregation, level filtering, and structured logging harder in a CI/CD context.
+- **Mixed `File` and `Path` APIs**: `DotDPFilesService` returns `File`; `DocPipeManifestWriter` uses `Path`; `SourceDumpResolver` converts back and forth. This creates friction and potential `NullPointerException` on `path.getParent()` for root-level files.
+- **`ContentCreationTask.createContent()`** is a stub that only logs. Its presence is misleading—readers may expect it to perform the actual work.
+- **`ps` field** in `DPContentCreation` is named as if it were a "post-script" but is simply a string concatenated to the output. The naming invites confusion.
+- **German comments** in `ContentUpdateRequiredController` ("Speicherort für die flache Hash-Datenbank", "Fehler beim Schreiben…") break the otherwise English-language codebase.
+
+### Extensibility
+
+**Positive:**
+- Adding a new `TemplateResolver` requires only a `@Component` class implementing the interface—zero changes to `PromptResolvingService`.
+- Adding a new `ContentFilter` follows the same pattern.
+- Adding a new `SourceSkeletonizer` (e.g., for C# or Python) is a single class.
+- The `OutputSink` interface allows swapping file I/O for S3, in-memory, or network sinks.
+- The `@Profile("!test")` + `@ConditionalOnProperty` on the `CommandLineRunner` cleanly separates CLI from hub mode.
+
+**Negative:**
+- **No SPI or plugin mechanism**: all resolvers/filters/skeletonizers must be Spring beans in the same classpath. There is no dynamic discovery (e.g., `ServiceLoader`, classpath scanning of a plugin directory, or Groovy-based hot-loading of new resolvers).
+- **`LLMService` is tightly coupled to `KIChatProvider` + `McpClientManager`**: adding a new LLM provider or a non-MCP tool integration requires modifying this class or the `common` module.
+- **`ContentCreationService`** hard-codes the processing pipeline (resolve → LLM → filter → append `ps` → write). Inserting a new step (e.g., a validation step, a translation step) requires modifying this class.
+- **`DPContentCreation`** is a flat `@Data` POJO. Adding a new configuration dimension (e.g., `temperature`, `maxTokens`, `systemPrompt`) requires a schema change to `documents.json` and a new field. There is no extensible `Map<String, Object> properties` escape hatch.
+
+### Robustness & Error Handling
+
+**Positive:**
+- `ContentCreationService.createContent()` catches `TemplateException | IOException` and `Throwable` separately, logging and recording failures without propagating. This fulfills the "keep running on errors" requirement.
+- `JobCreationService.createDPJob()` catches all exceptions during `documents.json` parsing and returns `DPJob.EMPTY_JOB`.
+- `SourceSkeletonResolver` falls back to a raw file dump if the skeletonizer fails.
+- `DocPipeArgsParser` swallows `RuntimeException` from argument parsing to keep the app alive.
+- `DocPipeRunner.runForProject()` writes the manifest in a `finally` block even on timeout/failure.
+
+**Negative (Critical):**
+- **`ContentUpdateRequiredController` is not thread-safe.** `readEntry` + `writeEntry` perform a read-modify-write on a shared `Properties` file. With 5 concurrent threads, two threads can read the same file, each add their entry, and the second write overwrites the first. There is no `synchronized`, no `FileLock`, no `ReadWriteLock`.
+- **`DocPipeRunner.run()` race condition**: the `try-with-resources` block closes the `ExecutorService` (calls `shutdown()`), then immediately checks `logService.maxLevel()`. Since `shutdown()` does not block, the log check may execute before any task has completed, leading to a false "no errors" exit or a premature `System.exit(1)`.
+- **No timeout on individual LLM calls**: `LLMService.chat()` delegates to `KIChatProvider` with no visible timeout. A hung LLM endpoint will block a thread pool slot indefinitely. The 1-hour `awaitTermination` in `runForProject` is a backstop but is far too long for a CI pipeline.
+- **`EnvResolver`** returns `null` if the environment variable is not set (via `System.getenv().get(envVar)`), but the method signature implies it returns a `String`. Callers may NPE.
+- **`URLResolver`** uses the deprecated `new URL(String)` constructor and does not handle relative paths or `file:` scheme edge cases.
+- **`Files.walk()` without depth limit or exclusion**: in `JobCreationService.readJobs()`, `SourceSkeletonResolver`, `SourceDumpResolver`, and `expandCreation`, a large monorepo (e.g., with `node_modules`, `.git`, build artifacts) will cause excessive I/O and memory pressure.
+
+### Performance & Resource Efficiency
+
+**Negative:**
+- **Redundant full-tree walks**: `JobCreationService.readJobs()` walks the entire project tree to find `.dp` directories. Then `expandCreation` walks the tree *again* for each `forEach` glob pattern. Then `SourceSkeletonResolver`/`SourceDumpResolver` walk *again* during prompt resolution. For a project with 10 `forEach` patterns and 50k files, this is 500k+ `stat` calls.
+- **`Files.walk()` streams are not closed in `SourceSkeletonResolver` and `SourceDumpResolver`** when the `return` statement is inside the `try` block—actually, they *are* in try-with-resources, so this is fine. However, the `JobCreationService.readJobs()` stream is returned to the caller and the caller must close it. The `flatMap` in `DocPipeRunner` does not explicitly close the stream, relying on the `collect()` to terminate it. This is fragile.
+- **`Properties` file I/O per task**: every content creation task reads and potentially writes the `content-hashes.properties` file. For 100 tasks, this is 100+ file opens.
+- **No connection pooling or caching for LLM HTTP calls** (assumed in `KIChatProvider`—not visible in this codebase).
+- **`ObjectMapper` used for cloning** (`DPContentCreation.clone()`) is a heavyweight operation for a simple POJO copy. A manual copy or `record` would be cheaper.
+- **`CopyOnWriteArrayList` in `DocPipeRunResult`**: appropriate for the low write frequency, but if a single task produces thousands of outputs, the copy-on-write overhead becomes significant.
+
+**Positive:**
+- Fixed thread pool (`maxThreads`, default 5) prevents unbounded parallelism.
+- Hash-based caching avoids redundant LLM calls for unchanged prompts.
+- `OutputSink` uses `BufferedWriter` for efficient file I/O.
+
+---
 
 ## 4. Strengths & Best Practices
 
-### 4.1 Clear service decomposition
+1. **Open/Closed Compliance via Strategy Interfaces**: `TemplateResolver`, `ContentFilter`, and `SourceSkeletonizer` are all injected as `List<T>` and looked up by name/ID. New implementations are added without modifying existing code.
 
-The main responsibilities are separated into clear Spring services:
+2. **Graceful Degradation by Design**: The `DPJob.EMPTY_JOB` null-object, the non-throwing `ContentCreationService`, and the `@Accept`-annotated exception swallowing in `DocPipeArgsParser` collectively ensure that a single misconfigured job or a bad CLI argument does not halt the entire pipeline.
 
-- Discovery: `JobCreationService`
-- Prompt resolution: `PromptResolvingService`
-- LLM access: `LLMService`
-- Content orchestration: `ContentCreationService`
-- Update detection: `ContentUpdateRequiredController`
-- Output writing: `OutputSinkFactory`
-- Manifest writing: `DocPipeManifestWriter`
+3. **Testability Seams**: The `exitHandler` `IntConsumer` in `DocPipeRunner` and the `OutputSink` interface allow unit tests to verify behavior without side effects (no `System.exit`, no real file writes).
 
-This makes the codebase approachable.
+4. **Dual-Mode Architecture**: The `@Profile("!test")` + `@ConditionalOnProperty("prjxp.hub.enabled")` on the `CommandLineRunner`, combined with the separate `runForProject()` method, cleanly supports both CLI and in-process execution without conditional logic scattered through services.
 
-### 4.2 Good use of Spring extension points
+5. **Thread-Safe Run State**: `DocPipeRunResult` uses `CopyOnWriteArrayList` and returns immutable copies via `List.copyOf()`, making it safe for concurrent task execution.
 
-Using injected lists for polymorphic components is a strong design choice:
+6. **Content Hash Caching**: The SHA-256 hash of the resolved prompt in `ContentUpdateRequiredController` is a pragmatic and effective mechanism to avoid paying for redundant LLM tokens in iterative CI runs.
 
-- `List<TemplateResolver>`
-- `List<ContentFilter>`
-- `List<SourceSkeletonizer>`
+7. **Comprehensive Javadoc**: Every public class and method has meaningful documentation, including design rationale (e.g., the `@Accept` annotations explaining *why* an exception is swallowed).
 
-This supports open/closed principle behavior for several feature areas.
+8. **`OutputSink` Abstraction**: The `AutoCloseable` + `println`/`printf` interface is a clean, minimal abstraction that makes the I/O layer trivially mockable.
 
-### 4.3 Testability through output abstraction
+9. **`SourceSkeletonizer` Fallback Strategy**: When no skeletonizer matches or one fails, the system falls back to a raw file dump with an HTML comment explaining the reason. This is a robust degradation path.
 
-`OutputSink` and `OutputSinkFactory` decouple output writing from content generation. This makes content generation easier to test without touching the real filesystem.
+10. **Manifest Writing in `finally`**: `DocPipeRunner.runForProject()` guarantees the manifest is written even on timeout or exception, ensuring the hub always has a (possibly partial) list of outputs.
 
-### 4.4 Separate embedded runner behavior
-
-`runForProject(ProjectDefinition pd)` avoids `System.exit` and reports failures through `DocPipeRunException`. This is a good design distinction for in-process use.
-
-### 4.5 Thread-safe result collection
-
-`DocPipeRunResult` is simple and thread-safe. It supports concurrent task execution without external locking.
-
-### 4.6 Manifest writing is robustly isolated
-
-`DocPipeManifestWriter` writes generated output paths relative to the project root and falls back to absolute paths for external outputs. Manifest writing is also handled as non-fatal in `runForProject()`, which prevents secondary failures from masking the main run result.
-
-### 4.7 Prompt templating architecture is flexible
-
-The Handlebars-based resolver mechanism enables powerful prompt composition:
-
-- Include current file contents.
-- Dump source directories.
-- Run Groovy scripts.
-- Inject graph retrieval enrichment.
-- Inject MCP tool instructions.
-- Include URL-like file references.
-
-This provides significant flexibility for documentation automation.
-
-### 4.8 Hash-based update avoidance
-
-The prompt-hash mechanism is a useful optimization to avoid unnecessary LLM calls. This is particularly valuable because LLM calls can be slow and expensive.
-
-### 4.9 Explicit local misconfiguration tolerance
-
-Returning `DPJob.EMPTY_JOB` on broken `documents.json` is consistent with the requirement that local misconfigurations should not stop the whole pipeline.
-
-### 4.10 Visual Basic skeletonization is a useful token-reduction feature
-
-`VisualBasicSourceSkeletonizer` demonstrates a valuable pattern: extract structure instead of dumping full source code. This reduces prompt size and improves LLM relevance.
+---
 
 ## 5. Identified Risks & Technical Debt
 
-### 5.1 Critical: Groovy execution has excessive privileges
-
-`GroovyResolver` exposes:
-
-```java
-b.put("applicationContext", applicationContext);
-b.put("dir", baseDir);
-b.put("options", options);
-b.put("dpContext", context);
-```
-
-Giving scripts access to `ApplicationContext` effectively gives them access to all Spring beans and potentially all application capabilities. Since Groovy can execute arbitrary code, this means prompt templates can:
-
-- read arbitrary files
-- write files
-- access secrets exposed through beans or environment
-- invoke network-capable services
-- alter application behavior
-- call Spring-managed services directly
-
-The integration of Groovy is an intentional architectural decision and provides maximum flexibility, but it must be treated as trusted-code execution.
-
-Risk level: **High**
-
-### 5.2 Critical: Parallel hash-file writes are unsafe
-
-The `.dp/content-hashes.properties` file is modified through read-modify-write cycles without locking. Parallel tasks can overwrite each other’s hash entries.
-
-Risk level: **High**
-
-### 5.3 Critical: Failed writes can still update prompt hashes
-
-If output sink creation or writing fails, the error is logged and recorded, but `ContentUpdateRequiredController` still writes the prompt hash because the updater lambda swallows the exception.
-
-Risk level: **High**
-
-### 5.4 High: Weak configuration validation
-
-The project currently relies on runtime failures to identify malformed configuration. Missing or invalid fields are not validated upfront.
-
-Examples:
-
-- missing `prompt`
-- missing `outputFile`
-- missing `stereotype`
-- invalid `filterList`
-- invalid `forEach` glob
-- invalid source paths
-- missing prompt template files
-- output path escaping root
-
-Risk level: **High**
-
-### 5.5 High: Path handling is inconsistent and insufficiently constrained
-
-Several operations can read or write outside the intended directory structure. This is especially important because prompt templates may be authored locally and executed in CI.
-
-Risk level: **High**
-
-### 5.6 High: CLI execution can hang indefinitely
-
-`DocPipeRunner#run()` has no explicit timeout. If an LLM provider, MCP tool, prompt resolver, or Groovy script hangs, the build pipeline can hang.
-
-Risk level: **High**
-
-### 5.7 Medium: Duplicate runner logic
-
-`run()` and `runForProject()` perform similar task creation and executor submission but differ in behavior. This creates a risk of inconsistent behavior and future bugs.
-
-Risk level: **Medium**
-
-### 5.8 Medium: Model configuration path is unclear
-
-Model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`); the earlier `.dp/models.json` / `ModelConfigLoader` path has been removed. `DPJob#getModelForStereotype()` is also unused. `LLMService` uses `KIChatProvider` directly.
-
-This creates uncertainty around:
-
-- how stereotypes are registered
-
-Risk level: **Medium**
-
-### 5.9 Medium: Logging strategy is inconsistent
-
-The project uses both:
-
-- `PxLogService`
-- Lombok `@Log` / `java.util.logging.Logger`
-
-Only errors logged through `PxLogService` appear to contribute to CLI failure detection via `logService.maxLevel()`.
-
-Risk level: **Medium**
-
-### 5.10 Medium: Store-prompt output uses wrong base directory
-
-`storePrompt` writes relative to process working directory. This can create files in unexpected locations and fail in CI.
-
-Risk level: **Medium**
-
-### 5.11 Medium: Source dump helpers can generate excessive prompts
-
-Recursive source dumping without size limits can create very large prompts, leading to:
-
-- high costs
-- slow execution
-- failed LLM calls
-- memory pressure
-
-Risk level: **Medium**
-
-### 5.12 Medium: Unknown filters are silently ignored
-
-`ContentCreationService#applyContentFilters()` ignores unrecognized filters:
-
-```java
-if (filter != null) {
-    content = filter.filter(content);
-}
-```
-
-This can hide configuration typos.
-
-Risk level: **Medium**
-
-### 5.13 Medium: No clear retry or timeout policy for external services
-
-LLM calls and enrichment/MCP integrations depend on external services. The visible code does not define:
-
-- request timeout
-- retry behavior
-- rate-limit behavior
-- fallback behavior
-- cancellation behavior
-
-Risk level: **Medium**
-
-### 5.14 Low: `EnvResolver` behavior is incomplete
-
-`EnvResolver` only resolves values that start with `${`, strips all braces, and reads from `System.getenv()`. It does not support embedded placeholders or system properties loaded from `.env`.
-
-Risk level: **Low**
-
-### 5.15 Low: Resource handling issue in `DPGroovyTool#grep()`
-
-`Files.walk(rootDir)` is not used in a try-with-resources block. This can leak filesystem resources.
-
-Risk level: **Low**
-
-### 5.16 Low: `FileOutputSink` assumes parent path exists
-
-`FileOutputSink` calls:
-
-```java
-Files.createDirectories(path.getParent());
-```
-
-If `path.getParent()` is null, this can throw a `NullPointerException`. In normal use, output paths appear absolute and parented, but the class itself is not defensive.
-
-Risk level: **Low**
-
-### 5.17 Low: `URLResolver` is misleadingly named
-
-`URLResolver` does not really fetch URL content. It parses a URL and reads a local file based on `new URL(fileParam).getFile()` relative to the base directory.
-
-This may surprise users and maintainers.
-
-Risk level: **Low**
+### Critical (Must Fix)
+
+| # | Risk | Location | Impact |
+|---|---|---|---|
+| C1 | **Thread-unsafe `Properties` file access** | `ContentUpdateRequiredController.readEntry` / `writeEntry` | Concurrent tasks corrupt the hash database, causing either redundant LLM calls or (worse) stale content being served. |
+| C2 | **Race condition in `DocPipeRunner.run()`** | `try (ExecutorService …)` block | `shutdown()` is non-blocking; the `logService.maxLevel()` check and `System.exit(1)` may execute before tasks complete, producing incorrect exit codes in CI. |
+| C3 | **Unbounded `Files.walk()` with no exclusions** | `JobCreationService.readJobs()`, `SourceSkeletonResolver`, `SourceDumpResolver`, `expandCreation` | On large repos (`.git`, `node_modules`, `target/`), the walk will be extremely slow or OOM. No `FileVisitOption` or `FileFilter` exclusion. |
+
+### High (Should Fix Soon)
+
+| # | Risk | Location | Impact |
+|---|---|---|---|
+| H1 | **Groovy script security: full `ApplicationContext` exposed** | `GroovyResolver.resolve()` | A malicious or buggy Groovy template can access any Spring bean (e.g., `RestTemplate`, `DataSource`), enabling SSRF, data exfiltration, or RCE. |
+| H2 | **No timeout on LLM calls** | `LLMService.chat()` → `KIChatProvider` | A hung LLM endpoint blocks a thread pool slot indefinitely. The 1-hour `awaitTermination` is a backstop but is unacceptable for CI. |
+| H3 | **`EnvResolver` returns `null` for missing vars** | `EnvResolver.resolve()` | Callers expecting a non-null `String` will NPE. The method should return `""` or throw. |
+| H4 | **`ContentCreationService` is a 7-dependency orchestrator** | `ContentCreationService` | Violates SRP. Adding a new pipeline step (validation, translation, approval) requires modifying this class. |
+| H5 | **`URLResolver` uses deprecated `new URL(String)`** | `URLResolver.resolve()` | `java.net.URL` constructor is deprecated since Java 20. Also does not handle relative paths or non-`file:` schemes. |
+
+### Medium (Technical Debt)
+
+| # | Risk | Location | Impact |
+|---|---|---|---|
+| M1 | **Inconsistent `File` vs `Path` usage** | `DotDPFilesService` returns `File`; other classes use `Path` | Friction, potential NPE on `getParent()`, harder to reason about. |
+| M2 | **JUL instead of SLF4J** | All `@Log` annotations | Incompatible with Spring Boot's default logging stack; harder to configure in CI log aggregation. |
+| M3 | **`ContentCreationTask.createContent()` is a dead stub** | `ContentCreationTask` | Misleading; suggests the task is self-executing when it is not. |
+| M4 | **`ps` field naming** | `DPContentCreation.ps` | Implies "post-script" but is a plain string append. Confusing. |
+| M5 | **German comments in production code** | `ContentUpdateRequiredController` | Breaks language consistency; hinders onboarding. |
+| M6 | **`@ComponentScan("de.spraener.prjxp")` is overly broad** | `DocPipeCliApp` | May pull in unintended beans from sibling modules. |
+| M7 | **`DocPipeConfig` is an empty `@Component`** | `DocPipeConfig` | A bean with a single `Path` field that is never injected or set. Dead code or incomplete wiring. |
+| M8 | **No structured/JSON logging** | All services | CI log parsers and dashboards benefit from structured output; JUL text logs are harder to process. |
+| M9 | **`ObjectMapper.convertValue` for cloning** | `DPContentCreation.clone()` | Heavyweight for a flat POJO; a `record` or manual copy would be simpler and faster. |
+| M10 | **No retry/circuit-breaker for LLM calls** | `LLMService` | Transient network errors or 429 responses will fail the task with no retry. |
+
+---
 
 ## 6. Actionable Recommendations
 
-### Priority 1: Fix correctness and CI reliability issues
+### Priority 1 – Fix Critical Defects (This Sprint)
 
-#### 1.1 Prevent hash updates when output generation fails
+1. **Synchronize `ContentUpdateRequiredController` file access.**
+   - Wrap `readEntry` + `writeEntry` in a `synchronized` block on the `File` object, or better, use `java.nio.channels.FileLock` on the properties file.
+   - Alternatively, replace the `Properties` file with an in-memory `ConcurrentHashMap<String, String>` that is loaded at startup and persisted atomically (write to temp file, then `Files.move` with `ATOMIC_MOVE`) at the end of the run.
 
-Change `ContentUpdateRequiredController#onUpdateRequired()` to update the hash only when the updater reports success.
+2. **Fix the `DocPipeRunner.run()` race condition.**
+   - Replace the `try-with-resources` with an explicit `shutdown()` + `awaitTermination(timeout)` + `shutdownNow()` pattern (mirroring `runForProject`).
+   - Use a reasonable timeout (e.g., 30 minutes) and log a warning if it elapses.
 
-Example direction:
+3. **Add filesystem walk exclusions and depth limits.**
+   - In `JobCreationService.readJobs()`, add a `FileFilter` or `FileVisitOption` to skip `.git`, `node_modules`, `target`, `build`, `.idea`, and other VCS/build directories.
+   - In `SourceSkeletonResolver` and `SourceDumpResolver`, add the same exclusions and a configurable max depth.
+   - In `expandCreation`, cache the `Files.walk` result per `rootPath` to avoid re-walking for each `forEach` pattern.
 
-```java
-public void onUpdateRequired(String prompt, ContentCreationTask cct, CheckedRunnable updater) {
-    String outputFile = cct.getDpContentCreation().getOutputFile();
-    if (updateRequired(cct, prompt, outputFile)) {
-        updater.run();
-        writeEntry(cct, toHash(prompt), outputFile);
-    }
-}
-```
+### Priority 2 – Harden Security & Resilience (Next Sprint)
 
-Then ensure output write failures propagate out of the updater. Alternatively, return a boolean:
+4. **Restrict Groovy script bindings.**
+   - Remove `applicationContext` from the script bindings. Instead, expose a narrow, read-only `DocPipeScriptContext` object that provides only the specific services the script needs (e.g., `DPGroovyTool`, a read-only `ProjectDefinition`).
+   - If full bean access is truly required, gate it behind a configuration flag (`prjxp.docpipe.groovy.expose-context=true`) that is `false` by default.
 
-```java
-public void onUpdateRequired(String prompt, ContentCreationTask cct, Supplier<Boolean> updater) {
-    if (updateRequired(cct, prompt, outputFile)) {
-        boolean success = updater.get();
-        if (success) {
-            writeEntry(cct, toHash(prompt), outputFile);
-        }
-    }
-}
-```
+5. **Add a timeout to LLM calls.**
+   - Configure a per-call timeout (e.g., 120 seconds) in `KIChatProvider` or wrap the `chat()` call in a `CompletableFuture` with `orTimeout`.
+   - Add a simple retry (1–2 attempts with exponential backoff) for transient HTTP errors (429, 503).
 
-#### 1.2 Make content hash storage concurrency-safe
+6. **Fix `EnvResolver` null return.**
+   - Change the method to return `""` when the environment variable is not set, or throw a `ConfigException` with a clear message.
 
-At minimum, synchronize per hash file path:
+7. **Fix `URLResolver` deprecation and path handling.**
+   - Replace `new URL(fileParam)` with `URI.create(fileParam).toURL()` or, better, treat the parameter as a relative path resolved against `baseDir` (consistent with other resolvers).
 
-```java
-private final ConcurrentMap<Path, Object> locks = new ConcurrentHashMap<>();
-```
+### Priority 3 – Improve Architecture & Maintainability (Backlog)
 
-Use the lock for read-modify-write operations.
+8. **Decompose `ContentCreationService` into a pipeline of steps.**
+   - Define a `ContentCreationStep` interface with `void execute(ContentCreationContext ctx)`.
+   - Implement steps: `PromptResolveStep`, `HashCheckStep`, `LlmCallStep`, `FilterStep`, `PostScriptStep`, `WriteStep`.
+   - `ContentCreationService` becomes a thin orchestrator that iterates over an ordered `List<ContentCreationStep>`.
+   - This makes it trivial to insert new steps (validation, translation, approval) without modifying existing code.
 
-Better options:
+9. **Standardize on `java.nio.file.Path`.**
+   - Refactor `DotDPFilesService` to return `Path` instead of `File`.
+   - Update all callers to use `Path` APIs.
+   - This eliminates the `File` ↔ `Path` conversion friction and the NPE risk on `getParent()`.
 
-- Use one hash file per output.
-- Use atomic file replacement.
-- Use a small embedded database.
-- Use Java file locks if multiple DocPipe processes can run concurrently.
-- Write to a temporary file and atomically move it into place.
+10. **Migrate logging to SLF4J.**
+    - Replace `lombok.extern.java.Log` with `lombok.extern.slf4j.Slf4j`.
+    - Configure Logback (Spring Boot default) with a JSON appender for CI log aggregation.
+    - This aligns with the Spring Boot ecosystem and enables structured logging.
 
-#### 1.3 Add a timeout to CLI execution
+11. **Remove or repurpose `ContentCreationTask.createContent()`.**
+    - Either delete the stub method or rename it to `describe()` / `toString()` to avoid confusion.
 
-Make CLI mode use the same timeout concept as embedded mode.
+12. **Rename `ps` to `postScript` or `appendText`** in `DPContentCreation` and update all references.
 
-Recommended properties:
+13. **Translate German comments to English** in `ContentUpdateRequiredController` and any other files.
 
-```properties
-prjxp.docpipe.maxthreads=5
-prjxp.docpipe.timeout=PT1H
-prjxp.docpipe.task-timeout=PT10M
-```
+14. **Narrow `@ComponentScan`** to `de.spraener.prjxp.docpipe` and `de.spraener.prjxp.common` (or use explicit `@Import` for specific beans) to avoid pulling in unintended beans.
 
-Avoid indefinite build-pipeline hangs.
+15. **Remove or wire `DocPipeConfig`.**
+    - If it is not used, delete it. If it is intended for future use, add `@ConfigurationProperties` binding and document its purpose.
 
-#### 1.4 Collect and inspect submitted futures
+16. **Replace `ObjectMapper.convertValue` cloning with a `record` or manual copy.**
+    - Convert `DPContentCreation` to a Java `record` (if Java 16+) or add a proper `copy()` method. This avoids the overhead of Jackson serialization for a simple value object.
 
-Update runner execution to retain `Future<?>` objects and call `get()` after executor termination. This prevents silently lost executor task exceptions.
+17. **Add a `FileVisitOption`-based exclusion utility.**
+    - Create a `WalkExclusions` utility class that encapsulates the set of directories to skip (`.git`, `node_modules`, `target`, `build`, `.idea`, `dist`, `vendor`).
+    - Use it consistently in all `Files.walk()` calls.
 
-#### 1.5 Standardize failure reporting
+18. **Add integration tests for the full pipeline.**
+    - Test the `runForProject()` path with a fixture project containing multiple `.dp` directories, `forEach` patterns, and a mock LLM provider.
+    - Verify that the manifest is written, failures are recorded, and the method throws `DocPipeRunException` with the correct summary.
 
-Ensure all meaningful task failures are recorded consistently.
+19. **Add a `@ConfigurationProperties` class for DocPipe-specific settings.**
+    - Centralize `maxThreads`, `groovy.expose-context`, `walk.maxDepth`, `walk.exclusions`, `llm.timeout`, `llm.maxRetries` into a typed configuration class rather than scattered `@Value` annotations.
 
-Recommended approach:
-
-- Introduce a `RunMode` or `RunContext`.
-- Always collect a `DocPipeRunResult`.
-- CLI mode can still use `exitHandler.accept(1)` after evaluating the result.
-- Embedded mode throws `DocPipeRunException`.
-
-This removes the dependency on global log severity as the primary failure signal.
-
-### Priority 2: Introduce configuration validation
-
-#### 2.1 Add a configuration validator
-
-Create a `DPContentCreationValidator` or `DocPipeConfigValidator`.
-
-Validate:
-
-- `prompt` is present.
-- prompt template exists.
-- `outputFile` or generated output pattern is valid.
-- `stereotype` is present.
-- `filterList` entries exist.
-- `forEach` pattern is valid.
-- `outputDir` and `storePrompt` are safe.
-- no path escapes allowed base directory unless explicitly enabled.
-
-Validation should produce structured, actionable diagnostics and allow the runner to skip invalid tasks rather than fail the whole run.
-
-#### 2.2 Consider JSON Schema or versioned config
-
-Introduce a config shape like:
-
-```json
-{
-  "version": 1,
-  "documents": [
-    {
-      "outputFile": "README.md",
-      "stereotype": "documentation",
-      "prompt": "readme.hbs"
-    }
-  ]
-}
-```
-
-This supports evolution and better validation messages.
-
-#### 2.3 Model configuration (resolved)
-
-Model configuration lives exclusively in `application.yaml` (`prjxp.chatModels[]`), resolved by stereotype via `KIChatProvider`. The earlier `.dp/models.json` / `ModelConfigLoader` path has been removed, so there is a single authoritative source.
-
-### Priority 3: Harden Groovy integration while preserving flexibility
-
-Groovy is an intentional architectural decision and can remain. The recommendation is not to remove it, but to define and control its risk.
-
-#### 3.1 Define a trust model
-
-Document clearly:
-
-- Groovy scripts are trusted code.
-- They can access local files and application services.
-- They must not be used with untrusted repositories or untrusted pull requests unless sandboxing is enabled.
-
-#### 3.2 Reduce default exposed bindings
-
-Avoid exposing the full `ApplicationContext` by default.
-
-Instead expose a curated API, for example:
-
-```java
-b.put("tools", new DPGroovyTool());
-b.put("dir", baseDir);
-b.put("currentFile", currentFile);
-b.put("args", context);
-```
-
-If `ApplicationContext` is still needed, make it opt-in:
-
-```properties
-prjxp.docpipe.groovy.expose-application-context=false
-```
-
-#### 3.3 Add execution timeout for Groovy scripts
-
-Prevent infinite loops in scripts from hanging the pipeline.
-
-#### 3.4 Add script caching carefully
-
-If scripts are repeated, compiled script caching can improve performance. The cache should be keyed by script content and relevant engine configuration.
-
-### Priority 4: Improve file/path safety and consistency
-
-#### 4.1 Centralize path resolution
-
-Expand `DotDPFilesService` or create a `DocPipePathService` that handles:
-
-- job root
-- `.dp` directory
-- prompt templates
-- output files
-- stored prompts
-- manifest paths
-- path normalization
-- base-directory boundary checks
-
-#### 4.2 Fix `storePrompt` path resolution
-
-Store prompts relative to the job root or `.dp` directory, not the process working directory.
-
-Example:
-
-```java
-Path storePromptPath = ccTask.getDpJob()
-    .getRootDir()
-    .toPath()
-    .resolve(ccTask.getDpContentCreation().getStorePrompt())
-    .normalize();
-
-Files.createDirectories(storePromptPath.getParent());
-Files.writeString(storePromptPath, prompt, StandardCharsets.UTF_8);
-```
-
-#### 4.3 Add boundary checks for file inclusion helpers
-
-For `SourceDumpResolver`, `SourceSkeletonResolver`, `CurrentFileResolver`, and `URLResolver`, normalize paths and verify they remain within the intended project/job root unless explicitly configured otherwise.
-
-#### 4.4 Rename or clarify `URLResolver`
-
-If it only reads local files, rename it to `FileIncludeResolver` or update behavior/documentation to match actual URL semantics.
-
-### Priority 5: Refactor runner execution flow
-
-#### 5.1 Extract common task execution logic
-
-Create a reusable internal method:
-
-```java
-private DocPipeRunResult executeTasks(List<ContentCreationTask> tasks, boolean collectManifest)
-```
-
-Both `run()` and `runForProject()` should use it.
-
-#### 5.2 Use structured run options
-
-Introduce:
-
-```java
-public record DocPipeRunOptions(
-    boolean exitOnFailure,
-    boolean writeManifest,
-    Duration timeout,
-    boolean continueOnTaskFailure
-) {}
-```
-
-This makes behavior explicit and avoids mode-specific branching scattered across the runner.
-
-#### 5.3 Avoid direct `System.exit` coupling
-
-The existing `exitHandler` seam is good. Keep it, but prefer returning a status object from core logic:
-
-```java
-DocPipeRunSummary summary = runner.runInternal(...);
-```
-
-Then the CLI adapter decides whether to exit.
-
-### Priority 6: Improve observability
-
-#### 6.1 Use a single logging abstraction for failure decisions
-
-If `PxLogService` determines CLI failure, all serious errors should go through it. Direct `log.severe()` calls should either be mirrored to `PxLogService` or failure should be based on `DocPipeRunResult`.
-
-#### 6.2 Add structured task context to logs
-
-Include:
-
-- project name
-- job root
-- output file
-- prompt template
-- stereotype
-- current file for `forEach` tasks
-
-This will improve CI debugging.
-
-#### 6.3 Log unknown filters as warnings or errors
-
-Unknown filters should not be silently ignored.
-
-Example:
-
-```java
-logService.warning("Unknown content filter '%s' for output '%s'", filterName, outputFile);
-```
-
-Depending on strictness settings, this could become a task failure.
-
-### Priority 7: Improve performance safeguards
-
-#### 7.1 Add source dump limits
-
-Add configurable limits:
-
-```properties
-prjxp.docpipe.source-dump.max-files=200
-prjxp.docpipe.source-dump.max-bytes-per-file=200000
-prjxp.docpipe.source-dump.max-total-bytes=2000000
-```
-
-#### 7.2 Add ignore patterns
-
-Default ignores should include:
-
-- `.git`
-- `.gradle`
-- `target`
-- `build`
-- `node_modules`
-- `.idea`
-- `.prjxp-data`
-
-#### 7.3 Cache prompt templates
-
-Cache template file contents and/or compiled Handlebars templates per run, especially if `forEach` creates many tasks using the same prompt.
-
-#### 7.4 Avoid repeated full repository walks
-
-For `forEach` expansion and source scanning, consider a per-run file index.
-
-### Priority 8: Clean up technical debt
-
-#### 8.1 Remove or wire unused components
-
-Decide the fate of:
-
-- `DPJob#getModelForStereotype()`
-- `EnvResolver`
-- `DPGroovyTool`
-
-Unused components should either be integrated, tested, and documented, or removed.
-
-#### 8.2 Fix `.docpipe` vs `.dp` terminology
-
-Use `.dp` consistently in:
-
-- Javadocs
-- user documentation
-- config examples
-- method names if needed
-
-#### 8.3 Improve `EnvResolver`
-
-If kept, make it support:
-
-- system properties
-- environment variables
-- embedded placeholders
-- defaults
-- unresolved-variable reporting
-
-Example syntax:
-
-```text
-${OPENAI_API_KEY}
-${MODEL:gpt-4o-mini}
-```
-
-#### 8.4 Make `FileOutputSink` defensive
-
-Handle null parent paths:
-
-```java
-Path parent = path.getParent();
-if (parent != null) {
-    Files.createDirectories(parent);
-}
-```
-
-#### 8.5 Close `Files.walk()` streams in `DPGroovyTool`
-
-Use try-with-resources:
-
-```java
-try (Stream<Path> walk = Files.walk(rootDir)) {
-    walk.filter(...)
-        .forEach(...);
-}
-```
-
-#### 8.6 Trim filter names
-
-Support configuration like:
-
-```json
-"filterList": "noSurroundingCodeBlock, anotherFilter"
-```
-
-by trimming names:
-
-```java
-for (String filterName : filterList.split(",")) {
-    String normalized = filterName.trim();
-}
-```
-
-#### 8.7 Make context handling type-safe
-
-Introduce a prompt context object instead of raw `Map<String, String>` casts.
-
-Example:
-
-```java
-public record PromptContext(
-    Map<String, String> args,
-    String currentFile,
-    File jobRoot,
-    File dpDir
-) {}
-```
-
-## Recommended Target Architecture
-
-A slightly refined architecture would look like this:
-
-```text
-CLI Adapter
-  -> DocPipeApplicationService
-      -> JobDiscoveryService
-      -> ConfigurationValidationService
-      -> TaskExecutionService
-          -> PromptService
-              -> TemplateResolver plugins
-          -> UpdateStateService
-          -> LLMService
-          -> ContentPostProcessor
-              -> ContentFilter plugins
-          -> OutputService
-      -> ManifestService
-      -> RunResult / Diagnostics
-```
-
-Key changes:
-
-- `DocPipeRunner` becomes thinner.
-- Execution policy is centralized.
-- Hash/update state is concurrency-safe.
-- Configuration is validated before task execution.
-- Failures are recorded structurally.
-- Groovy remains available but runs under an explicit trust model.
-- File/path access goes through a central service.
-
-## Prioritized Roadmap
-
-### Immediate fixes
-
-1. Prevent hash updates on failed output writes.
-2. Synchronize or redesign hash-file writes.
-3. Add CLI timeout.
-4. Fix `storePrompt` path resolution.
-5. Standardize failure reporting using `DocPipeRunResult`.
-
-### Short-term improvements
-
-1. Add configuration validation.
-2. Add path normalization and boundary checks.
-3. Clarify model configuration loading.
-4. Collect executor futures and inspect task failures.
-5. Log unknown filters.
-
-### Medium-term improvements
-
-1. Refactor duplicated runner logic.
-2. Introduce run options and run summary objects.
-3. Harden Groovy bindings and add script timeout.
-4. Add source-dump limits and ignore patterns.
-5. Cache prompt templates or file indexes per run.
-
-### Long-term improvements
-
-1. Define a versioned configuration schema.
-2. Add comprehensive integration tests for malformed local configs.
-3. Add concurrency tests for parallel hash updates.
-4. Add security documentation for trusted/untrusted repository usage.
-5. Introduce richer diagnostics output for CI/CD systems.
+20. **Document the Groovy integration risk explicitly.**
+    - Add a `SECURITY.md` or a prominent Javadoc on `GroovyResolver` explaining the trust model: Groovy scripts are only safe if authored by trusted team members. In multi-tenant or open-source scenarios, this is a critical vulnerability.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 
