@@ -154,12 +154,20 @@ public class JavaCodeChunker implements PxChunker {
         return javaCodeGraphBuilder.weightedGraph().map(CodeGraph::nodeById).orElse(Map.of());
     }
 
-    /** Stamps the graph-node id and (when rated) the Leiden cluster/weight onto a chunk. */
+    /**
+     * Stamps the graph-node id plus the Leiden cluster/weight onto a chunk.
+     * <p>
+     * Only nodes that are part of the current run's weighted graph are stamped. The live-update
+     * path ({@code ChunkProcess.executeForFiles}) does not publish the pre-walk event, so no graph
+     * is built there; stamping a bare {@code graph_node} would leave the chunk without
+     * {@code leiden_cluster_id}/{@code leiden_weight} and break the metadata contract that every
+     * graph node carries its Leiden rating.
+     */
     private void applyGraphMetadata(PxChunk c, String graphNode, Map<String, GraphNode> graphNodes) {
         if (graphNode == null || graphNode.isBlank()) return;
-        c.getMetadata().put(GraphMetadata.GRAPH_NODE, graphNode);
         GraphNode node = graphNodes.get(graphNode);
         if (node == null) return;
+        c.getMetadata().put(GraphMetadata.GRAPH_NODE, graphNode);
         if (node.clusterId() != null) c.getMetadata().put(GraphMetadata.LEIDEN_CLUSTER_ID, node.clusterId());
         c.getMetadata().put(GraphMetadata.LEIDEN_WEIGHT, String.valueOf(node.weight()));
     }

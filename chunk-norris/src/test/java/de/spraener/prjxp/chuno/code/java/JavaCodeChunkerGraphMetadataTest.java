@@ -34,6 +34,9 @@ class JavaCodeChunkerGraphMetadataTest {
     JavaCodeChunker uut;
 
     @Autowired
+    JavaCodeGraphBuilder graphBuilder;
+
+    @Autowired
     ApplicationEventPublisher eventPublisher;
 
     @Test
@@ -82,5 +85,33 @@ class JavaCodeChunkerGraphMetadataTest {
                     assertThat(c.getMetadata().get(GraphMetadata.LEIDEN_CLUSTER_ID)).isNotNull();
                     assertThat(c.getMetadata().get(GraphMetadata.LEIDEN_WEIGHT)).isNotNull();
                 });
+    }
+
+    /**
+     * The hub's live-update path ({@code ChunkProcess.executeForFiles}) never publishes the
+     * pre-walk event, so no graph is built for that run. Chunks must then carry no graph metadata
+     * at all — a bare {@code graph_node} without {@code leiden_*} would be unusable for ranking
+     * and would break the metadata contract asserted above.
+     */
+    @Test
+    void livePathWithoutGraphBuildStampsNoGraphMetadata() throws Exception {
+        graphBuilder.beginRun();
+
+        Files.writeString(root.resolve("Live.java"), """
+                package demo;
+                public class Live {
+                    public String hello() { return "hi"; }
+                }
+                """);
+
+        List<PxChunk> chunks = uut.chunk(root.resolve("Live.java").toFile()).toList();
+
+        assertThat(chunks).isNotEmpty();
+        assertThat(chunks).anySatisfy(c ->
+                assertThat(c.getMetadata().get("java_code_section")).isEqualTo("classFrame"));
+        assertThat(chunks).allSatisfy(c -> assertThat(c.getMetadata())
+                .doesNotContainKeys(GraphMetadata.GRAPH_NODE,
+                        GraphMetadata.LEIDEN_CLUSTER_ID,
+                        GraphMetadata.LEIDEN_WEIGHT));
     }
 }
