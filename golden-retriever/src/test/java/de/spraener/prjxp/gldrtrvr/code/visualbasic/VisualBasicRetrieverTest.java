@@ -1,5 +1,6 @@
 package de.spraener.prjxp.gldrtrvr.code.visualbasic;
 
+import de.spraener.prjxp.common.config.GraphRerankConfig;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
@@ -38,7 +39,7 @@ class VisualBasicRetrieverTest {
             public double rank(PxChunk chunk) {
                 return 1.0;
             }
-        })));
+        }), new GraphRerankConfig()));
     }
 
     @Test

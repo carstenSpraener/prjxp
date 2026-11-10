@@ -248,6 +248,7 @@ public class HubProjectRegistry implements ProjectRegistry {
     }
 
     /** The parsed definition of a known project, or null for unknown names. */
+    @Override
     public ProjectDefinition definitionOf(String name) {
         ProjectEntry entry = projects.get(name);
         return entry == null ? null : entry.getDefinition();

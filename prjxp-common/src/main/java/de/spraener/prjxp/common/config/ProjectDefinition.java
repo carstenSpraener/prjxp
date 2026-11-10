@@ -26,6 +26,8 @@ public class ProjectDefinition {
     private String name;
     private String rootDir;
     private String jsonlFile;
+    /** Optional path to the code knowledge graph artifact. When unset, derived from the JSONL file ({@code px-chunks.jsonl} → {@code px-chunks.graph.json}). */
+    private String graphFile;
     private String chunoWhiteList = "java,ts";
     /** Comma-separated directory names never indexed outside a source directory (any path segment, case-insensitive). */
     private String excludeDirNames = DEFAULT_EXCLUDE_DIR_NAMES;
@@ -79,6 +81,34 @@ public class ProjectDefinition {
         }
         String root = (rootDir == null || rootDir.isBlank()) ? "." : rootDir;
         return Paths.get(root).resolve(jsonlFile).toString();
+    }
+
+    /**
+     * graphFile resolved against rootDir (absolute paths pass through). When {@code graphFile}
+     * is unset, it is derived from the JSONL file: {@code px-chunks.jsonl} → {@code px-chunks.graph.json}.
+     * Returns null when neither is set.
+     */
+    public String resolvedGraphFile() {
+        String raw = (graphFile != null && !graphFile.isBlank()) ? graphFile : deriveGraphFileFromJsonl();
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        Path p = Paths.get(raw);
+        if (p.isAbsolute() || isAbsolutePathPortable(raw)) {
+            return raw;
+        }
+        String root = (rootDir == null || rootDir.isBlank()) ? "." : rootDir;
+        return Paths.get(root).resolve(raw).toString();
+    }
+
+    /** Derives the graph file path from the configured JSONL file (same base, {@code .graph.json} extension). */
+    private String deriveGraphFileFromJsonl() {
+        if (jsonlFile == null || jsonlFile.isBlank()) {
+            return null;
+        }
+        return jsonlFile.endsWith(".jsonl")
+                ? jsonlFile.substring(0, jsonlFile.length() - ".jsonl".length()) + ".graph.json"
+                : jsonlFile + ".graph.json";
     }
 
     private boolean isAbsolutePathPortable(String value) {

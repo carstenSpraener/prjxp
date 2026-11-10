@@ -7,6 +7,13 @@ import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.ProjectDefinition;
+import de.spraener.prjxp.common.graph.CodeGraphIo;
+import de.spraener.prjxp.common.graph.GraphMetadata;
+import de.spraener.prjxp.common.language.CodeGraphBuilder;
+import de.spraener.prjxp.common.language.LanguagePack;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
+import de.spraener.prjxp.common.model.CodeGraph;
+import de.spraener.prjxp.common.model.GraphNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
@@ -21,6 +28,8 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 @Service
@@ -35,6 +44,7 @@ public class ChunkProcess {
     private final JsonMapper jsonMapper = new JsonMapper();
     private final PrjXPConfig cfg;
     private final TransferPasswordResolver transferPasswordResolver;
+    private final LanguagePackRegistry languagePackRegistry;
 
     public void execute() throws Exception {
         final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException(
@@ -49,7 +59,7 @@ public class ChunkProcess {
         final TransferSession session = transferPasswordResolver.prepare(
                 cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
         final PrintStream out = createWriter(pd, session);
-        eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg));
+        eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg, pd));
 
         Files.walk(Path.of(pd.getRootDir()))
                 .filter(Files::isRegularFile)
@@ -58,6 +68,7 @@ public class ChunkProcess {
                 .forEach(path -> handlePath(out, pd, path));
         ;
         doPostWalk(out);
+        writeGraphArtifact(pd, session);
         if (out != System.out) {
             out.close();
         }
@@ -183,15 +194,69 @@ public class ChunkProcess {
     }
 
     protected void doPostWalk(PrintStream out) {
+        Map<String, GraphNode> graphNodes = weightedGraphNodes();
         factory.listPostWalkChunker()
                 .parallel()
                 .flatMap(pwChunk -> pwChunk.chunk(null))
-                .map(chunk -> toJSONL(chunk))
+                .map(chunk -> {
+                    enrichWithLeiden(chunk, graphNodes);
+                    return toJSONL(chunk);
+                })
                 .forEach(
                         str -> out.println(str)
                 )
         ;
         out.flush();
+    }
+
+    /** The first language pack that produced a weighted graph this run, or null. */
+    private CodeGraph weightedGraph() {
+        if (languagePackRegistry == null) return null;
+        for (LanguagePack pack : languagePackRegistry.all()) {
+            if (pack == null) continue;
+            Optional<CodeGraphBuilder> builder = pack.codeGraph();
+            if (builder != null && builder.isPresent()) {
+                Optional<CodeGraph> graph = builder.get().weightedGraph();
+                if (graph != null && graph.isPresent()) return graph.get();
+            }
+        }
+        return null;
+    }
+
+    private Map<String, GraphNode> weightedGraphNodes() {
+        CodeGraph graph = weightedGraph();
+        return graph == null ? Map.of() : graph.nodeById();
+    }
+
+    /** Stamps Leiden cluster/weight onto a post-walk chunk from its parent type node (method nodes are skipped). */
+    private void enrichWithLeiden(PxChunk chunk, Map<String, GraphNode> graphNodes) {
+        if (chunk == null || chunk.getParent() == null || graphNodes.isEmpty()) return;
+        GraphNode node = graphNodes.get(chunk.getParent());
+        if (node == null || node.isMethod()) return;
+        if (node.clusterId() != null) chunk.getMetadata().put(GraphMetadata.LEIDEN_CLUSTER_ID, node.clusterId());
+        chunk.getMetadata().put(GraphMetadata.LEIDEN_WEIGHT, String.valueOf(node.weight()));
+    }
+
+    /** Writes the weighted code graph to the project's graph artifact (optionally encrypted). */
+    private void writeGraphArtifact(ProjectDefinition pd, TransferSession session) {
+        CodeGraph graph = weightedGraph();
+        if (graph == null || graph.nodes().isEmpty()) return;
+        String targetPath = pd.resolvedGraphFile();
+        if (targetPath == null || targetPath.isBlank()) return;
+        try {
+            Path target = Path.of(targetPath);
+            Path parent = target.toAbsolutePath().getParent();
+            if (parent != null) Files.createDirectories(parent);
+            try (OutputStream raw = new FileOutputStream(targetPath)) {
+                OutputStream out = session.encrypt()
+                        ? TransferCrypto.openEncryptedOutputStream(raw, session.password())
+                        : raw;
+                new CodeGraphIo().write(out, graph);
+                if (out != raw) out.close();   // emit cipher final block + GCM auth tag
+            }
+        } catch (IOException | RuntimeException e) {
+            log.warning("Could not write graph artifact " + targetPath + ": " + e.getMessage());
+        }
     }
 
     public String toJSONL(PxChunk chunk) {

@@ -4,6 +4,7 @@ import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
@@ -47,7 +48,8 @@ class ChunkProcessExecuteForFilesTest {
         vetoRegistry = mock(VetoRegistry.class);
         cfg = new PrjXPConfig();
         uut = new ChunkProcess(mock(PxLogService.class), factory, mock(ApplicationEventPublisher.class),
-                vetoRegistry, cfg, mock(TransferPasswordResolver.class));
+                vetoRegistry, cfg, mock(TransferPasswordResolver.class),
+                new LanguagePackRegistry(List.of(), List.of()));
         pd = new ProjectDefinition();
         pd.setName("p");
         pd.setRootDir(root.toString());

@@ -2,6 +2,7 @@ package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.capability.IdentifierRules;
 import de.spraener.prjxp.common.capability.LanguageCapability;
+import de.spraener.prjxp.common.config.GraphRerankConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -11,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
@@ -19,6 +21,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.data.Offset.offset;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -43,6 +46,9 @@ class VectorSearchServiceTest {
 
     @Mock
     SearchCapabilitiesRegistry registry;
+
+    @Spy
+    GraphRerankConfig graphRerankConfig = new GraphRerankConfig();
 
     @InjectMocks
     VectorSearchService service;
@@ -174,5 +180,79 @@ class VectorSearchServiceTest {
         List<SearchHit> hits = service.search("q", "myproj", null, 10);
 
         assertThat(hits).isEmpty();
+    }
+
+    @Test
+    void centralChunkRanksHigherThanPeripheralWithSameSimilarity() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        PxChunk central = PxChunk.create(c -> {
+            c.setId("central");
+            c.setContent("central content");
+            c.getMetadata().put("leiden_weight", "1.0");
+        });
+        PxChunk peripheral = PxChunk.create(c -> {
+            c.setId("peripheral");
+            c.setContent("peripheral content");
+            c.getMetadata().put("leiden_weight", "0.0");
+        });
+
+        when(dao.searchVector(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(central, 0.9), new ScoredChunk(peripheral, 0.9)));
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 10);
+
+        assertThat(hits).hasSize(2);
+        assertThat(scoreOf(hits, "central")).isCloseTo(0.9, offset(1e-9));
+        assertThat(scoreOf(hits, "peripheral")).isCloseTo(0.72, offset(1e-9));   // 0.9 * floor(0.8)
+    }
+
+    @Test
+    void missingWeightKeepsRawSimilarity() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("chunk-1");
+            c.setContent("x".repeat(300));
+        });
+
+        when(dao.searchVector(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 0.87)));
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 10);
+
+        assertThat(hits).hasSize(1);
+        assertThat(hits.get(0).score()).isEqualTo(0.87);   // weight 1.0 = neutral factor
+    }
+
+    @Test
+    void weightRerankAlsoAppliesToChunkWithLanguageSection() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("chunk-1");
+            c.setContent("x".repeat(300));
+            c.getMetadata().put("java_code_section", "method");
+            c.getMetadata().put("leiden_weight", "0.5");
+        });
+
+        when(dao.searchVector(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 0.9)));
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 10);
+
+        assertThat(hits).hasSize(1);
+        assertThat(hits.get(0).score()).isCloseTo(0.81, offset(1e-9));   // 0.9 * (0.8 + 0.2 * 0.5)
+    }
+
+    private static double scoreOf(List<SearchHit> hits, String chunkId) {
+        return hits.stream()
+                .filter(h -> chunkId.equals(h.chunkId()))
+                .findFirst()
+                .orElseThrow()
+                .score();
     }
 }

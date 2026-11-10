@@ -5,6 +5,8 @@ import de.spraener.prjxp.common.model.FileView;import de.spraener.prjxp.common.m
 import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
+import de.spraener.prjxp.mcp.GraphNeighbor;
+import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
 import de.spraener.prjxp.mcp.ProjectSummary;
 import dev.langchain4j.agent.tool.ToolSpecification;
@@ -22,7 +24,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Registers the six prjxp tools in the central {@link ToolRegistry} so that they are
+ * Registers the eight prjxp tools in the central {@link ToolRegistry} so that they are
  * available for native function calling — executed in-process as plain Java calls on
  * {@link PrjxpMcpTool}, without a JSON-RPC round trip.
  * <p>
@@ -51,6 +53,8 @@ public class PrjxpToolRegistration {
         register(readBySignatureTool());
         register(listProjectsTool());
         register(listFilesTool());
+        register(graphFileTool());
+        register(graphNodeTool());
     }
 
     private void register(ToolDefinition tool) {
@@ -236,6 +240,68 @@ public class PrjxpToolRegistration {
                 }, spec);
     }
 
+    private ToolDefinition graphFileTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("graphFile")
+                .description("""
+                        STRUCTURE TOOL: Returns the typed code-graph neighbours of one file — imported/extended/implemented/field/param/return/call edges with file paths.
+                        Requires an indexed project with a graph artifact. Use graphNode for a specific symbol.
+                        """)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("file",
+                                "File path — absolute, project-root-relative, or just the file name (lenient: exact -> suffix -> basename).")
+                        .addStringProperty("project", "Optional project name. Defaults to the active project.")
+                        .addIntegerProperty("maxEdges", "Maximum neighbours per direction (default 30, max 100).")
+                        .addBooleanProperty("includeExternal", "Include edges to nodes outside the project (default false).")
+                        .required("file")
+                        .build())
+                .build();
+
+        return new ToolDefinition("graphFile", spec.description(),
+                Map.of("file", "File path", "project", "Optional project name",
+                        "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges"),
+                params -> {
+                    String file = string(params, "file");
+                    if (file == null) {
+                        return "ERROR: 'file' parameter is required for graphFile.";
+                    }
+                    GraphView view = mcpTool.graphFile(file, string(params, "project"),
+                            integer(params, "maxEdges"), bool(params, "includeExternal"));
+                    return formatGraph(view);
+                }, spec);
+    }
+
+    private ToolDefinition graphNodeTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("graphNode")
+                .description("""
+                        STRUCTURE TOOL: Returns the typed code-graph neighbours of one node id (`fqn` or `fqn#name(paramFQNs)`).
+                        Lenient resolution: exact -> suffix. Ambiguous symbols return a candidate list. Use graphFile to start from a file.
+                        """)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("symbol",
+                                "Node id — class FQN (`com.example.Foo`) or method id (`com.example.Foo#bar(int)`); bare names are matched as a suffix.")
+                        .addStringProperty("project", "Optional project name. Defaults to the active project.")
+                        .addIntegerProperty("maxEdges", "Maximum neighbours per direction (default 30, max 100).")
+                        .addBooleanProperty("includeExternal", "Include edges to nodes outside the project (default false).")
+                        .required("symbol")
+                        .build())
+                .build();
+
+        return new ToolDefinition("graphNode", spec.description(),
+                Map.of("symbol", "Node id (FQN or method id)", "project", "Optional project name",
+                        "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges"),
+                params -> {
+                    String symbol = string(params, "symbol");
+                    if (symbol == null) {
+                        return "ERROR: 'symbol' parameter is required for graphNode.";
+                    }
+                    GraphView view = mcpTool.graphNode(symbol, string(params, "project"),
+                            integer(params, "maxEdges"), bool(params, "includeExternal"));
+                    return formatGraph(view);
+                }, spec);
+    }
+
     // ==================== Result formatting ====================
 
     private String formatFileList(FileListResult result) {
@@ -336,6 +402,50 @@ public class PrjxpToolRegistration {
             }
         }
         return truncate(sb.toString(), READER_RESULT_CAP);
+    }
+
+    private String formatGraph(GraphView view) {
+        if (view == null) {
+            return "No graph view returned.";
+        }
+        if (view.error() != null) {
+            return "ERROR: " + view.error();
+        }
+        if (view.candidates() != null && !view.candidates().isEmpty()) {
+            StringBuilder sb = new StringBuilder("Ambiguous. Candidates:\n");
+            for (String cand : view.candidates()) {
+                sb.append("  - ").append(cand).append("\n");
+            }
+            return sb.toString();
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Project: ").append(view.project()).append("\n");
+        if (view.file() != null) {
+            sb.append("File: ").append(view.file()).append("\n");
+        } else {
+            sb.append("Node: ").append(view.nodeId()).append("\n");
+        }
+        sb.append("  ").append(view.nodeId());
+        if (view.clusterId() != null || view.weight() != null) {
+            sb.append("   [cluster:").append(view.clusterId() == null ? "?" : view.clusterId())
+                    .append(", weight:").append(view.weight() == null ? "?" : String.format(java.util.Locale.ROOT, "%.2f", view.weight()))
+                    .append("]");
+        }
+        sb.append("\n");
+        for (GraphNeighbor n : view.outgoing()) {
+            sb.append("    ").append(n.type()).append(" -> ").append(n.neighborId())
+                    .append(n.neighborFile() != null ? "  [" + n.neighborFile() + "]" : "")
+                    .append("\n");
+        }
+        for (GraphNeighbor n : view.incoming()) {
+            sb.append("    <- ").append(n.type()).append("  ").append(n.neighborId())
+                    .append(n.neighborFile() != null ? "  [" + n.neighborFile() + "]" : "")
+                    .append("\n");
+        }
+        if (view.outgoing().isEmpty() && view.incoming().isEmpty()) {
+            sb.append("    (no edges)\n");
+        }
+        return truncate(sb.toString(), SEARCH_RESULT_CAP);
     }
 
     // ==================== Argument coercion ====================

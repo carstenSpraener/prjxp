@@ -116,4 +116,53 @@ class ProjectDefinitionTest {
         assertThat(Path.of(pd.resolvedJsonlFile()).normalize())
                 .isEqualTo(Path.of(".").resolve("px-chunks.jsonl").normalize());
     }
+
+    @Test
+    void resolvedGraphFile_explicitResolvesAgainstRootDir() {
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setRootDir("/x/proj");
+        pd.setGraphFile("my-graph.json");
+
+        assertThat(Path.of(pd.resolvedGraphFile()).normalize())
+                .isEqualTo(Path.of("/x/proj").resolve("my-graph.json").normalize());
+    }
+
+    @Test
+    void resolvedGraphFile_derivedFromJsonlWhenUnset() {
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setRootDir("/x/proj");
+        pd.setJsonlFile("px-chunks.jsonl");
+
+        assertThat(Path.of(pd.resolvedGraphFile()).normalize())
+                .isEqualTo(Path.of("/x/proj").resolve("px-chunks.graph.json").normalize());
+    }
+
+    @Test
+    void resolvedGraphFile_explicitWinsOverDerived() {
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setRootDir("/x/proj");
+        pd.setJsonlFile("px-chunks.jsonl");
+        pd.setGraphFile("custom.json");
+
+        assertThat(Path.of(pd.resolvedGraphFile()).normalize())
+                .isEqualTo(Path.of("/x/proj").resolve("custom.json").normalize());
+    }
+
+    @Test
+    void resolvedGraphFile_nullWhenNoJsonlAndNoGraphFile() {
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setRootDir("/x/proj");
+
+        assertThat(pd.resolvedGraphFile()).isNull();
+    }
+
+    @Test
+    void resolvedGraphFile_absolutePassesThroughUnchanged() {
+        ProjectDefinition pd = new ProjectDefinition();
+        pd.setRootDir("/x/proj");
+        pd.setGraphFile("/abs/graph.json");
+
+        assertThat(Path.of(pd.resolvedGraphFile()).normalize())
+                .isEqualTo(Path.of("/abs/graph.json").normalize());
+    }
 }

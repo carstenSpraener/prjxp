@@ -14,6 +14,9 @@ dependencies {
     // Groovy for dynamic tool scripting (Phase 01: MCP Tool Support)
     implementation libs.groovy
 
+    // Leiden community detection for graph clustering (Phase 02: Graph-Bau)
+    implementation libs.networkanalysis
+
     testImplementation libs.bundles.test.bundle
     testFixturesImplementation libs.bundles.test.bundle
 }

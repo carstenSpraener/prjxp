@@ -4,6 +4,14 @@ import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
+import de.spraener.prjxp.common.graph.CodeGraphIo;
+import de.spraener.prjxp.common.language.CodeGraphBuilder;
+import de.spraener.prjxp.common.language.LanguagePack;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
+import de.spraener.prjxp.common.model.CodeGraph;
+import de.spraener.prjxp.common.model.EdgeType;
+import de.spraener.prjxp.common.model.GraphEdge;
+import de.spraener.prjxp.common.model.GraphNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
@@ -27,7 +35,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -72,18 +82,46 @@ class ChunkProcessTest {
     }
 
     private ChunkProcess uut(PrjXPConfig cfg, String passwordValue) {
-        return uut(cfg, passwordValue, stubFactory());
+        return uut(cfg, passwordValue, stubFactory(), emptyRegistry());
     }
 
     private ChunkProcess uut(PrjXPConfig cfg, String passwordValue, ChunkerFactory factory) {
+        return uut(cfg, passwordValue, factory, emptyRegistry());
+    }
+
+    private ChunkProcess uut(PrjXPConfig cfg, String passwordValue, ChunkerFactory factory, LanguagePackRegistry registry) {
         return new ChunkProcess(
                 Mockito.mock(PxLogService.class),
                 factory,
                 Mockito.mock(ApplicationEventPublisher.class),
                 noVeto(),
                 cfg,
-                resolverWith(cfg.getTransfer().getPasswordEnv(), passwordValue)
+                resolverWith(cfg.getTransfer().getPasswordEnv(), passwordValue),
+                registry
         );
+    }
+
+    private LanguagePackRegistry emptyRegistry() {
+        return new LanguagePackRegistry(List.of(), List.of());
+    }
+
+    /** A registry whose single pack exposes the given weighted graph. */
+    private LanguagePackRegistry registryWith(CodeGraph graph) {
+        LanguagePack fakePack = new LanguagePack() {
+            @Override public String language() { return "java"; }
+            @Override public String mimeType() { return "text/x-java-code"; }
+            @Override public Optional<CodeGraphBuilder> codeGraph() {
+                CodeGraphBuilder builder = new CodeGraphBuilder() {
+                    @Override public boolean matches(File f) { return false; }
+                    @Override public void beginRun() {}
+                    @Override public void process(File f) {}
+                    @Override public CodeGraph build() { return graph; }
+                    @Override public Optional<CodeGraph> weightedGraph() { return Optional.of(graph); }
+                };
+                return Optional.of(builder);
+            }
+        };
+        return new LanguagePackRegistry(List.of(fakePack), List.of());
     }
 
     private String decryptedOutput(PrjXPConfig cfg, char[] password) throws Exception {
@@ -180,6 +218,96 @@ class ChunkProcessTest {
         // regular file (ENOTDIR) and would falsely report "exists".
         assertThat(Files.exists(blocker.resolve("out.jsonl"))).isFalse();
         assertThat(capturedOut.toString()).contains("\"content\":\"hello world content\"");   // stdout fallback preserved
+    }
+
+    // ------------------------------------------------------------------ graph artifact (Phase 02)
+
+    private CodeGraph sampleGraph() {
+        return new CodeGraph(
+                List.of(GraphNode.type("demo.Sample", "src/Sample.java", "java")),
+                List.of(new GraphEdge("demo.Sample", "demo.Base", EdgeType.EXTENDS, true))
+        );
+    }
+
+    @Test
+    void execute_withoutPassword_writesPlainGraphArtifact() throws Exception {
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ");
+
+        uut(cfg, null, stubFactory(), registryWith(sampleGraph())).execute();
+
+        Path graphFile = tempDir.resolve("out.graph.json");
+        assertThat(graphFile).exists();
+        CodeGraph read = new CodeGraphIo().read(graphFile);
+        assertThat(read.nodes()).extracting(GraphNode::id).contains("demo.Sample");
+        assertThat(read.edges()).extracting(GraphEdge::target).contains("demo.Base");
+    }
+
+    @Test
+    void execute_withPassword_writesEncryptedGraphArtifact() throws Exception {
+        PrjXPConfig cfg = configWith("PRJXP_TEST_PASSWORD_XYZ");
+
+        uut(cfg, "env-pw", stubFactory(), registryWith(sampleGraph())).execute();
+
+        byte[] bytes = Files.readAllBytes(tempDir.resolve("out.graph.json"));
+        assertThat(new String(bytes, 0, 8, StandardCharsets.US_ASCII)).isEqualTo("PRJXPENC");
+        try (InputStream in = TransferCrypto.openAuto(new ByteArrayInputStream(bytes), "env-pw".toCharArray())) {
+            CodeGraph read = new CodeGraphIo().read(in);
+            assertThat(read.nodes()).extracting(GraphNode::id).contains("demo.Sample");
+            assertThat(read.edges()).extracting(GraphEdge::target).contains("demo.Base");
+        }
+    }
+
+    @Test
+    void postWalkChunks_getLeidenMetadataFromParentTypeNode() throws Exception {
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ");
+        CodeGraph graph = new CodeGraph(
+                List.of(GraphNode.type("demo.Sample", "src/Sample.java", "java").withRating("c0", 0.5)),
+                List.of()
+        );
+        ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
+        Mockito.when(factory.createChunker(Mockito.any(File.class))).thenReturn(Stream.empty());
+        Mockito.when(factory.listPostWalkChunker()).thenAnswer(inv -> Stream.of(postWalkChunker("demo.Sample")));
+        uut(cfg, null, factory, registryWith(graph)).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        assertThat(content).contains("\"leiden_cluster_id\":\"c0\"");
+        assertThat(content).contains("\"leiden_weight\":\"0.5\"");
+    }
+
+    @Test
+    void postWalkMethodNodesDoNotGetLeidenMetadata() throws Exception {
+        PrjXPConfig cfg = configWith("PRJXP_TEST_NO_PASSWORD_XYZ");
+        CodeGraph graph = new CodeGraph(
+                List.of(GraphNode.method("demo.Sample#add(int,int)", "src/Sample.java", "java").withRating("c0", 0.5)),
+                List.of()
+        );
+        ChunkerFactory factory = Mockito.mock(ChunkerFactory.class);
+        Mockito.when(factory.createChunker(Mockito.any(File.class))).thenReturn(Stream.empty());
+        Mockito.when(factory.listPostWalkChunker()).thenAnswer(inv -> Stream.of(postWalkChunker("demo.Sample#add(int,int)")));
+        uut(cfg, null, factory, registryWith(graph)).execute();
+
+        String content = Files.readString(tempDir.resolve("out.jsonl"));
+        assertThat(content).doesNotContain("leiden_cluster_id");
+        assertThat(content).doesNotContain("leiden_weight");
+    }
+
+    private PxChunker postWalkChunker(String parent) {
+        return new PxChunker() {
+            @Override
+            public Stream<PxChunk> chunk(File f) {
+                return Stream.of(PxChunk.create(c -> {
+                    c.setId(parent + ".dependencies");
+                    c.setParent(parent);
+                    c.setMimeType("text/plain");
+                    c.setContent("deps");
+                }));
+            }
+
+            @Override
+            public boolean matches(File f) {
+                return false;
+            }
+        };
     }
 
     private ChunkerFactory stubFactory() {

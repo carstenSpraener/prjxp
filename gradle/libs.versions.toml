@@ -26,6 +26,7 @@ lombok = "1.18.34"
 groovy = "5.0.5"
 opennlp = "2.5.12"   # pinned: langchain4j pulls 2.5.4 transitively (CVE-2026-42027/-40682/-42440)
 handlebars = "4.5.1"
+cwts = "1.3.0"       # CWTS Leiden community detection (MIT)
 
 lucene = "9.12.0"
 
@@ -86,6 +87,7 @@ commons-io = { group = "commons-io", name = "commons-io", version.ref = "commons
 commons-compress = { module = "org.apache.commons:commons-compress", version.ref = "commonsCompress" }
 jgrapht = { group = "org.jgrapht", name="jgrapht-core", version="1.5.3"}
 lucene-core = { group = "org.apache.lucene", name = "lucene-core", version.ref = "lucene" }
+networkanalysis = { group = "nl.cwts", name = "networkanalysis", version.ref = "cwts" }
 handlebars = { group = "com.github.jknack", name = "handlebars", version.ref = "handlebars" }
 
 # Document conversion libraries

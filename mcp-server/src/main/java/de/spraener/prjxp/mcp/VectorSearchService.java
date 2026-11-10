@@ -1,5 +1,7 @@
 package de.spraener.prjxp.mcp;
 
+import de.spraener.prjxp.common.config.GraphRerankConfig;
+import de.spraener.prjxp.common.graph.GraphRerank;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -22,6 +24,7 @@ public class VectorSearchService {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final SearchCapabilitiesRegistry registry;
     private final ProjectRegistry projectRegistry;
+    private final GraphRerankConfig graphRerankConfig;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
@@ -47,7 +50,9 @@ public class VectorSearchService {
         }
 
         return results.stream()
-                .map(sc -> SearchHit.from(sc.chunk(), sc.score(), SearchHit.preview(sc.chunk().getContent()), SOURCE))
+                .map(sc -> SearchHit.from(sc.chunk(),
+                        GraphRerank.rerank(sc.score(), sc.chunk(), graphRerankConfig.getFloor()),
+                        SearchHit.preview(sc.chunk().getContent()), SOURCE))
                 .toList();
     }
 }

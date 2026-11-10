@@ -5,7 +5,9 @@ import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import de.spraener.prjxp.chuno.spring.SpringPreWalkEvent;
 import de.spraener.prjxp.common.config.PrjXPConfig;
+import lombok.extern.java.Log;
 import org.springframework.context.event.EventListener;
+import org.springframework.core.annotation.Order;
 import org.springframework.stereotype.Component;
 
 import java.io.File;
@@ -15,18 +17,21 @@ import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
+@Log
 public class JavaFQNamesMapper {
     private Map<String, Set<String>> name2FQNamesMap = new ConcurrentHashMap<>();
 
+    @Order(10)
     @EventListener(SpringPreWalkEvent.class)
     public void fillFQNamesMap(SpringPreWalkEvent<PrjXPConfig> event) {
+        name2FQNamesMap.clear();
         try {
-            Files.walk(Path.of(event.config().getActiveProject().get().getRootDir()))
+            Files.walk(Path.of(event.project().getRootDir()))
                     .filter(Files::isRegularFile)
                     .filter(path -> path.toString().endsWith(".java"))
                     .forEach(path -> handleFile(path.toFile()));
         } catch (Exception e) {
-            // FIXME: handle exceptions!!!
+            log.warning("Could not fill FQNames map: " + e.getMessage());
         }
     }
 

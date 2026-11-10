@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp.tools;
 
+import de.spraener.prjxp.common.model.EdgeType;
 import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.common.model.MethodView;
@@ -8,6 +9,8 @@ import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
+import de.spraener.prjxp.mcp.GraphNeighbor;
+import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
 import de.spraener.prjxp.mcp.ProjectSummary;
 import dev.langchain4j.agent.tool.ToolSpecification;
@@ -25,6 +28,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -50,7 +54,8 @@ class PrjxpToolRegistrationTest {
     @Test
     void registersAllTools() {
         assertThat(registry.getTools()).extracting(ToolDefinition::getName)
-                .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles");
+                .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles",
+                        "graphFile", "graphNode");
     }
 
     @Test
@@ -58,7 +63,7 @@ class PrjxpToolRegistrationTest {
         // The second run hits name collisions — they must be logged, not thrown
         registration.registerTools();
 
-        assertThat(registry.getTools()).hasSize(6);
+        assertThat(registry.getTools()).hasSize(8);
     }
 
     @Test
@@ -268,6 +273,74 @@ class PrjxpToolRegistrationTest {
         when(mcpTool.listFiles(any(), any(), any())).thenReturn(new FileListResult(List.of(), false));
 
         assertThat(execute("listFiles", Map.of())).contains("No files found");
+    }
+
+    // ==================== graphFile / graphNode ====================
+
+    @Test
+    void graphFileToolFormatsView() {
+        GraphView view = new GraphView("demo", "src/A.java", "demo.A", "c0", 0.9,
+                List.of(new GraphNeighbor(EdgeType.IMPORT, "demo.B", "src/B.java", false)),
+                List.of(new GraphNeighbor(EdgeType.EXTENDS, "demo.C", "src/C.java", false)),
+                List.of(), null);
+        when(mcpTool.graphFile(eq("src/A.java"), any(), any(), any())).thenReturn(view);
+
+        String result = execute("graphFile", Map.of("file", "src/A.java"));
+
+        assertThat(result).contains("File: src/A.java");
+        assertThat(result).contains("demo.A");
+        assertThat(result).contains("cluster:c0");
+        assertThat(result).contains("weight:0.90");
+        assertThat(result).contains("IMPORT -> demo.B");
+        assertThat(result).contains("[src/B.java]");
+        assertThat(result).contains("<- EXTENDS  demo.C");
+    }
+
+    @Test
+    void graphFileToolRendersError() {
+        when(mcpTool.graphFile(any(), any(), any(), any()))
+                .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
+
+        assertThat(execute("graphFile", Map.of("file", "src/A.java")))
+                .isEqualTo("ERROR: Graph nicht verfügbar, bitte reindexieren");
+    }
+
+    @Test
+    void graphFileToolRendersCandidates() {
+        when(mcpTool.graphFile(any(), any(), any(), any()))
+                .thenReturn(GraphView.ambiguous("demo", "A.java", List.of("src/x/A.java", "src/y/A.java")));
+
+        String result = execute("graphFile", Map.of("file", "A.java"));
+
+        assertThat(result).contains("Ambiguous");
+        assertThat(result).contains("src/x/A.java");
+        assertThat(result).contains("src/y/A.java");
+    }
+
+    @Test
+    void graphFileToolRendersNullView() {
+        when(mcpTool.graphFile(any(), any(), any(), any())).thenReturn(null);
+
+        assertThat(execute("graphFile", Map.of("file", "src/A.java"))).isEqualTo("No graph view returned.");
+    }
+
+    @Test
+    void graphNodeToolRendersNodeHeaderWhenNoFile() {
+        GraphView view = new GraphView("demo", null, "demo.A", null, null,
+                List.of(), List.of(), List.of(), null);
+        when(mcpTool.graphNode(any(), any(), any(), any())).thenReturn(view);
+
+        String result = execute("graphNode", Map.of("symbol", "demo.A"));
+
+        assertThat(result).contains("Node: demo.A");
+        assertThat(result).contains("(no edges)");
+    }
+
+    @Test
+    void graphNodeToolRequiresSymbol() {
+        assertThat(execute("graphNode", Map.of()))
+                .isEqualTo("ERROR: 'symbol' parameter is required for graphNode.");
+        verifyNoInteractions(mcpTool);
     }
 
     // ==================== argument coercion & truncation ====================

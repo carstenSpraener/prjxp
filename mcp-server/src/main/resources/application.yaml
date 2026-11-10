@@ -57,6 +57,19 @@ prjxp:
       # Default wäre 60s -> Timeout. Über PRJXP_CHAT_TIMEOUT_SECS anpassbar.
       timeout-secs: ${PRJXP_CHAT_TIMEOUT_SECS:300}
 
+  graph:
+    rerank:
+      # Phase-05 E2E calibration on the prjxp corpus: weights are degree-centrality
+      # values normalized by the max degree of the whole edge set (external hub types
+      # like java.util.List dominate it), so the observed range is 0..0.145 (p99 0.026).
+      # With floor=0.8 nearly every code chunk is demoted by ~20 % and semantically
+      # weaker doc chunks win even for code-specific queries. 0.98 keeps code on top
+      # while still damping peripheral nodes (measured: mean rank shift ~7 positions).
+      floor: 0.98
+      b-graph: 5.0
+      cap: 5.0
+      w-base: 1.0
+
 server:
   port: ${SERVER_PORT:7007}
   forward-headers-strategy: framework

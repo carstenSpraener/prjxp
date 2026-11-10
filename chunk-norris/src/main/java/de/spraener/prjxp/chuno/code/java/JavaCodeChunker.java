@@ -13,6 +13,9 @@ import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.expr.AnnotationExpr;
 import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
+import de.spraener.prjxp.common.graph.GraphMetadata;
+import de.spraener.prjxp.common.model.CodeGraph;
+import de.spraener.prjxp.common.model.GraphNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SymbolMetadata;
 import de.spraener.prjxp.common.model.PxFileType;
@@ -34,6 +37,7 @@ import java.util.ArrayDeque;
 import java.util.Collection;
 import java.util.Deque;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -47,6 +51,8 @@ public class JavaCodeChunker implements PxChunker {
     public static final String MDKEY_CODESECTION = "java_code_section";
 
     private final JavaDependencyHandler javaDependencyHandler;
+    private final JavaCodeGraphBuilder javaCodeGraphBuilder;
+    private final JavaFQNamesMapper fqNamesMapper;
 
     @Value("${prjxp.java.chunksize:1000}")
     private int chunkSize;
@@ -62,11 +68,13 @@ public class JavaCodeChunker implements PxChunker {
 
             javaDependencyHandler.fillDependencies(cu);
 
+            Map<String, GraphNode> graphNodes = graphNodes();
+
             List<PxChunk> chunks = new ArrayList<>();
-            chunks.addAll(createImportChunk(f, cu, codeLines));
-            chunks.addAll(createMethodChunks(f, cu, codeLines));
+            chunks.addAll(createImportChunk(f, cu, codeLines, graphNodes));
+            chunks.addAll(createMethodChunks(f, cu, codeLines, graphNodes));
             chunks.addAll(createEnumConstantChunks(f, cu, codeLines));
-            chunks.addAll(createClassFrameChunk(f, cu, codeLines));
+            chunks.addAll(createClassFrameChunk(f, cu, codeLines, graphNodes));
             chunks.addAll(createMetaChunk(cu, chunks, codeLines));
             return chunks.stream();
         } catch( ParseProblemException ppXC ) {
@@ -141,6 +149,21 @@ public class JavaCodeChunker implements PxChunker {
         return PxFileType.JAVA_CODE.matches(f);
     }
 
+    /** The weighted graph's nodes by id (empty map when no graph was built this run). */
+    private Map<String, GraphNode> graphNodes() {
+        return javaCodeGraphBuilder.weightedGraph().map(CodeGraph::nodeById).orElse(Map.of());
+    }
+
+    /** Stamps the graph-node id and (when rated) the Leiden cluster/weight onto a chunk. */
+    private void applyGraphMetadata(PxChunk c, String graphNode, Map<String, GraphNode> graphNodes) {
+        if (graphNode == null || graphNode.isBlank()) return;
+        c.getMetadata().put(GraphMetadata.GRAPH_NODE, graphNode);
+        GraphNode node = graphNodes.get(graphNode);
+        if (node == null) return;
+        if (node.clusterId() != null) c.getMetadata().put(GraphMetadata.LEIDEN_CLUSTER_ID, node.clusterId());
+        c.getMetadata().put(GraphMetadata.LEIDEN_WEIGHT, String.valueOf(node.weight()));
+    }
+
     private ChunkRange getImportsRange(CompilationUnit cu, List<String> codeLines) {
         final ValueContainer<Integer> vcFromLine = new ValueContainer(Integer.MAX_VALUE);
         final ValueContainer<Integer> vcToLine = new ValueContainer(0);
@@ -163,7 +186,7 @@ public class JavaCodeChunker implements PxChunker {
         return new ChunkRange(fromLine, toLine, codeLines);
     }
 
-    private Collection<PxChunk> createImportChunk(File src, CompilationUnit cu, List<String> codeLines) throws IOException {
+    private Collection<PxChunk> createImportChunk(File src, CompilationUnit cu, List<String> codeLines, Map<String, GraphNode> graphNodes) throws IOException {
         ChunkRange importRange = getImportsRange(cu, codeLines);
         String primaryTypeFqn = cu.getPrimaryType()
                 .flatMap(TypeDeclaration::getFullyQualifiedName)
@@ -178,7 +201,8 @@ public class JavaCodeChunker implements PxChunker {
                         c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.IMPORTS.getName()),
                         c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.IMPORTS.getName(),
                                 primaryTypeFqn,
-                                primaryTypeName)
+                                primaryTypeName),
+                        c -> applyGraphMetadata(c, primaryTypeFqn, graphNodes)
                 )
         );
     }
@@ -202,25 +226,31 @@ public class JavaCodeChunker implements PxChunker {
         return result;
     }
 
-    private Collection<? extends PxChunk> createMethodChunks(File f, CompilationUnit cu, List<String> codeLines) {
+    private Collection<? extends PxChunk> createMethodChunks(File f, CompilationUnit cu, List<String> codeLines, Map<String, GraphNode> graphNodes) {
         List<PxChunk> chunks = new ArrayList<>();
         var primaryType = cu.getPrimaryType();
-        primaryType.ifPresent(pt -> createContainedMethodChunks(f, cu, chunks, pt, codeLines));
+        primaryType.ifPresent(pt -> createContainedMethodChunks(f, cu, chunks, pt, codeLines, graphNodes));
         for (var subClazz : collectTypes(cu)) {
             if (primaryType.isEmpty() || !subClazz.equals(primaryType.get())) {
-                createContainedMethodChunks(f, cu, chunks, subClazz, codeLines);
+                createContainedMethodChunks(f, cu, chunks, subClazz, codeLines, graphNodes);
             }
         }
         return chunks;
     }
 
-    private void createContainedMethodChunks(File f, CompilationUnit cu, List<PxChunk> chunks, TypeDeclaration<?> type, List<String> codeLines) {
+    private void createContainedMethodChunks(File f, CompilationUnit cu, List<PxChunk> chunks, TypeDeclaration<?> type, List<String> codeLines, Map<String, GraphNode> graphNodes) {
         String clazzName = type.getFullyQualifiedName().orElse(type.getNameAsString());
         String pkgName = cu.getPackageDeclaration().map(pd -> pd.getName().toString()).orElse("");
+        String typeFqn = type.getFullyQualifiedName().orElse(type.getNameAsString());
+        List<String> imports = cu.getImports().stream().map(i -> i.getNameAsString()).toList();
 
         for (var m : type.getMethods()) {
             String methodSig = m.getDeclarationAsString(false, false, false);
             String id = clazzName + "." + methodSig;
+            List<String> paramFqns = m.getParameters().stream()
+                    .map(p -> JavaGraphIds.resolveTypeName(p.getType(), fqNamesMapper, pkgName, imports))
+                    .toList();
+            String graphNode = JavaGraphIds.methodId(typeFqn, m.getNameAsString(), paramFqns);
             m.getJavadocComment().ifPresent(jc -> {
                 StringBuilder content = new StringBuilder();
                 int fromLine = jc.getRange().get().begin.line - 1;
@@ -236,7 +266,8 @@ public class JavaCodeChunker implements PxChunker {
                                         c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.METHOD_DOC.getName()),
                                         c->c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
                                         c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.METHOD_DOC.getName(),
-                                                clazzName, m.getNameAsString(), methodSig)
+                                                clazzName, m.getNameAsString(), methodSig),
+                                        c -> applyGraphMetadata(c, graphNode, graphNodes)
                             )
                 ));
             });
@@ -259,7 +290,8 @@ public class JavaCodeChunker implements PxChunker {
                                     c -> c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
                                     c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.METHOD.getName()),
                                     c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.METHOD.getName(),
-                                            clazzName, m.getNameAsString(), methodSig)
+                                            clazzName, m.getNameAsString(), methodSig),
+                                    c -> applyGraphMetadata(c, graphNode, graphNodes)
                         )
                 ));
         }
@@ -268,6 +300,10 @@ public class JavaCodeChunker implements PxChunker {
         for (var ctor : type.getConstructors()) {
             String ctorSig = ctor.getDeclarationAsString(false, false, false);
             String id = clazzName + "." + ctorSig;
+            List<String> paramFqns = ctor.getParameters().stream()
+                    .map(p -> JavaGraphIds.resolveTypeName(p.getType(), fqNamesMapper, pkgName, imports))
+                    .toList();
+            String graphNode = JavaGraphIds.methodId(typeFqn, ctor.getNameAsString(), paramFqns);
             ctor.getJavadocComment().ifPresent(jc -> {
                 StringBuilder content = new StringBuilder();
                 int fromLine = jc.getRange().get().begin.line - 1;
@@ -283,7 +319,8 @@ public class JavaCodeChunker implements PxChunker {
                                         c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.METHOD_DOC.getName()),
                                         c->c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
                                         c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.METHOD_DOC.getName(),
-                                                clazzName, ctor.getNameAsString(), ctorSig)
+                                                clazzName, ctor.getNameAsString(), ctorSig),
+                                        c -> applyGraphMetadata(c, graphNode, graphNodes)
                                 )
                         ));
             });
@@ -306,7 +343,8 @@ public class JavaCodeChunker implements PxChunker {
                                     c -> c.setEmbeddingPrefix(pkgName+" "+type.getName().asString()),
                                     c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.CONSTRUCTOR.getName()),
                                     c -> SymbolMetadata.applyMethod(c.getMetadata(), JavaCodeSection.CONSTRUCTOR.getName(),
-                                            clazzName, ctor.getNameAsString(), ctorSig)
+                                            clazzName, ctor.getNameAsString(), ctorSig),
+                                    c -> applyGraphMetadata(c, graphNode, graphNodes)
                             )
                     ));
         }
@@ -363,7 +401,7 @@ public class JavaCodeChunker implements PxChunker {
         return chunks;
     }
 
-    private Collection<? extends PxChunk> createClassFrameChunk(File f, CompilationUnit cu, List<String> codeLines) {
+    private Collection<? extends PxChunk> createClassFrameChunk(File f, CompilationUnit cu, List<String> codeLines, Map<String, GraphNode> graphNodes) {
         List<PxChunk> chunks = new ArrayList<>();
         for (var clazz : collectTypes(cu)) {
             StringBuilder content = new StringBuilder();
@@ -398,7 +436,8 @@ public class JavaCodeChunker implements PxChunker {
                                 c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.CLAZZ_FRAME.getName()),
                                 c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.CLAZZ_FRAME.getName(),
                                         clazz.getFullyQualifiedName().orElse(clazz.getNameAsString()),
-                                        clazz.getNameAsString())
+                                        clazz.getNameAsString()),
+                                        c -> applyGraphMetadata(c, clazz.getFullyQualifiedName().orElse(clazz.getNameAsString()), graphNodes)
                     );
                             }
 

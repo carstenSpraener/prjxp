@@ -33,12 +33,14 @@ class PrjxpMcpToolTest {
     private ProjectRegistry projectRegistry;
     @Mock
     private FileListService fileListService;
+    @Mock
+    private FileGraphService fileGraphService;
 
     private PrjxpMcpTool tool;
 
     @BeforeEach
     void setUp() {
-        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService, projectRegistry, fileListService);
+        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService, projectRegistry, fileListService, fileGraphService);
     }
 
     @Test
@@ -136,5 +138,35 @@ class PrjxpMcpToolTest {
         tool.listFiles("src", null, 10000);
 
         verify(fileListService).list("src", "default", 500);
+    }
+
+    @Test
+    void graphFileDelegatesAndDefaultsProject() {
+        when(fileGraphService.graphFile("src/A.java", "default", 5, true))
+                .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
+
+        GraphView view = tool.graphFile("  src/A.java  ", null, 5, true);
+
+        assertThat(view.error()).isEqualTo("Graph nicht verfügbar, bitte reindexieren");
+        verify(fileGraphService).graphFile("src/A.java", "default", 5, true);
+    }
+
+    @Test
+    void graphNodeDelegatesAndDefaultsProject() {
+        when(fileGraphService.graphNode("demo.A", "default", null, null))
+                .thenReturn(GraphView.unavailable("Node nicht gefunden: demo.A"));
+
+        GraphView view = tool.graphNode("demo.A", "", null, null);
+
+        assertThat(view.error()).contains("demo.A");
+        verify(fileGraphService).graphNode("demo.A", "default", null, null);
+    }
+
+    @Test
+    void graphFileRequiresFile() {
+        GraphView view = tool.graphFile("", "demo", null, null);
+
+        assertThat(view.error()).isEqualTo("Parameter 'file' ist erforderlich.");
+        verifyNoInteractions(fileGraphService);
     }
 }

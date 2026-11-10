@@ -114,11 +114,46 @@ class GRPromptEnrichmentTest {
         assertThat(result).doesNotContain("Groessenlimit");
     }
 
+    @Test
+    void vectorScoresAreNotRerankedByLeidenWeight() {
+        PxChunk central = PxChunk.create(c -> {
+            c.setId("central");
+            c.setContent("central");
+            c.getMetadata().put("leiden_weight", "1.0");
+        });
+        PxChunk peripheral = PxChunk.create(c -> {
+            c.setId("peripheral");
+            c.setContent("peripheral");
+            c.getMetadata().put("leiden_weight", "0.0");
+        });
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(List.of(new ScoredChunk(central, 0.9), new ScoredChunk(peripheral, 0.9)));
+
+        CapturingRetriever retriever = new CapturingRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        withDao.enrich("test", "query", List.of(),
+                c -> c,
+                s -> s.length() > 0);
+
+        // The retriever path must receive the raw vector scores: the Leiden weight acts
+        // additively inside ChunkRankingService (via ChunkNode), never multiplicatively here.
+        assertThat(retriever.captured()).extracting(ScoredChunk::score)
+                .containsExactly(0.9, 0.9);
+    }
+
     private static class FakeChunkDao implements PxChunkDao {
         private final PrjXPEmbeddingStoreReference ref = new PrjXPEmbeddingStoreReference();
+        private List<ScoredChunk> vectorResults;
 
         FakeChunkDao(String projectName) {
             ref.setProjectName(projectName);
+        }
+
+        void setVectorResults(List<ScoredChunk> results) {
+            this.vectorResults = results;
         }
 
         @Override
@@ -144,6 +179,33 @@ class GRPromptEnrichmentTest {
         @Override
         public Stream<PxChunk> findAll() {
             return Stream.empty();
+        }
+
+        @Override
+        public List<ScoredChunk> searchVector(String query, Map<String, String> filters, int limit) {
+            if (vectorResults == null) {
+                throw new UnsupportedOperationException("Vector search is not supported by this store");
+            }
+            return vectorResults;
+        }
+    }
+
+    private static class CapturingRetriever implements GoldenRetriever {
+        private List<ScoredChunk> captured = List.of();
+
+        List<ScoredChunk> captured() {
+            return captured;
+        }
+
+        @Override
+        public StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
+            this.captured = chunks;
+            return new StringBuilder("captured");
+        }
+
+        @Override
+        public List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks, Function<String, Boolean>... contextValidators) {
+            return List.of();
         }
     }
 

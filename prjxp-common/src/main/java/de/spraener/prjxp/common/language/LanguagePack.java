@@ -42,6 +42,16 @@ public interface LanguagePack {
     }
 
     /**
+     * Graph side: this pack's {@link CodeGraphBuilder}, or empty if the language cannot
+     * build a code graph. The builder is driven in the pre-walk (AST → graph), then rated
+     * by a {@link GraphWeighter}; the result feeds the {@code graph} tool and the
+     * {@code leiden_cluster_id}/{@code leiden_weight} chunk metadata.
+     */
+    default Optional<CodeGraphBuilder> codeGraph() {
+        return Optional.empty();
+    }
+
+    /**
      * Reader side: this pack's {@link FileViewProvider} for lossless {@code readFile}
      * rendering, or empty if not provided (the host falls back to the generic reader).
      *

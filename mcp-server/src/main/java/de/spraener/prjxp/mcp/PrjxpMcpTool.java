@@ -33,6 +33,8 @@ public class PrjxpMcpTool {
 
     private final FileListService fileListService;
 
+    private final FileGraphService fileGraphService;
+
     @McpTool(name = "vectorSearch", description = """
             CRITICAL PRIMARY SEARCH TOOL (level 1 of 3): Delivers relevant semantic information from the project context.
 
@@ -223,6 +225,54 @@ public class PrjxpMcpTool {
         if (StringUtils.isEmpty(project)) project = "default";
         int safeLimit = (limit == null) ? SearchLimits.LIST_DEFAULT_LIMIT : SearchLimits.clampList(limit);
         return fileListService.list(path, project, safeLimit);
+    }
+
+    @McpTool(name = "graphFile", description = """
+            STRUCTURE TOOL: Returns the typed code-graph neighbours of one file — imported/extended/implemented/field/param/return/call edges with file paths.
+            Requires an indexed project with a graph artifact. Use graphNode for a specific symbol.
+            """)
+    public GraphView graphFile(
+            @McpToolParam(description = "File path — absolute, project-root-relative, or just the file name (lenient: exact -> suffix -> basename).", required = true)
+            String file,
+
+            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            String project,
+
+            @McpToolParam(description = "Maximum neighbours per direction (default 30, max 100).", required = false)
+            Integer maxEdges,
+
+            @McpToolParam(description = "Include edges to nodes outside the project (default false).", required = false)
+            Boolean includeExternal
+    ) {
+        if (StringUtils.isBlank(file)) {
+            return GraphView.unavailable("Parameter 'file' ist erforderlich.");
+        }
+        if (StringUtils.isEmpty(project)) project = "default";
+        return fileGraphService.graphFile(file.trim(), project, maxEdges, includeExternal);
+    }
+
+    @McpTool(name = "graphNode", description = """
+            STRUCTURE TOOL: Returns the typed code-graph neighbours of one node id (`fqn` or `fqn#name(paramFQNs)`).
+            Lenient resolution: exact -> suffix. Ambiguous symbols return a candidate list. Use graphFile to start from a file.
+            """)
+    public GraphView graphNode(
+            @McpToolParam(description = "Node id — class FQN (`com.example.Foo`) or method id (`com.example.Foo#bar(int)`); bare names are matched as a suffix.", required = true)
+            String symbol,
+
+            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            String project,
+
+            @McpToolParam(description = "Maximum neighbours per direction (default 30, max 100).", required = false)
+            Integer maxEdges,
+
+            @McpToolParam(description = "Include edges to nodes outside the project (default false).", required = false)
+            Boolean includeExternal
+    ) {
+        if (StringUtils.isBlank(symbol)) {
+            return GraphView.unavailable("Parameter 'symbol' ist erforderlich.");
+        }
+        if (StringUtils.isEmpty(project)) project = "default";
+        return fileGraphService.graphNode(symbol.trim(), project, maxEdges, includeExternal);
     }
 
 }
