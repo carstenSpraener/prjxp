@@ -46,7 +46,9 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                 case DEPENDENCIE_INFO:
                     if (level == ContentLevel.POINTERS) {
                         String parent = pxChunk.getParent();
-                        if (parent != null && !parent.isBlank()) {
+                        // Check the emitted pointer, not the bare class name: a superstring FQN
+                        // (e.g. de.ex.FooFactory) must not suppress the pointer for de.ex.Foo.
+                        if (parent != null && !parent.isBlank() && !prompt.contains("→ graphNode(\"" + parent + "\")")) {
                             nextPrompt = prompt + "\n\n## Dependencies of " + parent + "\n→ graphNode(\"" + parent + "\")\n";
                         }
                     } else {

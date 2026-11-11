@@ -287,6 +287,42 @@ class JavaPromptModifierTest {
     }
 
     @Test
+    void dependencyPointerIsSkippedWhenParentPointerAlreadyPresent() {
+        PxChunk dep = PxChunk.create(
+                c -> c.setId("de.example.SomeService.dependencies"),
+                c -> c.setParent("de.example.SomeService"),
+                c -> c.setMimeType("text/plain"),
+                c -> c.setContent("  * de.example.HiddenNeighbour"),
+                c -> c.getMetadata().put("java_code_section", "dependenciesInfo"));
+
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+        String original = "prompt → graphNode(\"de.example.SomeService\")";
+        String result = new JavaPromptModifier(pointers).modifyPrompt(dao, dep, original);
+
+        assertThat(result).doesNotContain("## Dependencies of");
+        assertThat(result).isEqualTo(original);   // the prompt is left unchanged
+    }
+
+    @Test
+    void dependencyPointerIsNotSuppressedBySimilarFqn() {
+        PxChunk dep = PxChunk.create(
+                c -> c.setId("de.example.SomeService.dependencies"),
+                c -> c.setParent("de.example.SomeService"),
+                c -> c.setMimeType("text/plain"),
+                c -> c.setContent("  * de.example.HiddenNeighbour"),
+                c -> c.getMetadata().put("java_code_section", "dependenciesInfo"));
+
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+        // a superstring FQN pointer must not suppress the pointer for the shorter parent
+        String result = new JavaPromptModifier(pointers).modifyPrompt(dao, dep,
+                "prompt → graphNode(\"de.example.SomeServiceFactory\")");
+
+        assertThat(result).contains("## Dependencies of de.example.SomeService");
+    }
+
+    @Test
     void varargsMethodNameIsResolved() {
         PxChunk varargs = PxChunk.create(
                 c -> c.setId("com.example.Foo.bar(int... args)"),

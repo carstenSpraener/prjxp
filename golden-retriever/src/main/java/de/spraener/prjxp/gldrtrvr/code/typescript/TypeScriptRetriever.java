@@ -88,7 +88,9 @@ public class TypeScriptRetriever implements GoldenRetriever {
                 case DEPENDENCIE_INFO:
                     if (level == ContentLevel.POINTERS) {
                         String parent = pxChunk.getParent();
-                        if (parent != null && !parent.isBlank()) {
+                        // Check the emitted pointer, not the bare name: a superstring path
+                        // (e.g. com/example/OtherFactory.ts) must not suppress the pointer for Other.ts.
+                        if (parent != null && !parent.isBlank() && !prompt.contains("→ graphNode(\"" + parent + "\")")) {
                             nextPrompt = prompt + "\n\n## Dependencies of " + parent + "\n→ graphNode(\"" + parent + "\")\n";
                         }
                     } else {

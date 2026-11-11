@@ -115,4 +115,98 @@ class TypeScriptRetrieverTest {
         String skeletonPrompt = retriever.buildPromptForFindings("proj", List.of(new ScoredChunk(dep, 1.0)), new SearchParams(20, 0.85, true)).toString();
         assertThat(skeletonPrompt).contains("de.example.HiddenNeighbour");
     }
+
+    private static int countOccurrences(String haystack, String needle) {
+        int count = 0;
+        int idx = 0;
+        while ((idx = haystack.indexOf(needle, idx)) != -1) {
+            count++;
+            idx += needle.length();
+        }
+        return count;
+    }
+
+    @Test
+    void dependencyPointerIsSkippedWhenParentPointerAlreadyPresent() {
+        // parent frame resolvable in the dao, so both dep chunks share the same tree
+        PxChunk otherFrame = PxChunk.create(
+                c -> c.setId("com/example/Other.ts"),
+                c -> c.setContent("export class Other {}"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "classFrame"));
+        // two dep chunks with the same parent: the first emits the pointer, the second must be skipped
+        PxChunk dep1 = PxChunk.create(
+                c -> c.setId("com/example/Other.ts.deps1"),
+                c -> c.setParent("com/example/Other.ts"),
+                c -> c.setContent("  * de.example.HiddenNeighbour1"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "dependenciesInfo"));
+        PxChunk dep2 = PxChunk.create(
+                c -> c.setId("com/example/Other.ts.deps2"),
+                c -> c.setParent("com/example/Other.ts"),
+                c -> c.setContent("  * de.example.HiddenNeighbour2"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "dependenciesInfo"));
+        PxChunkDao dao = mock(PxChunkDao.class);
+        when(dao.findById(otherFrame.getId())).thenReturn(new java.util.ArrayList<>(List.of(otherFrame)));
+        when(dao.findById(dep1.getId())).thenReturn(new java.util.ArrayList<>(List.of(dep1)));
+        when(dao.findById(dep2.getId())).thenReturn(new java.util.ArrayList<>(List.of(dep2)));
+        TypeScriptRetriever retriever = retrieverWith(dao);
+
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+        String prompt = retriever.buildPromptForFindings("proj",
+                List.of(new ScoredChunk(dep1, 1.0), new ScoredChunk(dep2, 1.0)), pointers).toString();
+
+        // the pointer is emitted exactly once (by the first dep chunk); the second is skipped
+        assertThat(countOccurrences(prompt, "## Dependencies of")).isEqualTo(1);
+        assertThat(countOccurrences(prompt, "→ graphNode(\"com/example/Other.ts\")")).isEqualTo(1);
+    }
+
+    @Test
+    void dependencyPointerIsNotSuppressedBySimilarFqn() {
+        PxChunk otherFrame = PxChunk.create(
+                c -> c.setId("com/example/Other.ts"),
+                c -> c.setContent("export class Other {}"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "classFrame"));
+        // a superstring FQN frame, nested under Other.ts so it shares the same tree
+        PxChunk factoryFrame = PxChunk.create(
+                c -> c.setId("com/example/Other.tsFactory"),
+                c -> c.setParent("com/example/Other.ts"),
+                c -> c.setContent("export class OtherFactory {}"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "classFrame"));
+        // emits → graphNode("com/example/Other.tsFactory") — a superstring of the dep's parent
+        PxChunk similarDep = PxChunk.create(
+                c -> c.setId("com/example/Other.tsFactory.deps"),
+                c -> c.setParent("com/example/Other.tsFactory"),
+                c -> c.setContent("  * de.example.HiddenNeighbour"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "dependenciesInfo"));
+        // the dep under test; its id sorts after the factory frame so the similar pointer is emitted first
+        PxChunk dep = PxChunk.create(
+                c -> c.setId("com/example/Other.tsZZZ"),
+                c -> c.setParent("com/example/Other.ts"),
+                c -> c.setContent("  * de.example.OtherNeighbour"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "dependenciesInfo"));
+        PxChunkDao dao = mock(PxChunkDao.class);
+        when(dao.findById(otherFrame.getId())).thenReturn(new java.util.ArrayList<>(List.of(otherFrame)));
+        when(dao.findById(factoryFrame.getId())).thenReturn(new java.util.ArrayList<>(List.of(factoryFrame)));
+        when(dao.findById(similarDep.getId())).thenReturn(new java.util.ArrayList<>(List.of(similarDep)));
+        when(dao.findById(dep.getId())).thenReturn(new java.util.ArrayList<>(List.of(dep)));
+        TypeScriptRetriever retriever = retrieverWith(dao);
+
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+        String prompt = retriever.buildPromptForFindings("proj",
+                List.of(new ScoredChunk(similarDep, 1.0), new ScoredChunk(dep, 1.0)), pointers).toString();
+
+        // the similar (superstring) pointer must not suppress the dep's own pointer.
+        // Assert the pointer (not the header): the factory header "## Dependencies of
+        // com/example/Other.tsFactory" contains the dep header as a prefix, but the factory
+        // pointer does NOT contain the dep pointer (a bare contains(parent) would have suppressed it).
+        assertThat(prompt).contains("→ graphNode(\"com/example/Other.ts\")");
+    }
 }

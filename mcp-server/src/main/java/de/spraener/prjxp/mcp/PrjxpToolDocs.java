@@ -44,7 +44,7 @@ public final class PrjxpToolDocs {
 
     public static final String READ_BY_SIGNATURE = """
             Complete implementation of a symbol (javadoc + body) by name, any indexed language.
-            'method' is a name or FQN; class FQNs return the class frame. container disambiguates a bare name.
+            'method' is a name or 'FQN#name'; class FQNs return the class frame. container disambiguates a bare name.
             """;
 
     public static final String LIST_PROJECTS = """

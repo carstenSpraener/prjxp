@@ -67,12 +67,19 @@ public class SymbolReaderService {
         List<PxChunk> hits;
         try {
             hits = dao.searchByIndex(filters, LOOKUP_LIMIT).stream().map(ScoredChunk::chunk).toList();
+            if (hits.isEmpty() && (container == null || container.isBlank())) {
+                Map<String, String> fallback = fallbackFilters(method);
+                if (fallback != null) {
+                    hits = dao.searchByIndex(fallback, LOOKUP_LIMIT).stream().map(ScoredChunk::chunk).toList();
+                }
+            }
         } catch (UnsupportedOperationException uoe) {
             return SymbolReadResult.error("Index search is not supported by this embedding store — readBySignature requires a Lucene index.");
         }
         if (hits.isEmpty())
             return SymbolReadResult.error("No symbol matching '" + method + "'"
-                    + (container != null && !container.isBlank() ? " in container '" + container + "'" : "") + " found in the index.");
+                    + (container != null && !container.isBlank() ? " in container '" + container + "'" : "")
+                    + " found in the index. Methods are indexed as '<ContainerFqn>#<methodName>'; classes as their FQN. A bare name plus 'container' also works.");
 
         List<PxChunk> units = ReaderSupport.combineUnits(hits);
         Map<String, PxChunk> docByMethodId = new HashMap<>();
@@ -103,6 +110,39 @@ public class SymbolReaderService {
         List<String> remaining = views.subList(MAX_FULL_MATCHES, views.size()).stream()
                 .map(MethodView::fqn).distinct().toList();
         return new SymbolReadResult(List.copyOf(full), remaining, null);
+    }
+
+    /**
+     * Fallback filters for a {@code method} that the primary lookup missed: the reference is split at its
+     * last {@code #} or {@code .} into a name and a container candidate (a trailing {@code (…)} parameter
+     * list is stripped from the name) and retried as {@code SYMBOL_NAME} plus {@code SYMBOL_CONTAINER_FQN}
+     * only when the container candidate is a real FQN (contains a dot); returns {@code null} when no
+     * fallback applies (no separator, or a blank name).
+     */
+    private static Map<String, String> fallbackFilters(String method) {
+        String containerCandidate;
+        String nameCandidate;
+        if (method.contains("#")) {
+            int idx = method.lastIndexOf('#');
+            containerCandidate = method.substring(0, idx);
+            nameCandidate = method.substring(idx + 1);
+            int paren = nameCandidate.indexOf('(');
+            if (paren >= 0 && nameCandidate.endsWith(")"))
+                nameCandidate = nameCandidate.substring(0, paren);
+        } else if (method.contains(".")) {
+            int idx = method.lastIndexOf('.');
+            containerCandidate = method.substring(0, idx);
+            nameCandidate = method.substring(idx + 1);
+        } else {
+            return null;
+        }
+        if (nameCandidate.isBlank())
+            return null;
+        Map<String, String> filters = new HashMap<>();
+        filters.put(SymbolMetadata.SYMBOL_NAME, nameCandidate);
+        if (containerCandidate.contains("."))
+            filters.put(SymbolMetadata.SYMBOL_CONTAINER_FQN, containerCandidate);
+        return filters;
     }
 
     private MethodView toMethodView(PxChunk m, PxChunk doc) {
