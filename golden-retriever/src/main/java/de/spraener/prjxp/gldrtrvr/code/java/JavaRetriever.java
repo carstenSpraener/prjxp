@@ -23,8 +23,8 @@ import java.util.function.Function;
 public class JavaRetriever implements GoldenRetriever {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
-    @Value("${prjxp.gldrtrvr.max-dependency-entries:10}")
-    private int maxDependencyEntries = 10;
+    @Value("${prjxp.gldrtrvr.max-dependency-entries:5}")
+    private int maxDependencyEntries = 5;
 
     @SafeVarargs
     public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {

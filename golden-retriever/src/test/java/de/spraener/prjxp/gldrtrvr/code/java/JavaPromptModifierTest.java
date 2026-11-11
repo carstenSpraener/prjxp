@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
+import de.spraener.prjxp.common.graph.GraphMetadata;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
@@ -299,5 +300,96 @@ class JavaPromptModifierTest {
         String result = skeleton.modifyPrompt(dao, blank, "call qux here");
 
         assertThat(result).contains("call").contains("here");
+    }
+
+    // ---- Phase 02 (Graphify-Tool-V2): cluster id + pointer layer on class frames ----
+
+    private PxChunk clazzFrameChunkWithFile() {
+        return PxChunk.create(
+                c -> c.setId("com.example.Foo"),
+                c -> c.setFile("/abs/path/com/example/Foo.java"),
+                c -> c.setContent("class Foo {}"),
+                c -> c.getMetadata().put("java_code_section", "classFrame"));
+    }
+
+    @Test
+    void fullLevelEmitsSkeletonAndPointerLayer() {
+        JavaPromptModifier full = new JavaPromptModifier(new SearchParams(20, 0.85));
+
+        String result = full.modifyPrompt(dao, clazzFrameChunkWithFile(), "prompt");
+
+        assertThat(result).contains("class Foo {}");
+        assertThat(result).contains("readFile(");
+        assertThat(result).contains("readBySignature(");
+        assertThat(result).contains("graphNode(");
+    }
+
+    @Test
+    void skeletonLevelEmitsSkeletonAndPointerLayer() {
+        JavaPromptModifier skeleton = new JavaPromptModifier(new SearchParams(20, 0.85, true));
+
+        String result = skeleton.modifyPrompt(dao, clazzFrameChunkWithFile(), "prompt");
+
+        assertThat(result).contains("class Foo {}");
+        assertThat(result).contains("readFile(");
+        assertThat(result).contains("readBySignature(");
+        assertThat(result).contains("graphNode(");
+    }
+
+    @Test
+    void clusterMetadataEmitsClusterPointer() {
+        PxChunk clustered = PxChunk.create(
+                c -> c.setId("com.example.Foo"),
+                c -> c.setFile("/abs/path/com/example/Foo.java"),
+                c -> c.setContent("class Foo {}"),
+                c -> c.getMetadata().put("java_code_section", "classFrame"),
+                c -> c.getMetadata().put(GraphMetadata.LEIDEN_CLUSTER_ID, "c6"));
+        JavaPromptModifier full = new JavaPromptModifier(new SearchParams(20, 0.85));
+
+        String result = full.modifyPrompt(dao, clustered, "prompt");
+
+        assertThat(result).contains("[cluster:c6]");
+    }
+
+    @Test
+    void missingClusterMetadataEmitsNoClusterPointer() {
+        JavaPromptModifier full = new JavaPromptModifier(new SearchParams(20, 0.85));
+
+        String result = full.modifyPrompt(dao, clazzFrameChunkWithFile(), "prompt");
+
+        assertThat(result).doesNotContain("[cluster:");
+    }
+
+    @Test
+    void chunkWithoutFileEmitsNoReadFilePointer() {
+        PxChunk noFile = PxChunk.create(
+                c -> c.setId("com.example.NoFile"),
+                c -> c.setContent("class NoFile {}"),
+                c -> c.getMetadata().put("java_code_section", "classFrame"));
+        JavaPromptModifier full = new JavaPromptModifier(new SearchParams(20, 0.85));
+
+        String result = full.modifyPrompt(dao, noFile, "prompt");
+
+        assertThat(result).doesNotContain("readFile(\"null\")");
+        assertThat(result).doesNotContain("readFile(");
+        assertThat(result).contains("readBySignature(\"com.example.NoFile\")");
+    }
+
+    @Test
+    void pointersLevelEmitsOnlyPointerLayer() {
+        SearchParams params = new SearchParams(20, 0.85);
+        params.setContentLevel(ContentLevel.POINTERS);
+        JavaPromptModifier pointers = new JavaPromptModifier(params);
+        // dependency chunk exists in the store, but POINTERS must not render it
+        PxChunkDao depDao = daoWithDependencies(DependencyCompactorTest.dependencyContent(25, 15));
+
+        String result = pointers.modifyPrompt(depDao, clazzFrameChunkWithFile(), "prompt");
+
+        assertThat(result).contains("## com.example.Foo");
+        assertThat(result).contains("readFile(");
+        assertThat(result).contains("readBySignature(");
+        assertThat(result).contains("graphNode(");
+        assertThat(result).doesNotContain("```java");
+        assertThat(result).doesNotContain("### Hier noch Infos zu den Dependencies");
     }
 }

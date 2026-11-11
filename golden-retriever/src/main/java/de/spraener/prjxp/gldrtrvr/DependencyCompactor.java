@@ -21,7 +21,7 @@ import java.util.List;
  */
 public final class DependencyCompactor {
     private static final String ENTRY_PREFIX = "  * ";
-    private static final String MARKER = "\n[%d weitere Dependencies nicht angezeigt – Volltext via grep]";
+    private static final String MARKER = "\n[%d weitere Dependencies nicht angezeigt]";
 
     private DependencyCompactor() {
     }
@@ -29,7 +29,7 @@ public final class DependencyCompactor {
     /**
      * Kürzt die Dependency-Liste auf die ersten {@code maxEntries} Einträge (beide Sektionen
      * Outgoing/Incoming zusammengezählt, Original-Reihenfolge und Sektions-Header bleiben).
-     * Am Ende: {@code "\n[<n> weitere Dependencies nicht angezeigt – Volltext via grep]"}.
+     * Am Ende: {@code "\n[<n> weitere Dependencies nicht angezeigt]"}.
      * {@code maxEntries <= 0} oder Content ohne {@code "* "-Einträge → unverändert zurück.
      */
     public static String compact(String dependencyContent, int maxEntries) {

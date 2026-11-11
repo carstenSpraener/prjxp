@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 public class DependencyCompactorTest {
 
-    public static final String MARKER_30 = "[30 weitere Dependencies nicht angezeigt – Volltext via grep]";
+    public static final String MARKER_30 = "[30 weitere Dependencies nicht angezeigt]";
 
     public static String fqn(String prefix, int i) {
         return "com.example.module.something." + prefix + i;
@@ -45,6 +45,8 @@ public class DependencyCompactorTest {
 
         assertThat(countEntries(result)).isEqualTo(10);
         assertThat(result).contains(MARKER_30);
+        // Phase 02: neutral marker — no tool name (grep) in the prompt
+        assertThat(result).doesNotContain("grep");
         assertThat(result).contains("**Outgoing**");
         assertThat(result).contains("**Incoming**:");
         // original order: the first 10 entries are the first 10 outgoing ones

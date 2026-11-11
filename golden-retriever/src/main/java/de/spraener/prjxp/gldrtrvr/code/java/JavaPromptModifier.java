@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.code.java;
 
 import de.spraener.prjxp.common.code.java.JavaCodeSection;
+import de.spraener.prjxp.common.graph.GraphMetadata;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
@@ -27,9 +28,9 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
         String nextPrompt = prompt;
         if (pxChunk.getMetadata().containsKey("java_code_section")) {
             JavaCodeSection section = JavaCodeSection.fromName(pxChunk.getMetadata().get("java_code_section"));
+            ContentLevel level = searchParams != null ? searchParams.effectiveContentLevel() : ContentLevel.FULL;
             switch (section) {
                 case METHOD:
-                    ContentLevel level = searchParams != null ? searchParams.effectiveContentLevel() : ContentLevel.FULL;
                     boolean reduced = level == ContentLevel.SKELETON || level == ContentLevel.POINTERS;
                     if( !reduced ) {
                         PxChunk javaDoc = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".javadoc"));
@@ -50,12 +51,29 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                     break;
                 case CLAZZ_FRAME:
                     String className = pxChunk.getId();
-                    nextPrompt = prompt + "\n\n## Hier ein Rumpf der Klasse " + className + ":\n\n```java\n" + pxChunk.getContent() + "\n```\n";
-                    PxChunk dependenyChunk = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".dependencies"));
-                    if (dependenyChunk != null) {
-                        nextPrompt += "\n\n### Hier noch Infos zu den Dependencies innerhalb des Projekts:\n\n"
-                                + DependencyCompactor.compact(dependenyChunk.getContent(), maxDependencyEntries);
+                    String clusterId = pxChunk.getMetadata().get(GraphMetadata.LEIDEN_CLUSTER_ID);
+                    if (level != ContentLevel.POINTERS) {
+                        // existing behaviour, unchanged
+                        nextPrompt = prompt + "\n\n## Hier ein Rumpf der Klasse " + className + ":\n\n```java\n"
+                                + pxChunk.getContent() + "\n```\n";
+                        PxChunk dependenyChunk = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".dependencies"));
+                        if (dependenyChunk != null) {
+                            nextPrompt += "\n\n### Hier noch Infos zu den Dependencies innerhalb des Projekts:\n\n"
+                                    + DependencyCompactor.compact(dependenyChunk.getContent(), maxDependencyEntries);
+                        }
+                    } else {
+                        nextPrompt = prompt + "\n\n## " + className + "\n";
                     }
+                    // pointer layer — emitted for EVERY content level
+                    if (clusterId != null && !clusterId.isBlank()) {
+                        nextPrompt += "[cluster:" + clusterId + "]\n";
+                    }
+                    String file = pxChunk.getFile();
+                    if (file != null && !file.isBlank()) {
+                        nextPrompt += "→ readFile(\"" + file + "\")\n";
+                    }
+                    nextPrompt += "→ readBySignature(\"" + className + "\")\n";
+                    nextPrompt += "→ graphNode(\"" + className + "\")\n";
                     break;
                 default:
                     break;
