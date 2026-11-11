@@ -1,6 +1,6 @@
-# Dashboard
+## Dashboard
 
-The Dashboard is the primary monitoring view in the PRJXP Hub web UI. It provides a real-time overview of system health, query performance, and indexed projects. Data is refreshed automatically via polling—no manual reload is required.
+The Dashboard is the primary monitoring view in the PRJXP Hub web UI. It displays real-time system health metrics, query performance statistics, and a project overview. All data is fetched via polling—no page reload is required to see updated values.
 
 The page is organized into three sections:
 
@@ -8,84 +8,104 @@ The page is organized into three sections:
 |---|---|
 | **System Health** | Four metric cards (CPU, Memory, Disk, Connections) |
 | **Query Stats** | Two chart panels (Response Times, Cache Performance) |
-| **Projects** | Table of indexed projects with live counts |
+| **Projects** | Table of indexed projects with their status |
 
 A **live-update indicator** in the header signals that data is being refreshed in the background.
 
-## Layout and Visual Structure
+---
 
-The dashboard renders the following elements in order:
+## Layout
 
-- **Title** – An `<h1>` reading "Dashboard" with a `neon-glow` CSS class for the PRJXP visual theme.
-- **Metrics grid** (`.metrics-grid`) – A responsive grid containing four `<metric-card>` components:
-  - CPU
-  - Memory
-  - Disk
-  - Connections
-- **Charts grid** (`.charts-grid`) – A responsive grid containing two `<chart-panel>` components:
-  - **Response Times** – displays *Avg* and *P95* latency values.
-  - **Cache Performance** – displays *Hits* and *Misses* counts.
-- **Projects section** – A table listing all indexed projects. The section is always rendered, even when the project list is empty.
+The page renders the following structural elements (top to bottom):
+
+1. **Title** – An `<h1>` reading "Dashboard" with a `neon-glow` CSS class.
+2. **Metrics grid** (`.metrics-grid`) – A responsive grid containing four `<metric-card>` components:
+   - CPU
+   - Memory
+   - Disk
+   - Connections
+3. **Charts grid** (`.charts-grid`) – A responsive grid containing two `<chart-panel>` components:
+   - **Response Times** – two data points: *Avg* and *P95*
+   - **Cache Performance** – two data points: *Hits* and *Misses*
+4. **Projects section** – A table listing all indexed projects.
 
 Each of the three areas is wrapped in a `.dashboard-section` container.
 
-## Data Sources and Polling
+---
 
-The `DashboardComponent` subscribes to three observables provided by `DashboardService`. Each observable is polled on a fixed interval and wrapped with `catchError` so the UI degrades gracefully if a backend endpoint is unavailable.
+## Data Sources and Polling Intervals
 
-| Observable | Service method | Poll interval | Fallback on error |
+The `DashboardService` provides three observable streams. The component subscribes to them in `ngOnInit` with the following polling cadences:
+
+| Stream | Service method | Poll interval | Fallback on error |
 |---|---|---|---|
-| `health$` | `pollHealth(5000)` | 5 s | Empty `SystemHealth` object |
-| `queryStats$` | `pollQueryStats(10000)` | 10 s | Empty `QueryStats` object |
-| `projects$` | `pollProjects(10000)` | 10 s | Empty array `[]` |
+| System health | `pollHealth(5000)` | 5 s | `{}` (empty `SystemHealth`) |
+| Query statistics | `pollQueryStats(10000)` | 10 s | `{}` (empty `QueryStats`) |
+| Project list | `pollProjects(10000)` | 10 s | `[]` (empty array) |
 
-All three subscriptions are established in `ngOnInit()`. The `queryStats$` stream additionally pipes through a `tap()` operator that calls `updateChartData()` to keep the chart signals in sync with the latest API response.
+All three streams are wrapped in `catchError` so that a missing or unreachable backend endpoint degrades gracefully to an empty value rather than crashing the UI.
 
-## Chart Data
+A fourth service method, `getProjectStats()`, is available on the service but is **not** subscribed to by the dashboard component in its current implementation.
 
-Two reactive signals drive the chart panels. They are populated from the `QueryStats` model each time the 10-second poll returns:
+---
+
+## Query Statistics Chart Data
+
+When a new `QueryStats` payload arrives, the component's `updateChartData` method maps the raw fields into the two chart panels:
 
 ### Response Times chart
 
-| Data point label | Source field |
-|---|---|
-| `Avg` | `stats.avgResponseTimeMs` (defaults to `0`) |
-| `P95` | `stats.p95ResponseTimeMs` (defaults to `0`) |
+| Chart label | Source field | Fallback |
+|---|---|---|
+| Avg | `stats.avgResponseTimeMs` | `0` |
+| P95 | `stats.p95ResponseTimeMs` | `0` |
 
 ### Cache Performance chart
 
-| Data point label | Source field |
+| Chart label | Source field | Fallback |
+|---|---|---|
+| Hits | `stats.cacheHits` | `0` |
+| Misses | `stats.cacheMisses` | `0` |
+
+If a field is `null` or `undefined` in the API response, the chart renders `0` for that data point.
+
+---
+
+## Live Updates
+
+The dashboard does **not** require a manual refresh. Because each stream is a polling observable:
+
+- **System health** values (CPU, Memory, Disk, Connections) update every **5 seconds**.
+- **Query stats** and the **project list** update every **10 seconds**.
+
+The `LiveUpdateIndicatorComponent` in the header reflects the active polling state, giving the operator a visual cue that data is current.
+
+---
+
+## Graceful Degradation
+
+If the Hub backend is not yet fully operational (for example, during initial startup or if a metrics endpoint has not been deployed), the dashboard still renders:
+
+- Metric cards display `0` or a blank value.
+- Chart panels show flat lines at `0`.
+- The project table is empty.
+
+No error dialogs or broken layouts appear; the `catchError` operators ensure the UI remains interactive while waiting for the backend to become available.
+
+---
+
+## Component Dependencies
+
+The `DashboardComponent` (selector `app-dashboard`, standalone) imports the following child components and pipes:
+
+| Dependency | Purpose |
 |---|---|
-| `Hits` | `stats.cacheHits` (defaults to `0`) |
-| `Misses` | `stats.cacheMisses` (defaults to `0`) |
+| `MetricCardComponent` | Renders a single labelled numeric metric |
+| `ChartPanelComponent` | Renders a small bar/line chart from `ChartDataPoint[]` |
+| `LiveUpdateIndicatorComponent` | Visual indicator that polling is active |
+| `AsyncPipe` | Bridges RxJS observables to the template |
 
-Each chart panel receives an array of `ChartDataPoint` objects (`{ label, value }`).
-
-## Models
-
-The dashboard consumes three data models:
-
-- **`SystemHealth`** – CPU, memory, disk, and connection metrics displayed in the metric cards.
-- **`QueryStats`** – Response-time percentiles and cache hit/miss counters displayed in the charts.
-- **`ProjectInfo`** – Per-project metadata (name, index status, etc.) displayed in the projects table.
-
-## Live-Update Indicator
-
-A `<live-update-indicator>` component is rendered in the dashboard header. It is driven by the same polling streams, so it reflects whether the most recent poll cycle has completed. Because the projects stream polls every 10 seconds, the indicator (and any project counts) stay current without requiring the user to reload the page.
-
-## Error Handling
-
-Each polling stream is wrapped with `catchError`:
-
-```ts
-this.health$.set(
-  this.dashboardService.pollHealth(5000).pipe(
-    catchError(() => of({} as SystemHealth))
-  )
-);
-```
-
-If a backend endpoint is not yet available (for example, during initial deployment or a transient outage), the corresponding UI section renders with zeroed or empty values rather than throwing an error. The next successful poll restores real data automatically.
+The component holds its data in Angular **signals** (`health$`, `queryStats$`, `projects$`, `queryTimesData`, `cacheData`), which are updated reactively as new polling results arrive.
 
 _This document was generated with Doc|Pipe._
 

@@ -1,14 +1,12 @@
 # Projects
 
-The **Projects** page is the central management view in the PRJXP Hub web UI. It lists every project that has been imported into your Hub instance, shows its current pipeline status, and provides the actions you need to keep the index current: reindexing, reimporting, embedding dependencies, and syncing from GitHub.
+The **Projects** page is the central hub for managing every codebase you have imported into PRJXP. It shows a list of projects with their current status, lets you create, edit, and delete them, and exposes the full reindexing and GitHub workflows.
 
 The page loads the project list on open and refreshes it every **10 seconds** so that counts, statuses, and live-update indicators stay current without manual reloading.
 
----
+## Viewing Projects
 
-## Project List & Status
-
-When the page loads, the component calls `getProjects()` and renders one row per project. Each row displays:
+When you open the Projects page, the component calls `getProjects()` and renders every project as a row. Each row displays:
 
 | Field | Description |
 |---|---|
@@ -18,162 +16,137 @@ When the page loads, the component calls `getProjects()` and renders one row per
 | **Embedding count** | Number of vectors stored for the project. |
 | **Reindex progress bar** | Shown only while a reindex is actively running (see [Reindexing](#reindexing)). |
 
+Click a row to **select** the project. The selected project drives the action buttons in the detail card (reindex, embed dependencies, reimport, update from GitHub, docpipe).
+
 ### Filtering
 
-A search box at the top of the list filters projects by **name**. Matching is **case-insensitive** and uses substring inclusion:
+A search box at the top of the list filters projects by name. The match is **case-insensitive** and uses substring matching:
 
-```text
-project-a   →  matches "project-a", "PROJECT-A", "my-project-a"
-(empty)     →  shows all projects
-```
+- Typing `project-a` matches `project-a`.
+- Typing `PROJECT-A` also matches `project-a`.
+- An empty filter shows all projects.
 
-### Status badges
+## Project Status and Lifecycle
 
-| Status | Badge class | Meaning |
+Each project carries two independent status dimensions:
+
+### Overall status (`status`)
+
+| Value | Badge class | Meaning |
 |---|---|---|
-| `READY` | `status-ready` | Index is complete and queryable. |
-| `FAILED` | `status-failed` | The last pipeline run did not finish successfully. |
-| Any other (e.g. `IMPORTING`) | `status-default` | Pipeline is in progress. |
+| `READY` | `status-ready` | The project is fully indexed and queryable. |
+| `FAILED` | `status-failed` | The import or indexing pipeline failed. |
+| `IMPORTING` | `status-default` | The project is still being cloned / imported. |
+| *(any other)* | `status-default` | In-progress or transitional state. |
 
----
+### Reindex status (`reindexStatus`)
 
-## Creating & Editing Projects
-
-Both creation and editing open the **YAML editor dialog**. The dialog is pre-populated with the project's current configuration when editing; it starts blank when creating.
-
-### Configuration fields
-
-The YAML editor exposes the following fields (model `PrjxpYamlConfig`):
-
-| Field | Type | Notes |
-|---|---|---|
-| `name` | string | Unique project identifier. |
-| `rootDir` | string | Path to the source tree on the Hub host. |
-| `chunoWhiteList` | string | Comma-separated list of file extensions to include (e.g. `java,ts`). |
-| `tibedBatchSize` | number | Batch size for the embedding step. |
-| `prompt` | string \| null | Optional custom system prompt for the RAG pipeline. |
-| `fulltext` | boolean | Whether to include full-text search alongside vector search. |
-| `embedDependencies` | boolean | Whether to also embed third-party library sources. |
-
-### Save behaviour
-
-- **New project** (`name` does not match any existing project): the component calls `createProject(config)`.
-- **Existing project** (`name` matches a project already in the list): the component calls `updateProject(name, { rootDir, chunoWhiteList, tibedBatchSize, prompt, fulltext, embedDependencies })`.
-
-After a successful save the project list is reloaded and the editor closes.
-
-### Delete
-
-Selecting a project and choosing **Delete** calls `deleteProject(name)`. On success the list is reloaded and the selection is cleared.
-
----
-
-## Reindexing
-
-Reindexing re-runs the full chunk → embed pipeline for a project. It is the primary way to pick up source-code changes after the initial import.
-
-### Confirmation dialog
-
-Clicking **Reindex** on a project row opens a confirmation dialog that displays the project name. You can:
-
-- **Confirm** – triggers the reindex.
-- **Cancel** – closes the dialog; no action is taken.
-
-### Progress tracking
-
-Once confirmed, the component:
-
-1. Calls `reindexProject(name)`.
-2. Starts a **2-second polling interval** on `getReindexStatus(name)`.
-3. Updates the project row in the list with the returned `reindexStatus` and `reindexProgress` (0–100).
-4. Renders a **progress bar** in the row while the status is one of the active values: `CHUNKING`, `EMBEDDING`, `IMPORTING`, or `DOCPIPE`.
-5. **Stops polling** when the status reaches `COMPLETE` or `FAILED`.
-6. Reloads the full project list to refresh counts.
-7. After **5 seconds**, resets the row's `reindexStatus` to `IDLE` and `reindexProgress` to `0` so the UI returns to a clean state.
-
-If you navigate away and return while a reindex is still running, `loadProjects()` detects the active status and **resumes polling** automatically.
-
-### Reindex status values
-
-| Status | Active? | Meaning |
+| Value | Active? | Meaning |
 |---|---|---|
 | `IDLE` | No | No reindex in progress. |
-| `IMPORTING` | Yes | Source files are being read. |
+| `IMPORTING` | Yes | Source files are being re-read. |
 | `CHUNKING` | Yes | Code is being split into chunks. |
 | `EMBEDDING` | Yes | Chunks are being vectorised. |
 | `DOCPIPE` | Yes | Documentation pipeline is running. |
-| `COMPLETE` | No | Pipeline finished successfully. |
-| `FAILED` | No | Pipeline encountered an error. |
+| `COMPLETE` | No | Reindex finished successfully. |
+| `FAILED` | No | Reindex failed. |
 
----
+When a reindex is **active** (any of the four "Yes" values above), the project row renders a progress bar whose width tracks `reindexProgress` (0–100 %). Idle, complete, and failed projects show no bar.
 
-## GitHub Import & Update
+## Creating and Editing Projects
 
-### Import a new project from GitHub
+Both creation and editing use the **YAML editor dialog**.
 
-1. Click **Import from GitHub** to open the import dialog.
-2. Enter the **repository URL** (e.g. `https://github.com/foo/bar.git`) and, optionally, a **GitHub token** for private repositories.
-3. Submit. The dialog **stays open** and shows a status indicator:
+### Creating a new project
 
-| Phase | What you see |
-|---|---|
-| `running` | The import request was accepted; the dialog shows a spinner. |
-| `success` | A success message (e.g. "Imported bar") is displayed. The dialog **auto-closes after 1.5 s**. |
-| `error` | An error message (e.g. "git clone exited with code 128") is displayed. The dialog **stays open** so you can retry. |
+1. Click **Create Project**. The editor opens with a blank form.
+2. Fill in the configuration fields (see table below).
+3. Click **Save**. The component calls `createProject(config)`, then reloads the list and closes the dialog.
 
-Behind the scenes the component polls `getGithubOperations()` every **2 seconds**, matching on the repository URL as the operation key. Polling stops when the operation status is no longer `PENDING`, or after a **300-second deadline** (matching the server-side `githubTimeoutSeconds` default). Transient network errors on the poll do not abort the loop.
+### Editing an existing project
 
-If the initial `importGithub` request itself fails (e.g. a network error), the dialog immediately shows the error and remains open for retry.
+1. Select a project in the list.
+2. Click **Edit**. The editor opens pre-populated with the project's current values.
+3. Modify any field and click **Save**. The component calls `updateProject(name, …)` with the changed fields, then reloads the list and closes the dialog.
 
-### Update an existing GitHub-backed project
+### YAML configuration fields
 
-Select a project and choose **Update from GitHub**. The component calls `updateGithub(name)`, then polls `getGithubOperations()` (keyed by project name) every 2 seconds with the same 300-second deadline. The result is surfaced as a **toast notification**:
+| Field | Type | Purpose |
+|---|---|---|
+| `name` | string | Unique project identifier. |
+| `rootDir` | string | Filesystem path to the project root. |
+| `chunoWhiteList` | string | Comma-separated list of languages to index (e.g. `java,ts`). |
+| `tibedBatchSize` | number | Batch size for the embedding pipeline. |
+| `prompt` | string \| null | Optional custom system prompt for the RAG model. |
+| `fulltext` | boolean | Whether to include full-text search alongside vector search. |
+| `embedDependencies` | boolean | Whether to also embed third-party library sources. |
 
-- **Success** toast: e.g. "Updated project-a".
-- **Error** toast: e.g. "git pull exited with code 1".
+When saving an **existing** project, the component sends `rootDir`, `chunoWhiteList`, `tibedBatchSize`, `prompt` (or `null`), `fulltext`, and `embedDependencies`. When creating a **new** project, the full `PrjxpYamlConfig` object is sent.
 
-The project list is reloaded after the request is accepted.
+### Deleting a project
 
----
+Select a project and click **Delete**. The component calls `deleteProject(name)`, reloads the list, and clears the selection if the deleted project was the one you had selected.
+
+## Reindexing
+
+Reindexing re-runs the full pipeline (import → chunk → embed) for an existing project. It is a **two-step confirmation** flow:
+
+1. Click **Reindex** on the selected project. A confirmation dialog appears showing the project name.
+2. **Confirm** – the dialog closes, `reindexProject(name)` is called, and the UI begins **polling** `getReindexStatus(name)` every **2 seconds**.
+   - Each poll updates the project's `reindexStatus` and `reindexProgress` in the list, so you see the progress bar advance.
+   - Polling stops automatically when the status becomes `COMPLETE` or `FAILED`.
+   - After a 5-second delay following completion, the status resets to `IDLE` and progress to 0, returning the row to a clean state.
+   - The project list is reloaded once after the pipeline finishes so that chunk and embedding counts are refreshed.
+3. **Cancel** – the dialog closes and the project name is cleared. No reindex is started.
+
+If you navigate away and return to the Projects page while a reindex is still running, `loadProjects()` detects the active status and **resumes polling** automatically.
+
+## GitHub Import and Update
+
+### Importing a repository
+
+1. Click **Import from GitHub**. A dialog opens with two fields:
+   - **URL** – the repository URL (e.g. `https://github.com/foo/bar.git`).
+   - **Token** – optional; supply a GitHub personal access token for private repositories.
+2. Click **Import**. The dialog stays open and shows a **running** indicator.
+3. The component calls `importGithub(url, token)`, then begins **polling** `getGithubOperations()` every **2 seconds** (up to a **300-second** deadline).
+   - **Success** – the dialog shows a success message (e.g. "Imported bar") and **auto-closes after 1.5 seconds**. The project list is reloaded.
+   - **Failure** – the dialog shows the error message (e.g. "git clone exited with code 128") and **stays open** so you can retry.
+   - **Request error** – if the initial `importGithub` call itself fails, the dialog shows the error and stays open.
+4. You can also **close** the dialog at any time; this stops polling and resets the status to idle.
+
+### Updating a GitHub-backed project
+
+Select a project that was imported from GitHub and click **Update from GitHub**. The component calls `updateGithub(name)`, then polls the GitHub operations endpoint (same 2-second / 300-second mechanism). The result is shown as a **toast notification**:
+
+- **Success** – a green toast with the operation message (e.g. "Updated project-a").
+- **Failure** – a red toast with the error message (e.g. "git pull exited with code 1").
+
+The project list is reloaded after the update request is accepted.
 
 ## Additional Actions
 
-These actions operate on the **currently selected** project. If no project is selected, the action is a no-op.
+These actions operate on the **currently selected** project. If no project is selected, the button is a no-op.
 
-| Action | Service call | Post-action behaviour |
+| Action | Service call | What happens after |
 |---|---|---|
-| **Embed Dependencies** | `embedDependencies(name)` | Reloads the project list (the async materialisation registers new library chunks). |
-| **Reimport** | `reimportProject(name)` | Reloads the project list. |
-| **DocPipe** | `docpipeProject(name)` | Starts reindex-status polling (same 2 s interval as reindex). |
+| **Embed Dependencies** | `embedDependencies(name)` | The project list is reloaded so newly materialised library chunks appear. |
+| **Reimport** | `reimportProject(name)` | The project list is reloaded. |
+| **DocPipe** | `docpipeProject(name)` | Polling for the doc-phase status begins (same 2-second mechanism as reindex). |
 
----
+All three actions require a project to be selected first. The component checks `selectedProject()` and returns early if it is `null`.
 
-## Project Lifecycle at a Glance
+## Cleanup and Polling Lifecycle
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│                        IMPORT (initial)                            │
-│  GitHub import / local import                                       │
-│  status: IMPORTING  →  READY  |  FAILED                            │
-└──────────────────────────────┬──────────────────────────────────────┘
-                               │
-                               ▼
-┌─────────────────────────────────────────────────────────────────────┐
-│                        READY (steady state)                        │
-│  chunkCount / embeddingCount populated, queryable                  │
-│                                                                    │
-│  Actions available:                                                │
-│    • Reindex        →  CHUNKING → EMBEDDING → COMPLETE/FAILED      │
-│    • Reimport       →  re-runs the import pipeline                 │
-│    • Embed Deps     →  materialises & embeds library sources       │
-│    • DocPipe        →  runs the documentation pipeline             │
-│    • Update (GitHub)→  git pull + reindex                          │
-│    • Edit YAML      →  update config, reindex on next run          │
-│    • Delete         →  removes the project and its index           │
-└─────────────────────────────────────────────────────────────────────┘
-```
+The component manages three independent timers, all of which are cleaned up when you leave the page (`ngOnDestroy`):
 
-The **backend is the source of truth** for all statuses and counts. The UI polls at fixed intervals (10 s for the list, 2 s for reindex and GitHub operations) and never mutates state locally beyond the progress bar and status badge.
+| Timer | Interval | Stopped when |
+|---|---|---|
+| **List refresh** | 10 s | Component destroyed. |
+| **Reindex poll** | 2 s | Status reaches `COMPLETE` or `FAILED`; component destroyed. |
+| **GitHub operation poll** | 2 s | Operation resolves (success or failure); 300 s deadline elapses; dialog closed; component destroyed. |
+
+Transient network errors during a GitHub poll do **not** stop the poller; the next tick simply retries. The 300-second deadline covers the server-side `githubTimeoutSeconds` default and prevents indefinite polling if the operation never resolves.
 
 _This document was generated with Doc|Pipe._
 

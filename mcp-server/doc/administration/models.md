@@ -1,24 +1,35 @@
 # Models
 
-PRJXP uses two categories of AI models:
-
-- **Embedding models** – convert source-code chunks into fixed-size vectors for similarity search.
-- **Chat models** – generate natural-language answers (and documentation) from retrieved context.
-
-Both are configured in the Hub's `application.yml` (or `application.yaml`) and can be overridden with environment variables. This chapter covers every relevant field, the supported provider types, and the stereotype mechanism for chat models.
-
----
+PRJXP uses two categories of AI models: **embedding models** (which convert code chunks into vectors for retrieval) and **chat models** (which generate answers via retrieval-augmented generation). Both are configured in the Hub's `application.yml` and can be overridden with environment variables.
 
 ## Embedding Models
 
-The embedding model is the component that turns each code chunk into a vector. PRJXP supports two provider types, selected via the `type` field:
+The embedding model is responsible for converting source-code chunks into dense vectors. PRJXP supports two configuration keys depending on the deployment profile:
 
-| `type` value | Provider | Typical use |
-|---|---|---|
-| `OLLAMA` | Ollama server | Local, self-hosted inference |
-| `OPEN_AI` | Any OpenAI-compatible API (LM Studio, vLLM, OpenAI, etc.) | Local or remote |
+### `prjxp.embedding`
 
-### Configuration block
+| Field | Type | Default | Description |
+|-------|------|---------|-------------|
+| `type` | String | — | Model backend: `OLLAMA` or `OPEN_AI` |
+| `apiBaseURL` | String | — | Base URL of the embedding service |
+| `modelName` | String | — | Model identifier (e.g. `mxbai-embed-large`) |
+| `timeout` | int (seconds) | — | HTTP timeout for embedding requests |
+| `apiKey` | String | `dummy` | API key (required for `OPEN_AI`) |
+| `maxSegmentsPerBatch` | int | `32` | Maximum texts per embedding HTTP request; the per-project `tibedBatchSize` is split at this size |
+
+Example (Ollama backend):
+
+```yaml
+prjxp:
+  embedding:
+    type: OLLAMA
+    apiBaseURL: http://192.168.188.92:11434
+    modelName: mxbai-embed-large
+    timeout: 60
+    maxSegmentsPerBatch: 32
+```
+
+Example (OpenAI-compatible backend, e.g. LM Studio):
 
 ```yaml
 prjxp:
@@ -28,30 +39,20 @@ prjxp:
     modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
     timeout: ${EMBEDDING_TIMEOUT:180}
     apiKey: ${EMBEDDING_API_KEY:dummy}
+    maxSegmentsPerBatch: 32
 ```
+
+### `prjxp.embedding-model`
+
+An alternative configuration key with a different field naming convention:
 
 | Field | Type | Default | Description |
-|---|---|---|---|
-| `type` | String | – | `OLLAMA` or `OPEN_AI`. Determines which HTTP client the Hub uses. |
-| `apiBaseURL` | String | – | Base URL of the embedding endpoint (e.g. `http://host.docker.internal:1234/v1`). |
-| `modelName` | String | – | Model identifier as expected by the provider (e.g. `mixedbread-ai/mxbai-embed-large-v1`). |
-| `timeout` | int (seconds) | `180` | Per-request timeout for the embedding call. |
-| `apiKey` | String | `dummy` | Bearer token. For local providers (LM Studio, Ollama) a placeholder is sufficient. |
-
-### Ollama example
-
-```yaml
-prjxp:
-  embedding:
-    type: OLLAMA
-    apiBaseURL: http://192.168.188.92:11434
-    modelName: mxbai-embed-large
-    timeout: 60
-```
-
-### Alternative `embedding-model` block
-
-A second, kebab-case configuration path exists for environments that prefer explicit provider naming:
+|-------|------|---------|-------------|
+| `server-type` | String | — | Provider type (e.g. `openai`) |
+| `provider-url` | String | — | Base URL of the embedding service |
+| `model-name` | String | — | Model identifier |
+| `api-key` | String | — | API key |
+| `timeout-secs` | int | — | HTTP timeout in seconds |
 
 ```yaml
 prjxp:
@@ -63,29 +64,9 @@ prjxp:
     timeout-secs: 20
 ```
 
-The fields map one-to-one to the `embedding` block above (`server-type` ≡ `type`, `provider-url` ≡ `apiBaseURL`, etc.). Use whichever block your deployment profile expects; do not define both simultaneously.
-
----
-
 ## Embedding Stores
 
-Each project gets its own vector index. The Lucene-based store is configured under `prjxp.embeddingStoreLucene`:
-
-```yaml
-prjxp:
-  embeddingStoreLucene:
-    indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
-    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
-```
-
-| Field | Type | Default | Description |
-|---|---|---|---|
-| `indexPath` | String | `/app-source/.prjxp-data/lucene-index` | Filesystem path where Lucene writes the vector index. Must be writable by the Hub process. |
-| `vectorDimension` | int | `1024` | Dimensionality of the embedding vectors. **Must match** the output dimension of the configured embedding model. |
-
-### Per-project store registration
-
-Individual projects are registered in a list. The entry marked `default: true` is used when no explicit project is specified:
+Embedding stores define where vectors are persisted per project. Configure the list under `prjxp.embedding-stores`:
 
 ```yaml
 prjxp:
@@ -96,26 +77,41 @@ prjxp:
     - project-name: "kigbau"
 ```
 
-Add one entry per project you want the Hub to index. The `project-name` must match the name used during project import.
+- `project-name` — identifier matching the project name.
+- `default` — set to `true` on exactly one entry to mark it as the fallback store.
 
----
+### Lucene Index
+
+The vector index backend is configured under `prjxp.embeddingStoreLucene`:
+
+| Field | Env Variable | Default | Description |
+|-------|-------------|---------|-------------|
+| `indexPath` | `LUCENE_INDEX_PATH` | `/app-source/.prjxp-data/lucene-index` | Filesystem path for the Lucene index |
+| `vectorDimension` | `LUCENE_VECTOR_DIMENSION` | `1024` | Dimensionality of the embedding vectors |
+
+```yaml
+prjxp:
+  embeddingStoreLucene:
+    indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
+    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
+```
+
+> **Note:** `vectorDimension` must match the output dimension of the configured embedding model. `mxbai-embed-large` produces 1024-dimensional vectors.
 
 ## Chat Models
 
-Chat models are defined as a **list** of entries. Each entry carries a **stereotype** – a logical role that PRJXP's internal pipelines (DocPipe, Q&A, Javadoc generation) use to select the appropriate model.
+Chat models are defined as a list under `prjxp.chatModels` (camelCase) or `prjxp.chat-models` (kebab-case). Each entry is a **stereotype** — a named role that the DocPipe and retrieval pipeline selects for a specific task.
 
-### Stereotypes observed in the source
+### Stereotypes
 
-| Stereotype | Typical use |
-|---|---|
-| `default` | General Q&A / interactive chat |
+| Stereotype | Typical Use |
+|------------|-------------|
+| `default` | General Q&A and interactive chat |
 | `detailed` | Long-form document generation (FAQ, architecture docs) |
 | `documentation` | Structured documentation output |
-| `javadoc` | Per-method / per-class Javadoc generation |
+| `javadoc` | Javadoc / API-comment generation |
 
-You may define additional stereotypes; any string is valid. PRJXP falls back to the `default` stereotype if the requested one is not configured.
-
-### Configuration block (Docker / camelCase)
+### Example Configuration
 
 ```yaml
 prjxp:
@@ -148,7 +144,7 @@ prjxp:
         enable_thinking: false
 ```
 
-### Configuration block (kebab-case, non-Docker)
+Kebab-case variant (single default stereotype):
 
 ```yaml
 prjxp:
@@ -161,111 +157,105 @@ prjxp:
       timeout-secs: ${PRJXP_CHAT_TIMEOUT_SECS:300}
 ```
 
-> **Note:** The kebab-case variant uses `stereo-type` (not `stereotype`). Both forms bind to the same Java class; use the form that matches your Spring profile.
-
-### Supported `serverType` values
-
-| Value | Provider |
-|---|---|
-| `lm-studio` | LM Studio (OpenAI-compatible local server) |
-| `openai` | OpenAI API or any OpenAI-compatible endpoint |
-| `ollama` | Ollama |
-
-The `providerUrl` must point to the provider's OpenAI-compatible `/v1` endpoint (or the Ollama root for `ollama`).
-
----
+> **Timeout guidance:** A local 27 B model can take well over 60 s for document generation. The default timeout is 60 s; raise it (e.g. `300` or `600`) for large local models. Override at runtime with `PRJXP_CHAT_TIMEOUT_SECS`.
 
 ## Chat Model Configuration Fields
 
-Every entry in the `chatModels` list maps to the `PrjXPChatModelReference` class. The full field set:
+Each chat-model entry maps to the `PrjXPChatModelReference` class. The following fields are available:
 
 | Field | Type | Default | Description |
-|---|---|---|---|
-| `stereotype` / `stereo-type` | String | – | Logical role identifier (see table above). |
-| `serverType` / `server-type` | String | – | Provider: `lm-studio`, `openai`, `ollama`. |
-| `modelName` / `model-name` | String | – | Model identifier as the provider expects. |
-| `apiKey` / `api-key` | String | – | Auth token. Excluded from log output (`@ToString.Exclude`). |
-| `providerUrl` / `provider-url` | String | – | Base URL of the chat endpoint. |
-| `timeoutSecs` / `timeout-secs` | int | `60` | Per-request timeout in seconds. |
-| `temperature` | double | `0.0` | Sampling temperature. |
-| `prompt` | String | – | Optional standing system prompt, prepended to every conversation. Supports `${ENV_VAR}` placeholders. |
-| `supportsTools` | Boolean | `null` | `true`/`false` to force native function calling on or off. `null` (default) = auto-detect: tools are attempted; if the provider rejects them, the chat falls back to a text protocol. |
-| `args` | Map\<String, String\> | `{}` | Client/connection-level parameters consumed by the provider-specific `ChatModelSupplier` (e.g. Azure endpoint, `api-version`, `trust-all-certs`). |
-| `bodyProperties` | Map\<String, Object\> | `{}` | Request-level properties merged into every chat-completion request body as top-level JSON fields. Use for provider-specific knobs that have no dedicated config field. |
+|-------|------|---------|-------------|
+| `stereotype` / `stereo-type` | String | — | Named role for the model |
+| `serverType` / `server-type` | String | — | Provider backend (e.g. `lm-studio`) |
+| `modelName` / `model-name` | String | — | Model identifier |
+| `apiKey` / `api-key` | String | — | API key (excluded from log output) |
+| `providerUrl` / `provider-url` | String | — | Base URL of the chat endpoint |
+| `timeoutSecs` / `timeout-secs` | int | `60` | HTTP timeout in seconds |
+| `temperature` | double | `0.0` | Sampling temperature |
+| `prompt` | String | — | Standing instructions prepended to every conversation. Supports `${ENV}` placeholders |
+| `supportsTools` | Boolean | `null` | `null` = auto-detect (tools attempted, falls back to text protocol if rejected). `true`/`false` to force |
+| `args` | Map\<String, String\> | `{}` | Client/connection-level parameters (e.g. Azure endpoint, `api-version`, `trust-all-certs`). Consumed by the `ChatModelSupplier` implementation |
+| `bodyProperties` | Map\<String, Object\> | `{}` | Request-level properties merged into every chat-completion request body as top-level JSON fields. Use for provider-specific knobs with no dedicated config field |
 
-### `bodyProperties` in practice
+### `bodyProperties` in Practice
 
-The most common use case is disabling Qwen3's thinking mode, which otherwise leaks tool-call XML into the response content and breaks DocPipe's function-calling pipeline:
+The `bodyProperties` map is serialized as top-level JSON fields in the request body. String values that look like booleans or numbers are coerced to their native JSON type by the supplier.
+
+A common use case: Qwen3's "thinking" mode leaks tool calls into the response content as XML, breaking native function calling. Disable it per stereotype:
 
 ```yaml
 bodyProperties:
   enable_thinking: false
 ```
 
-Values may be booleans, numbers, strings, or nested objects. String values that look like booleans or numbers are coerced to their native JSON type by the supplier before the request is sent.
-
 ### `supportsTools`
 
-Set this explicitly when you know the provider's tool-calling behaviour:
+- **`null`** (default): PRJXP attempts native function calling. If the provider rejects the tools parameter, the chat falls back to a text-based protocol.
+- **`true`**: Forces native function calling; the request fails if the provider does not support it.
+- **`false`**: Disables tool sending entirely; the model responds in plain text.
+
+## Provider Types and Environment Variables
+
+### Supported `serverType` / `type` Values
+
+| Value | Context | Notes |
+|-------|---------|-------|
+| `OLLAMA` | Embedding | Connects to an Ollama instance (`/api/embeddings`) |
+| `OPEN_AI` | Embedding | Any OpenAI-compatible `/v1/embeddings` endpoint |
+| `openai` | Embedding (`embedding-model`) | Same as `OPEN_AI`, kebab-case variant |
+| `lm-studio` | Chat | Any OpenAI-compatible `/v1/chat/completions` endpoint (LM Studio, vLLM, etc.) |
+
+### Environment Variables
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `EMBEDDING_API_BASE_URL` | Base URL for the embedding service | `http://host.docker.internal:1234/v1` |
+| `EMBEDDING_MODEL_NAME` | Embedding model identifier | `mixedbread-ai/mxbai-embed-large-v1` |
+| `EMBEDDING_API_KEY` | API key for embedding (and chat) | `dummy` |
+| `EMBEDDING_TIMEOUT` | Embedding HTTP timeout (seconds) | `180` |
+| `PRJXP_EMBEDDING_API_BASE_URL` | Base URL for `embedding-model` key | `http://localhost:1234/v1` |
+| `PRJXP_EMBEDDING_MODEL_NAME` | Model name for `embedding-model` key | `mxbai-embed-large-v1` |
+| `PRJXP_CHAT_TIMEOUT_SECS` | Chat HTTP timeout (seconds) | `300` |
+| `LUCENE_INDEX_PATH` | Lucene index directory | `/app-source/.prjxp-data/lucene-index` |
+| `LUCENE_VECTOR_DIMENSION` | Vector dimensionality | `1024` |
+| `PRJXP_MAX_UPLOAD_SIZE` | Max upload size for Hub endpoints | `100MB` |
+
+### Docker Networking
+
+When the Hub runs in Docker and the model server runs on the host, use `host.docker.internal` in `providerUrl` / `apiBaseURL`:
 
 ```yaml
-supportsTools: true    # force native function calling
-supportsTools: false   # disable; use text-protocol tool simulation
-# omit (null)         # auto-detect with graceful fallback
+providerUrl: http://host.docker.internal:1234/v1
 ```
 
-### `args`
-
-Supplier-specific connection parameters. Example (hypothetical Azure deployment):
+For bare-metal or same-network deployments, use the host IP directly:
 
 ```yaml
-args:
-  azure-endpoint: "https://my-resource.openai.azure.com"
-  api-version: "2024-02-01"
+apiBaseURL: http://192.168.188.92:11434
 ```
 
-These are passed to the `ChatModelSupplier` implementation and do **not** appear in the request body.
+### Graph Rerank (Retrieval Scoring)
 
----
+Retrieved chunks are re-scored using graph centrality before being passed to the chat model. Configure under `prjxp.graph.rerank`:
 
-## Environment Variables
+| Field | Default | Description |
+|-------|---------|-------------|
+| `floor` | `0.98` | Minimum multiplier applied to a chunk's score. Values near 1.0 keep code chunks ranked high while damping peripheral nodes. |
+| `b-graph` | `5.0` | Exponent for the graph-centrality boost |
+| `cap` | `5.0` | Maximum multiplier |
+| `w-base` | `1.0` | Base weight |
 
-All configuration values that accept `${...}` placeholders can be overridden at container start. The following variables are referenced in the source material:
-
-| Variable | Default | Used by |
-|---|---|---|
-| `EMBEDDING_API_BASE_URL` | `http://host.docker.internal:1234/v1` | `prjxp.embedding.apiBaseURL` |
-| `EMBEDDING_MODEL_NAME` | `mixedbread-ai/mxbai-embed-large-v1` | `prjxp.embedding.modelName` |
-| `EMBEDDING_TIMEOUT` | `180` | `prjxp.embedding.timeout` |
-| `EMBEDDING_API_KEY` | `dummy` | `prjxp.embedding.apiKey`, chat `apiKey` |
-| `PRJXP_EMBEDDING_API_BASE_URL` | `http://localhost:1234/v1` | `prjxp.embedding-model.provider-url` |
-| `PRJXP_EMBEDDING_MODEL_NAME` | `mxbai-embed-large-v1` | `prjxp.embedding-model.model-name` |
-| `PRJXP_CHAT_TIMEOUT_SECS` | `300` | `prjxp.chat-models[].timeout-secs` |
-| `LUCENE_INDEX_PATH` | `/app-source/.prjxp-data/lucene-index` | `prjxp.embeddingStoreLucene.indexPath` |
-| `LUCENE_VECTOR_DIMENSION` | `1024` | `prjxp.embeddingStoreLucene.vectorDimension` |
-| `PRJXP_ROOT_DIR` | `.` | Hub data directories (`import`, `projects`, `chunks`) |
-| `PRJXP_MAX_UPLOAD_SIZE` | `100MB` | `spring.servlet.multipart.max-file-size` / `max-request-size` |
-| `SERVER_PORT` | `7007` | `server.port` |
-| `MCP_CORS_ALLOWED_PATTERNS` | `http://10.*.*.*,http://172.16.*.*.*,http://192.168.*.*.*,http://localhost:*` | `mcp.cors.allowed-patterns` |
-| `PRJXP_HUB_URL` | `http://localhost:7007/mcp` | `prjxp.mcp-servers[].url` |
-| `PRJXP_DOCS_DIR` | `/app/doc` | `prjxp.docs.dir` |
-
-### Docker `docker run` example
-
-```bash
-docker run -d \
-  --name prjxp-hub \
-  -p 7007:7007 \
-  -e EMBEDDING_API_BASE_URL=http://host.docker.internal:1234/v1 \
-  -e EMBEDDING_MODEL_NAME=mixedbread-ai/mxbai-embed-large-v1 \
-  -e EMBEDDING_API_KEY=your-key \
-  -e LUCENE_VECTOR_DIMENSION=1024 \
-  -e PRJXP_CHAT_TIMEOUT_SECS=300 \
-  -v /data/prjxp:/app-source/.prjxp-data \
-  prjxp/hub:latest
+```yaml
+prjxp:
+  graph:
+    rerank:
+      floor: 0.98
+      b-graph: 5.0
+      cap: 5.0
+      w-base: 1.0
 ```
 
-> **Tip:** When running the Hub in Docker alongside a local LM Studio instance on the host, use `host.docker.internal` (Linux: add `--add-host=host.docker.internal:host-gateway`) or the host's LAN IP in `providerUrl` and `apiBaseURL`.
+> **Calibration note:** Weights are degree-centrality values normalized by the maximum degree in the edge set. External hub types (e.g. `java.util.List`) dominate the maximum, so the observed range is 0–0.145 (p99 ≈ 0.026). A `floor` of 0.8 demotes nearly every code chunk by ~20 %, letting semantically weaker documentation chunks win even for code-specific queries. `0.98` keeps code on top while still damping peripheral nodes (measured mean rank shift ≈ 7 positions).
 
 _This document was generated with Doc|Pipe._
 

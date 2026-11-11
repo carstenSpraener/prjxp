@@ -1,10 +1,10 @@
 # Quickstart
 
-This chapter walks you through the three actions you will perform immediately after starting the PRJXP Hub:
+This chapter walks you through the three things you need to do after starting the PRJXP Hub for the first time:
 
-1. **Import** a project (archive, embedded archive, or live directory).
-2. **Watch** the indexing lifecycle move the project from *IMPORTING* to *READY*.
-3. **Ask** your first question in the chat and see the retrieval pipeline in action.
+1. **Import a project** so the Hub can index its source code.
+2. **Watch the indexing lifecycle** until the project is ready.
+3. **Ask your first question** in the chat and follow the results into the code graph.
 
 No additional configuration is required beyond the Hub container being up and the web UI reachable in your browser.
 
@@ -12,160 +12,162 @@ No additional configuration is required beyond the Hub container being up and th
 
 ## Importing a Project
 
-The Import page (`/import`) presents three tabs. The default tab is **Upload**.
+The Import page (the first screen you see in the web UI) offers three tabs. The default tab is **Upload**.
 
-| Tab | What you provide | Service call | Typical file |
-|-----|-----------------|--------------|--------------|
-| **Upload** | An archive of your source tree | `uploadArchive(file)` | `my-project.tar.gz` |
-| **Embedded** | A pre-packaged embedded archive | `uploadEmbedded(file)` | `my-project-embedded.tgz` |
-| **Live** | A directory already on the Hub host | `scanLiveProjects()` → `registerProject(candidate)` | — (filesystem path) |
+| Tab | What you do | Typical file | Resulting status |
+|-----|-------------|--------------|-----------------|
+| **Upload** | Drop or select an archive of a project | `.tar.gz` | `READY` (synchronous) |
+| **Embedded** | Drop or select an embedded archive | `.tgz` | `IMPORTING` (asynchronous) |
+| **Live** | Scan the host filesystem for existing projects | — (no file) | `READY` after registration |
 
-### Upload tab (archive)
+### Upload (archive)
 
-1. Click the **Upload** tab (selected by default).
-2. Drag-and-drop or browse to select an archive file (e.g. `my-project.tar.gz`).
-3. The UI calls `uploadArchive` with the selected `File`. On success the returned `ProjectInfo` (containing `name` and `status`) is appended to the project list card.
-4. On failure an alert is shown with the server error message.
+1. Click the **Upload** tab (it is selected by default).
+2. Drag a project archive (e.g. `my-project.tar.gz`) into the upload zone, or click to browse.
+3. The Hub unpacks the archive, chunks the source files, and embeds them.
+4. On success the project card appears in the **Uploaded projects** list with status `READY`.
+5. On failure an alert is shown with the server error message.
 
-### Embedded tab
+### Embedded
 
 1. Switch to the **Embedded** tab.
 2. Select an embedded archive (e.g. `my-project-embedded.tgz`).
-3. The UI calls `uploadEmbedded`. The resulting `ProjectInfo` appears in the embedded-projects list.
+3. The project card appears with status `IMPORTING`. Indexing continues in the background; the card updates to `READY` when the Hub finishes.
 
-> **Note:** The embedded flow is intended for projects that were previously packaged with their index artifacts. The returned status may initially be `IMPORTING` while the Hub validates the bundle.
+### Live (host scan)
 
-### Live tab (host directory)
+Use this when the project already exists on the machine that runs the Hub container and you want to index it in place.
 
 1. Switch to the **Live** tab.
-2. Click **Scan**. The UI sets a scanning indicator and calls `scanLiveProjects()`.
-3. The Hub returns a list of `LiveProjectCandidate` objects, each containing:
+2. Click **Scan**. The Hub walks the host filesystem and returns a list of *candidates*. Each candidate shows:
 
    | Field | Meaning |
    |-------|---------|
-   | `name` | Project name (derived from directory) |
-   | `directory` | Absolute path on the Hub host |
+   | `name` | Project name (derived from the directory) |
+   | `directory` | Absolute path on the host |
    | `hasConfigFile` | Whether a PRJXP config file was detected |
    | `languages` | Detected source languages (e.g. `["Java"]`, `["Kotlin"]`) |
 
-4. For each candidate you want to index, click **Register**. The UI sends a `ProjectCreateRequest`:
+3. For each candidate you want to index, click **Register**. The Hub sends a `ProjectCreateRequest` with `kind: "LIVE"` and the candidate's `rootDir`, then removes it from the candidate list.
+4. The registered project appears in the project list and begins indexing.
 
-   ```json
-   {
-     "name": "my-proj",
-     "kind": "LIVE",
-     "rootDir": "/path/my-proj"
-   }
-   ```
-
-   On success the candidate is removed from the list and the project appears in the main project list.
+> **Tip:** If the scan returns no candidates, verify that the Hub container has the correct host-path volume mounted so it can see your source trees.
 
 ---
 
 ## The Indexing Lifecycle
 
-After any import method completes, the Hub builds (or validates) the project index in the background. The `ProjectInfo.status` field tracks progress:
+Every project moves through a small state machine. The status is visible on the project card and is also returned by the `listProjects` tool.
 
 ```
 IMPORTING  ──►  READY
+   │
+   └──►  (error – card shows the failure reason)
 ```
 
 | Status | Meaning |
 |--------|---------|
-| `IMPORTING` | The Hub is chunking source files, computing embeddings, and (where applicable) building the code graph. The project is **not yet searchable**. |
-| `READY` | The index is complete. The project appears in `listProjects()` and all search tools accept it as a `projectName`. |
+| `IMPORTING` | The Hub is chunking source files and computing embeddings. The project is **not yet searchable**. |
+| `READY` | All chunks are embedded and the project is fully queryable. |
 
-You can monitor progress on the Import page: the project card updates its status badge as the Hub transitions the project. Once the badge reads **READY**, the project is fully queryable.
+- **Upload** projects typically reach `READY` before the HTTP response returns (synchronous path).
+- **Embedded** and **Live** projects start at `IMPORTING` and transition to `READY` asynchronously. Poll the project list or wait for the card to update.
 
-> The `listProjects()` tool returns every indexed project together with the timestamp of its last index update. Use it to confirm that your project is visible to the retrieval layer.
+While a project is `IMPORTING`, chat queries against it will not return results. Wait for `READY` before asking questions.
 
 ---
 
 ## Asking Your First Question
 
-Open the **Chat** view and select your newly indexed project (e.g. `prjxp`). Type a natural-language question, for example:
+Once a project shows `READY`, open the **Chat** view. The chat is backed by a set of retrieval tools that the assistant calls on your behalf. You simply type a natural-language question; the assistant picks the right tool(s).
 
-```
-Which class handles the import lifecycle, and what methods does it expose?
-```
-
-Under the hood the Hub runs a **three-level search ladder** plus structural tools:
-
-| Level | Tool | Purpose |
-|-------|------|---------|
-| 1 (primary) | `vectorSearch(projectName, userQuestion)` | Semantic retrieval over chunk embeddings. Always called first for discovery. |
-| 2 | `grep(query, project)` | Exact full-text search across all chunks. Use the exact method signature as `query` to pull the full body. |
-| 3 | `readFile(file, project)` / `readBySignature(project, method)` | Returns the **complete** source of a file or a single method (Javadoc + body; Java only for `readBySignature`). |
-
-Orthogonal structural tools are also available:
+### Available tools
 
 | Tool | Purpose |
 |------|---------|
-| `listProjects()` | All indexed projects + last-update timestamp. |
-| `listFiles(project, path)` | Browse the file tree; supports path prefixes and globs. |
-| `graphFile(project, file, includeExternal, maxEdges)` | Typed code-graph neighbours of a file (imports, extends, implements, field, param, return, call edges). |
-| `graphNode(project, symbol, includeExternal, maxEdges)` | Typed neighbours of a specific symbol (FQN or `fqn#name(paramFQNs)`). Lenient resolution: exact → suffix. |
+| `vectorSearch` | Semantic search over embedded chunks. The primary entry point for *"where is X?"*, *"how does Y work?"*, *"which classes are involved?"* |
+| `grep` | Exact full-text search. Use for exact signatures, annotation lookups, and call-site enumeration. |
+| `readFile` | Returns the complete source of one file (reconstructed from the index). |
+| `readBySignature` | Returns the full implementation (Javadoc + body) of a method or class by name / FQN. |
+| `listProjects` | Lists all searchable projects and their last index timestamp. |
+| `listFiles` | Lists file paths in the index (structure only, no content). |
+| `graphFile` | Typed code-graph neighbours of a file (import, extends, implements, field, param, return, call edges). |
+| `graphNode` | Typed code-graph neighbours of a single symbol (FQN or `FQN#name(params)`). |
+| `graphCluster` | Top members of a cluster, ranked by degree centrality. |
+| `graphClusterOverview` | The N largest clusters in the project – a quick architecture map. |
 
-### Typical retrieval flow for one question
+### Typical flows
+
+The assistant composes tools in these patterns:
+
+- **Discover** – `vectorSearch` → `readFile(path)` for a whole file, or `readBySignature(fqn)` for a single method.
+- **Enumerate implementations** – `grep("@Annotation", contentLevel=POINTERS)`. Runtime-discovered implementations have no edge in the code graph, so `vectorSearch` cannot find them.
+- **Call sites** – `grep("symbolName", contentLevel=POINTERS)`. Cheaper than `graphNode`.
+- **Architecture** – `vectorSearch` + `graphNode` / `graphClusterOverview`.
+
+### `contentLevel` and what you get back
+
+| `contentLevel` | Output |
+|----------------|--------|
+| `POINTERS` *(default)* | File path plus `readFile` / `readBySignature` / `graphNode` hints per hit (~50 bytes each). Follow the hints to drill in. |
+| `SKELETON` | Class frames with method signatures. |
+| `FULL` | Complete method / file bodies. |
+
+Defaults for every search tool: `contentLevel=POINTERS`, `sourceType=code`, `maxResults=10`.
+
+### Example: your first question
 
 ```
-userQuestion
-    │
-    ▼
-vectorSearch("prjxp", question)          ← semantic hits (chunks)
-    │
-    ├──► grep("exactSignature", "prjxp") ← confirm / pull full body
-    │
-    └──► readFile("src/.../Foo.java", "prjxp")   ← whole file
-         readBySignature("prjxp", "com.acme.Foo#bar(String)")  ← one method
+You:  How does the import service handle archive uploads?
+
+Assistant:  [vectorSearch → 3 chunks in ImportService.ts]
+            [readFile → ImportService.ts, lines 40–112]
+            The uploadArchive method unpacks the archive, walks the file tree,
+            chunks each source file, and submits the chunks to the embedding
+            pipeline. On completion it returns a ProjectInfo with status READY.
 ```
 
-The LLM assembles the retrieved chunks into a grounded answer. You will see the answer in the chat pane; no additional API calls are needed from your side.
-
-> **Tip:** Pass `includeTests: true` to `vectorSearch` when your question concerns test code. The default is `false` for `vectorSearch` and `true` for `grep`.
+The assistant will cite file paths and line ranges. Click a path to open the file in the viewer, or ask a follow-up such as *"Show me the `registerProject` method"* to trigger `readBySignature`.
 
 ---
 
-## Verifying the Index
+## Exploring the Code Graph
 
-After the first question, you can sanity-check the index from the chat or any tool-capable client:
+Beyond text search, the Hub builds a typed code graph (imports, extends, implements, field, param, return, call edges). Use the graph tools when you need structural context:
 
-```text
-listProjects()
+| Tool | When to use it |
+|------|---------------|
+| `graphFile(file)` | "What does this file import / call / extend?" |
+| `graphNode(symbol)` | "What calls / is called by this method?" (expensive for hot symbols – prefer `grep(symbol, POINTERS)`) |
+| `graphClusterOverview(topN)` | "Give me the top-level architecture." Returns the N largest clusters with size and top members. |
+| `graphCluster(clusterId, topN)` | "Show me the most important members of cluster c42." |
+
+Both `graphFile` and `graphNode` accept:
+
+- `includeExternal` – set `true` to reveal JDK / library edges (hidden by default to reduce noise).
+- `maxEdges` – cap on neighbours per direction.
+
+A common exploration sequence:
+
 ```
+graphClusterOverview(project="my-project", topN=5)
+  →  [cluster:c3]  142 nodes  top: com.acme.core.Engine, com.acme.core.Pipeline
+  →  [cluster:c7]   89 nodes  top: com.acme.api.RestController
 
-Expected output (one line per project):
+graphCluster(project="my-project", clusterId="c3", topN=10)
+  →  ranked members by degree centrality
 
+graphNode(project="my-project", symbol="com.acme.core.Engine#run(java.lang.String)")
+  →  call edges, param types, return type
 ```
-prjxp   last-indexed: 2025-07-11T09:42:17Z
-```
-
-To confirm that source files were chunked:
-
-```text
-listFiles(project: "prjxp", path: "src/main")
-```
-
-To inspect the dependency neighbourhood of a specific file:
-
-```text
-graphFile(project: "prjxp", file: "src/main/java/com/acme/ImportService.java", includeExternal: false, maxEdges: 20)
-```
-
-If the project is still `IMPORTING`, these tools will return an empty result or an error until the index is complete.
 
 ---
 
-## Troubleshooting the First Import
+## What's Next
 
-| Symptom | Likely cause | Action |
-|---------|-------------|--------|
-| Alert: *"Upload fehlgeschlagen: …"* | Archive rejected by the Hub (bad format, size limit, or server error). | Check the Hub container logs; re-compress the archive as `.tar.gz` (upload) or `.tgz` (embedded). |
-| Project stuck on `IMPORTING` | Indexing is still running or failed mid-build. | Wait, then call `listProjects()` to see if the timestamp advanced. Restart the Hub container if it does not. |
-| `vectorSearch` returns no hits | Project not yet `READY`, or the question is too narrow. | Confirm status is `READY`; rephrase the question with broader terms. |
-| `readBySignature` returns "Java only" | The symbol belongs to a non-Java source file. | Use `readFile` or `grep` instead. |
-
-Error messages surfaced by the UI are rendered in German (e.g. *"Unbekannter Fehler"* = "Unknown error"). The underlying HTTP response body contains the machine-readable detail.
+- **Indexing options** – language-specific chunking rules and embedding model selection.
+- **Multi-project queries** – the `project` parameter on every tool lets you target a specific project; `listProjects` shows all available names.
+- **API access** – the same tools are exposed over the Hub's HTTP API for scripting and CI integration.
 
 _This document was generated with Doc|Pipe._
 

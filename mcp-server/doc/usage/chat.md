@@ -2,80 +2,75 @@
 
 The Chat panel in the PRJXP Hub web UI lets you ask natural-language questions about indexed project source code. It combines a large-language-model (LLM) backend with optional retrieval-augmented generation (RAG) over your project's code chunks, and optional tool execution, to produce grounded answers.
 
-The chat runs entirely in the browser against the Hub's streaming API. Messages, the selected model, the active project context, and the tool toggle are all persisted in `localStorage`, so your configuration survives page reloads.
-
 ## Selecting a Model
 
-On page load the component calls `GlobalsService.getChatModels()` to fetch the list of LLM models registered on the Hub. Each model object exposes:
+The chat uses a configurable LLM model. On load, the component calls `getChatModels()` to fetch the list of models available on the Hub. Each model entry exposes:
 
 | Field | Example | Purpose |
-|---|---|---|
-| `stereoType` | `"default"` | Logical model identifier used in the UI and in API calls |
+|-------|---------|---------|
+| `stereoType` | `"default"` | Identifier used for selection and persistence |
 | `serverType` | `"ollama"` | Backend server type |
 | `modelName` | `"llama3"` | Concrete model name on the server |
 
 Selection rules:
 
-- If a previously persisted model (from `ChatSettingsPersistenceService`) still exists in the fetched list, it is restored.
+- If a previously saved model (from localStorage) still exists in the fetched list, it is restored automatically.
 - Otherwise the **first** model in the list is selected.
-- If the backend returns an empty list or the request fails, the component keeps the default value `"default"`.
+- If the model list is empty or the request fails, the component keeps the current value (`"default"`).
 
-The currently selected model name is displayed in the status bar at the top of the chat panel.
+You can change the model at any time through the **Settings** dialog (see [Chat Settings](#chat-settings)).
 
-## Project Context & RAG Retrieval
+## Project Context and RAG Retrieval
 
-The `projectContext` signal (type `string | null`) identifies which indexed project the RAG pipeline should search.
+The `projectContext` signal (a project name string, or `null`) determines whether RAG retrieval is performed before the LLM generates an answer.
 
-- **`null`** – No project is selected. The thinking indicator shows *"Verabeite…"* (Processing). The LLM answers from its own knowledge only.
-- **A project name** (e.g. `"prjxp"`) – The thinking indicator shows *"RAG-Suche läuft…"* (RAG search running). The backend performs a semantic search over that project's code chunks and injects the retrieved context into the prompt before the LLM generates a response.
+- **`projectContext` is `null`** – the request is sent without a project. The thinking indicator shows *"Verabeite…"* (plain LLM generation).
+- **`projectContext` is set** (e.g. `"prjxp"`) – the backend runs a semantic search over that project's indexed code chunks first. The thinking indicator shows *"RAG-Suche läuft…"* while retrieval is in progress.
 
-The project name is passed as the third argument to the streaming API call. The final assistant message returned by the backend includes a `ragContext` array containing the retrieved chunks, which the UI can display alongside the answer.
+The project name you select is passed as the third argument to the streaming endpoint. The final assistant message includes a `ragContext` array containing the retrieved chunks that informed the answer, so you can inspect which source-code passages the model used.
 
-## Tool Execution
+## Tools
 
-The `useTools` signal (boolean, default `false`) controls whether the LLM is allowed to invoke tools during generation.
+The `useTools` boolean flag (default `false`) enables tool execution during the generation phase.
 
-- When **disabled**, the model produces a single text response.
-- When **enabled**, the backend may emit intermediate `phase` events with `phase: "tools"` that carry a `toolCalls` array. The UI updates the thinking bubble to show which tools are being executed. The final `complete` event also includes the `toolCalls` array in the assistant message.
+- When **disabled**, the backend skips the tool-execution phase entirely.
+- When **enabled**, the backend may invoke tools (e.g. `vectorSearch`, `grep`, `readFile`, `readBySignature`, `graphNode`, etc.) against the active project before or during LLM generation.
 
-## Sending Messages & Streaming
+During streaming, a `phase` event with `phase: "tools"` updates the thinking bubble to show which tools are being executed and includes the `toolCalls` array in the message. The final `complete` event also carries the full `toolCalls` list, which is rendered in the assistant message.
+
+## Sending Messages and Streaming
 
 When you type a question and press send, the following sequence occurs:
 
-1. **History assembly** – The last **10** messages (excluding internal `thinking`-role messages) are collected as the conversation history.
-2. **User message** – Your text is appended to the visible message list.
-3. **Thinking bubble** – A temporary `thinking`-role message appears with a status label.
-4. **Streaming request** – `ChatService.sendStreaming(text, modelName, projectContext, useTools, history)` is called. The response arrives as Server-Sent Events (SSE):
+1. **History is assembled.** The last **10** messages (excluding internal `thinking`-role messages) are collected as `{ role, content }` pairs and sent with the request.
+2. **User message is appended** to the visible conversation.
+3. **A "thinking" bubble** appears with a status label (see Project Context above).
+4. **The request is sent** via `sendStreaming(text, modelName, projectContext, useTools, history)`, which opens a Server-Sent Events (SSE) stream.
+5. **Phase events** (`event: "phase"`) update the thinking bubble in place. Example phases:
+   - `llm_generating` – "LLM generiert Antwort…"
+   - `tools` – shows tool execution status and `toolCalls`
+6. **Completion** (`event: "complete"`) replaces the thinking bubble with the final assistant message, including `content`, `ragContext`, and `toolCalls`.
+7. **Errors** (`event: "error"` or a transport-level failure) replace the thinking bubble with an error message.
 
-| SSE event | Effect in the UI |
-|---|---|
-| `phase` | Updates the thinking bubble text (and `toolCalls` if `phase === "tools"`). |
-| `complete` | Replaces the thinking bubble with the final `assistant` message, including `ragContext` and `toolCalls`. |
-| `error` | Replaces the thinking bubble with an error message (`"Error: <message>"`). |
-
-5. **Completion** – The `isSending` flag is set back to `false`, re-enabling the input.
-
-If the HTTP request itself fails (network error, etc.), the thinking bubble is replaced with an error message and the input is re-enabled.
-
-The message area auto-scrolls to the bottom whenever the message list changes.
+The `isSending` flag is `true` while the stream is open and `false` once the stream completes or errors. The message area auto-scrolls to the bottom whenever the message list changes.
 
 ## Chat Settings
 
-Click the **settings** (gear) icon in the chat header to open the settings dialog. The dialog lets you change three values at once:
+Click the **settings** (gear) icon in the chat header to open the settings dialog. The dialog lets you configure three values:
 
-| Setting | Type | Description |
-|---|---|---|
-| **Model** | `string` | Which LLM to use (from the Hub's registered models). |
-| **Project context** | `string \| null` | Which indexed project to search for RAG, or `null` to disable RAG. |
-| **Use tools** | `boolean` | Whether the model may call tools. |
+| Setting | Type | Default |
+|---------|------|---------|
+| Model | `string` (a `stereoType` from the available list) | `"default"` |
+| Project context | `string \| null` (a project name) | `null` |
+| Use tools | `boolean` | `false` |
 
-When you close the dialog, the selected values are applied to the chat and persisted to `localStorage` via `ChatSettingsPersistenceService`. On the next page load the same values are restored automatically.
+When you close the dialog, the selected values are applied to the chat and **persisted to localStorage** so they survive page reloads. The project context is validated against the project list when the dialog opens.
 
-## Persistence & Clearing
+## Persistence and Clearing
 
-- **Messages** are saved to `localStorage` through `PanelStateService` every time the message list changes. On reload, previously saved messages are restored and the view scrolls to the bottom.
-- **Settings** (model, project context, tool toggle) are saved via `ChatSettingsPersistenceService` and restored on load.
-- **Clear chat** – Click the **clear** button to remove all messages from the current session and from `localStorage`. The panel returns to its empty state.
+- **Chat messages** are saved to localStorage (via the panel-state service) every time the message list changes. On the next page load, previously saved messages are restored and the view scrolls to the bottom.
+- **Settings** (model, project context, use-tools) are persisted separately and restored on load.
+- **Clear chat** (the clear button in the header) empties the message list and removes the persisted messages from localStorage. Settings are *not* cleared by this action.
 
 _This document was generated with Doc|Pipe._
 
