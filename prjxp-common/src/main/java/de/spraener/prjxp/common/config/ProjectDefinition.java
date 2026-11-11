@@ -12,9 +12,11 @@ public class ProjectDefinition {
      * (case-insensitive), unless the path is inside a source directory (see {@link #sourceDirNames}).
      * Covers common vendor/VCS/build/IDE directories. {@code build} and {@code target} are listed
      * here and share the source-directory exception with {@code StandardVetos.isBuildArtifact}.
+     * {@code .prjxp-data} is prjxp's own working directory (Lucene index, transfer downloads,
+     * e2e scratch files); a project tree that contains it must not index it.
      */
     public static final String DEFAULT_EXCLUDE_DIR_NAMES =
-            "node_modules,.git,.svn,.hg,vendor,dist,coverage,.idea,.vscode,__pycache__,target,build,bin,obj,debug,release";
+            "node_modules,.git,.svn,.hg,vendor,dist,coverage,.idea,.vscode,__pycache__,target,build,bin,obj,debug,release,.prjxp-data";
 
     /**
      * Default directory names that mark a source tree. Once a path enters a source directory,

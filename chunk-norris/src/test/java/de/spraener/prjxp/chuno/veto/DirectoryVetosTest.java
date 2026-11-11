@@ -33,6 +33,12 @@ class DirectoryVetosTest {
     }
 
     @Test
+    void prjxpDataDirectoryIsExcludedByDefault() {
+        when(def.getExcludeDirNames()).thenReturn(ProjectDefinition.DEFAULT_EXCLUDE_DIR_NAMES);
+        assertThat(vetos.isExcludedDir(Path.of(".prjxp-data/e2e/tmp/LeidenProbe.java"))).isTrue();
+    }
+
+    @Test
     void fileOutsideExcludedDirectoryIsNotExcluded() {
         when(def.getExcludeDirNames()).thenReturn("node_modules");
         assertThat(vetos.isExcludedDir(Path.of("frontend/src/app/importer.ts"))).isFalse();
