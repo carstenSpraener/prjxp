@@ -53,6 +53,8 @@ public class PrjXPConfig {
         private String modelName = "mxbai-embed-large-v1";
         /** Optional output vector dimension for models such as text-embedding-3-large. */
         private Integer dimensions;
+        /** Disables TLS certificate validation for OpenAI-compatible embedding providers. */
+        private boolean trustAllCerts;
         private int timeout = 20;
         /** Additional HTTP headers for OpenAI-compatible embedding providers. */
         private Map<String, String> customHeaders = new LinkedHashMap<>();

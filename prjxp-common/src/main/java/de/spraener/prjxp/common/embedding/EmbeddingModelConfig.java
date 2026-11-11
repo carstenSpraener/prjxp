@@ -43,7 +43,8 @@ public class EmbeddingModelConfig {
                     .customHeaders(EnvPlaceholderResolver.resolveMap(ebCfg.getCustomHeaders()))
                     .customQueryParams(EnvPlaceholderResolver.resolveMap(ebCfg.getCustomQueryParams()))
                     .httpClientBuilder(JdkHttpClient.builder()
-                            .httpClientBuilder(HttpClient.newBuilder().sslContext(sslContext())))
+                            .httpClientBuilder(HttpClient.newBuilder().sslContext(
+                                    ebCfg.isTrustAllCerts() ? insecureSslContext() : sslContext())))
                     // langchain4j defaults maxSegmentsPerBatch to 2048 -> a large embedAll() becomes
                     // one giant request that a local model times out on. Cap it so every request
                     // stays small enough to finish within the timeout (split into many requests).
@@ -79,6 +80,30 @@ public class EmbeddingModelConfig {
             return sslContext;
         } catch (Exception e) {
             throw new IllegalStateException("Unable to initialize the TLS truststore for Azure OpenAI", e);
+        }
+    }
+
+    private SSLContext insecureSslContext() {
+        try {
+            javax.net.ssl.TrustManager[] trustAll = {new javax.net.ssl.X509TrustManager() {
+                @Override
+                public java.security.cert.X509Certificate[] getAcceptedIssuers() {
+                    return new java.security.cert.X509Certificate[0];
+                }
+
+                @Override
+                public void checkClientTrusted(java.security.cert.X509Certificate[] chain, String authType) {
+                }
+
+                @Override
+                public void checkServerTrusted(java.security.cert.X509Certificate[] chain, String authType) {
+                }
+            }};
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, trustAll, new java.security.SecureRandom());
+            return sslContext;
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to initialize the insecure TLS context for Azure OpenAI", e);
         }
     }
 }
