@@ -131,6 +131,8 @@ public class PrjxpToolRegistration {
                         .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
                         .addStringProperty("language", "Optional language filter, e.g. 'java' or 'ts'.")
                         .addIntegerProperty("limit", "Maximum number of results (default 10, max 100).")
+                        .addStringProperty("contentLevel",
+                                "How much content to emit per hit: FULL (bodies — the default), SKELETON (signatures only) or POINTERS (tool hints only). Same semantics as vectorSearch.")
                         .addBooleanProperty("includeTests",
                                 "Include test sources (default: false for vectorSearch, true for grep). Pass false to grep to exclude test files.")
                         .required("query", "project")
@@ -146,7 +148,7 @@ public class PrjxpToolRegistration {
                     }
                     String project = string(params, "project");
                     List<SearchHit> hits = mcpTool.grep(query, project, string(params, "language"),
-                            integer(params, "limit"), bool(params, "includeTests"));
+                            integer(params, "limit"), string(params, "contentLevel"), bool(params, "includeTests"));
                     return formatHits(query, project, hits);
                 }, spec);
     }

@@ -1,5 +1,6 @@
 package de.spraener.prjxp.mcp;
 
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
@@ -43,7 +44,11 @@ public class GrepSearchController {
 
             @Parameter(description = "Maximum number of results (default 10, max 100).")
             @RequestParam(name = "limit", required = false, defaultValue = "" + SearchLimits.DEFAULT_LIMIT)
-            int limit
+            int limit,
+
+            @Parameter(description = "How much content to emit per hit: FULL (default), SKELETON or POINTERS (tool hints only).")
+            @RequestParam(name = "contentLevel", required = false)
+            String contentLevel
     ) {
         if (query == null || query.isBlank()) {
             return ResponseEntity.badRequest().body(new SearchError("missingQuery", "Parameter 'query' is required."));
@@ -51,7 +56,8 @@ public class GrepSearchController {
 
         int safeLimit = SearchLimits.clamp(limit);
         try {
-            return ResponseEntity.ok(grepSearchService.search(query.trim(), project, language, safeLimit));
+            return ResponseEntity.ok(grepSearchService.search(query.trim(), project, language, safeLimit, true,
+                    ContentLevel.parse(contentLevel)));
         } catch (UnknownProjectException e) {
             return ResponseEntity.badRequest().body(new SearchError("unknownProject", e.getMessage()));
         }

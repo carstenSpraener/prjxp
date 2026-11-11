@@ -165,20 +165,30 @@ class PrjxpMcpToolTest {
     @Test
     void grepDefaultsIncludeTestsToTrue() {
         // Exact search is deliberate intent: null includeTests must default to true
-        when(grepSearchService.search("q", "myproj", null, 10, true)).thenReturn(List.of());
+        when(grepSearchService.search("q", "myproj", null, 10, true, ContentLevel.FULL)).thenReturn(List.of());
 
-        tool.grep("q", "myproj", null, null, null);
+        tool.grep("q", "myproj", null, null, null, null);
 
-        verify(grepSearchService).search("q", "myproj", null, 10, true);
+        verify(grepSearchService).search("q", "myproj", null, 10, true, ContentLevel.FULL);
     }
 
     @Test
     void grepPassesExplicitIncludeTestsThrough() {
-        when(grepSearchService.search("q", "myproj", null, 10, false)).thenReturn(List.of());
+        when(grepSearchService.search("q", "myproj", null, 10, false, ContentLevel.FULL)).thenReturn(List.of());
 
-        tool.grep("q", "myproj", null, null, false);
+        tool.grep("q", "myproj", null, null, null, false);
 
-        verify(grepSearchService).search("q", "myproj", null, 10, false);
+        verify(grepSearchService).search("q", "myproj", null, 10, false, ContentLevel.FULL);
+    }
+
+    @Test
+    void grepPassesContentLevelThrough() {
+        // null contentLevel parses to FULL (today's behaviour); an explicit value is passed through
+        when(grepSearchService.search("q", "myproj", null, 10, true, ContentLevel.POINTERS)).thenReturn(List.of());
+
+        tool.grep("q", "myproj", null, null, "POINTERS", true);
+
+        verify(grepSearchService).search("q", "myproj", null, 10, true, ContentLevel.POINTERS);
     }
 
     @Test

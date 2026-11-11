@@ -8,6 +8,7 @@ import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.model.TestPathFilter;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import lombok.RequiredArgsConstructor;
@@ -45,6 +46,10 @@ public class GrepSearchService {
     }
 
     public List<SearchHit> search(String query, String project, String language, int limit, boolean includeTests) {
+        return search(query, project, language, limit, includeTests, ContentLevel.FULL);
+    }
+
+    public List<SearchHit> search(String query, String project, String language, int limit, boolean includeTests, ContentLevel contentLevel) {
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         String resolved = projectRegistry.resolve(project);
         PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
@@ -63,7 +68,7 @@ public class GrepSearchService {
             } catch (UnsupportedOperationException e) {
                 return List.of();
             }
-            List<SearchHit> hits = toHits(project, query, chunks, limit, includeTests);
+            List<SearchHit> hits = toHits(project, query, chunks, limit, includeTests, contentLevel);
             if (includeTests || hits.size() >= limit || chunks.size() < window || window >= MAX_WINDOW) {
                 return hits;
             }
@@ -71,7 +76,7 @@ public class GrepSearchService {
         }
     }
 
-    private List<SearchHit> toHits(String project, String query, List<ScoredChunk> chunks, int limit, boolean includeTests) {
+    private List<SearchHit> toHits(String project, String query, List<ScoredChunk> chunks, int limit, boolean includeTests, ContentLevel contentLevel) {
         Map<String,List<ScoredChunk>> fileToHitsMap = new HashMap<>();
         for( ScoredChunk sChunk : chunks) {
             String fileName = sChunk.chunk().getFile();
@@ -88,6 +93,7 @@ public class GrepSearchService {
 
         List<SearchHit> searchHits = new ArrayList<>();
         SearchParams sp = new SearchParams(limit, 0.85);
+        sp.setContentLevel(contentLevel == null ? ContentLevel.FULL : contentLevel);
         for( String fileName : fileToHitsMap.keySet() ) {
             List<ScoredChunk> scoredChunks = fileToHitsMap.get(fileName);
             StringBuilder sb = new StringBuilder();

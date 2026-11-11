@@ -154,6 +154,7 @@ public class PrjxpMcpTool {
             NEED THE COMPLETE METHOD BY NAME OR THE ENTIRE FILE? Use readBySignature (method) or readFile (whole file) — level 3.
 
             includeTests: include test sources (default: false for vectorSearch, true for grep). Pass false to grep to exclude test files.
+            contentLevel: FULL (default), SKELETON or POINTERS (tool hints only) — same semantics as vectorSearch.
             """)
     public List<SearchHit> grep(
         @McpToolParam(description = "Exact search string (required).", required = true)
@@ -167,6 +168,14 @@ public class PrjxpMcpTool {
 
         @McpToolParam(description = "Maximum number of results (default 10, max 100).", required = false)
         Integer limit,
+
+        @McpToolParam(description="""
+            How much content to emit per hit: FULL (complete chunk/method bodies — the default),
+            SKELETON (signatures only) or POINTERS (tool hints only, ~100 bytes per hit).
+            Use POINTERS to enumerate matches (e.g. all @ChunkVeto implementations) without paying
+            for their bodies; follow the readFile/readBySignature hints afterwards.
+            """, required = false)
+        String contentLevel,
 
         @McpToolParam(description="""
             Include test sources (src/test, src/testFixtures) in the results. Default is true — exact search is deliberate intent.
@@ -183,7 +192,7 @@ public class PrjxpMcpTool {
             includeTests = Boolean.TRUE;   // exact search: tests are deliberate intent
         }
 
-        return grepSearchService.search(query.trim(), project, language, limit, includeTests);
+        return grepSearchService.search(query.trim(), project, language, limit, includeTests, ContentLevel.parse(contentLevel));
     }
 
     @McpTool(name = "readFile", description = """

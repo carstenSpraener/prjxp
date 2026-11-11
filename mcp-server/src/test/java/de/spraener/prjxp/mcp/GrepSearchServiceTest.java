@@ -7,6 +7,7 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
@@ -515,12 +516,49 @@ class GrepSearchServiceTest {
         assertThat(windowCaptor.getAllValues().get(1)).isGreaterThan(40);
     }
 
+    // ---- contentLevel: POINTERS emits hints instead of bodies ----
+
+    @Test
+    void pointersModeEmitsHintsInsteadOfBodies() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        String bodyMarker = "return !vetoRegistry.shouldVeto(p);";
+        PxChunk chunk = fileChunk("v1", "src/main/java/DirectoryVetos.java",
+                "public boolean shouldVeto(PxChunk p) {\n    " + bodyMarker + "\n}");
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 1.0)));
+
+        ContentRetriever fake = new ContentRetriever();
+        when(retrieverRegistry.all()).thenReturn(List.of(fake));
+
+        SearchHit pointers = service.search("@ChunkVeto", "myproj", "java", 10, true, ContentLevel.POINTERS).get(0);
+        assertThat(pointers.snippet()).doesNotContain(bodyMarker);
+        assertThat(pointers.snippet()).contains("readFile(");
+        assertThat(fake.lastParams.effectiveContentLevel()).isEqualTo(ContentLevel.POINTERS);
+
+        SearchHit full = service.search("@ChunkVeto", "myproj", "java", 10, true, ContentLevel.FULL).get(0);
+        assertThat(full.snippet()).contains(bodyMarker);
+        assertThat(fake.lastParams.effectiveContentLevel()).isEqualTo(ContentLevel.FULL);
+    }
+
     private static class ContentRetriever implements GoldenRetriever {
+        /** Last SearchParams handed in — captured so tests can assert on the content level. */
+        SearchParams lastParams;
+
         @Override
         public StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
+            lastParams = params;
+            boolean pointers = params != null && params.effectiveContentLevel() == ContentLevel.POINTERS;
             StringBuilder sb = new StringBuilder();
             for (ScoredChunk sc : chunks) {
-                if (sc.chunk().getContent() != null) {
+                if (pointers) {
+                    // pointer layer: tool hints only, no body
+                    String file = sc.chunk().getFile();
+                    if (file != null) {
+                        sb.append("→ readFile(\"").append(file).append("\")\n");
+                    }
+                } else if (sc.chunk().getContent() != null) {
                     sb.append(sc.chunk().getContent());
                 }
             }
