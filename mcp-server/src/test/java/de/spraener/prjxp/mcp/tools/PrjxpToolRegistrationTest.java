@@ -16,6 +16,7 @@ import de.spraener.prjxp.mcp.ClusterView;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
+import de.spraener.prjxp.mcp.PrjxpToolDocs;
 import de.spraener.prjxp.mcp.ProjectSummary;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import org.junit.jupiter.api.BeforeEach;
@@ -92,6 +93,28 @@ class PrjxpToolRegistrationTest {
                 .filter(s -> s.name().equals("graphClusterOverview")).findFirst().orElseThrow();
         assertThat(graphClusterOverview.parameters().required()).containsExactly("project");
         assertThat(graphClusterOverview.parameters().properties()).containsKeys("project", "topN");
+    }
+
+    @Test
+    void descriptionsShareTheSingleSourceOfTruth() {
+        // The hub chat path must carry exactly the same tool text as the MCP path (PrjxpToolDocs).
+        Map<String, String> expected = Map.of(
+                "vectorSearch", PrjxpToolDocs.VECTOR_SEARCH,
+                "grep", PrjxpToolDocs.GREP,
+                "readFile", PrjxpToolDocs.READ_FILE,
+                "readBySignature", PrjxpToolDocs.READ_BY_SIGNATURE,
+                "listProjects", PrjxpToolDocs.LIST_PROJECTS,
+                "listFiles", PrjxpToolDocs.LIST_FILES,
+                "graphFile", PrjxpToolDocs.GRAPH_FILE,
+                "graphNode", PrjxpToolDocs.GRAPH_NODE,
+                "graphCluster", PrjxpToolDocs.GRAPH_CLUSTER,
+                "graphClusterOverview", PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW);
+
+        for (ToolSpecification spec : registry.specifications()) {
+            assertThat(spec.description())
+                    .as("tool '%s' description", spec.name())
+                    .isEqualTo(expected.get(spec.name()));
+        }
     }
 
     // ==================== vectorSearch ====================

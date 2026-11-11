@@ -2,6 +2,7 @@ package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;
+import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,6 +23,10 @@ import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class PrjxpMcpToolTest {
+
+    /** The vector-filter map a code-scoped search (the default) must receive. */
+    private static final Map<String, String> CODE_FILTER =
+            Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf");
 
     @Mock
     private GRPromptEnrichment enrichment;
@@ -76,90 +81,142 @@ class PrjxpMcpToolTest {
     @Test
     void vectorSearchResolvesProjectViaRegistry() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "How does chunking work?", 0.85, 20, ContentLevel.SKELETON, false, Map.of()))
+        when(enrichment.enrich("myproj", "How does chunking work?", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER))
                 .thenReturn("Relevante Information in 'myproj':\nchunk content");
 
         String result = tool.vectorSearch("How does chunking work?", "myproj", null, null, null, null, null, null);
 
         assertThat(result).contains("chunk content");
-        verify(enrichment).enrich("myproj", "How does chunking work?", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
+        verify(enrichment).enrich("myproj", "How does chunking work?", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER);
     }
 
     @Test
     void vectorSearchDefaultProjectResolvesViaRegistry() {
         when(projectRegistry.resolve("default")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of())).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER)).thenReturn("ctx");
 
         String result = tool.vectorSearch("q", "default", null, null, null, null, null, null);
 
         assertThat(result).contains("ctx");
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER);
     }
 
     @Test
     void vectorSearchDefaultsIncludeTestsToFalse() {
         // Semantic discovery: tests are noise — null includeTests must default to false
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of())).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER)).thenReturn("ctx");
 
         tool.vectorSearch("q", "myproj", null, null, null, null, null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER);
     }
 
     @Test
     void vectorSearchPassesExplicitIncludeTestsThrough() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, true, Map.of())).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, true, CODE_FILTER)).thenReturn("ctx");
 
         tool.vectorSearch("q", "myproj", null, null, null, null, null, true);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, true, Map.of());
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, true, CODE_FILTER);
     }
 
-    // ---- Phase 01 (Graphify-Tool-V2): the contentLevel knob ----
+    // ---- the contentLevel knob ----
 
     @Test
-    void vectorSearchWithoutContentLevelDefaultsToSkeleton() {
-        // D2: the MCP vectorSearch defaults to SKELETON (token economy)
+    void vectorSearchWithoutContentLevelDefaultsToPointers() {
+        // the MCP vectorSearch defaults to the cheap POINTERS path
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of())).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER)).thenReturn("ctx");
 
         tool.vectorSearch("q", "myproj", null, null, null, null, null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER);
     }
 
     @Test
     void vectorSearchWithContentLevelFullPassesFull() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false, Map.of())).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.FULL, false, CODE_FILTER)).thenReturn("ctx");
 
         tool.vectorSearch("q", "myproj", null, null, null, "FULL", null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false, Map.of());
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.FULL, false, CODE_FILTER);
     }
 
     @Test
-    void vectorSearchWithSkeletonsOnlyTruePassesSkeleton() {
-        // the deprecated skeletonsOnly alias still maps to SKELETON
+    void skeletonsOnlyTrueWithoutContentLevelStillMeansSkeleton() {
+        // legacy mapping: the deprecated skeletonsOnly=TRUE still means SKELETON when contentLevel is absent
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of())).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.SKELETON, false, CODE_FILTER)).thenReturn("ctx");
 
         tool.vectorSearch("q", "myproj", null, null, true, null, null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.SKELETON, false, CODE_FILTER);
     }
 
     @Test
     void vectorSearchContentLevelWinsOverSkeletonsOnly() {
         // an explicit contentLevel is authoritative over the deprecated alias
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false, Map.of())).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.FULL, false, CODE_FILTER)).thenReturn("ctx");
 
         tool.vectorSearch("q", "myproj", null, null, true, "FULL", null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false, Map.of());
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.FULL, false, CODE_FILTER);
+    }
+
+    // ---- the sourceType knob (cheap path) ----
+
+    @Test
+    void vectorSearchDefaultsToCodeSourceType() {
+        // null sourceType must normalise to the code filter (excludes prose docs)
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER)).thenReturn("ctx");
+
+        tool.vectorSearch("q", "myproj", null, null, null, null, null, null);
+
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false,
+                Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf"));
+    }
+
+    @Test
+    void vectorSearchExplicitSourceTypeDocsWinsOverDefault() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        Map<String, String> docsFilter = Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/markdown|application/pdf");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, docsFilter)).thenReturn("ctx");
+
+        tool.vectorSearch("q", "myproj", null, null, null, null, "docs", null);
+
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, docsFilter);
+    }
+
+    @Test
+    void vectorSearchDefaultsMaxResultsToTen() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER)).thenReturn("ctx");
+
+        tool.vectorSearch("q", "myproj", null, null, null, null, null, null);
+
+        verify(enrichment).enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER);
+    }
+
+    @Test
+    void emptyCodeSearchAppendsSourceTypeHint() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        String deadEnd = "Es konnte kein valider Kontext erstellt werden! Effektive Similarity-Schwelle: 0.50 (3 Fallbacks).";
+
+        // positive: sourceType=null -> code -> the dead-end hint is appended
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, CODE_FILTER)).thenReturn(deadEnd);
+        String codeResult = tool.vectorSearch("q", "myproj", null, null, null, null, null, null);
+        assertThat(codeResult).contains("sourceType=all");
+
+        // negative: sourceType=docs -> the hint is NOT appended
+        Map<String, String> docsFilter = Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/markdown|application/pdf");
+        when(enrichment.enrich("myproj", "q", 0.85, 10, ContentLevel.POINTERS, false, docsFilter)).thenReturn(deadEnd);
+        String docsResult = tool.vectorSearch("q", "myproj", null, null, null, null, "docs", null);
+        assertThat(docsResult).doesNotContain("sourceType=all");
     }
 
     @Test

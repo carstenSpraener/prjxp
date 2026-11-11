@@ -12,6 +12,7 @@ import de.spraener.prjxp.mcp.ClusterView;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
+import de.spraener.prjxp.mcp.PrjxpToolDocs;
 import de.spraener.prjxp.mcp.ProjectSummary;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
@@ -76,29 +77,24 @@ public class PrjxpToolRegistration {
     private ToolDefinition vectorSearchTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("vectorSearch")
-                .description("""
-                        CRITICAL PRIMARY SEARCH TOOL (level 1 of 3): Delivers relevant semantic information from the project context.
-                        ALWAYS call this first for discovery: finding classes, understanding structure, locating implementations.
-                        Follow up with grep (exact string), readBySignature (complete method) or readFile (whole file).
-                        includeTests: include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.
-                        """)
+                .description(PrjxpToolDocs.VECTOR_SEARCH)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("userQuestion",
-                                "A targeted, standalone search prompt optimized for vector retrieval.")
+                                "Search prompt for vector retrieval.")
                         .addStringProperty("projectName",
-                                "Required project name. Call listProjects to discover valid names.")
+                                "Project name (listProjects).")
                         .addNumberProperty("similarity",
-                                "Similarity threshold 0.0-1.0. Higher is more precise. Default 0.85.")
+                                "Leave at 0.85; lower only if a search returns nothing.")
                         .addIntegerProperty("maxResults",
-                                "Maximum number of results to return. Default 20.")
+                                "Maximum number of FILES, default 10 (max 20).")
                         .addBooleanProperty("skeletonsOnly",
-                                "DEPRECATED alias for contentLevel. Kept for backward compatibility.")
+                                "Deprecated; contentLevel wins. Legacy TRUE still means SKELETON.")
                         .addStringProperty("contentLevel",
-                                "How much content to emit: FULL (full method bodies), SKELETON (signatures only — the default), or POINTERS (tool hints only). Authoritative over skeletonsOnly.")
+                                "POINTERS (default) hints only, SKELETON signatures, FULL bodies.")
                         .addStringProperty("sourceType",
-                                "Filter by source type: all (default), code (everything except prose documents), or docs (only markdown/pdf prose).")
+                                "code (default) | docs | all. Retry with all for prose documentation.")
                         .addBooleanProperty("includeTests",
-                                "Include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.")
+                                "Include test sources (default false).")
                         .required("userQuestion", "projectName")
                         .build())
                 .build();
@@ -121,20 +117,16 @@ public class PrjxpToolRegistration {
     private ToolDefinition grepTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("grep")
-                .description("""
-                        SEARCH TOOL (level 2 of 3): Exact full-text search over all chunks of a project.
-                        Use the exact method signature as query to retrieve its FULL BODY.
-                        includeTests: include test sources (default: false for vectorSearch, true for grep). Pass false to grep to exclude test files.
-                        """)
+                .description(PrjxpToolDocs.GREP)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("query", "Exact search string, e.g. 'public MClass createMClass'.")
-                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
-                        .addStringProperty("language", "Optional language filter, e.g. 'java' or 'ts'.")
-                        .addIntegerProperty("limit", "Maximum number of results (default 10, max 100).")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addStringProperty("language", "Optional language filter (e.g. 'java').")
+                        .addIntegerProperty("limit", "Max hits after grouping, default 10 (max 100).")
                         .addStringProperty("contentLevel",
-                                "How much content to emit per hit: FULL (bodies — the default), SKELETON (signatures only) or POINTERS (tool hints only). Same semantics as vectorSearch.")
+                                "POINTERS enumerates, SKELETON signatures, FULL (default) bodies.")
                         .addBooleanProperty("includeTests",
-                                "Include test sources (default: false for vectorSearch, true for grep). Pass false to grep to exclude test files.")
+                                "Include test sources (default true).")
                         .required("query", "project")
                         .build())
                 .build();
@@ -156,16 +148,13 @@ public class PrjxpToolRegistration {
     private ToolDefinition readFileTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("readFile")
-                .description("""
-                        READER (level 3 of 3): Returns a COMPLETE source view of one file, reconstructed from the project index.
-                        Use when you need the entire file instead of snippets or skeletons.
-                        """)
+                .description(PrjxpToolDocs.READ_FILE)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("file",
-                                "File path — absolute, project-root-relative, or just the file name.")
-                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
-                        .addIntegerProperty("offset", "Optional 1-based line number to start reading from.")
-                        .addIntegerProperty("limit", "Optional maximum number of lines to return.")
+                                "File path (absolute, relative, or name; lenient).")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("offset", "Optional 1-based start line.")
+                        .addIntegerProperty("limit", "Optional max lines from offset.")
                         .required("file", "project")
                         .build())
                 .build();
@@ -186,16 +175,13 @@ public class PrjxpToolRegistration {
     private ToolDefinition readBySignatureTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("readBySignature")
-                .description("""
-                        READER (level 3 of 3): Returns the COMPLETE implementation of a symbol — javadoc + full method body.
-                        Java only. Class FQNs return the class frame.
-                        """)
+                .description(PrjxpToolDocs.READ_BY_SIGNATURE)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("method",
-                                "Method name (e.g. 'createMClass') or fully qualified 'com.example.Foo#bar'.")
+                                "Method name or FQN; class FQNs return the class frame.")
                         .addStringProperty("container",
-                                "Optional containing class FQN to disambiguate a bare method name.")
-                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
+                                "Optional containing class FQN to disambiguate.")
+                        .addStringProperty("project", "Project name (listProjects).")
                         .required("method", "project")
                         .build())
                 .build();
@@ -216,8 +202,7 @@ public class PrjxpToolRegistration {
     private ToolDefinition listProjectsTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("listProjects")
-                .description("DISCOVERY TOOL: Lists all projects that have a searchable index in this server, "
-                        + "with the timestamp of each project's last index update.")
+                .description(PrjxpToolDocs.LIST_PROJECTS)
                 .parameters(JsonObjectSchema.builder().build())
                 .build();
 
@@ -238,15 +223,12 @@ public class PrjxpToolRegistration {
     private ToolDefinition listFilesTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("listFiles")
-                .description("""
-                        STRUCTURAL DISCOVERY TOOL (orthogonal to the search ladder): Lists which files exist in the project index.
-                        Use it to explore the file tree and locate files by name pattern before reading them.
-                        """)
+                .description(PrjxpToolDocs.LIST_FILES)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("path",
-                                "Path prefix or glob. '*' matches any characters including '/' (recursive). Empty = all files.")
-                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
-                        .addIntegerProperty("limit", "Maximum number of files to return (default 50, max 500).")
+                                "Path prefix or glob ('*' spans '/'); empty = all.")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("limit", "Max files to return (default 50, max 500).")
                         .required("project")
                         .build())
                 .build();
@@ -263,16 +245,13 @@ public class PrjxpToolRegistration {
     private ToolDefinition graphFileTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("graphFile")
-                .description("""
-                        STRUCTURE TOOL: Returns the typed code-graph neighbours of one file — imported/extended/implemented/field/param/return/call edges with file paths.
-                        Requires an indexed project with a graph artifact. Use graphNode for a specific symbol.
-                        """)
+                .description(PrjxpToolDocs.GRAPH_FILE)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("file",
-                                "File path — absolute, project-root-relative, or just the file name (lenient: exact -> suffix -> basename).")
-                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
-                        .addIntegerProperty("maxEdges", "Maximum neighbours per direction (default 30, max 100).")
-                        .addBooleanProperty("includeExternal", "Include edges to nodes outside the project (default false).")
+                                "File path (absolute, relative, or name; lenient).")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("maxEdges", "Max neighbours per direction (default 30, max 100).")
+                        .addBooleanProperty("includeExternal", "Include JDK/library edges (default false).")
                         .required("file", "project")
                         .build())
                 .build();
@@ -294,16 +273,13 @@ public class PrjxpToolRegistration {
     private ToolDefinition graphNodeTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("graphNode")
-                .description("""
-                        STRUCTURE TOOL: Returns the typed code-graph neighbours of one node id (`fqn` or `fqn#name(paramFQNs)`).
-                        Lenient resolution: exact -> suffix. Ambiguous symbols return a candidate list. Use graphFile to start from a file.
-                        """)
+                .description(PrjxpToolDocs.GRAPH_NODE)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("symbol",
-                                "Node id — class FQN (`com.example.Foo`) or method id (`com.example.Foo#bar(int)`); bare names are matched as a suffix.")
-                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
-                        .addIntegerProperty("maxEdges", "Maximum neighbours per direction (default 30, max 100).")
-                        .addBooleanProperty("includeExternal", "Include edges to nodes outside the project (default false).")
+                                "Node id: class FQN or method id; bare names match as suffix.")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("maxEdges", "Max neighbours per direction (default 30, max 100).")
+                        .addBooleanProperty("includeExternal", "Include JDK/library edges (default false).")
                         .required("symbol", "project")
                         .build())
                 .build();
@@ -325,16 +301,12 @@ public class PrjxpToolRegistration {
     private ToolDefinition graphClusterTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("graphCluster")
-                .description("""
-                        STRUCTURE TOOL: Lists the most important members of one cluster (Community), ranked by degree centrality (weight = in + out).
-                        USE AFTER a cluster id is known — e.g. from vectorSearch output `[cluster:c6]` or from graphNode.
-                        Each member shows its (in, out) edge counts; call graphNode on a member for its typed edges.
-                        """)
+                .description(PrjxpToolDocs.GRAPH_CLUSTER)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("clusterId",
-                                "Cluster id, e.g. 'c6' (the value after 'cluster:' in vectorSearch output).")
-                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
-                        .addIntegerProperty("topN", "Number of top members to return (default 10, max 50).")
+                                "Cluster id, e.g. 'c6' (from vectorSearch output).")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("topN", "Top members to return (default 10, max 50).")
                         .required("clusterId", "project")
                         .build())
                 .build();
@@ -353,14 +325,10 @@ public class PrjxpToolRegistration {
     private ToolDefinition graphClusterOverviewTool() {
         ToolSpecification spec = ToolSpecification.builder()
                 .name("graphClusterOverview")
-                .description("""
-                        STRUCTURE TOOL: A map of the project's clusters (Communities) — the N largest, each with its size and its top members by weight.
-                        USE THIS to explore the architecture WITHOUT a starting class: it answers "what are the main areas of this codebase?".
-                        Then drill down with graphCluster(clusterId).
-                        """)
+                .description(PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW)
                 .parameters(JsonObjectSchema.builder()
-                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
-                        .addIntegerProperty("topN", "Number of clusters to return (default 10, max 50).")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("topN", "Clusters to return (default 10, max 50).")
                         .required("project")
                         .build())
                 .build();
