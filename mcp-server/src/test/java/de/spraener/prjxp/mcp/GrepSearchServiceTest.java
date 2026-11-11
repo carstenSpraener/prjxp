@@ -13,6 +13,7 @@ import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -30,6 +31,7 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -480,6 +482,37 @@ class GrepSearchServiceTest {
         assertThat(hits).extracting(SearchHit::file).containsExactly("src/main/java/Foo.java");
         // raw window must be >= 4x the requested limit (here 40) so filtering cannot starve the result
         verify(dao).searchFullText(eq("q"), anyMap(), eq(40));
+    }
+
+    @Test
+    void growingWindowFindsNonTestFileWhenFirstWindowIsAllTestChunks() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        when(dao.searchFullText(anyString(), anyMap(), anyInt())).thenAnswer(invocation -> {
+            int window = invocation.getArgument(2);
+            if (window == 40) {
+                // Exactly 40 chunks (== window) so the service considers the window exhausted
+                List<ScoredChunk> testChunks = new ArrayList<>();
+                for (int i = 0; i < 40; i++) {
+                    testChunks.add(new ScoredChunk(
+                            fileChunk("t" + i, "src/test/java/FooTest.java", "test content " + i), 2.0));
+                }
+                return testChunks;
+            }
+            return List.of(new ScoredChunk(fileChunk("m1", "src/main/java/Foo.java", "main content"), 1.0));
+        });
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 1, false);
+
+        // the first 40-chunk window contained no usable file, so a second, larger window was needed
+        assertThat(hits).hasSize(1);
+        assertThat(hits.get(0).file()).isEqualTo("src/main/java/Foo.java");
+
+        ArgumentCaptor<Integer> windowCaptor = ArgumentCaptor.forClass(Integer.class);
+        verify(dao, atLeast(2)).searchFullText(eq("q"), anyMap(), windowCaptor.capture());
+        assertThat(windowCaptor.getAllValues().get(0)).isEqualTo(40);
+        assertThat(windowCaptor.getAllValues().get(1)).isGreaterThan(40);
     }
 
     private static class ContentRetriever implements GoldenRetriever {
