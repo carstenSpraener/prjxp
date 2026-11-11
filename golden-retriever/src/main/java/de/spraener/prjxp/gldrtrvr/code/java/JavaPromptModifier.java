@@ -44,7 +44,14 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                     nextPrompt = replaceInPrompt(prompt, toMethodName(pxChunk), toMethodSignature(pxChunk.getContent()));
                     break;
                 case DEPENDENCIE_INFO:
-                    nextPrompt = prompt + pxChunk.getContent();
+                    if (level == ContentLevel.POINTERS) {
+                        String parent = pxChunk.getParent();
+                        if (parent != null && !parent.isBlank()) {
+                            nextPrompt = prompt + "\n\n## Dependencies of " + parent + "\n→ graphNode(\"" + parent + "\")\n";
+                        }
+                    } else {
+                        nextPrompt = prompt + pxChunk.getContent();
+                    }
                     break;
                 case METHOD_DOC:
                     nextPrompt = insertBefore(prompt, toMethodName(pxChunk), pxChunk.getContent());

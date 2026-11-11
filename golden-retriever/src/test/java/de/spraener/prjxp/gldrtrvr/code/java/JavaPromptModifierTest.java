@@ -264,6 +264,29 @@ class JavaPromptModifierTest {
     }
 
     @Test
+    void dependencyInfoUnderPointersEmitsOnlyGraphNodePointer() {
+        PxChunk dep = PxChunk.create(
+                c -> c.setId("de.example.SomeService.dependencies"),
+                c -> c.setParent("de.example.SomeService"),
+                c -> c.setMimeType("text/plain"),
+                c -> c.setContent("  * de.example.HiddenNeighbour"),
+                c -> c.getMetadata().put("java_code_section", "dependenciesInfo"));
+
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+        String pointerResult = new JavaPromptModifier(pointers).modifyPrompt(dao, dep, "prompt");
+
+        assertThat(pointerResult).doesNotContain("de.example.HiddenNeighbour");
+        assertThat(pointerResult).contains("→ graphNode(\"de.example.SomeService\")");
+
+        String fullResult = new JavaPromptModifier(new SearchParams(20, 0.85)).modifyPrompt(dao, dep, "prompt");
+        assertThat(fullResult).contains("de.example.HiddenNeighbour");
+
+        String skeletonResult = new JavaPromptModifier(new SearchParams(20, 0.85, true)).modifyPrompt(dao, dep, "prompt");
+        assertThat(skeletonResult).contains("de.example.HiddenNeighbour");
+    }
+
+    @Test
     void varargsMethodNameIsResolved() {
         PxChunk varargs = PxChunk.create(
                 c -> c.setId("com.example.Foo.bar(int... args)"),

@@ -2,6 +2,7 @@ package de.spraener.prjxp.gldrtrvr.code.typescript;
 
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
@@ -78,5 +79,40 @@ class TypeScriptRetrieverTest {
 
         assertThat(prompt).contains("## Hier ein Rumpf der Klasse com/example/Foo.ts");
         assertThat(prompt).doesNotContain("### Hier noch Infos zu den Dependencies");
+    }
+
+    @Test
+    void dependencyInfoUnderPointersEmitsOnlyGraphNodePointer() {
+        // parent frame resolvable in the dao, so the session tree keeps the dep chunk's parent
+        PxChunk otherFrame = PxChunk.create(
+                c -> c.setId("com/example/Other.ts"),
+                c -> c.setContent("export class Other {}"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "classFrame"));
+        // id deliberately NOT parent + ".dependencies": the parent frame's CLASS_FRAME branch
+        // would otherwise re-render the dep content via the compactor and leak the marker
+        PxChunk dep = PxChunk.create(
+                c -> c.setId("com/example/Other.ts.deps"),
+                c -> c.setParent("com/example/Other.ts"),
+                c -> c.setContent("  * de.example.HiddenNeighbour"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "dependenciesInfo"));
+        PxChunkDao dao = mock(PxChunkDao.class);
+        when(dao.findById(dep.getId())).thenReturn(new java.util.ArrayList<>(List.of(dep)));
+        when(dao.findById(otherFrame.getId())).thenReturn(new java.util.ArrayList<>(List.of(otherFrame)));
+        TypeScriptRetriever retriever = retrieverWith(dao);
+
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+        String pointerPrompt = retriever.buildPromptForFindings("proj", List.of(new ScoredChunk(dep, 1.0)), pointers).toString();
+
+        assertThat(pointerPrompt).doesNotContain("de.example.HiddenNeighbour");
+        assertThat(pointerPrompt).contains("→ graphNode(\"com/example/Other.ts\")");
+
+        String fullPrompt = retriever.buildPromptForFindings("proj", List.of(new ScoredChunk(dep, 1.0)), params).toString();
+        assertThat(fullPrompt).contains("de.example.HiddenNeighbour");
+
+        String skeletonPrompt = retriever.buildPromptForFindings("proj", List.of(new ScoredChunk(dep, 1.0)), new SearchParams(20, 0.85, true)).toString();
+        assertThat(skeletonPrompt).contains("de.example.HiddenNeighbour");
     }
 }
