@@ -376,6 +376,39 @@ class JavaPromptModifierTest {
     }
 
     @Test
+    void clusterPointerStartsOnItsOwnLineAfterDependencyMarker() {
+        PxChunk clustered = PxChunk.create(
+                c -> c.setId("com.example.Foo"),
+                c -> c.setFile("/abs/path/com/example/Foo.java"),
+                c -> c.setContent("class Foo {}"),
+                c -> c.getMetadata().put("java_code_section", "classFrame"),
+                c -> c.getMetadata().put(GraphMetadata.LEIDEN_CLUSTER_ID, "c7"));
+        PxChunkDao depDao = daoWithDependencies(DependencyCompactorTest.dependencyContent(25, 15));
+        JavaPromptModifier full = new JavaPromptModifier(new SearchParams(20, 0.85));
+
+        String result = full.modifyPrompt(depDao, clustered, "prompt");
+
+        assertThat(result).doesNotContain("angezeigt][cluster:");
+        assertThat(result).contains("\n[cluster:c7]");
+    }
+
+    @Test
+    void pointersHeaderAndClusterPointerAreAdjacentWithoutBlankLine() {
+        PxChunk clustered = PxChunk.create(
+                c -> c.setId("com.example.Foo"),
+                c -> c.setContent("class Foo {}"),
+                c -> c.getMetadata().put("java_code_section", "classFrame"),
+                c -> c.getMetadata().put(GraphMetadata.LEIDEN_CLUSTER_ID, "c7"));
+        SearchParams params = new SearchParams(20, 0.85);
+        params.setContentLevel(ContentLevel.POINTERS);
+        JavaPromptModifier pointers = new JavaPromptModifier(params);
+
+        String result = pointers.modifyPrompt(dao, clustered, "prompt");
+
+        assertThat(result).contains("## com.example.Foo\n[cluster:c7]\n");
+    }
+
+    @Test
     void pointersLevelEmitsOnlyPointerLayer() {
         SearchParams params = new SearchParams(20, 0.85);
         params.setContentLevel(ContentLevel.POINTERS);

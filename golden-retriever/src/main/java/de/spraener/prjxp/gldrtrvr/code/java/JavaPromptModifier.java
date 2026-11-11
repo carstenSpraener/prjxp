@@ -62,9 +62,12 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                                     + DependencyCompactor.compact(dependenyChunk.getContent(), maxDependencyEntries);
                         }
                     } else {
-                        nextPrompt = prompt + "\n\n## " + className + "\n";
+                        nextPrompt = prompt + "\n\n## " + className;
                     }
                     // pointer layer — emitted for EVERY content level
+                    if (!nextPrompt.endsWith("\n")) {
+                        nextPrompt += "\n";
+                    }
                     if (clusterId != null && !clusterId.isBlank()) {
                         nextPrompt += "[cluster:" + clusterId + "]\n";
                     }

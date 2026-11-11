@@ -1,109 +1,100 @@
-# Software Architecture Assessment: Golden Retriever (gldrtrvr) – Multi-Language Code Retrieval & LLM Prompt Enrichment
+# Software Architecture Assessment: Golden Retriever (gldrtrvr) – Multi-Language Code Context Retrieval for LLM Prompts
 
 ## 1. Executive Summary
 
-The Golden Retriever project is a Spring Boot application that retrieves relevant code and documentation chunks from a project's indexed codebase (Java, TypeScript, Visual Basic, Markdown, plain text) and assembles them into structured prompts for LLM interaction. It employs a layered architecture with a clear pipeline: **FileViewProvider → Retriever → PromptSession → PromptModifier → LLM Chat**.
+The Golden Retriever project is a Spring Boot application that retrieves, ranks, and assembles relevant code and documentation chunks from a project's indexed codebase into structured prompts for LLM consumption. It supports five content types (Java, TypeScript, Visual Basic, Markdown, plain text) through a pluggable retriever architecture.
+
+**Current State:** The architecture is functional and demonstrates a clear layered design with a Strategy/Registry pattern for extensibility. However, it suffers from significant code duplication across language-specific components (PromptSessions, Retriever combine logic), inconsistent abstractions, and several naming/quality issues that will compound maintenance cost as the project grows.
 
 **Key Strengths:**
-- Well-defined extension points via `LanguagePack`, `GoldenRetriever`, and `ChunkRankingStrategy` interfaces
-- Consistent use of Spring DI and component scanning
-- Thoughtful budget management (content-length caps, dependency compaction, fallback iteration)
-- Clean separation between file rendering (reader) and prompt assembly (retriever/session)
+- Clean separation between retrieval, ranking, and prompt-assembly concerns
+- Well-designed `LanguagePack` / `RetrieverRegistry` plugin architecture for adding new languages
+- Thoughtful fallback/degradation strategies in FileViewProviders (splice → orphan → flat join)
+- Configurable ranking via `ChunkRankingStrategy` with a composable base + modulator formula
 
 **Most Critical Risks:**
-- **Severe code duplication** across four near-identical `PromptSession` classes and five near-identical `combineScoredChunksByID` implementations, creating a high maintenance burden
-- **Cross-language coupling**: `VisualBasicRetriever.buildSearchHits` accepts `JavaPromptSession.PromptModifier`, violating the language-pack isolation principle
-- **Inconsistent `PromptModifier` contracts** across sessions (3-arg vs. `BiFunction`), preventing a unified abstraction
-- **Thread-unsafe mutable state** in session objects and `ChunkNode` trees
-- **German-language strings hardcoded** in production prompt output, limiting internationalization
-- **O(n²) tree traversal** in `findRootForChunk` / `findChunkNodeInTree` for large chunk sets
+- ~40% of the codebase is duplicated boilerplate across the four PromptSession classes and five Retriever classes
+- A latent `StringIndexOutOfBoundsException` bug in `TypeScriptRetriever.insertBefore`
+- O(n²) tree-traversal in `findRootForChunk` combined with N+1 database calls in `buildGraphToRoot`
+- Inconsistent `PromptModifier` contracts across sessions (3-arg vs. `BiFunction`)
 
 ## 2. Architectural Style & Patterns
 
 | Pattern | Where Applied | Assessment |
 |---------|--------------|------------|
-| **Layered Architecture** | Reader → Retriever → PromptSession → Modifier → Chat | Clear vertical separation; each layer has a distinct responsibility |
-| **Strategy** | `ChunkRankingStrategy` + `ChunkRankingService` | Well-implemented; supports base + modulator composition |
-| **Registry / Plugin** | `LanguagePackRegistry`, `RetrieverRegistry` | Good extensibility for new languages; dedup logic is sound |
-| **Template Method** | `PromptSession.buildPrompt(PromptModifier, ...)` | Intended as a template, but the modifier contract is inconsistent across implementations |
-| **Visitor** | `ChunkNode.visit(Consumer<ChunkNode>)` | Functional and clean; used for tree traversal during prompt assembly |
-| **Composite** | `ChunkNode` (parent/child tree) | Appropriate for representing class→method hierarchies |
-| **Facade** | `GRPromptEnrichment` | Orchestrates search → retrieval → formatting; good single entry point |
-| **Observer / Event** | `JavaDocGeneratedEvent` + `JavdocGeneratedPostProcessor` | Lightweight decoupling for post-processing |
-| **Spring Boot Idiomatic** | `@Component`, `@Service`, `@Value`, `@RequiredArgsConstructor` | Standard; consistent with the ecosystem |
+| **Layered Architecture** | Reader (FileViewProvider) → Retriever (GoldenRetriever) → PromptSession → PromptModifier → LLM | Clear vertical flow; each layer has a distinct responsibility |
+| **Strategy** | `ChunkRankingStrategy` + `ChunkRankingService` | Well-implemented; `isModulator()` default method enables additive scoring without breaking existing strategies |
+| **Registry / Plugin** | `LanguagePack` → `LanguagePackRegistry` → `RetrieverRegistry` | Good extensibility point; new languages plug in via a single `LanguagePack` bean |
+| **Template Method** | `PromptSession.buildPrompt(PromptModifier, ...)` | The session defines the algorithm (tree-walk → rank → budget); the modifier supplies per-chunk rendering |
+| **Observer** | `JavaDocGeneratedEvent` + `JavdocGeneratedPostProcessor` | Lightweight Spring event for decoupling Javadoc generation from post-processing |
+| **Facade** | `GRPromptEnrichment` | Orchestrates vector search, iteration, multi-retriever assembly, and budget enforcement |
+| **Spring Boot Idiomatic** | `@Component`, `@Service`, `@RequiredArgsConstructor`, `@Value`, `@EventListener` | Standard DI; constructor injection preferred over field injection (good) |
 
-**Component Decoupling Analysis:**
-
-The intended decoupling is strong at the *interface* level (`GoldenRetriever`, `FileViewProvider`, `LanguagePack`, `ChunkRankingStrategy`). However, *implementation-level* coupling undermines this:
-
-- The four `PromptSession` classes are **copy-paste siblings** with only minor metadata-key differences. They are not unified behind a common base or generic parameterization.
-- `VisualBasicRetriever` directly imports and uses `JavaPromptSession.PromptModifier` in its `buildSearchHits` signature, creating a **compile-time dependency between language modules**.
-- The `PromptModifier` interface is **re-declared independently** in each session class rather than being a shared top-level type.
+**Component Decoupling:**
+- The `FileViewProvider` interface cleanly separates *rendering* (how a file looks) from *retrieval* (which chunks are relevant).
+- The `GoldenRetriever` interface is the primary extension point for content types.
+- **Weakness:** The `PromptSession` classes are *not* behind a shared interface or base class. Each language has its own concrete class with a *different* `PromptModifier` signature, preventing polymorphic use. The `RetrieverRegistry` returns `List<GoldenRetriever>`, but the sessions are instantiated *inside* each retriever, making them invisible to the registry.
 
 ## 3. Quality Attribute Evaluation
 
 ### Maintainability & Readability
 
-- **Naming:** Generally good (`FileViewProvider`, `GoldenRetriever`, `PromptSession`). However, `rootForrest` (missing 'e' in "forest") appears in all four session classes. The typo `DEPENDENCIE_INFO` (missing 'Y') is propagated across multiple files. `sanatize` (should be `sanitize`) in `JavaDocEnricher`.
-- **SOLID Adherence:**
-  - **S:** Reasonable. Each retriever handles one language. However, `TypeScriptRetriever.modifyPromptByChunk` handles 4+ section types with a switch, and the method is 40+ lines.
-  - **O:** The `ChunkRankingStrategy` interface is open for extension. The `LanguagePack` registry is open. However, adding a new language requires duplicating the entire PromptSession + Retriever + PromptModifier triad.
-  - **L:** `VisualBasicRetriever.buildSearchHits` accepting `JavaPromptSession.PromptModifier` is an LSP violation in spirit—VB code should not depend on Java's modifier contract.
-  - **I:** `PromptModifier` is a single-method interface (good), but it is re-declared per session rather than shared.
-  - **D:** Dependencies on `PxChunkDao`, `PxChunkDaoProvider`, `ChunkRankingService` are injected via constructor (good). However, `@Value` field injection is used in some retrievers, mixing DI styles.
-- **Readability:** Javadoc is present on most public methods. The `FileViewProvider` implementations have clear class-level comments. The `GRPromptEnrichment` class is dense with overloads (6+ `enrich` methods) that would benefit from a builder or parameter object.
+- **Naming inconsistencies:** `rootForrest` (should be `rootForest`), `DEPENDENCIE_INFO` (should be `DEPENDENCY_INFO`), `CLAZZ_FRAME` (should be `CLASS_FRAME`), `sanatize` (should be `sanitize`). These propagate across multiple files and are confusing.
+- **Language mixing:** German comments/strings (`"Hier ein Rumpf der Klasse"`, `"weitere %d Klassen wegen Groessenlimit nicht enthalten"`) are interspersed with English Javadoc. This is a team convention issue but hurts readability for non-German-speaking contributors.
+- **SOLID violations:**
+  - **SRP:** `TypeScriptRetriever` and `VisualBasicRetriever` embed their `modifyPromptByChunk` logic inline rather than delegating to a separate `PromptModifier` class (as `JavaRetriever` does with `JavaPromptModifier`). This makes the retriever 200+ lines and harder to test in isolation.
+  - **OCP:** Adding a new language requires creating 4–5 new classes (Retriever, PromptSession, ChunkRanker, FileViewProvider, LanguagePack) with near-identical boilerplate. The PromptSession duplication means the "open for extension" principle is undermined by "closed for modification" of the duplicated code.
+  - **DIP:** `PromptSession` classes depend on concrete `PxChunkDao` and `ChunkRankingService` via constructor, which is acceptable, but the `@Data` annotation generates setters for these, violating the immutability intent.
+- **Code cleanliness:** Generally good use of records (`SplicePlan`, `RankedPrompt`, `Token`, `Range`), streams, and modern Java (switch expressions, `var`, text blocks). The `FileViewProvider` implementations are well-structured with clear private helpers.
 
 ### Extensibility
 
-- **Adding a new language** (e.g., Python): Requires creating a new `FileViewProvider`, `Retriever`, `PromptSession`, `PromptModifier`, `ChunkRanker`, and `LanguagePack`—six new classes, most of which are near-copies of existing ones. A **generic `AbstractPromptSession<T>`** parameterized by metadata key and section-type enum would reduce this to 2–3 classes.
-- **Adding a new ranking strategy:** Trivially extensible via `ChunkRankingStrategy` + Spring auto-discovery. Well-designed.
-- **Adding a new retriever (non-language):** `RetrieverRegistry` picks up any `GoldenRetriever` bean not provided by a pack. Good.
-- **Replacing the LLM provider:** Abstracted behind `KIChatProvider`. Good.
-- **Replacing the chunk store:** Abstracted behind `PxChunkDao` / `PxChunkDaoProvider`. Good.
+- **Adding a new language** (e.g., Python): Requires implementing `FileViewProvider`, `GoldenRetriever`, a `PromptSession`, a `ChunkRankingStrategy`, and a `LanguagePack`. The `LanguagePack` + `RetrieverRegistry` pattern makes the *registration* trivial, but the *implementation* is ~600 lines of near-duplicated code per language.
+- **Adding a new ranking factor:** Clean. Implement `ChunkRankingStrategy`, annotate `@Component`, and it's auto-discovered by `ChunkRankingService`. The `isModulator()` default method is a nice touch.
+- **Replacing the LLM provider:** `KIChatProvider` is injected into `GldRtrvrQuestioner`; the `getByName("default")` call suggests a registry pattern, but the hardcoded `"default"` string is a minor coupling.
+- **Adding a new content type to an existing language:** The `FileViewProvider` and `GoldenRetriever` are per-language, not per-content-type. Adding, say, a "Kotlin" variant of the Java retriever would require a new `LanguagePack` rather than a configuration change.
 
 ### Robustness & Error Handling
 
+- **Critical bug:** `TypeScriptRetriever.insertBefore()` logs a warning when `splittIdx < 0` but then *proceeds* to call `prompt.substring(0, splittIdx)`, which throws `StringIndexOutOfBoundsException`. The `JavaPromptModifier.insertBefore()` correctly returns the unmodified prompt in this case.
 - **Null safety gaps:**
-  - `TypeScriptChunkRanker.supports()`, `JavaChunkRanker.supports()`, `VisualBasicChunkRanker.supports()`, `MarkdownChunkRanker.supports()` all call `chunk.getMetadata().containsKey(...)` without a null check on `getMetadata()`. Only `LeidenWeightRankingStrategy` guards against null metadata.
-  - `TypeScriptRetriever.modifyPromptByChunk` calls `pxChunk.getMetadata().get(...)` without null guard.
-  - `JavaPromptModifier.modifyPrompt` calls `pxChunk.getMetadata().containsKey(...)` without null guard.
-- **Critical bug in `TypeScriptRetriever.insertBefore`:** When `splittIdx < 0`, the code logs a warning but then proceeds to call `prompt.substring(0, splittIdx)` with a negative index, which will throw `StringIndexOutOfBoundsException`. The `JavaPromptModifier.insertBefore` correctly returns the unmodified prompt in this case.
-- **`buildGraphToRoot` mutates input:** `c.setParent(null)` modifies the passed-in `PxChunk` object as a side effect. If the same chunk instance is referenced elsewhere, this silently corrupts its parent link.
-- **`CliArgsParser.options`** is a non-volatile field with lazy initialization in a `@Component` (singleton). In a multi-threaded Spring context, this is a race condition.
-- **`@Value` field injection** in `TypeScriptRetriever`, `MarkdownRetriever`, `TextRetriever` bypasses constructor immutability and makes testing harder.
-- **`PxChunkService.findByPredicate`** uses `.get()` on `Optional`, which throws `NoSuchElementException` if the project is not configured—no graceful degradation.
+  - `sortByFromLine` in all FileViewProviders calls `unit.getMetadata().get(SECTION_KEY)` without null-checking `getMetadata()`.
+  - `firstParagraph` in `MarkdownFileViewProvider` calls `paragraphs.get(0)` as a fallback after `min()` — safe only if the list is non-empty (guaranteed by the caller, but not self-documenting).
+  - `buildGraphToRoot` mutates the input chunk (`c.setParent(null)`) when the parent is missing — a side effect that could corrupt shared state.
+- **Exception handling:** `GRPromptEnrichment.findRelevantScored` catches `UnsupportedOperationException` to fall back to a different search method — a reasonable degradation strategy. However, `JavaDocEnricher` catches broad `Exception` and logs, which can mask bugs.
+- **Edge cases:** The `FileViewProvider` implementations handle empty/null inputs well (e.g., `units == null ? List.of() : units`). The `DependencyCompactor` handles `maxEntries <= 0` gracefully.
+- **`System.exit(0)` in `CliArgsParser`:** Prevents Spring context shutdown, finalizers, and makes the class untestable.
 
 ### Performance & Resource Efficiency
 
-- **O(n²) tree search:** `findRootForChunk` iterates all roots and calls `findChunkNodeInTree` (recursive, O(tree-size)) for each. For N chunks across R roots, this is O(N × R × avgTreeSize). A `Map<String, ChunkNode>` index (chunkId → node) would reduce this to O(N).
-- **N+1 DAO calls in `buildGraphToRoot`:** Each recursive step calls `chunkDao.findById(parent)`. For a deep hierarchy (file → class → method → inner-class → method), this is multiple sequential DB/embedding-store round-trips per chunk.
-- **`ChunkNode.visit()` sorts children on every call:** `Collections.sort(childs, ...)` is invoked at every node during traversal. For a tree of depth D with branching factor B, this is O(D × B log B) per visit. The sort should be done once at tree construction time.
-- **String concatenation in `JavaPromptSession.buildPrompt`:** Uses `context += rp.treeContext()` (creates a new String object per iteration) while `TypeScriptPromptSession` and `VisualBasicPromptSession` correctly use `StringBuilder`. Inconsistent and suboptimal.
-- **`@Data` on PromptSession classes:** Generates `toString()`, `equals()`, `hashCode()` over all fields including `chunkStore` (HashMap) and `rootForrest` (List of ChunkNode trees). If these objects are ever logged or used in collections, this triggers expensive recursive serialization.
-- **`DependencyCompactor.compact`** splits the entire dependency content into lines, iterates twice (count + filter). For very large dependency lists this is O(n) but allocates a full line array. Acceptable for typical sizes.
-- **`GRPromptEnrichment.reIterate`** uses a do-while loop with vector search. The `vectorWindow` (50) is fetched per iteration. The loop is bounded by the 0.5 score floor, so it terminates, but each iteration is a full vector search.
+- **N+1 database calls:** `buildGraphToRoot` recursively calls `chunkDao.findById(parent)` for each ancestor. For a chunk 5 levels deep, this is 5 sequential DB round-trips. The `chunkStore` cache mitigates repeated lookups within a session, but the *initial* tree construction is O(depth) DB calls per chunk.
+- **O(n²) tree search:** `findRootForChunk` iterates all roots and calls `findChunkNodeInTree` (recursive, O(tree-size)) for each. With N chunks and M roots, worst case is O(N × M × treeDepth). For a project with 500 chunks across 50 root classes, this is 25,000+ node visits.
+- **Redundant sorting in `visit`:** `ChunkNode.visit` calls `Collections.sort(childs, ...)` on *every* invocation. Since `visit` is called once per root in `buildPrompt`, this is O(k log k) per node per call — unnecessary if the tree is static during the visit.
+- **String concatenation in `JavaPromptSession.buildPrompt`:** Uses `context += rp.treeContext()` (String concatenation in a loop) instead of `StringBuilder`. The TypeScript and VisualBasic sessions correctly use `StringBuilder`. This creates O(n²) memory allocation for large prompts.
+- **Blocking `Thread.sleep` in `JavaDocEnricher`:** Rate-limits LLM calls with a 5-second sleep in a sequential loop. For 100 undocumented methods, this is 500 seconds of blocking. An async or batched approach would be preferable.
+- **`@Value` on non-final fields with `@Data`:** The `@Data` annotation generates setters for `docMaxChars`, `docWindowChars`, etc., meaning the `@Value`-injected values can be accidentally overwritten by generated setters.
 
 ## 4. Strengths & Best Practices
 
-1. **Clean interface-driven extension points:** `GoldenRetriever`, `FileViewProvider`, `LanguagePack`, `ChunkRankingStrategy` provide well-defined contracts. New languages and ranking strategies can be added without modifying existing code.
+1. **`LanguagePack` + `RetrieverRegistry` plugin architecture:** Adding a new language is a single `@Component` class. The registry deduplicates by language name and merges with standalone retriever beans. This is a clean, testable extension mechanism.
 
-2. **`RetrieverRegistry` deduplication logic:** Merges pack-provided retrievers with standalone beans, using a `TreeMap` for deterministic ordering and a `HashSet` for dedup. This is a thoughtful design that avoids double-processing.
+2. **Composable ranking formula:** `ChunkRankingService` combines a base rank with an optional modulator (Leiden weight) using a configurable formula (`wBase * base + min(bGraph * weight, cap)`). The `isModulator()` default method on the interface is elegant — existing strategies are unaffected.
 
-3. **`ChunkRankingService` base + modulator composition:** The formula `wBase * baseRank + min(bGraph * weight, cap)` with configurable weights via `GraphRerankConfig` is a clean, tunable ranking model. The `LeidenWeightRankingStrategy` as a modulator is a good example of the pattern.
+3. **Graceful degradation in FileViewProviders:** Each provider has a clear fallback chain (structured splice → orphan append → flat join-all). The `SplicePlan` record with `-1` sentinel for "not found" is clean.
 
-4. **Budget management with graceful degradation:** Content-length caps, dependency compaction (`DependencyCompactor`), and the fallback iteration in `GRPromptEnrichment` (lowering similarity threshold in 0.05 increments) show awareness of LLM context-window constraints.
+4. **`DependencyCompactor`:** A focused, well-documented utility with a clear contract (truncate to N entries, preserve section headers, append a marker). Easy to test in isolation.
 
-5. **`FileViewProvider` implementations are well-structured:** The `JavaFileViewProvider` with its `SplicePlan` record, descending-index application, and annotation-block detection is a clean, well-commented implementation. The `MarkdownFileViewProvider` uses a `Block` record and `LinkedHashMap` for ordered grouping.
+5. **`GRPromptEnrichment` iteration strategy:** The `reIterate` method implements a principled fallback (increase maxResults up to 16, then step down the similarity threshold on a 0.05 grid, abort below 0.5). The epsilon (`1e-9`) prevents infinite loops from float drift.
 
-6. **`DependencyCompactor` is a well-isolated utility:** Static, final, with a clear contract and a user-visible marker for truncated entries. Good separation of concerns.
+6. **Use of Java records for value objects:** `SplicePlan`, `RankedPrompt`, `Token`, `Range`, `JavaDocGeneratedEvent` — all appropriate uses of records for immutable data carriers.
 
-7. **`TextSegment2PxChunkConverter`** is a minimal, focused adapter between LangChain4j and the domain model.
+7. **`@RequiredArgsConstructor` for DI:** Consistent constructor injection via Lombok, avoiding field-injection anti-patterns.
 
-8. **`GRPromptEnrichment` orchestration:** The do-while loop with `reIterate` and abort conditions provides a robust fallback mechanism for when the initial similarity threshold is too strict.
+8. **`FileViewProvider` separation:** The rendering logic (how a file *looks*) is cleanly separated from the retrieval logic (which chunks are *relevant*). The `MarkdownFileViewProvider` in particular is well-structured with clear helper methods.
 
-9. **Use of Java records** (`SplicePlan`, `RankedPrompt`, `Token`, `Range`, `JavaDocGeneratedEvent`) for immutable value objects.
+9. **`TextRetriever` as a simple fallback:** Demonstrates that not every content type needs the full tree/ranking machinery. It's a lightweight, self-contained retriever.
 
-10. **`@SafeVarargs` on `final` methods** with varargs of `Function<String, Boolean>`—correct usage to suppress compiler warnings.
+10. **`@SafeVarargs` on varargs methods:** Correctly applied to `buildPromptForFindings` and `retrieveSearchHits` to suppress unchecked warnings.
 
 ## 5. Identified Risks & Technical Debt
 
@@ -111,123 +102,113 @@ The intended decoupling is strong at the *interface* level (`GoldenRetriever`, `
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 1 | **`insertBefore` NPE/IOOBE bug** | `TypeScriptRetriever.insertBefore` | When `splittIdx < 0`, code logs a warning but still calls `prompt.substring(0, splittIdx)` → `StringIndexOutOfBoundsException` at runtime |
-| 2 | **Cross-language coupling** | `VisualBasicRetriever.buildSearchHits(JavaPromptSession.PromptModifier, ...)` | VB module has a compile-time dependency on Java module; breaks the language-pack isolation principle |
-| 3 | **Inconsistent `PromptModifier` contracts** | `MarkdownPromptSession` uses `BiFunction<PxChunk, String, String>`; all others use a 3-arg `PromptModifier` interface | Prevents a unified `PromptSession` abstraction; callers must know which session type they have |
-| 4 | **Massive duplication in PromptSessions** | `JavaPromptSession`, `TypeScriptPromptSession`, `VisualBasicPromptSession`, `MarkdownPromptSession` | ~200 lines of near-identical code × 4. Any bug fix or feature addition must be replicated 4× |
-| 5 | **Massive duplication in `combineScoredChunksByID`** | All 5 retrievers | ~25 lines of identical logic × 5, differing only in the metadata-key check |
+| 1 | **`StringIndexOutOfBoundsException` bug** | `TypeScriptRetriever.insertBefore()` | When `splittIdx < 0`, the method logs a warning but then calls `prompt.substring(0, splittIdx)` → runtime crash. The `JavaPromptModifier` version handles this correctly. |
+| 2 | **Massive PromptSession duplication** | `JavaPromptSession`, `TypeScriptPromptSession`, `VisualBasicPromptSession`, `MarkdownPromptSession` | ~150 lines × 4 = 600 lines of near-identical code. Any bug fix or feature addition must be replicated 4×. The `PromptModifier` interface is *different* across sessions (3-arg vs. `BiFunction`), preventing a shared base. |
+| 3 | **Retriever `combineScoredChunksByID` duplication** | All 5 retrievers | ~25 lines of identical logic (group by ID, check `total > size`, load from DAO or combine in-memory) repeated 5×. |
 
 ### High
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 6 | **O(n²) tree traversal** | `findRootForChunk` + `findChunkNodeInTree` in all sessions | Performance degrades quadratically with chunk count; no index by chunk ID |
-| 7 | **N+1 DAO calls** | `buildGraphToRoot` recursive `chunkDao.findById` | Each hierarchy level triggers a separate store call; deep hierarchies cause many round-trips |
-| 8 | **Thread-unsafe mutable state** | `chunkStore` (HashMap), `rootForrest` (ArrayList), `ChunkNode.childs` (ArrayList) in all sessions | Sessions are not thread-safe; concurrent use will cause `ConcurrentModificationException` or data corruption |
-| 9 | **German strings in production output** | All PromptSessions, `GRPromptEnrichment`, `JavaPromptModifier`, `TextRetriever`, `MarkdownRetriever` | LLM prompts and user-facing messages are hardcoded in German; not internationalizable |
-| 10 | **`@Data` on session classes** | All four `PromptSession` classes | Generates `toString()`/`equals()`/`hashCode()` over large mutable collections; expensive and potentially recursive |
+| 4 | **O(n²) + N+1 in tree construction** | `PromptSession.findRootForChunk` / `buildGraphToRoot` | For large projects (1000+ chunks), the recursive DB calls and linear tree scans create significant latency. No batch-loading or index-based lookup. |
+| 5 | **`@Data` on PromptSession classes** | All 4 PromptSessions | Generates `equals`/`hashCode`/`toString` over `chunkStore` (HashMap), `chunkDao`, `rankingService` — expensive and semantically wrong. Also generates public setters for dependencies that should be immutable. |
+| 6 | **Inconsistent `PromptModifier` contracts** | `MarkdownPromptSession` uses `BiFunction<PxChunk, String, String>`; others use a 3-arg interface with `PxChunkDao` | Prevents a unified `PromptSession` abstraction. Callers must know which session type they're dealing with. |
+| 7 | **`buildGraphToRoot` mutates input** | All PromptSessions | `c.setParent(null)` modifies the caller's chunk object. If the same `PxChunk` instance is shared (e.g., from a cache), this corrupts state. |
+| 8 | **`System.exit(0)` in Spring component** | `CliArgsParser` | Prevents graceful shutdown, breaks testability, and is a code smell in a managed container. |
 
 ### Medium
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 11 | **Typo: `rootForrest`** | All four PromptSession classes | Naming error; should be `rootForest` |
-| 12 | **Typo: `DEPENDENCIE_INFO`** | `TypeScriptCodeSection`, `JavaCodeSection`, rankers, modifiers | Propagated across the codebase; a metadata-key typo is a silent data-integrity risk |
-| 13 | **Typo: `sanatize`** | `JavaDocEnricher` | Method name should be `sanitize` |
-| 14 | **Inconsistent DI style** | `@Value` field injection in some retrievers vs. constructor injection in others | Inconsistent testability; field-injected values are not easily overridden in unit tests |
-| 15 | **`buildGraphToRoot` mutates input** | All four PromptSession classes | `c.setParent(null)` is a side effect on the caller's object |
-| 16 | **`ChunkNode.visit()` sorts on every call** | `ChunkNode` | Redundant sorting during traversal; should sort once at construction |
-| 17 | **`JavaPromptSession.buildPrompt` uses `+=`** | `JavaPromptSession` | String concatenation in a loop; inconsistent with TS/VB which use `StringBuilder` |
-| 18 | **`CliArgsParser.options` race condition** | `CliArgsParser` | Non-volatile lazy init in a singleton; unsafe under concurrent access |
-| 19 | **`@Log` (JUL) in a Spring Boot app** | Multiple classes | Inconsistent with Spring's logging abstraction; no log-level control via Spring config |
-| 20 | **`JavaPromptModifier.toMethodName` varargs hack** | `JavaPromptModifier` | Fragile string manipulation for varargs; will break on edge cases |
-| 21 | **`PxChunkService.findByPredicate` uses `.get()`** | `PxChunkService` | Throws `NoSuchElementException` instead of a meaningful error |
-| 22 | **`GRPromptEnrichment` has 6+ `enrich` overloads** | `GRPromptEnrichment` | Parameter explosion; a `EnrichRequest` builder would be cleaner |
+| 9 | **Typo propagation** | `rootForrest`, `DEPENDENCIE_INFO`, `CLAZZ_FRAME`, `sanatize` | Confusing for new developers; makes grep/search harder; suggests insufficient code review. |
+| 10 | **Unimplemented `retrieveSearchHits`** | `TypeScriptRetriever`, `MarkdownRetriever` | Return `Collections.EMPTY_LIST` with a `// TODO` comment. Callers get silently empty results. |
+| 11 | **Hardcoded German prompt strings** | `JavaPromptModifier`, `TypeScriptRetriever`, `VisualBasicRetriever`, `GldRtrvrQuestioner` | `"Hier ein Rumpf der Klasse"`, `"FRAGE: "` — not externalized to resource bundles. Makes i18n impossible and couples prompt text to code. |
+| 12 | **`visit()` sorts on every call** | `ChunkNode.visit` | `Collections.sort(childs, ...)` inside the recursive visitor. Unnecessary if the tree is static during a single `buildPrompt` call. |
+| 13 | **String concatenation in loop** | `JavaPromptSession.buildPrompt` | `context += rp.treeContext()` instead of `StringBuilder`. O(n²) for large prompts. |
+| 14 | **Blocking `Thread.sleep` for rate limiting** | `JavaDocEnricher` | 5-second sleep per LLM call in a sequential loop. Not scalable; blocks the calling thread. |
+| 15 | **Hardcoded path in `JavaDocEnricher`** | `Path.of("build/enriched-src")` | Not configurable; will break in different build environments. |
+| 16 | **`@Value` on non-final fields with `@Data`** | `MarkdownRetriever`, `TextRetriever` | Generated setters can override `@Value`-injected values. The field initializer (`= 2000`) is redundant with `@Value`. |
 
 ### Low
 
 | # | Issue | Location | Impact |
 |---|-------|----------|--------|
-| 23 | **`Collections.EMPTY_LIST`** (deprecated) | `TypeScriptRetriever`, `MarkdownRetriever`, `VisualBasicRetriever` | Should use `Collections.emptyList()` or `List.of()` |
-| 24 | **`JavaDocEnricher` hardcodes `build/enriched-src`** | `JavaDocEnricher` | Not configurable; should be a `@Value` property |
-| 25 | **`JavaDocEnricher` uses `Thread.sleep` for rate limiting** | `JavaDocEnricher` | Blocking; should use a proper rate-limiter or async scheduling |
-| 26 | **`MarkdownChunkRanker` ranks by content length** | `MarkdownChunkRanker` | Length is a weak relevance signal; may favor long, low-value sections |
+| 17 | **Unused imports** | `TypeScriptPromptSession` imports `BiFunction`; `VisualBasicRetriever` imports `JavaCodeSection` | Minor code smell; IDE warnings. |
+| 18 | **`Collections.EMPTY_LIST` vs `Collections.emptyList()`** | Multiple retrievers | `EMPTY_LIST` is deprecated since Java 9. |
+| 19 | **`firstParagraph` fallback to `get(0)`** | `MarkdownFileViewProvider` | Works but is implicit; a `@NonNull` annotation or explicit check would be clearer. |
+| 20 | **`normalizeForMatch` regex per line** | `TypeScriptFileViewProvider` | `replaceAll("\\s+", " ")` on every line comparison. Could be pre-computed. |
 
 ## 6. Actionable Recommendations
 
-### Priority 1 – Fix Critical Bugs (Immediate)
+### Priority 1 – Fix Critical Bugs (This Sprint)
 
-1. **Fix `TypeScriptRetriever.insertBefore`:** Add an early return when `splittIdx < 0` (mirror the `JavaPromptModifier` behavior). Add a unit test for the not-found case.
+1. **Fix `TypeScriptRetriever.insertBefore`:** Add an early return when `splittIdx < 0` (mirror the `JavaPromptModifier` behavior):
+   ```java
+   if (splittIdx < 0) {
+       log.warning("Methodenname %s nicht gefunden in Prompt", methodName);
+       return prompt; // ← ADD THIS
+   }
+   ```
 
-2. **Decouple `VisualBasicRetriever` from `JavaPromptSession`:** Extract a shared `PromptModifier` interface to a common package (e.g., `de.spraener.prjxp.gldrtrvr.prompt.PromptModifier`). Update all sessions and retrievers to use it. Remove the `JavaPromptSession` import from the VB module.
+2. **Fix `JavaPromptSession.buildPrompt` string concatenation:** Replace `context += rp.treeContext()` with a `StringBuilder` (as the TypeScript/VisualBasic sessions already do).
 
-### Priority 2 – Eliminate Duplication (High Impact, Medium Effort)
+3. **Remove mutation in `buildGraphToRoot`:** Instead of `c.setParent(null)`, create a defensive copy or use a local variable:
+   ```java
+   if (parentChunk == null || parentChunk.isEmpty()) {
+       PxChunk copy = PxChunk.copy(c);
+       copy.setParent(null);
+       return buildGraphToRoot(copy);
+   }
+   ```
 
-3. **Create a generic `AbstractPromptSession`:**
-   - Parameterize by metadata key (e.g., `"java_code_section"`, `"typescript_code_section"`).
-   - Unify the `PromptModifier` interface (single 3-arg method: `modifyPrompt(PxChunkDao, PxChunk, String)`).
-   - Move `findRootForChunk`, `findChunkNodeInTree`, `readChunk`, `buildGraphToRoot`, `setChunks`, `setChunksByScore` into the base class.
-   - Allow subclasses to override `buildPrompt` ranking formula and budget message.
-   - Replace `@Data` with explicit getters/setters or `@Getter @Setter` to avoid generating `toString`/`equals` over collections.
-   - Fix `rootForrest` → `rootForest`.
+### Priority 2 – Eliminate Duplication (Next Sprint)
 
-4. **Extract a shared `ChunkCombiner` utility:**
-   - Create a static method `combineScoredChunksByID(PxChunkDao, List<ScoredChunk>, Predicate<PxChunk> filter)` that encapsulates the group-by-ID, best-score, and re-fetch logic.
-   - Each retriever calls it with its language-specific predicate (`isJavaChunk`, `isTypeScriptChunk`, etc.).
-   - Eliminates ~25 lines × 5 of duplication.
+4. **Extract a `BasePromptSession` (or generic `PromptSession<T>`):**
+   - Unify the `PromptModifier` interface to a single 3-arg signature: `String modifyPrompt(PxChunkDao dao, PxChunk chunk, String currentPrompt)`.
+   - Move `findRootForChunk`, `findChunkNodeInTree`, `buildGraphToRoot`, `readChunk`, `setChunks`, `setChunksByScore`, `buildPrompt`, `buildSearchHits` into the base class.
+   - Allow subclasses to override: the metadata key for type identification, the `RankedPrompt` record shape, and the ranking formula.
+   - This eliminates ~500 lines of duplicated code and ensures bug fixes propagate to all languages.
 
-### Priority 3 – Performance & Correctness (High Impact)
+5. **Extract `ChunkCombiner` utility:** Create a shared static method:
+   ```java
+   public static <T> List<T> combineById(PxChunkDao dao, List<T> items, 
+       Function<T, PxChunk> chunkExtractor, Predicate<PxChunk> typeFilter)
+   ```
+   Replace the 5× duplicated `combineScoredChunksByID` / `combineChunksByID` in all retrievers.
 
-5. **Add a `Map<String, ChunkNode>` index to `ChunkNode` trees:**
-   - Maintain an ID→node map alongside the tree structure.
-   - Replace `findChunkNodeInTree` (O(n) recursive) with a map lookup (O(1)).
-   - This reduces `findRootForChunk` from O(N × R × treeSize) to O(N × R) or O(N) with a root-level index.
+6. **Extract `PromptModifier` implementations for TS and VB:** Follow the `JavaPromptModifier` pattern — create `TypeScriptPromptModifier` and `VisualBasicPromptModifier` classes, removing the inline `modifyPromptByChunk` from the retrievers. This makes each retriever ~80 lines instead of ~200.
 
-6. **Batch the `buildGraphToRoot` DAO calls:**
-   - Collect all parent IDs needed, perform a single batch `findById` call, then build the tree in memory.
-   - Eliminates the N+1 pattern for deep hierarchies.
+### Priority 3 – Performance (Next 2 Sprints)
 
-7. **Sort `ChunkNode.childs` once at construction time**, not on every `visit()` call.
+7. **Batch-load ancestors in `buildGraphToRoot`:** Collect all parent IDs first, issue a single `chunkDao.findByIds(Set<String>)` call, then build the tree in-memory. Reduces N sequential DB calls to 1.
 
-8. **Fix `JavaPromptSession.buildPrompt` to use `StringBuilder`** (consistent with TS/VB sessions).
+8. **Index the tree for `findRootForChunk`:** Maintain a `Map<String, ChunkNode>` (chunkId → node) alongside the tree. Replace the O(n) recursive `findChunkNodeInTree` with an O(1) map lookup.
 
-9. **Make session objects thread-safe or document them as non-reentrant:**
-   - Either use `ConcurrentHashMap` for `chunkStore` and `CopyOnWriteArrayList` for `rootForrest`, or add a `synchronized` guard / document single-threaded usage.
-   - Alternatively, make sessions immutable after `setChunks`/`setChunksByScore` completes.
+9. **Remove per-visit sorting in `ChunkNode.visit`:** Sort children once in `addChild` or in a `prepareVisit()` method called before the traversal, not on every recursive call.
 
-### Priority 4 – Internationalization & Configuration (Medium Impact)
+10. **Replace `Thread.sleep` in `JavaDocEnricher` with an async rate limiter:** Use a `Semaphore` or a token-bucket pattern with a scheduled executor to parallelize LLM calls while respecting the rate limit.
 
-10. **Externalize all user-facing strings to a resource bundle** (`messages.properties` / `messages_de.properties`):
-    - "weitere %d Klassen wegen Groessenlimit nicht enthalten"
-    - "Hier ein Rumpf der Klasse"
-    - "Hier noch Infos zu den Dependencies"
-    - "Es konnte kein valider Kontext erstellt werden!"
-    - "Relevante Information aus dem Projekt"
-    - "Textauszug aus"
-    - "Index-Stand"
-    - All LLM prompt templates in `GldRtrvrQuestioner` and `JavaDocEnricher`
+### Priority 4 – Code Quality & Consistency (Ongoing)
 
-11. **Standardize DI to constructor injection:** Replace `@Value` field injection in `TypeScriptRetriever`, `MarkdownRetriever`, `TextRetriever` with constructor parameters (via `@RequiredArgsConstructor` + `@Value` on the constructor param, or a config object).
+11. **Fix all typos in a single PR:** `rootForrest` → `rootForest`, `DEPENDENCIE_INFO` → `DEPENDENCY_INFO`, `CLAZZ_FRAME` → `CLASS_FRAME`, `sanatize` → `sanitize`. Use IDE rename-refactoring to ensure all references update.
 
-12. **Replace `@Log` (JUL) with `@Slf4j` (Logback/SLF4J):** Consistent with Spring Boot's logging stack; enables log-level control via `application.yml`.
+12. **Replace `@Data` with `@Getter` + `@Setter` (selective) on PromptSessions:** Remove generated `equals`/`hashCode`/`toString` over collections and dependencies. Make `chunkDao` and `rankingService` final (constructor-injected, no setter).
 
-### Priority 5 – Code Hygiene (Low Effort, Good Signal)
+13. **Externalize prompt strings to resource bundles:** Move all German/English prompt templates to `messages.properties` (or a `PromptTemplates` class with configurable strings). This enables i18n and makes prompt tuning a configuration change rather than a code change.
 
-13. **Fix typos:** `rootForrest` → `rootForest`, `DEPENDENCIE_INFO` → `DEPENDENCY_INFO` (coordinate with the chunker that produces this key), `sanatize` → `sanitize`.
+14. **Implement or remove `retrieveSearchHits` TODOs:** Either implement the method for `TypeScriptRetriever` and `MarkdownRetriever`, or throw `UnsupportedOperationException` with a clear message. Silently returning an empty list is a trap for callers.
 
-14. **Replace `Collections.EMPTY_LIST`** with `Collections.emptyList()` or `List.of()`.
+15. **Replace `System.exit(0)` in `CliArgsParser`:** Publish a `CliHelpRequestedEvent` or set a flag that the main application class checks after the Spring context is ready. Alternatively, use `SpringApplication.exit()`.
 
-15. **Make `JavaDocEnricher`'s output directory configurable** via `@Value("${prjxp.gldrtrvr.enriched-src-dir:build/enriched-src}")`.
+16. **Make `JavaDocEnricher` target path configurable:** Inject via `@Value("${prjxp.gldrtrvr.enriched-src-path:build/enriched-src}")`.
 
-16. **Replace `Thread.sleep` rate limiting** in `JavaDocEnricher` with a `RateLimiter` (Guava) or Spring's `@Async` + semaphore.
+17. **Add unit tests for the `FileViewProvider` splice logic:** The `SplicePlan` / `applyInDescendingIndexOrder` / `normalizeForMatch` logic is complex and currently untested. Test with synthetic frame/method content covering: exact match, normalized match, no match (fallback), multiple methods in one frame, orphan methods.
 
-17. **Refactor `GRPromptEnrichment` overloads** into a single method accepting an `EnrichRequest` record (projectName, prompt, prefetchedChunks, searchParams, promptFormatter, includeTests, contextValidators).
+18. **Add integration tests for `GRPromptEnrichment` iteration:** Verify the `reIterate` fallback loop terminates correctly at the 0.5 floor and that the 0.05 grid stepping works as documented.
 
-18. **Add null guards to all `ChunkRankingStrategy.supports()` implementations:** `chunk != null && chunk.getMetadata() != null && chunk.getMetadata().containsKey(...)`.
+19. **Standardize `@Value` usage:** For fields that need a default for non-Spring construction, use constructor parameters with defaults rather than field initializers + `@Value` on non-final fields. This avoids the `@Data`-generated-setter override risk.
 
-19. **Add a `@NonNull` or null-check guard** to `buildGraphToRoot` before mutating `c.setParent(null)`, or work on a copy.
-
-20. **Introduce integration tests** for the full pipeline: chunk ingestion → retrieval → prompt assembly → budget enforcement. The current codebase has no visible test coverage.
+20. **Introduce a `ContentLevel`-aware `PromptModifier` base:** The `JavaPromptModifier` already branches on `ContentLevel` (FULL / SKELETON / POINTERS). Generalize this so all language modifiers can support the same content-level semantics without duplicating the branching logic.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 
