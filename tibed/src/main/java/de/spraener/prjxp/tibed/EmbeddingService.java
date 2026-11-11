@@ -69,7 +69,7 @@ public class EmbeddingService {
             // getTransferJsonlStream auto-detects the PRJXPENC magic: a chunk JSONL that chunk-norris
             // encrypted (transfer password available) is decrypted, plaintext files pass through unchanged.
             char[] password = transferPasswordResolver.resolvePassword(cfg.getTransfer().getPasswordEnv());
-            log.info("Reading JSONL from " + pd.resolvedJsonlFile() + " for project '" + pd.getName() + "' with batch size " + effectiveBatchSize);
+            log.info("Reading JSONL from " + pd.resolvedJsonlFile() + " for project '" + pd.getName() + "': chunk batch " + effectiveBatchSize);
             reader.readChunksFromJsonlStreamBatched(streamProvider.getTransferJsonlStream(pd.resolvedJsonlFile(), password), effectiveBatchSize, this::fromJSONL)
                     .forEach(batch -> {
                         embedChunk(store, pd.getName(), batch);
@@ -88,7 +88,7 @@ public class EmbeddingService {
                     .filter( c -> needsEmbedding(store, projectName, c))
                     .toList()
             );
-            log.info("Embedded batch of " + chunks.length + " chunks for project "+projectName);
+            log.info("Embedded chunk batch of " + chunks.length + " chunks for project " + projectName);
         } catch (Exception e) {
             logService.error(e, "Embedding of chunk batch failed: %s", e.getMessage());
         }

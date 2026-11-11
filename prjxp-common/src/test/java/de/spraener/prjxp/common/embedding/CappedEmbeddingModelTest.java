@@ -10,6 +10,10 @@ import org.junit.jupiter.api.Test;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -172,5 +176,74 @@ class CappedEmbeddingModelTest {
     void nullDelegate_throwsIllegalArgumentException() {
         assertThatThrownBy(() -> new CappedEmbeddingModel(null, 32))
                 .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void splitLogsOneLinePerSplitWithExactNumbers() {
+        RecordingModel fake = new RecordingModel(8, "m", null, null);
+        CappedEmbeddingModel model = new CappedEmbeddingModel(fake, 2);
+
+        Logger logger = Logger.getLogger(CappedEmbeddingModel.class.getName());
+        Level originalLevel = logger.getLevel();
+        List<String> messages = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                messages.add(record.getMessage());
+            }
+
+            @Override
+            public void close() {
+            }
+
+            @Override
+            public void flush() {
+            }
+        };
+        logger.setLevel(Level.INFO);
+        logger.addHandler(handler);
+        try {
+            model.embedAll(segments(5));
+        } finally {
+            logger.removeHandler(handler);
+            logger.setLevel(originalLevel);
+        }
+
+        assertThat(messages).hasSize(1);
+        assertThat(messages).allSatisfy(m -> assertThat(m).contains("Splitting 5 embedding segments into 3 provider requests (cap=2)"));
+    }
+
+    @Test
+    void noSplitLogWhenBatchFitsTheCap() {
+        RecordingModel fake = new RecordingModel(8, "m", null, null);
+        CappedEmbeddingModel model = new CappedEmbeddingModel(fake, 5);
+
+        Logger logger = Logger.getLogger(CappedEmbeddingModel.class.getName());
+        Level originalLevel = logger.getLevel();
+        List<String> messages = new ArrayList<>();
+        Handler handler = new Handler() {
+            @Override
+            public void publish(LogRecord record) {
+                messages.add(record.getMessage());
+            }
+
+            @Override
+            public void close() {
+            }
+
+            @Override
+            public void flush() {
+            }
+        };
+        logger.setLevel(Level.INFO);
+        logger.addHandler(handler);
+        try {
+            model.embedAll(segments(3));
+        } finally {
+            logger.removeHandler(handler);
+            logger.setLevel(originalLevel);
+        }
+
+        assertThat(messages).isEmpty();
     }
 }

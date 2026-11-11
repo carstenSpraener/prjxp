@@ -282,7 +282,7 @@ class EmbeddingExportServiceTest {
         }
 
         assertThat(messages).anySatisfy(m -> assertThat(m).contains("Reading JSONL"));
-        assertThat(messages).filteredOn(m -> m.contains("Embedded batch")).hasSize(2);
+        assertThat(messages).filteredOn(m -> m.contains("Embedded chunk batch")).hasSize(2);
     }
 
     @Test

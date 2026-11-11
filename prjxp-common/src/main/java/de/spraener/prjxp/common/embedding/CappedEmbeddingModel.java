@@ -10,7 +10,6 @@ import lombok.extern.java.Log;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Decorator that caps the number of texts sent to the underlying provider in a single
@@ -30,7 +29,6 @@ public class CappedEmbeddingModel implements EmbeddingModel {
 
     private final EmbeddingModel delegate;
     private final int maxSegmentsPerBatch;
-    private final AtomicBoolean loggedSplit = new AtomicBoolean(false);
 
     public CappedEmbeddingModel(EmbeddingModel delegate, int maxSegmentsPerBatch) {
         if (delegate == null) {
@@ -52,14 +50,7 @@ public class CappedEmbeddingModel implements EmbeddingModel {
 
         int size = textSegments.size();
         int requests = (size + maxSegmentsPerBatch - 1) / maxSegmentsPerBatch;
-        if (loggedSplit.compareAndSet(false, true)) {
-            log.info("Embedding batch of " + size + " segments split into " + requests
-                    + " provider requests (cap=" + maxSegmentsPerBatch
-                    + "); set prjxp.embedding.maxSegmentsPerBatch to change this");
-        } else {
-            log.fine("Embedding batch of " + size + " segments split into " + requests
-                    + " provider requests (cap=" + maxSegmentsPerBatch + ")");
-        }
+        log.info("Splitting " + size + " embedding segments into " + requests + " provider requests (cap=" + maxSegmentsPerBatch + ")");
 
         List<Embedding> all = new ArrayList<>(size);
         TokenUsage total = null;
