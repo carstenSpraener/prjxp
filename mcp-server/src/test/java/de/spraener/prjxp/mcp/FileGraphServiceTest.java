@@ -171,11 +171,11 @@ class FileGraphServiceTest {
 
     @Test
     void graphFileUnknownProjectReturnsNotSearchable() {
-        doThrow(new UnknownProjectException("nope", List.of())).when(projectRegistry).ensureSearchable("nope");
+        doThrow(new UnknownProjectException("nope", List.of("alpha", "beta"))).when(projectRegistry).ensureSearchable("nope");
 
         GraphView view = service.graphFile("src/A.java", "nope", 30, false);
 
-        assertThat(view.error()).contains("nicht suchbar");
+        assertThat(view.error()).contains("No searchable store").contains("nope").contains("alpha");
     }
 
     @Test

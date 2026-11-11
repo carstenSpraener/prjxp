@@ -16,9 +16,11 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -299,5 +301,145 @@ class GrepSearchServiceTest {
                 eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-plugin",
                         PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
                 eq(10));
+    }
+
+    // ---- Phase 02: test-class filter ----
+
+    private static PxChunk fileChunk(String id, String file, String content) {
+        return PxChunk.create(c -> {
+            c.setId(id);
+            c.setFile(file);
+            c.setContent(content);
+        });
+    }
+
+    @Test
+    void defaultSearchIncludesTestFiles() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(fileChunk("m1", "src/main/java/A.java", "main content"), 1.0),
+                        new ScoredChunk(fileChunk("t1", "src/test/java/ATest.java", "test content"), 1.0)));
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 10);
+
+        assertThat(hits).extracting(SearchHit::file)
+                .containsExactlyInAnyOrder("src/main/java/A.java", "src/test/java/ATest.java");
+    }
+
+    @Test
+    void includeTestsFalseRemovesTestFiles() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(fileChunk("m1", "src/main/java/A.java", "main content"), 1.0),
+                        new ScoredChunk(fileChunk("t1", "src/test/java/ATest.java", "test content"), 1.0)));
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 10, false);
+
+        assertThat(hits).extracting(SearchHit::file)
+                .containsExactly("src/main/java/A.java");
+    }
+
+    @Test
+    void includeTestsFalseKeepsOutputWithinMainHitBudget() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        List<ScoredChunk> chunks = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            chunks.add(new ScoredChunk(fileChunk("m" + i, "src/main/java/M" + i + ".java",
+                    "MAIN" + i + "-".repeat(100)), 1.0));
+        }
+        for (int i = 0; i < 6; i++) {
+            chunks.add(new ScoredChunk(fileChunk("t" + i, "src/test/java/T" + i + "Test.java",
+                    "TEST" + i + "-".repeat(100)), 1.0));
+        }
+        when(dao.searchFullText(anyString(), anyMap(), anyInt())).thenReturn(chunks);
+        when(retrieverRegistry.all()).thenReturn(List.of(new ContentRetriever()));
+
+        List<SearchHit> all = service.search("q", "myproj", null, 10, true);
+        List<SearchHit> mainOnly = service.search("q", "myproj", null, 10, false);
+
+        assertThat(all).hasSize(10);
+        assertThat(mainOnly).hasSize(4);
+
+        int mainSize = mainOnly.stream().mapToInt(h -> h.snippet().length()).sum();
+        int allSize = all.stream().mapToInt(h -> h.snippet().length()).sum();
+        assertThat(mainSize).isLessThan(allSize);
+
+        // No test content may leak into the output string
+        String output = String.join("", mainOnly.stream().map(SearchHit::snippet).toList());
+        assertThat(output).doesNotContain("TEST");
+        assertThat(output).contains("MAIN0");
+    }
+
+    // ---- Phase 03: doc-chunk windowing ----
+
+    @Test
+    void docChunkSnippetIsWindowed() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        String filler = "lorem ipsum dolor\n".repeat(250);
+        String content = filler + "UNIQUE_TOKEN" + filler;   // ~9 KB markdown
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("c1");
+            c.setFile("docs/readme.md");
+            c.setMimeType("text/markdown");
+            c.setContent(content);
+        });
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 1.0)));
+        when(retrieverRegistry.all()).thenReturn(List.of(new ContentRetriever()));
+
+        SearchHit hit = service.search("UNIQUE_TOKEN", "myproj", null, 10).get(0);
+
+        assertThat(hit.snippet()).contains("UNIQUE_TOKEN");
+        assertThat(hit.snippet().length()).isLessThan(content.length());
+        assertThat(hit.snippet()).contains("readFile(\"docs/readme.md\")");
+    }
+
+    @Test
+    void codeChunkSnippetIsNotWindowed() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        String content = "int x = 1;\n".repeat(2000);   // 8 KB code
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("c1");
+            c.setFile("src/A.java");
+            c.setMimeType("text/x-java-code");
+            c.setContent(content);
+        });
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 1.0)));
+        when(retrieverRegistry.all()).thenReturn(List.of(new ContentRetriever()));
+
+        SearchHit hit = service.search("x", "myproj", null, 10).get(0);
+
+        // Full text is a feature for code: snippet equals the full content, no marker
+        assertThat(hit.snippet()).isEqualTo(content);
+        assertThat(hit.snippet()).doesNotContain("readFile");
+    }
+
+    private static class ContentRetriever implements GoldenRetriever {
+        @Override
+        public StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
+            StringBuilder sb = new StringBuilder();
+            for (ScoredChunk sc : chunks) {
+                if (sc.chunk().getContent() != null) {
+                    sb.append(sc.chunk().getContent());
+                }
+            }
+            return sb;
+        }
+
+        @Override
+        public List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks, Function<String, Boolean>... contextValidators) {
+            return List.of();
+        }
     }
 }

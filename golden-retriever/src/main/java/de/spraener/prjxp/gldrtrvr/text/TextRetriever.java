@@ -1,5 +1,6 @@
 package de.spraener.prjxp.gldrtrvr.text;
 
+import de.spraener.prjxp.common.model.DocWindower;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -8,6 +9,7 @@ import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -33,6 +35,21 @@ public class TextRetriever implements GoldenRetriever {
     public static final String MIME = "text/plain";
     private final PxChunkDaoProvider chunkDaoProvider;
 
+    /** Max chars a non-code (doc) chunk may have before it is windowed. Initialized with the
+     *  property default so that non-Spring construction (tests) behaves like the configured default. */
+    @Value("${prjxp.gldrtrvr.doc-max-chars:2000}")
+    int docMaxChars = 2000;
+
+    /** Half-window size (chars) around the match when windowing a doc chunk. */
+    @Value("${prjxp.gldrtrvr.doc-window-chars:500}")
+    int docWindowChars = 500;
+
+    /** Max total chars for all doc chunks in one vectorSearch answer (doc-specific content budget,
+     *  smaller than the code budget). Initialized with the property default so that non-Spring
+     *  construction (tests) behaves like the configured default. */
+    @Value("${prjxp.gldrtrvr.doc-max-content-length:8000}")
+    int docMaxContentLength = 8000;
+
     @Override
     @SafeVarargs
     public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
@@ -42,7 +59,8 @@ public class TextRetriever implements GoldenRetriever {
                 .filter(sc -> MIME.equals(sc.chunk().getMimeType()))
                 .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed())
                 .toList();
-        int budget = params.getMaxContentLength();
+        // Doc-specific content budget (Phase 03c): docs get a smaller budget than code
+        int budget = Math.min(params.getMaxContentLength(), docMaxContentLength);
         int skipped = 0;
         for (var sc : textChunks) {
             String part = formatChunk(sc.chunk());
@@ -61,7 +79,10 @@ public class TextRetriever implements GoldenRetriever {
     private String formatChunk(PxChunk chunk) {
         String freshness = freshnessNote(chunk);
         return "\n## Textauszug aus " + chunk.getFile() + (freshness == null ? "" : " " + freshness) + ":\n"
-                + chunk.getContent() + "\n";
+                // Doc-chunk windowing (Phase 03b): vectorSearch hits are semantic, so query=null —
+                // the deterministic fallback (first docMaxChars chars + marker) applies.
+                + DocWindower.windowDoc(chunk.getContent(), null, chunk.getFile(),
+                        chunk.getMimeType(), docMaxChars, docWindowChars) + "\n";
     }
 
     /** A "(Index-Stand ...)" freshness note when the chunk carries a {@code generated_at} watermark; null otherwise. */

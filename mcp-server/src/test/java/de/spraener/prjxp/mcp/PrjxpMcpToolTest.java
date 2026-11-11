@@ -44,14 +44,14 @@ class PrjxpMcpToolTest {
     }
 
     @Test
-    void readFileDelegatesAndDefaultsProject() {
-        when(readerService.read("src/Foo.java", "default", null, null))
+    void readFilePassesProjectThrough() {
+        when(readerService.read("src/Foo.java", "myproj", null, null))
                 .thenReturn(FileView.error("src/Foo.java", "no index"));
 
-        FileView view = tool.readFile("src/Foo.java", null, null, null);
+        FileView view = tool.readFile("src/Foo.java", "myproj", null, null);
 
         assertThat(view.error()).isEqualTo("no index");
-        verify(readerService).read("src/Foo.java", "default", null, null);
+        verify(readerService).read("src/Foo.java", "myproj", null, null);
 
         // a blank 'file' must short-circuit to an error view without touching the service
         FileView err = tool.readFile("", "prj", 1, 5);
@@ -65,7 +65,7 @@ class PrjxpMcpToolTest {
     void vectorSearchUnknownProjectReturnsErrorString() {
         doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
 
-        String result = tool.vectorSearch("How does chunking work?", "nope", null, null, null);
+        String result = tool.vectorSearch("How does chunking work?", "nope", null, null, null, null);
 
         assertThat(result).startsWith("ERROR:").contains("nope").contains("alpha");
         verifyNoInteractions(enrichment);
@@ -74,24 +74,64 @@ class PrjxpMcpToolTest {
     @Test
     void vectorSearchResolvesProjectViaRegistry() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "How does chunking work?", 0.85, 20, false))
+        when(enrichment.enrich("myproj", "How does chunking work?", 0.85, 20, false, false))
                 .thenReturn("Relevante Information in 'myproj':\nchunk content");
 
-        String result = tool.vectorSearch("How does chunking work?", "myproj", null, null, null);
+        String result = tool.vectorSearch("How does chunking work?", "myproj", null, null, null, null);
 
         assertThat(result).contains("chunk content");
-        verify(enrichment).enrich("myproj", "How does chunking work?", 0.85, 20, false);
+        verify(enrichment).enrich("myproj", "How does chunking work?", 0.85, 20, false, false);
     }
 
     @Test
     void vectorSearchDefaultProjectResolvesViaRegistry() {
         when(projectRegistry.resolve("default")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, false)).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, false, false)).thenReturn("ctx");
 
-        String result = tool.vectorSearch("q", "default", null, null, null);
+        String result = tool.vectorSearch("q", "default", null, null, null, null);
 
         assertThat(result).contains("ctx");
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, false);
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, false, false);
+    }
+
+    @Test
+    void vectorSearchDefaultsIncludeTestsToFalse() {
+        // Semantic discovery: tests are noise — null includeTests must default to false
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, false, false)).thenReturn("ctx");
+
+        tool.vectorSearch("q", "myproj", null, null, null, null);
+
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, false, false);
+    }
+
+    @Test
+    void vectorSearchPassesExplicitIncludeTestsThrough() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, false, true)).thenReturn("ctx");
+
+        tool.vectorSearch("q", "myproj", null, null, null, true);
+
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, false, true);
+    }
+
+    @Test
+    void grepDefaultsIncludeTestsToTrue() {
+        // Exact search is deliberate intent: null includeTests must default to true
+        when(grepSearchService.search("q", "myproj", null, 10, true)).thenReturn(List.of());
+
+        tool.grep("q", "myproj", null, null, null);
+
+        verify(grepSearchService).search("q", "myproj", null, 10, true);
+    }
+
+    @Test
+    void grepPassesExplicitIncludeTestsThrough() {
+        when(grepSearchService.search("q", "myproj", null, 10, false)).thenReturn(List.of());
+
+        tool.grep("q", "myproj", null, null, false);
+
+        verify(grepSearchService).search("q", "myproj", null, 10, false);
     }
 
     @Test
@@ -122,44 +162,44 @@ class PrjxpMcpToolTest {
     }
 
     @Test
-    void listFilesDefaultsProjectAndLimit() {
-        when(fileListService.list(null, "default", 50)).thenReturn(new FileListResult(List.of("a.java"), false));
+    void listFilesDefaultsLimit() {
+        when(fileListService.list(null, "myproj", 50)).thenReturn(new FileListResult(List.of("a.java"), false));
 
-        FileListResult result = tool.listFiles(null, null, null);
+        FileListResult result = tool.listFiles(null, "myproj", null);
 
         assertThat(result.files()).containsExactly("a.java");
-        verify(fileListService).list(null, "default", 50);
+        verify(fileListService).list(null, "myproj", 50);
     }
 
     @Test
     void listFilesClampsLimitToMax() {
-        when(fileListService.list("src", "default", 500)).thenReturn(new FileListResult(List.of(), false));
+        when(fileListService.list("src", "myproj", 500)).thenReturn(new FileListResult(List.of(), false));
 
-        tool.listFiles("src", null, 10000);
+        tool.listFiles("src", "myproj", 10000);
 
-        verify(fileListService).list("src", "default", 500);
+        verify(fileListService).list("src", "myproj", 500);
     }
 
     @Test
-    void graphFileDelegatesAndDefaultsProject() {
-        when(fileGraphService.graphFile("src/A.java", "default", 5, true))
+    void graphFilePassesProjectThrough() {
+        when(fileGraphService.graphFile("src/A.java", "myproj", 5, true))
                 .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
 
-        GraphView view = tool.graphFile("  src/A.java  ", null, 5, true);
+        GraphView view = tool.graphFile("  src/A.java  ", "myproj", 5, true);
 
         assertThat(view.error()).isEqualTo("Graph nicht verfügbar, bitte reindexieren");
-        verify(fileGraphService).graphFile("src/A.java", "default", 5, true);
+        verify(fileGraphService).graphFile("src/A.java", "myproj", 5, true);
     }
 
     @Test
-    void graphNodeDelegatesAndDefaultsProject() {
-        when(fileGraphService.graphNode("demo.A", "default", null, null))
+    void graphNodePassesProjectThrough() {
+        when(fileGraphService.graphNode("demo.A", "myproj", null, null))
                 .thenReturn(GraphView.unavailable("Node nicht gefunden: demo.A"));
 
-        GraphView view = tool.graphNode("demo.A", "", null, null);
+        GraphView view = tool.graphNode("demo.A", "myproj", null, null);
 
         assertThat(view.error()).contains("demo.A");
-        verify(fileGraphService).graphNode("demo.A", "default", null, null);
+        verify(fileGraphService).graphNode("demo.A", "myproj", null, null);
     }
 
     @Test

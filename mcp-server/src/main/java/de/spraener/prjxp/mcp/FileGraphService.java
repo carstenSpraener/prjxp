@@ -68,7 +68,7 @@ public class FileGraphService {
         if (StringUtils.isBlank(file)) {
             return GraphView.unavailable("Parameter 'file' ist erforderlich.");
         }
-        String requestedProject = StringUtils.isEmpty(project) ? "default" : project;
+        String requestedProject = project;
         GraphView error = ensureSearchableOrError(requestedProject);
         if (error != null) {
             return error;
@@ -129,7 +129,7 @@ public class FileGraphService {
         if (StringUtils.isBlank(symbol)) {
             return GraphView.unavailable("Parameter 'symbol' ist erforderlich.");
         }
-        String requestedProject = StringUtils.isEmpty(project) ? "default" : project;
+        String requestedProject = project;
         GraphView error = ensureSearchableOrError(requestedProject);
         if (error != null) {
             return error;
@@ -166,7 +166,7 @@ public class FileGraphService {
             projectRegistry.ensureSearchable(requestedProject);
             return null;
         } catch (UnknownProjectException e) {
-            return GraphView.unavailable("Projekt nicht suchbar, bitte reindexieren");
+            return GraphView.unavailable(e.getMessage());
         }
     }
 

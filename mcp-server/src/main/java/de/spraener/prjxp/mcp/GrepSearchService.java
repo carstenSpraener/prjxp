@@ -1,14 +1,17 @@
 package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.language.LanguagePackRegistry;
+import de.spraener.prjxp.common.model.DocWindower;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.model.TestPathFilter;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
@@ -20,15 +23,25 @@ import java.util.*;
 public class GrepSearchService {
     public static final String SOURCE = "grep";
 
-    private static final int SNIPPET_CONTEXT = 120;
-    private static final int SNIPPET_MAX = 240;
-
     private final PxChunkDaoProvider chunkDaoProvider;
     private final RetrieverRegistry retrieverRegistry;
     private final LanguagePackRegistry languagePackRegistry;
     private final ProjectRegistry projectRegistry;
 
+    /** Max chars a non-code (doc) snippet may have before it is windowed. Initialized with the
+     *  property default so that non-Spring construction (tests) behaves like the configured default. */
+    @Value("${prjxp.mcp.grep.doc-max-chars:2000}")
+    int docMaxChars = 2000;
+
+    /** Half-window size (chars) around the match when windowing a doc snippet. */
+    @Value("${prjxp.mcp.grep.doc-window-chars:500}")
+    int docWindowChars = 500;
+
     public List<SearchHit> search(String query, String project, String language, int limit) {
+        return search(query, project, language, limit, true);
+    }
+
+    public List<SearchHit> search(String query, String project, String language, int limit, boolean includeTests) {
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         String resolved = projectRegistry.resolve(project);
         PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
@@ -66,6 +79,10 @@ public class GrepSearchService {
             for( var gr : retrieverRegistry.all() ) {
                 sb.append(gr.buildPromptForFindings(project, scoredChunks, sp));
             }
+            // Doc-chunk windowing (Phase 03): the retriever may rebuild content from the store,
+            // so the funnel is the finished snippet. Identity for code (text/x-*), untouched otherwise.
+            String mimeType = scoredChunks.isEmpty() ? null : scoredChunks.get(0).chunk().getMimeType();
+            String snippet = DocWindower.windowDoc(sb.toString(), query, fileName, mimeType, docMaxChars, docWindowChars);
             double totalScore = scoredChunks.stream().mapToDouble(ScoredChunk::score).sum();
             searchHits.add(
                     new SearchHit(
@@ -74,11 +91,14 @@ public class GrepSearchService {
                             fileName,
                             null,
                             null,
-                            sb.toString(),
+                            snippet,
                             SOURCE,
                             Map.of()
                     )
             );
+        }
+        if (!includeTests) {
+            searchHits.removeIf(h -> TestPathFilter.isTestPath(h.file()));
         }
         return searchHits;
     }
@@ -100,39 +120,5 @@ public class GrepSearchService {
     /** Sprache -> MIME aus der gemeinsamen LanguagePackRegistry (Built-in-Packs + Plugins). */
     private Map<String, String> mimeByLanguage() {
         return languagePackRegistry.mimeByLanguage();
-    }
-
-    private String extractSnippet(String content, String query) {
-        if (content == null || content.isBlank()) {
-            return "";
-        }
-        if (query == null || query.isBlank()) {
-            return content.length() <= SNIPPET_MAX ? content : content.substring(0, SNIPPET_MAX);
-        }
-
-        int idx = indexOfIgnoreCase(content, query.trim());
-        if (idx < 0) {
-            for (String word : query.toLowerCase(Locale.ROOT).split("\\s+")) {
-                int i = indexOfIgnoreCase(content, word);
-                if (i >= 0 && (idx < 0 || i < idx)) {
-                    idx = i;
-                }
-            }
-        }
-
-        if (idx < 0) {
-            return content.length() <= SNIPPET_MAX ? content : content.substring(0, SNIPPET_MAX);
-        }
-
-        int start = Math.max(0, idx - SNIPPET_CONTEXT);
-        int end = Math.min(content.length(), idx + query.trim().length() + SNIPPET_CONTEXT);
-        return content.substring(start, end);
-    }
-
-    private static int indexOfIgnoreCase(String haystack, String needle) {
-        if (needle.isEmpty()) {
-            return -1;
-        }
-        return haystack.toLowerCase(Locale.ROOT).indexOf(needle.toLowerCase(Locale.ROOT));
     }
 }

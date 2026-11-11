@@ -1,7 +1,7 @@
 package de.spraener.prjxp.mcp;
 
-import com.github.javaparser.StaticJavaParser;
 import de.spraener.prjxp.chuno.code.java.JavaCodeChunker;
+import de.spraener.prjxp.chuno.code.java.JavaParserFactory;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.gldrtrvr.reader.JavaFileViewProvider;
 import org.junit.jupiter.api.Test;
@@ -42,6 +42,9 @@ class JavaRoundTripTest {
 
     @Autowired
     JavaFileViewProvider provider;
+
+    @Autowired
+    JavaParserFactory javaParserFactory;
 
     @Test
     void parsedFileIsChunkedAndRestored() throws Exception {
@@ -143,7 +146,7 @@ class JavaRoundTripTest {
 
         // 5. Each restored frame block is valid Java again
         for (PxChunk frame : frames) {
-            StaticJavaParser.parse(extractFrameBlock(view, frame.getId()));   // throws on syntax error
+            javaParserFactory.parse(extractFrameBlock(view, frame.getId()));   // throws on syntax error
         }
     }
 

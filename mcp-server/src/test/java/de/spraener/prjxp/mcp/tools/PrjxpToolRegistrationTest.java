@@ -71,19 +71,20 @@ class PrjxpToolRegistrationTest {
         List<ToolSpecification> specs = registry.specifications();
 
         ToolSpecification grep = specs.stream().filter(s -> s.name().equals("grep")).findFirst().orElseThrow();
-        assertThat(grep.parameters().required()).containsExactly("query");
-        assertThat(grep.parameters().properties()).containsKeys("query", "project", "language", "limit");
+        assertThat(grep.parameters().required()).containsExactly("query", "project");
+        assertThat(grep.parameters().properties()).containsKeys("query", "project", "language", "limit", "includeTests");
 
         ToolSpecification vectorSearch = specs.stream()
                 .filter(s -> s.name().equals("vectorSearch")).findFirst().orElseThrow();
-        assertThat(vectorSearch.parameters().required()).containsExactly("userQuestion");
+        assertThat(vectorSearch.parameters().required()).containsExactly("userQuestion", "projectName");
+        assertThat(vectorSearch.parameters().properties()).containsKeys("userQuestion", "projectName", "similarity", "maxResults", "skeletonsOnly", "includeTests");
     }
 
     // ==================== vectorSearch ====================
 
     @Test
     void vectorSearchPassesTypedArguments() {
-        when(mcpTool.vectorSearch(eq("find foo"), eq("p1"), eq(0.7), eq(5), eq(true))).thenReturn("ctx");
+        when(mcpTool.vectorSearch(eq("find foo"), eq("p1"), eq(0.7), eq(5), eq(true), any())).thenReturn("ctx");
 
         String result = execute("vectorSearch", Map.of(
                 "userQuestion", "find foo", "projectName", "p1",
@@ -94,12 +95,21 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void vectorSearchCoercesStringNumbers() {
-        when(mcpTool.vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false))).thenReturn("ctx");
+        when(mcpTool.vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false), any())).thenReturn("ctx");
 
         execute("vectorSearch", Map.of(
                 "userQuestion", "q", "similarity", "0.9", "maxResults", "3", "skeletonsOnly", "false"));
 
-        verify(mcpTool).vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false));
+        verify(mcpTool).vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false), any());
+    }
+
+    @Test
+    void vectorSearchPassesIncludeTestsThrough() {
+        when(mcpTool.vectorSearch(eq("q"), any(), any(), any(), any(), eq(true))).thenReturn("ctx");
+
+        execute("vectorSearch", Map.of("userQuestion", "q", "includeTests", true));
+
+        verify(mcpTool).vectorSearch(eq("q"), any(), any(), any(), any(), eq(true));
     }
 
     @Test
@@ -112,7 +122,7 @@ class PrjxpToolRegistrationTest {
     @Test
     void grepFormatsHits() {
         SearchHit hit = new SearchHit("chunk-1", 0.9, "Foo.java", 10, 20, "public void foo()", "java", Map.of());
-        when(mcpTool.grep(eq("foo"), eq("p1"), any(), any())).thenReturn(List.of(hit));
+        when(mcpTool.grep(eq("foo"), eq("p1"), any(), any(), any())).thenReturn(List.of(hit));
 
         String result = execute("grep", Map.of("query", "foo", "project", "p1"));
 
@@ -125,12 +135,21 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void grepWithoutHitsMentionsProject() {
-        when(mcpTool.grep(any(), eq("p1"), any(), any())).thenReturn(List.of());
+        when(mcpTool.grep(any(), eq("p1"), any(), any(), any())).thenReturn(List.of());
 
         String result = execute("grep", Map.of("query", "nothing", "project", "p1"));
 
         assertThat(result).contains("No results found");
         assertThat(result).contains("p1");
+    }
+
+    @Test
+    void grepPassesIncludeTestsThrough() {
+        when(mcpTool.grep(eq("q"), any(), any(), any(), eq(false))).thenReturn(List.of());
+
+        execute("grep", Map.of("query", "q", "includeTests", false));
+
+        verify(mcpTool).grep(eq("q"), any(), any(), any(), eq(false));
     }
 
     @Test

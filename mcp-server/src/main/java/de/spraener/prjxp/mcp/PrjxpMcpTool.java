@@ -51,12 +51,14 @@ public class PrjxpMcpTool {
             The search returns method implementations only if the vector search hits a method chunk AND skeletonsOnly is set to false.
             Otherwise it returns simple class skeletons with imports and project dependencies for an architectural overview.
             Use grep on the exact signature for full method bodies, or readFile for the entire file.
+
+            includeTests: include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.
             """)
     public String vectorSearch(
             @McpToolParam(description = "A targeted, standalone search prompt optimized for vector retrieval based on what you need to find.", required = true)
             String userQuestion,
 
-            @McpToolParam(description = "Optional project name to narrow the scope. Leave empty/default if unknown.", required = false)
+            @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
             String projectName,
 
             @McpToolParam(description="""
@@ -72,7 +74,13 @@ public class PrjxpMcpTool {
             @McpToolParam(description="""
                 Do you need full method context on hit methods or do you always want to see class skeletons only? Default is false (full context).
                 """, required = false)
-            Boolean skeletonsOnly
+            Boolean skeletonsOnly,
+
+            @McpToolParam(description="""
+                Include test sources (src/test, src/testFixtures) in the results. Default is false — tests are noise for semantic discovery.
+                Pass true when asking about tests.
+                """, required = false)
+            Boolean includeTests
     ) {
 
         String prefix = """
@@ -92,8 +100,11 @@ public class PrjxpMcpTool {
         if( skeletonsOnly==null) {
             skeletonsOnly = Boolean.FALSE;
         }
+        if( includeTests==null) {
+            includeTests = Boolean.FALSE;   // semantic discovery: tests are noise
+        }
         log.info(String.format("searching context for '%s' for project '%s'.", userQuestion, projectName));
-        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, skeletonsOnly);
+        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, skeletonsOnly, includeTests);
 
         String result = String.format("%s\n%s", prefix, context);
         log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));
@@ -121,27 +132,37 @@ public class PrjxpMcpTool {
             Chunks that contain a hit include the complete method body, not just the skeleton.
             PARAMETER-RULE: Pass the exact string (e.g., "public MClass createMClass") as query.
             NEED THE COMPLETE METHOD BY NAME OR THE ENTIRE FILE? Use readBySignature (method) or readFile (whole file) — level 3.
+
+            includeTests: include test sources (default: false for vectorSearch, true for grep). Pass false to grep to exclude test files.
             """)
     public List<SearchHit> grep(
         @McpToolParam(description = "Exact search string (required).", required = true)
         String query,
 
-        @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+        @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
         String project,
 
         @McpToolParam(description = "Optional language filter (e.g. 'java', 'ts').", required = false)
         String language,
 
         @McpToolParam(description = "Maximum number of results (default 10, max 100).", required = false)
-        Integer limit
+        Integer limit,
+
+        @McpToolParam(description="""
+            Include test sources (src/test, src/testFixtures) in the results. Default is true — exact search is deliberate intent.
+            Pass false to exclude test files.
+            """, required = false)
+        Boolean includeTests
     ) {
         if( limit == null ) {
             limit = 0;
         }
         if( limit == 0 ) limit = SearchLimits.DEFAULT_LIMIT;
-        if(StringUtils.isEmpty(project)) project = "default";
+        if( includeTests==null) {
+            includeTests = Boolean.TRUE;   // exact search: tests are deliberate intent
+        }
 
-        return grepSearchService.search(query.trim(), project, language, limit);
+        return grepSearchService.search(query.trim(), project, language, limit, includeTests);
     }
 
     @McpTool(name = "readFile", description = """
@@ -158,7 +179,7 @@ public class PrjxpMcpTool {
                 """, required = true)
             String file,
 
-            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
             String project,
 
             @McpToolParam(description = "Optional 1-based line number to start reading from (paged reading of large files).", required = false)
@@ -170,7 +191,6 @@ public class PrjxpMcpTool {
         if (StringUtils.isEmpty(file)) {
             return FileView.error(file, "Parameter 'file' is required.");
         }
-        if (StringUtils.isEmpty(project)) project = "default";
         return readerService.read(file.trim(), project, offset, limit);
     }
 
@@ -192,10 +212,9 @@ public class PrjxpMcpTool {
             @McpToolParam(description = "Optional containing class FQN to disambiguate a bare method name.", required = false)
             String container,
 
-            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
             String project
     ) {
-        if (StringUtils.isEmpty(project)) project = "default";
         return symbolReaderService.readBySignature(method, container, project);
     }
 
@@ -216,13 +235,12 @@ public class PrjxpMcpTool {
                 """, required = false)
             String path,
 
-            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
             String project,
 
             @McpToolParam(description = "Maximum number of files to return (default 50, max 500).", required = false)
             Integer limit
     ) {
-        if (StringUtils.isEmpty(project)) project = "default";
         int safeLimit = (limit == null) ? SearchLimits.LIST_DEFAULT_LIMIT : SearchLimits.clampList(limit);
         return fileListService.list(path, project, safeLimit);
     }
@@ -230,12 +248,14 @@ public class PrjxpMcpTool {
     @McpTool(name = "graphFile", description = """
             STRUCTURE TOOL: Returns the typed code-graph neighbours of one file — imported/extended/implemented/field/param/return/call edges with file paths.
             Requires an indexed project with a graph artifact. Use graphNode for a specific symbol.
+            Edges whose target is a JDK or third-party library type are "external" and HIDDEN by default (includeExternal=false); set includeExternal=true to include them.
+            Concretely: for a method node, PARAM/RETURN edges to library types are hidden by default; for a type node, EXTENDS/IMPLEMENTS/FIELD edges to library types are hidden by default.
             """)
     public GraphView graphFile(
             @McpToolParam(description = "File path — absolute, project-root-relative, or just the file name (lenient: exact -> suffix -> basename).", required = true)
             String file,
 
-            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
             String project,
 
             @McpToolParam(description = "Maximum neighbours per direction (default 30, max 100).", required = false)
@@ -247,19 +267,20 @@ public class PrjxpMcpTool {
         if (StringUtils.isBlank(file)) {
             return GraphView.unavailable("Parameter 'file' ist erforderlich.");
         }
-        if (StringUtils.isEmpty(project)) project = "default";
         return fileGraphService.graphFile(file.trim(), project, maxEdges, includeExternal);
     }
 
     @McpTool(name = "graphNode", description = """
             STRUCTURE TOOL: Returns the typed code-graph neighbours of one node id (`fqn` or `fqn#name(paramFQNs)`).
             Lenient resolution: exact -> suffix. Ambiguous symbols return a candidate list. Use graphFile to start from a file.
+            Edges whose target is a JDK or third-party library type are "external" and HIDDEN by default (includeExternal=false); set includeExternal=true to include them.
+            Concretely: for a method node, PARAM/RETURN edges to library types are hidden by default; for a type node, EXTENDS/IMPLEMENTS/FIELD edges to library types are hidden by default.
             """)
     public GraphView graphNode(
             @McpToolParam(description = "Node id — class FQN (`com.example.Foo`) or method id (`com.example.Foo#bar(int)`); bare names are matched as a suffix.", required = true)
             String symbol,
 
-            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
             String project,
 
             @McpToolParam(description = "Maximum neighbours per direction (default 30, max 100).", required = false)
@@ -271,7 +292,6 @@ public class PrjxpMcpTool {
         if (StringUtils.isBlank(symbol)) {
             return GraphView.unavailable("Parameter 'symbol' ist erforderlich.");
         }
-        if (StringUtils.isEmpty(project)) project = "default";
         return fileGraphService.graphNode(symbol.trim(), project, maxEdges, includeExternal);
     }
 

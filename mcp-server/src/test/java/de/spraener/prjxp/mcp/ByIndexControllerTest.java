@@ -44,14 +44,14 @@ class ByIndexControllerTest {
 
     @Test
     void missingLanguageReturns400() throws Exception {
-        mvc.perform(get("/api/tools/byIndex").param("fqn", "com.example.Foo"))
+        mvc.perform(get("/api/tools/byIndex").param("fqn", "com.example.Foo").param("project", "myproj"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("missingLanguage"));
     }
 
     @Test
     void noSearchParamsReturns400() throws Exception {
-        mvc.perform(get("/api/tools/byIndex").param("language", "java"))
+        mvc.perform(get("/api/tools/byIndex").param("language", "java").param("project", "myproj"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("missingSearchParams"));
     }
@@ -62,7 +62,8 @@ class ByIndexControllerTest {
 
         mvc.perform(get("/api/tools/byIndex")
                 .param("language", "cobol")
-                .param("fqn", "com.example.Foo"))
+                .param("fqn", "com.example.Foo")
+                .param("project", "myproj"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error").value("unknownLanguage"));
     }
@@ -76,7 +77,8 @@ class ByIndexControllerTest {
 
         mvc.perform(get("/api/tools/byIndex")
                 .param("language", "java")
-                .param("fqn", "com.example.Foo"))
+                .param("fqn", "com.example.Foo")
+                .param("project", "myproj"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$").isArray())
                 .andExpect(jsonPath("$[0].chunkId").value("chunk-1"))
@@ -92,10 +94,11 @@ class ByIndexControllerTest {
         mvc.perform(get("/api/tools/byIndex")
                 .param("language", "java")
                 .param("fqn", "x")
+                .param("project", "myproj")
                 .param("limit", "500"))
                 .andExpect(status().isOk());
 
-        verify(service).search(new ByIndexQuery("java", "x", null, null, null, null, "default", 100));
+        verify(service).search(new ByIndexQuery("java", "x", null, null, null, null, "myproj", 100));
     }
 
     @Test
@@ -105,10 +108,11 @@ class ByIndexControllerTest {
 
         mvc.perform(get("/api/tools/byIndex")
                 .param("language", "java")
-                .param("fqn", "x"))
+                .param("fqn", "x")
+                .param("project", "myproj"))
                 .andExpect(status().isOk());
 
-        verify(service).search(new ByIndexQuery("java", "x", null, null, null, null, "default", 10));
+        verify(service).search(new ByIndexQuery("java", "x", null, null, null, null, "myproj", 10));
     }
 
     @Test

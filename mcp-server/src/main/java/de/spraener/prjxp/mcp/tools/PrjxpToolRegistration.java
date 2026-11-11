@@ -74,24 +74,27 @@ public class PrjxpToolRegistration {
                         CRITICAL PRIMARY SEARCH TOOL (level 1 of 3): Delivers relevant semantic information from the project context.
                         ALWAYS call this first for discovery: finding classes, understanding structure, locating implementations.
                         Follow up with grep (exact string), readBySignature (complete method) or readFile (whole file).
+                        includeTests: include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.
                         """)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("userQuestion",
                                 "A targeted, standalone search prompt optimized for vector retrieval.")
                         .addStringProperty("projectName",
-                                "Optional project name to narrow the scope.")
+                                "Required project name. Call listProjects to discover valid names.")
                         .addNumberProperty("similarity",
                                 "Similarity threshold 0.0-1.0. Higher is more precise. Default 0.85.")
                         .addIntegerProperty("maxResults",
                                 "Maximum number of results to return. Default 20.")
                         .addBooleanProperty("skeletonsOnly",
                                 "True returns class skeletons only, false (default) returns full method context.")
-                        .required("userQuestion")
+                        .addBooleanProperty("includeTests",
+                                "Include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.")
+                        .required("userQuestion", "projectName")
                         .build())
                 .build();
 
         return new ToolDefinition("vectorSearch", spec.description(),
-                Map.of("userQuestion", "The search prompt", "projectName", "Optional project name"),
+                Map.of("userQuestion", "The search prompt", "projectName", "Required project name"),
                 params -> {
                     String question = string(params, "userQuestion");
                     if (question == null) {
@@ -99,7 +102,7 @@ public class PrjxpToolRegistration {
                     }
                     String result = mcpTool.vectorSearch(question, string(params, "projectName"),
                             number(params, "similarity"), integer(params, "maxResults"),
-                            bool(params, "skeletonsOnly"));
+                            bool(params, "skeletonsOnly"), bool(params, "includeTests"));
                     return truncate(result, SEARCH_RESULT_CAP);
                 }, spec);
     }
@@ -110,18 +113,21 @@ public class PrjxpToolRegistration {
                 .description("""
                         SEARCH TOOL (level 2 of 3): Exact full-text search over all chunks of a project.
                         Use the exact method signature as query to retrieve its FULL BODY.
+                        includeTests: include test sources (default: false for vectorSearch, true for grep). Pass false to grep to exclude test files.
                         """)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("query", "Exact search string, e.g. 'public MClass createMClass'.")
-                        .addStringProperty("project", "Optional project name.")
+                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
                         .addStringProperty("language", "Optional language filter, e.g. 'java' or 'ts'.")
                         .addIntegerProperty("limit", "Maximum number of results (default 10, max 100).")
-                        .required("query")
+                        .addBooleanProperty("includeTests",
+                                "Include test sources (default: false for vectorSearch, true for grep). Pass false to grep to exclude test files.")
+                        .required("query", "project")
                         .build())
                 .build();
 
         return new ToolDefinition("grep", spec.description(),
-                Map.of("query", "Exact search string", "project", "Optional project name"),
+                Map.of("query", "Exact search string", "project", "Required project name"),
                 params -> {
                     String query = string(params, "query");
                     if (query == null) {
@@ -129,7 +135,7 @@ public class PrjxpToolRegistration {
                     }
                     String project = string(params, "project");
                     List<SearchHit> hits = mcpTool.grep(query, project, string(params, "language"),
-                            integer(params, "limit"));
+                            integer(params, "limit"), bool(params, "includeTests"));
                     return formatHits(query, project, hits);
                 }, spec);
     }
@@ -144,15 +150,15 @@ public class PrjxpToolRegistration {
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("file",
                                 "File path — absolute, project-root-relative, or just the file name.")
-                        .addStringProperty("project", "Optional project name.")
+                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
                         .addIntegerProperty("offset", "Optional 1-based line number to start reading from.")
                         .addIntegerProperty("limit", "Optional maximum number of lines to return.")
-                        .required("file")
+                        .required("file", "project")
                         .build())
                 .build();
 
         return new ToolDefinition("readFile", spec.description(),
-                Map.of("file", "File path", "project", "Optional project name"),
+                Map.of("file", "File path", "project", "Required project name"),
                 params -> {
                     String file = string(params, "file");
                     if (file == null) {
@@ -176,13 +182,13 @@ public class PrjxpToolRegistration {
                                 "Method name (e.g. 'createMClass') or fully qualified 'com.example.Foo#bar'.")
                         .addStringProperty("container",
                                 "Optional containing class FQN to disambiguate a bare method name.")
-                        .addStringProperty("project", "Optional project name.")
-                        .required("method")
+                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
+                        .required("method", "project")
                         .build())
                 .build();
 
         return new ToolDefinition("readBySignature", spec.description(),
-                Map.of("method", "Method name or FQN", "project", "Optional project name"),
+                Map.of("method", "Method name or FQN", "project", "Required project name"),
                 params -> {
                     String method = string(params, "method");
                     if (method == null) {
@@ -226,13 +232,14 @@ public class PrjxpToolRegistration {
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("path",
                                 "Path prefix or glob. '*' matches any characters including '/' (recursive). Empty = all files.")
-                        .addStringProperty("project", "Optional project name.")
+                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
                         .addIntegerProperty("limit", "Maximum number of files to return (default 50, max 500).")
+                        .required("project")
                         .build())
                 .build();
 
         return new ToolDefinition("listFiles", spec.description(),
-                Map.of("path", "Path prefix or glob", "project", "Optional project name"),
+                Map.of("path", "Path prefix or glob", "project", "Required project name"),
                 params -> {
                     FileListResult result = mcpTool.listFiles(string(params, "path"),
                             string(params, "project"), integer(params, "limit"));
@@ -250,15 +257,15 @@ public class PrjxpToolRegistration {
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("file",
                                 "File path — absolute, project-root-relative, or just the file name (lenient: exact -> suffix -> basename).")
-                        .addStringProperty("project", "Optional project name. Defaults to the active project.")
+                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
                         .addIntegerProperty("maxEdges", "Maximum neighbours per direction (default 30, max 100).")
                         .addBooleanProperty("includeExternal", "Include edges to nodes outside the project (default false).")
-                        .required("file")
+                        .required("file", "project")
                         .build())
                 .build();
 
         return new ToolDefinition("graphFile", spec.description(),
-                Map.of("file", "File path", "project", "Optional project name",
+                Map.of("file", "File path", "project", "Required project name",
                         "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges"),
                 params -> {
                     String file = string(params, "file");
@@ -281,15 +288,15 @@ public class PrjxpToolRegistration {
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("symbol",
                                 "Node id — class FQN (`com.example.Foo`) or method id (`com.example.Foo#bar(int)`); bare names are matched as a suffix.")
-                        .addStringProperty("project", "Optional project name. Defaults to the active project.")
+                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
                         .addIntegerProperty("maxEdges", "Maximum neighbours per direction (default 30, max 100).")
                         .addBooleanProperty("includeExternal", "Include edges to nodes outside the project (default false).")
-                        .required("symbol")
+                        .required("symbol", "project")
                         .build())
                 .build();
 
         return new ToolDefinition("graphNode", spec.description(),
-                Map.of("symbol", "Node id (FQN or method id)", "project", "Optional project name",
+                Map.of("symbol", "Node id (FQN or method id)", "project", "Required project name",
                         "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges"),
                 params -> {
                     String symbol = string(params, "symbol");

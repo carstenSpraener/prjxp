@@ -364,33 +364,19 @@ public class HubProjectRegistry implements ProjectRegistry {
     }
 
     /**
-     * null/blank/"default" -> active project (when it is a registered hub project), else the first
-     * READY project (sorted), else "default" (so ensureSearchable fails with the project list).
-     * Anything else as-is. Never throws.
-     * (Known Bug in v0.8.0-rc1, doc/Todos.md §4: the synthetic "default" fallback is not a
-     * registered hub project, so an empty projectName always failed in hub mode.)
+     * Resolves a requested project name: any concrete name passes through as-is.
+     * <p>
+     * A {@code null}/blank request or the legacy sentinel {@code "default"} throws
+     * {@link UnknownProjectException} — the project is required, there is no implicit default.
+     * (Fixes the known bug in v0.8.0-rc1, doc/Todos.md §4: the old active-project/"cwd" fallback
+     * either silently searched the wrong project or failed with an unhelpful error.)
      */
     @Override
     public String resolve(String requested) {
         if (requested == null || requested.isBlank() || "default".equalsIgnoreCase(requested)) {
-            String active = cfg.getActiveProject().map(ProjectDefinition::getName)
-                    .filter(projects::containsKey)
-                    .orElse(null);
-            if (active != null) {
-                return active;
-            }
-            return firstReadyProject().orElse("default");
+            throw UnknownProjectException.required(availableProjects());
         }
         return requested;
-    }
-
-    /** The first READY project in sorted name order, or empty when none is READY. */
-    private Optional<String> firstReadyProject() {
-        return projects.entrySet().stream()
-                .filter(e -> e.getValue().getStatus() == ProjectStatus.READY)
-                .map(Map.Entry::getKey)
-                .sorted()
-                .findFirst();
     }
 
     @Override

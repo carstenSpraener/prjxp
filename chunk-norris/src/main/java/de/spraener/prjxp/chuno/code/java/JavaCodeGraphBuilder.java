@@ -1,7 +1,5 @@
 package de.spraener.prjxp.chuno.code.java;
 
-import com.github.javaparser.ParserConfiguration;
-import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
@@ -63,6 +61,7 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
     private final JavaFQNamesMapper fqNamesMapper;
     private final GraphWeighter graphWeighter;
     private final VetoRegistry vetoRegistry;
+    private final JavaParserFactory javaParserFactory;
 
     private final List<GraphNode> nodes = new ArrayList<>();
     private final List<PendingEdge> edges = new ArrayList<>();
@@ -129,8 +128,7 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
     @Override
     public void process(File f) {
         try {
-            StaticJavaParser.getConfiguration().setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17);
-            CompilationUnit cu = StaticJavaParser.parse(f);
+            CompilationUnit cu = javaParserFactory.parse(f);
             String relFile = relFile(f);
             String pkg = cu.getPackageDeclaration().map(p -> p.getNameAsString()).orElse("");
             List<String> imports = cu.getImports().stream().map(i -> i.getNameAsString()).toList();

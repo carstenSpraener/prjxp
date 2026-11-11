@@ -37,7 +37,7 @@ public class MetaSearchParamsController {
 
     private List<SearchParamDef> globalParams() {
         return List.of(
-                SearchParamDef.optional("project", "Optional project name. Defaults to the active project."),
+                SearchParamDef.required("project", "Required project name. Call the projects endpoint to discover valid names."),
                 SearchParamDef.optional("limit", String.format(
                         "Maximum number of results (default %d, max %d).", SearchLimits.DEFAULT_LIMIT, SearchLimits.MAX_LIMIT)),
                 SearchParamDef.optional("mode", "Optional search mode (e.g. 'exact' or 'fuzzy'). Not supported by all endpoints."));

@@ -30,8 +30,8 @@ public class FileListController {
             @RequestParam(name = "path", required = false, defaultValue = "")
             String path,
 
-            @Parameter(description = "Optional project name. Defaults to the active project.")
-            @RequestParam(name = "project", required = false, defaultValue = "default")
+            @Parameter(description = "Required project name. Call the projects endpoint to discover valid names.")
+            @RequestParam(name = "project", required = true)
             String project,
 
             @Parameter(description = "Maximum number of files (default 50, max 500).")

@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.retrieval.SearchParams;
+import de.spraener.prjxp.gldrtrvr.DependencyCompactor;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
@@ -14,6 +15,11 @@ import lombok.extern.java.Log;
 @Log
 public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
     private final SearchParams searchParams;
+    private final int maxDependencyEntries;
+
+    public JavaPromptModifier(SearchParams searchParams) {
+        this(searchParams, 10);
+    }
 
     @Override
     public String modifyPrompt(PxChunkDao chunkDao, PxChunk pxChunk, String prompt) {
@@ -44,7 +50,8 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                     nextPrompt = prompt + "\n\n## Hier ein Rumpf der Klasse " + className + ":\n\n```java\n" + pxChunk.getContent() + "\n```\n";
                     PxChunk dependenyChunk = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".dependencies"));
                     if (dependenyChunk != null) {
-                        nextPrompt += "\n\n### Hier noch Infos zu den Dependencies innerhalb des Projekts:\n\n" + dependenyChunk.getContent();
+                        nextPrompt += "\n\n### Hier noch Infos zu den Dependencies innerhalb des Projekts:\n\n"
+                                + DependencyCompactor.compact(dependenyChunk.getContent(), maxDependencyEntries);
                     }
                     break;
                 default:

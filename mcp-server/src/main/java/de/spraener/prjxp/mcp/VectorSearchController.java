@@ -31,8 +31,8 @@ public class VectorSearchController {
             @RequestParam(name = "query", required = false)
             String query,
 
-            @Parameter(description = "Optional project name. Defaults to the active project.")
-            @RequestParam(name = "project", required = false, defaultValue = "default")
+            @Parameter(description = "Required project name. Call the projects endpoint to discover valid names.")
+            @RequestParam(name = "project", required = true)
             String project,
 
             @Parameter(description = "Optional language filter (e.g. 'java').")

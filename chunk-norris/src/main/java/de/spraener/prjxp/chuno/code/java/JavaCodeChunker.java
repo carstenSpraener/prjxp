@@ -1,8 +1,6 @@
 package de.spraener.prjxp.chuno.code.java;
 
 import com.github.javaparser.ParseProblemException;
-import com.github.javaparser.ParserConfiguration;
-import com.github.javaparser.StaticJavaParser;
 import com.github.javaparser.ast.CompilationUnit;
 import com.github.javaparser.ast.Node;
 import com.github.javaparser.ast.body.ConstructorDeclaration;
@@ -53,6 +51,7 @@ public class JavaCodeChunker implements PxChunker {
     private final JavaDependencyHandler javaDependencyHandler;
     private final JavaCodeGraphBuilder javaCodeGraphBuilder;
     private final JavaFQNamesMapper fqNamesMapper;
+    private final JavaParserFactory javaParserFactory;
 
     @Value("${prjxp.java.chunksize:1000}")
     private int chunkSize;
@@ -63,8 +62,7 @@ public class JavaCodeChunker implements PxChunker {
     public Stream<PxChunk> chunk(File f) {
         try {
             List<String> codeLines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
-            StaticJavaParser.getConfiguration().setLanguageLevel(ParserConfiguration.LanguageLevel.JAVA_17);
-            CompilationUnit cu = StaticJavaParser.parse(f);
+            CompilationUnit cu = javaParserFactory.parse(f);
 
             javaDependencyHandler.fillDependencies(cu);
 

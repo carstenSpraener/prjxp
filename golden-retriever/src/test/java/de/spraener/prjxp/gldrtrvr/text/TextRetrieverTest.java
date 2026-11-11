@@ -9,6 +9,7 @@ import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -136,5 +137,86 @@ class TextRetrieverTest {
 
         assertThat(prompt).doesNotContain("x".repeat(100));
         assertThat(prompt).contains("Groessenlimit");
+    }
+
+    // ---- Phase 03b: doc-chunk windowing (vectorSearch path) ----
+
+    // 22 KB text/plain chunk -> windowed + marker, full content not in the prompt
+    @Test
+    void largeTextChunkIsWindowedWithMarker() {
+        String content = "lorem ipsum dolor\n".repeat(1200);   // ~21.6 KB
+        PxChunk chunk = textChunk("big.rst:text", "docs/big.rst", content, 0, 1);
+
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), sp).toString();
+
+        assertThat(prompt).contains("readFile(\"docs/big.rst\")");
+        assertThat(prompt).doesNotContain(content);
+        assertThat(prompt.length()).isLessThan(content.length());
+    }
+
+    // 1 KB text/plain chunk (< docMaxChars) -> unchanged, no marker
+    @Test
+    void smallTextChunkIsUnchangedWithoutMarker() {
+        String content = "x\n".repeat(500);                            // 1000 chars < 2000
+        PxChunk chunk = textChunk("small.rst:text", "docs/small.rst", content, 0, 1);
+
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), sp).toString();
+
+        assertThat(prompt).contains(content);
+        assertThat(prompt).doesNotContain("readFile");
+    }
+
+    // ---- Phase 03c: doc-specific content budget (vectorSearch path) ----
+
+    /** 8 text/plain docs of ~2.2 KB each (all > docMaxChars, so each is windowed to ~2 KB). */
+    private List<ScoredChunk> eightTextDocs() {
+        List<ScoredChunk> chunks = new ArrayList<>();
+        for (int i = 1; i <= 8; i++) {
+            String content = "lorem ipsum dolor\n".repeat(123);   // 2214 chars > docMaxChars (2000)
+            PxChunk chunk = textChunk("doc" + i + ".rst:text", "docs/doc" + i + ".rst", content, 0, 1);
+            db.put("doc" + i + ".rst:text", List.of(chunk));
+            chunks.add(new ScoredChunk(chunk, 0.9));
+        }
+        return chunks;
+    }
+
+    // 8 windowed docs with the 50 KB code budget -> the 8 KB doc cap applies, not the code budget
+    @Test
+    void docBudgetCapsTotalDocVolume() {
+        SearchParams params = new SearchParams(20, 0.85);
+        params.setMaxContentLength(50000);
+
+        String prompt = retriever.buildPromptForFindings("default", eightTextDocs(), params).toString();
+
+        assertThat(prompt.length())
+                .as("8 windowed docs must be capped at docMaxContentLength + skip marker")
+                .isLessThanOrEqualTo(8000 + 200);
+        assertThat(prompt).contains("Groessenlimit");
+        // each windowed doc is > 2 KB, so only 3 fit into the 8 KB budget
+        // (the windowing marker appears once per included doc)
+        assertThat(prompt.split("readFile\\(", -1).length - 1).isEqualTo(3);
+    }
+
+    // maxContentLength smaller than the doc cap -> the smaller value wins (min behavior)
+    @Test
+    void smallerMaxContentLengthWinsOverDocCap() {
+        SearchParams params = new SearchParams(20, 0.85);
+        params.setMaxContentLength(5000);
+
+        String prompt = retriever.buildPromptForFindings("default", eightTextDocs(), params).toString();
+
+        assertThat(prompt.length()).isLessThanOrEqualTo(5000 + 200);
+        assertThat(prompt).contains("Groessenlimit");
+    }
+
+    // 8 x 2.2 KB docs -> total prompt < 10 KB (was ~18 KB before the doc budget)
+    @Test
+    void eightDocsStayBelowTenKb() {
+        SearchParams params = new SearchParams(20, 0.85);
+        params.setMaxContentLength(50000);
+
+        String prompt = retriever.buildPromptForFindings("default", eightTextDocs(), params).toString();
+
+        assertThat(prompt.length()).isLessThan(10_000);
     }
 }

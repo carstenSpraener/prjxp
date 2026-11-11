@@ -9,8 +9,10 @@ import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import de.spraener.prjxp.common.retrieval.SearchParams;
+import de.spraener.prjxp.gldrtrvr.DependencyCompactor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -22,6 +24,8 @@ import java.util.function.Function;
 public class TypeScriptRetriever implements GoldenRetriever {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
+    @Value("${prjxp.gldrtrvr.max-dependency-entries:10}")
+    private int maxDependencyEntries = 10;
 
     @SafeVarargs
     public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
@@ -90,7 +94,8 @@ public class TypeScriptRetriever implements GoldenRetriever {
                     nextPrompt = prompt + "\n\n## Hier ein Rumpf der Klasse " + className + ":\n\n```typescript\n" + pxChunk.getContent() + "\n```\n";
                     PxChunk dependencyChunk = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".dependencies"));
                     if (dependencyChunk != null) {
-                        nextPrompt += "\n\n### Hier noch Infos zu den Dependencies innerhalb des Projekts:\n\n" + dependencyChunk.getContent();
+                        nextPrompt += "\n\n### Hier noch Infos zu den Dependencies innerhalb des Projekts:\n\n"
+                                + DependencyCompactor.compact(dependencyChunk.getContent(), maxDependencyEntries);
                     }
                     break;
                 default:

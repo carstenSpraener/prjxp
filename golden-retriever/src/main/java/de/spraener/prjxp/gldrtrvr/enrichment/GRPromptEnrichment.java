@@ -2,6 +2,7 @@ package de.spraener.prjxp.gldrtrvr.enrichment;
 
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.model.TestPathFilter;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.SearchParams;
@@ -29,6 +30,10 @@ public class GRPromptEnrichment {
     private int totalContentLength = 60000;
 
     public String enrich(String projectName, String prompt) {
+        return enrich(projectName, prompt, true);
+    }
+
+    public String enrich(String projectName, String prompt, boolean includeTests) {
         SearchParams params = new SearchParams(20, 0.85);
         params.setMaxContentLength(maxContentLength);
         return enrich(projectName, prompt, List.of(),
@@ -41,10 +46,15 @@ public class GRPromptEnrichment {
                                 
                                 """, projectName, context
                         ),
+                includeTests,
                 c -> c.length() > 0);
     }
 
     public String enrich(String projectName, String prompt, double distance, int maxResults, boolean skeletonsOnly) {
+        return enrich(projectName, prompt, distance, maxResults, skeletonsOnly, true);
+    }
+
+    public String enrich(String projectName, String prompt, double distance, int maxResults, boolean skeletonsOnly, boolean includeTests) {
         SearchParams params = new SearchParams(maxResults, distance, skeletonsOnly);
         params.setMaxContentLength(maxContentLength);
         String enrichedContext = enrich(projectName, prompt, List.of(),
@@ -57,6 +67,7 @@ public class GRPromptEnrichment {
                                 
                                 """, projectName, context
                         ),
+                includeTests,
                 c -> c.length() > 0);
         String fallbackInfo = "Effektive Similarity-Schwelle: %.2f (%d Fallbacks)\n"
                 .formatted(params.getEffectiveMinScore(), params.getFallbackRounds());
@@ -72,6 +83,7 @@ public class GRPromptEnrichment {
                 params,
                 this::reIterate,
                 promptFormatter,
+                true,
                 contextValidator);
     }
 
@@ -80,6 +92,17 @@ public class GRPromptEnrichment {
                          SearchParams searchParams,
                          Function<SearchParams, SearchParams> iterationHandler,
                          Function<String, String> promptFormatter,
+                         Function<String, Boolean>... contextValidator) {
+        return enrich(projectName, prompt, prefetchedChunks, searchParams, iterationHandler,
+                promptFormatter, true, contextValidator);
+    }
+
+    public String enrich(String projectName, String prompt,
+                         List<PxChunk> prefetchedChunks,
+                         SearchParams searchParams,
+                         Function<SearchParams, SearchParams> iterationHandler,
+                         Function<String, String> promptFormatter,
+                         boolean includeTests,
                          Function<String, Boolean>... contextValidator) {
         boolean invalidPrompt = true;
         String overallContext = "";
@@ -90,6 +113,9 @@ public class GRPromptEnrichment {
             List<ScoredChunk> relevantChunks = new ArrayList<>();
             relevantChunks.addAll(prefetchedChunks.stream().map(c -> new ScoredChunk(c, 1.0)).toList());
             relevantChunks.addAll(similarChunks);
+            if (!includeTests) {
+                relevantChunks.removeIf(sc -> TestPathFilter.isTestPath(sc.chunk().getFile()));
+            }
 
             StringBuilder sb = new StringBuilder();
             int skippedRetrievers = 0;

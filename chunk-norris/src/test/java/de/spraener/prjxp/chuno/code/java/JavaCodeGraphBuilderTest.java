@@ -79,12 +79,12 @@ class JavaCodeGraphBuilderTest {
         pd.setName("p");
         pd.setRootDir(root.toString());
 
-        mapper = new JavaFQNamesMapper();
+        mapper = new JavaFQNamesMapper(new JavaParserFactory());
         mapper.fillFQNamesMap(new SpringPreWalkEvent<>(new PrjXPConfig(), pd));
 
         vetoRegistry = mock(VetoRegistry.class);
         when(vetoRegistry.shouldVeto(any(Path.class), any(ProjectDefinition.class))).thenReturn(false);
-        builder = new JavaCodeGraphBuilder(mapper, new LeidenWeighter(), vetoRegistry);
+        builder = new JavaCodeGraphBuilder(mapper, new LeidenWeighter(), vetoRegistry, new JavaParserFactory());
         builder.setRootDir(root);
     }
 
@@ -263,7 +263,7 @@ class JavaCodeGraphBuilderTest {
 
     @Test
     void build_withoutRootDir_usesAbsoluteFilePaths() {
-        JavaCodeGraphBuilder noRoot = new JavaCodeGraphBuilder(mapper, new LeidenWeighter(), vetoRegistry);
+        JavaCodeGraphBuilder noRoot = new JavaCodeGraphBuilder(mapper, new LeidenWeighter(), vetoRegistry, new JavaParserFactory());
         // no setRootDir call
 
         noRoot.beginRun();

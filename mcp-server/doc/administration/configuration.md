@@ -1,154 +1,105 @@
 # Configuration
 
-PRJXP is configured through Spring Boot `application.yaml` files and environment variables. All PRJXP-specific properties live under the `prjxp` prefix, bound to the `PrjXPConfig` class. This chapter covers the full runtime configuration surface: file layout, environment variables, and the individual property groups.
+PRJXP is configured through two Spring Boot YAML profiles and a set of environment variables. The application binds all `prjxp.*` properties to the `PrjXPConfig` class (prefix `prjxp`), which exposes them to the rest of the platform.
 
-## Configuration Files & Profiles
+## Configuration Files
 
-PRJXP ships three YAML profiles that are merged by Spring Boot at startup:
+PRJXP ships two YAML profiles:
 
-| File | Profile | Purpose |
-|------|---------|---------|
-| `application.yaml` | *(default)* | Development / local run |
+| File | Profile | Use |
+|------|---------|-----|
+| `application.yaml` | (default) | Local / development run from the repository root |
 | `application-docker.yaml` | `docker` | Self-hosted Hub inside the Docker image |
-| `application-mcp.yaml` | `mcp` | MCP server endpoint (CORS, upload limits) |
 
-Spring Boot activates profiles via the standard `SPRING_PROFILES_ACTIVE` variable or the `--spring.profiles.active` flag. In the Docker image the `docker` profile is the default; in a local IDE run the base `application.yaml` applies.
+Spring Boot selects the profile via the standard `SPRING_PROFILES_ACTIVE` variable. The Docker entrypoint sets it to `docker` automatically.
 
-All PRJXP properties are bound to a single `@ConfigurationProperties(prefix = "prjxp")` class (`PrjXPConfig`). The top-level keys you will see in YAML are:
+### Key differences between the two profiles
 
-```yaml
-prjxp:
-  activeProject: "cwd"
-  projects: []
-  mcpServers: []
-  embeddingStores: []
-  chatModels: []
-  embeddingStoreLucene: {}
-  embedding: {}
-  embeddingModel: {}
-  transfer: {}
-  readerMaxOutputChars: 100000
-  hub: {}
-  docs: {}
-```
+| Setting | Dev (`application.yaml`) | Docker (`application-docker.yaml`) |
+|---------|--------------------------|-------------------------------------|
+| `prjxp.embedding.type` | `OLLAMA` | `OPEN_AI` |
+| `prjxp.embedding.apiBaseURL` | `http://192.168.188.92:11434` | `${EMBEDDING_API_BASE_URL:http://host.docker.internal:1234/v1}` |
+| `spring.servlet.multipart.max-file-size` | `${PRJXP_MAX_UPLOAD_SIZE:100MB}` | `2GB` (hard-coded) |
+| `prjxp.docs.dir` | `mcp-server/doc` (relative to repo root) | `${PRJXP_DOCS_DIR:/app/doc}` (baked into image) |
+| `prjxp.hub.*` | Present (import-dir, projects-root, live-jsonl-dir) | Not present (Hub endpoints are the primary interface) |
+| `prjxp.embeddingStoreLucene` | Not present | Present (indexPath, vectorDimension) |
+| `spring.main.allow-bean-definition-overriding` | Not set | `true` |
+| `server.tomcat.connection-linger` | `-1` | Not set |
+
+### `PrjXPConfig` binding
+
+All properties under the `prjxp` prefix are bound to `de.spraener.prjxp.common.config.PrjXPConfig`. The class exposes:
+
+- `activeProject` (default `"cwd"`) – name of the project to operate on.
+- `projects` – list of `ProjectDefinition` entries.
+- `mcpServers` – list of external MCP server references.
+- `embeddingStores` – list of named embedding-store references.
+- `chatModels` – list of chat-model references.
+- `embeddingStoreLucene` – Lucene vector-store settings.
+- `embedding` – primary embedding-model settings.
+- `embeddingModel` – user-selectable single embedding model (Globals panel).
+- `readerMaxOutputChars` – cap for the `readFile` MCP tool (default `100 000`; `0` = uncapped).
+- `transfer` – external-embedding transfer settings.
+
+If `projects` is empty and `activeProject` is `"cwd"`, a fallback `ProjectDefinition` is created with `rootDir = "."`, `jsonlFile = "px-chunks.jsonl"`, `chunoWhiteList = "java,ts"`, `tibedBatchSize = 32`, and `tibedResetStore = true`.
 
 ## Environment Variables
 
-Every overridable property in the YAML files is exposed through an environment variable. The table below lists all variables referenced in the shipped configuration files.
+The following environment variables override values in the YAML files. All are optional; the defaults shown apply when the variable is unset.
 
-| Variable | Default | Used in | Purpose |
-|----------|---------|---------|---------|
-| `SERVER_PORT` | `7007` | all profiles | TCP port for the HTTP server |
-| `PRJXP_ROOT_DIR` | `.` | dev | Base directory for Hub data (import, projects, chunks) |
-| `PRJXP_MAX_UPLOAD_SIZE` | `100MB` | dev | Spring multipart file/request size limit |
-| `PRJXP_EMBEDDING_API_BASE_URL` | `http://localhost:1234/v1` | dev | Base URL for the OpenAI-compatible embedding endpoint |
-| `PRJXP_EMBEDDING_MODEL_NAME` | `mxbai-embed-large-v1` | dev | Embedding model name (OpenAI-compatible) |
-| `EMBEDDING_API_KEY` | *(no default)* | dev, docker | API key for embedding / chat providers |
-| `PRJXP_CHAT_TIMEOUT_SECS` | `300` | dev | Timeout for the default chat model |
-| `LUCENE_INDEX_PATH` | `/app-source/.prjxp-data/lucene-index` | docker | Lucene vector index directory |
-| `LUCENE_VECTOR_DIMENSION` | `1024` | docker | Dimensionality of stored vectors |
-| `EMBEDDING_API_BASE_URL` | `http://host.docker.internal:1234/v1` | docker | Embedding endpoint (Docker network) |
-| `EMBEDDING_MODEL_NAME` | `mixedbread-ai/mxbai-embed-large-v1` | docker | Embedding model name (Docker) |
-| `EMBEDDING_TIMEOUT` | `180` | docker | Embedding request timeout (seconds) |
-| `MCP_CORS_ALLOWED_PATTERNS` | `http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*` | mcp | Comma-separated CORS origin patterns |
-| `PRJXP_HUB_URL` | `http://localhost:7007/mcp` | docker | URL of the Hub MCP endpoint |
-| `PRJXP_DOCS_DIR` | `/app/doc` | docker | Source directory for the in-app docs browser |
-| `PRJXP_TRANSFER_PASSWORD` | *(no default)* | all | Password for encrypted transfer mode |
+| Variable | Default | Scope | Description |
+|----------|---------|-------|-------------|
+| `SERVER_PORT` | `7007` | Both | TCP port for the HTTP server. |
+| `PRJXP_ROOT_DIR` | `.` | Dev | Base directory for `.prjxp-data/` sub-directories (import, projects, chunks). |
+| `PRJXP_MAX_UPLOAD_SIZE` | `100MB` | Dev | Spring multipart limit for archive / JSONL uploads. |
+| `PRJXP_EMBEDDING_API_BASE_URL` | `http://localhost:1234/v1` | Dev | Base URL for the `embedding-model` reference. |
+| `PRJXP_EMBEDDING_MODEL_NAME` | `mxbai-embed-large-v1` | Dev | Model name for the `embedding-model` reference. |
+| `EMBEDDING_API_KEY` | *(none)* | Both | API key for OpenAI-compatible embedding / chat endpoints. |
+| `PRJXP_CHAT_TIMEOUT_SECS` | `300` | Dev | Timeout for the default chat model. |
+| `LUCENE_INDEX_PATH` | `/app-source/.prjxp-data/lucene-index` | Docker | Filesystem path for the Lucene vector index. |
+| `LUCENE_VECTOR_DIMENSION` | `1024` | Docker | Dimensionality of stored vectors. |
+| `EMBEDDING_API_BASE_URL` | `http://host.docker.internal:1234/v1` | Docker | Base URL for the OpenAI-compatible embedding endpoint. |
+| `EMBEDDING_MODEL_NAME` | `mixedbread-ai/mxbai-embed-large-v1` | Docker | Model identifier for the embedding endpoint. |
+| `EMBEDDING_TIMEOUT` | `180` | Docker | HTTP timeout (seconds) for embedding requests. |
+| `MCP_CORS_ALLOWED_PATTERNS` | `http://10.*.*.*,http://172.16.*.*,http://192.16.*.*,http://localhost:*` | Docker | Comma-separated CORS origin patterns (no spaces after commas). |
+| `PRJXP_HUB_URL` | `http://localhost:7007/mcp` | Docker | URL of the Hub MCP endpoint for external MCP clients. |
+| `PRJXP_DOCS_DIR` | `/app/doc` | Docker | Source directory for the in-app documentation browser. |
+| `PRJXP_TRANSFER_PASSWORD` | *(none)* | Both | Password for encrypted transfer mode. |
 
-> **Note:** In the Docker image, `host.docker.internal` resolves to the host machine. If you run the embedding or chat model on a different host, override `EMBEDDING_API_BASE_URL` (or `PRJXP_EMBEDDING_API_BASE_URL` in dev) accordingly.
-
-## Hub & Storage Paths
-
-The `prjxp.hub` block controls where the Hub stores its data on disk. All paths are resolved relative to `PRJXP_ROOT_DIR` (default `.` in dev, `/app-source` in Docker).
-
-```yaml
-prjxp:
-  hub:
-    enabled: true
-    import-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/import
-    projects-root: ${PRJXP_ROOT_DIR:.}/.prjxp-data/projects
-    live-jsonl-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/chunks
-```
-
-| Property | Meaning |
-|----------|---------|
-| `enabled` | Master switch for the Hub subsystem |
-| `import-dir` | Where uploaded archives / JSONL files are staged |
-| `projects-root` | Root directory for extracted project trees |
-| `live-jsonl-dir` | Directory for live chunk JSONL files |
-
-The in-app documentation browser reads from a separate path:
-
-```yaml
-prjxp:
-  docs:
-    dir: mcp-server/doc          # dev (relative to repo root)
-    # dir: ${PRJXP_DOCS_DIR:/app/doc}   # docker (baked into image)
-```
-
-In Docker the docs directory is baked into the image at `/app/doc`. You can override it with a bind mount or by setting `PRJXP_DOCS_DIR`.
-
-The Lucene vector index path is configured under `prjxp.embeddingStoreLucene`:
-
-```yaml
-prjxp:
-  embeddingStoreLucene:
-    indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
-    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
-    name: "prjxp"
-```
+> **CORS note:** Browsers send an `Origin` header on POST/PUT/DELETE. Origins that do not match one of the patterns in `mcp.cors.allowed-patterns` are rejected with HTTP 403. When deploying behind a reverse proxy with HTTPS, add your public hostname(s) to the list.
 
 ## Embedding Configuration
 
 PRJXP supports two embedding backends, selected by the `type` field:
 
-| Value | Provider |
-|-------|----------|
-| `OLLAMA` | Ollama HTTP API |
-| `OPEN_AI` | Any OpenAI-compatible `/v1/embeddings` endpoint (LM Studio, Ollama, OpenAI, etc.) |
+| `type` value | Backend | Typical use |
+|--------------|---------|-------------|
+| `OLLAMA` | Ollama HTTP API | Local GPU inference (dev) |
+| `OPEN_AI` | Any OpenAI-compatible `/v1/embeddings` endpoint | LM-Studio, vLLM, hosted APIs (Docker) |
 
-### `prjxp.embedding` (batch / store embedding)
-
-Used when embedding chunks for the vector store.
+### `prjxp.embedding` (primary embedding model)
 
 ```yaml
-# Dev (application.yaml)
 prjxp:
   embedding:
-    type: OLLAMA
-    apiBaseURL: http://192.168.188.92:11434
-    modelName: mxbai-embed-large
-    timeout: 60
-
-# Docker (application-docker.yaml)
-prjxp:
-  embedding:
-    type: "OPEN_AI"
-    apiBaseURL: ${EMBEDDING_API_BASE_URL:http://host.docker.internal:1234/v1}
-    modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
-    timeout: ${EMBEDDING_TIMEOUT:180}
-    apiKey: ${EMBEDDING_API_KEY:dummy}
+    type: OPEN_AI            # OLLAMA | OPEN_AI
+    apiBaseURL: http://host.docker.internal:1234/v1
+    modelName: mixedbread-ai/mxbai-embed-large-v1
+    timeout: 180             # seconds
+    apiKey: dummy            # from ${EMBEDDING_API_KEY}
+    # Optional:
+    dimensions: 1024         # output vector dimension (e.g. for text-embedding-3-large)
+    maxSegmentsPerBatch: 32  # max texts per single HTTP request
+    customHeaders: {}        # extra HTTP headers
+    customQueryParams: {}    # extra query parameters
 ```
 
-Full property reference (from `EmbeddingConfig`):
+- **`maxSegmentsPerBatch`** – langchain4j's `OpenAiEmbeddingModel` defaults to 2048 texts per request. Capping it (default `32`) keeps each HTTP call small enough to complete within `timeout` on local models. Only applies to the `OPEN_AI` type.
+- **`dimensions`** – optional; pass the desired output dimension for models that support it (e.g. `text-embedding-3-large`).
 
-| Property | Type | Default | Description |
-|----------|------|---------|-------------|
-| `type` | `OLLAMA` \| `OPEN_AI` | `OPEN_AI` | Backend selector |
-| `apiBaseURL` | String | `http://host.docker.internal:1234` | Base URL of the embedding service |
-| `apiKey` | String | `lm-studio` | API key (sent as `Authorization` header) |
-| `modelName` | String | `mxbai-embed-large-v1` | Model identifier |
-| `dimensions` | Integer | *(null)* | Optional output vector dimension (e.g. for `text-embedding-3-large`) |
-| `timeout` | int (seconds) | `20` | HTTP request timeout |
-| `customHeaders` | Map | `{}` | Extra HTTP headers for OpenAI-compatible providers |
-| `customQueryParams` | Map | `{}` | Extra query parameters for OpenAI-compatible providers |
-| `maxSegmentsPerBatch` | int | `32` | Max texts per single embedding HTTP request |
+### `prjxp.embedding-model` (user-selectable, Globals panel)
 
-> **`maxSegmentsPerBatch`:** LangChain4j's `OpenAiEmbeddingModel` defaults to 2048 texts per request. For local models (LM Studio, Ollama) a single giant request will time out. Capping the batch keeps every HTTP call small enough to complete within `timeout`. This setting only applies to the `OPEN_AI` backend.
-
-### `prjxp.embeddingModel` (single / interactive embedding)
-
-A user-configurable embedding model reference (exposed in the Globals panel of the UI). In the dev profile:
+A single, user-configurable embedding model reference exposed in the web UI:
 
 ```yaml
 prjxp:
@@ -160,9 +111,21 @@ prjxp:
     timeout-secs: 20
 ```
 
-### `prjxp.embeddingStores`
+### `prjxp.embeddingStoreLucene` (Docker profile)
 
-A list of named embedding-store references. Each entry maps a project name to a store; one entry is marked `default`:
+```yaml
+prjxp:
+  embeddingStoreLucene:
+    indexPath: ${LUCENE_INDEX_PATH:/app-source/.prjxp-data/lucene-index}
+    vectorDimension: ${LUCENE_VECTOR_DIMENSION:1024}
+    name: "prjxp"
+```
+
+The `vectorDimension` must match the dimensionality of the vectors produced by the active embedding model.
+
+### `prjxp.embedding-stores` (dev profile)
+
+A list of named embedding-store references; one is marked `default`:
 
 ```yaml
 prjxp:
@@ -172,22 +135,9 @@ prjxp:
     - project-name: "kigbau"
 ```
 
-## Chat Model Configuration
+## Chat Models
 
-Chat models are declared as a list under `prjxp.chatModels` (Docker) or `prjxp.chat-models` (dev). Each entry carries a **stereotype** that selects the model for a specific task.
-
-### Dev profile
-
-```yaml
-prjxp:
-  chat-models:
-    - stereo-type: "default"
-      server-type: "lm-studio"
-      model-name: "qwen3.8-27B"
-      api-key: "lm-studio"
-      provider-url: "http://localhost:1234/v1"
-      timeout-secs: ${PRJXP_CHAT_TIMEOUT_SECS:300}
-```
+Chat models are declared as a list under `prjxp.chatModels` (Docker) or `prjxp.chat-models` (dev). Each entry carries a **stereotype** that the DocPipe and other subsystems use to select the appropriate model.
 
 ### Docker profile
 
@@ -222,21 +172,38 @@ prjxp:
         enable_thinking: false
 ```
 
-| Property | Description |
-|----------|-------------|
-| `stereotype` / `stereo-type` | Task label (`detailed`, `documentation`, `javadoc`, `default`) |
-| `serverType` / `server-type` | Provider type (e.g. `lm-studio`) |
-| `providerUrl` / `provider-url` | Base URL of the chat endpoint |
-| `modelName` / `model-name` | Model identifier |
-| `apiKey` | API key (LM Studio accepts any non-empty string) |
-| `timeoutSecs` / `timeout-secs` | Request timeout in seconds |
-| `bodyProperties` | Extra JSON fields merged into the request body |
+> **Why `enable_thinking: false`?** Qwen3's thinking mode leaks the tool-call into the response body as XML, which breaks native function calling. DocPipe relies on function calling, so thinking is disabled for every stereotype.
 
-> **Qwen3 thinking mode:** The `enable_thinking: false` entry in `bodyProperties` disables Qwen3's internal "thinking" mode. Without it, the model leaks its reasoning into the response content as XML, which breaks native function-calling that DocPipe relies on.
+### Dev profile
 
-## MCP Server & CORS
+```yaml
+prjxp:
+  chat-models:
+    - stereo-type: "default"
+      server-type: "lm-studio"
+      model-name: "qwen3.8-27B"
+      api-key: "lm-studio"
+      provider-url: "http://localhost:1234/v1"
+      timeout-secs: ${PRJXP_CHAT_TIMEOUT_SECS:300}
+```
 
-### MCP server identity
+The dev default timeout is 300 s (5 min) because a local 27 B model takes >60 s for document generation (FAQ, architecture, etc.). Override with `PRJXP_CHAT_TIMEOUT_SECS`.
+
+## Hub, Storage & MCP Server
+
+### Hub storage directories (dev profile)
+
+All paths are relative to `PRJXP_ROOT_DIR` (default `.`):
+
+| Property | Default path | Purpose |
+|----------|-------------|---------|
+| `prjxp.hub.import-dir` | `.prjxp-data/import` | Staging area for uploaded archives / JSONL files. |
+| `prjxp.hub.projects-root` | `.prjxp-data/projects` | Extracted project trees. |
+| `prjxp.hub.live-jsonl-dir` | `.prjxp-data/chunks` | Live chunk JSONL files. |
+
+Set `PRJXP_ROOT_DIR=/data` to relocate all three under `/data/.prjxp-data/`.
+
+### MCP server
 
 ```yaml
 spring:
@@ -244,31 +211,11 @@ spring:
     mcp:
       server:
         protocol: STREAMABLE
-        name: "prjxp-mcp"
-        version: "1.0.0"
+        name: "prjxp-mcp"      # dev only
+        version: "1.0.0"       # dev only
 ```
 
-The MCP server uses the **STREAMABLE** transport (HTTP streaming). The `name` and `version` are advertised to MCP clients.
-
-### CORS
-
-```yaml
-mcp:
-  cors:
-    allowed-patterns: ${MCP_CORS_ALLOWED_PATTERNS:http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*}
-```
-
-- Patterns are **comma-separated with no spaces** after commas.
-- Browsers send an `Origin` header on `POST`/`PUT`/`DELETE`. Origins that do not match any pattern are rejected with **403**.
-- When deploying behind a reverse proxy with HTTPS, add your public hostname(s) to the list, e.g.:
-
-```bash
-export MCP_CORS_ALLOWED_PATTERNS="https://prjxp.example.com,http://localhost:*"
-```
-
-### MCP client references
-
-The Docker profile registers the Hub itself as an MCP server for internal tool-calling:
+The MCP endpoint is served at `/mcp` on the configured `server.port`. External MCP clients reference it via:
 
 ```yaml
 prjxp:
@@ -278,74 +225,63 @@ prjxp:
       url: ${PRJXP_HUB_URL:http://localhost:7007/mcp}
 ```
 
-## Server & Upload Limits
+### CORS
 
-### HTTP server
+```yaml
+mcp:
+  cors:
+    allowed-patterns: ${MCP_CORS_ALLOWED_PATTERNS:http://10.*.*.*,http://172.16.*.*,http://192.16.*.*,http://localhost:*}
+```
+
+Patterns are comma-separated with **no spaces** after commas. The defaults cover RFC-1918 private ranges and `localhost` on any port.
+
+### Graph rerank (dev profile)
+
+```yaml
+prjxp:
+  graph:
+    rerank:
+      floor: 0.98
+      b-graph: 5.0
+      cap: 5.0
+      w-base: 1.0
+```
+
+- **`floor`** – minimum degree-centrality weight. Calibrated on the PRJXP corpus: with `0.8` nearly every code chunk is demoted ~20 %; `0.98` keeps code on top while damping peripheral nodes (mean rank shift ≈ 7 positions).
+- **`b-graph` / `cap`** – bounds for the graph-based score.
+- **`w-base`** – base weight multiplier.
+
+### Server
 
 ```yaml
 server:
   port: ${SERVER_PORT:7007}
   forward-headers-strategy: framework
   tomcat:
-    connection-linger: -1
+    connection-linger: -1   # dev only; disables keep-alive linger
 ```
 
-| Property | Effect |
-|----------|--------|
-| `port` | Listening port (default **7007**) |
-| `forward-headers-strategy: framework` | Trusts `X-Forwarded-*` headers from a reverse proxy |
-| `tomcat.connection-linger: -1` | Disables Tomcat's connection-linger timeout (keeps long-lived MCP streams open) |
+## Transfer Configuration
 
-### Multipart upload limits
-
-```yaml
-# Dev
-spring:
-  servlet:
-    multipart:
-      max-file-size: ${PRJXP_MAX_UPLOAD_SIZE:100MB}
-      max-request-size: ${PRJXP_MAX_UPLOAD_SIZE:100MB}
-
-# MCP profile (Hub endpoints)
-spring:
-  servlet:
-    multipart:
-      max-file-size: 2GB
-      max-request-size: 2GB
-```
-
-Spring Boot's default is **1 MB** per file, which would reject project archives. The MCP profile raises the limit to **2 GB** to accommodate large `.tar` / `.jsonl` uploads. In dev the limit is tunable via `PRJXP_MAX_UPLOAD_SIZE`.
-
-### Transfer (external embedding)
-
-The `prjxp.transfer` block configures encrypted data transfer for external embedding workflows:
+The `prjxp.transfer` block controls the external-embedding transfer pipeline (used when embedding is performed outside the Hub):
 
 ```yaml
 prjxp:
   transfer:
-    passwordEnv: "PRJXP_TRANSFER_PASSWORD"
-    encrypt: AUTO
-    input: ""
-    output: ""
-    mode: STORE
+    passwordEnv: PRJXP_TRANSFER_PASSWORD   # name of the env var holding the password
+    encrypt: AUTO                          # AUTO | ALWAYS | NEVER
+    input:                                 # source path (JSONL or directory)
+    output:                                # destination path
+    mode: STORE                            # STORE | QUERY
 ```
 
-| Property | Default | Description |
-|----------|---------|-------------|
-| `passwordEnv` | `PRJXP_TRANSFER_PASSWORD` | Name of the env var holding the encryption password |
-| `encrypt` | `AUTO` | Encryption mode (`AUTO`, `ON`, `OFF`) |
-| `input` | *(empty)* | Input path for transfer |
-| `output` | *(empty)* | Output path for transfer |
-| `mode` | `STORE` | Transfer mode (`STORE`, …) |
-
-### Reader output cap
-
-```yaml
-prjxp:
-  readerMaxOutputChars: 100000
-```
-
-Maximum characters returned by the `readFile` MCP tool. Set to `0` for an uncapped response.
+| Field | Description |
+|-------|-------------|
+| `passwordEnv` | Name of the environment variable that holds the transfer password. |
+| `encrypt` | `AUTO` – encrypt only if a password is set; `ALWAYS` – always encrypt; `NEVER` – plaintext. |
+| `input` | Path to the source data (JSONL file or directory). |
+| `output` | Path where the result is written. |
+| `mode` | `STORE` – write vectors to the store; `QUERY` – return similarity results. |
 
 _This document was generated with Doc|Pipe._
 

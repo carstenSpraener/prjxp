@@ -41,7 +41,8 @@ public class McpRestController {
             @RequestParam(name = "userQuestion", required = true)
             String userQuestion,
 
-            @RequestParam(name = "project", required = false, defaultValue = "default")
+            @Parameter(description = "Required project name. Call the projects endpoint to discover valid names.")
+            @RequestParam(name = "project", required = true)
             String projectName,
 
             @Parameter(description = "Similarity threshold 0.0-1.0 (default 0.85).")

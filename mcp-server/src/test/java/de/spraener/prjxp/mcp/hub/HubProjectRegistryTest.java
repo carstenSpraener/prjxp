@@ -792,45 +792,53 @@ class HubProjectRegistryTest {
     }
 
     @Test
-    void resolveNullAndBlankReturnActiveProjectName() throws Exception {
-        registry.registerProject("alpha", projectDir("alpha"));   // the active project must be a registered hub project
+    void resolveNullAndBlankThrowRequired() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
 
-        assertThat(registry.resolve(null)).isEqualTo("alpha");   // active project from PrjXPConfig
-        assertThat(registry.resolve("  ")).isEqualTo("alpha");
+        assertThatThrownBy(() -> registry.resolve(null))
+                .isInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("required")
+                .hasMessageContaining("alpha");   // the available projects are listed
+        assertThatThrownBy(() -> registry.resolve("  "))
+                .isInstanceOf(UnknownProjectException.class);
     }
 
     @Test
-    void resolveDefaultStaysDefaultWhenNoProjectIsRegistered() {
-        assertThat(registry.resolve("default")).isEqualTo("default");   // nothing to fall back to
-        assertThat(registry.resolve("beta")).isEqualTo("beta");          // explicit names pass through
+    void resolveDefaultThrowsButExplicitNamesPassThrough() {
+        assertThatThrownBy(() -> registry.resolve("default"))
+                .isInstanceOf(UnknownProjectException.class);
+        assertThat(registry.resolve("beta")).isEqualTo("beta");   // explicit names pass through
     }
 
     @Test
-    void resolveIgnoresSyntheticCwdFallbackInHubMode() throws Exception {
-        // The reported bug (doc/Todos.md §4): hub mode = empty static projects list, activeProject "cwd"
-        // -> getActiveProject() returns the synthetic cwd fallback, which is not a registered hub project.
+    void resolveNullThrowsRegardlessOfCwdFallback() throws Exception {
+        // The reported bug (doc/Todos.md §4): the old code fell back to the synthetic "cwd"
+        // active project (or the first READY project) for a null request. Now a null/blank
+        // request is a hard error — the project is required, there is no implicit default.
         cfg.setProjects(List.of());
         cfg.setActiveProject("cwd");
         registry.registerProject("alpha", projectDir("alpha"));
         registry.setStatus("alpha", ProjectStatus.READY, null);
 
-        assertThat(registry.resolve(null)).isEqualTo("alpha");   // first READY — not the synthetic "cwd"
+        assertThatThrownBy(() -> registry.resolve(null))
+                .isInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("required");
     }
 
     @Test
-    void resolveFallsBackToFirstReadyProjectWhenActiveNotRegistered() throws Exception {
+    void resolveNullAndDefaultThrowEvenWhenProjectsAreReady() throws Exception {
         cfg.setActiveProject("ghost");   // not in the static projects list -> getActiveProject() empty
         registry.registerProject("zeta", projectDir("zeta"));
         registry.registerProject("alpha", projectDir("alpha"));
         registry.setStatus("zeta", ProjectStatus.READY, null);
         registry.setStatus("alpha", ProjectStatus.READY, null);
 
-        assertThat(registry.resolve(null)).isEqualTo("alpha");        // first READY in sorted order
-        assertThat(registry.resolve("default")).isEqualTo("alpha");   // the tool default triggers the same fallback
+        assertThatThrownBy(() -> registry.resolve(null)).isInstanceOf(UnknownProjectException.class);
+        assertThatThrownBy(() -> registry.resolve("default")).isInstanceOf(UnknownProjectException.class);
     }
 
     @Test
-    void resolvePrefersActiveProjectOverFirstReady() throws Exception {
+    void resolveNullThrowsEvenWhenActiveProjectIsRegistered() throws Exception {
         ProjectDefinition zeta = new ProjectDefinition();
         zeta.setName("zeta");
         cfg.setActiveProject("zeta");
@@ -840,18 +848,22 @@ class HubProjectRegistryTest {
         registry.setStatus("alpha", ProjectStatus.READY, null);
         registry.setStatus("zeta", ProjectStatus.READY, null);
 
-        assertThat(registry.resolve(null)).isEqualTo("zeta");   // the configured active project wins over "alpha" (first READY)
+        assertThatThrownBy(() -> registry.resolve(null))
+                .isInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("required");   // no implicit active-project default
     }
 
     @Test
-    void resolveReturnsDefaultWhenNoProjectIsReady() throws Exception {
+    void resolveNullThrowsAndEnsureSearchableListsAvailable() throws Exception {
         cfg.setActiveProject("ghost");   // not resolvable -> no active project
         registry.registerProject("alpha", projectDir("alpha"));   // stays IMPORTING
 
-        assertThat(registry.resolve(null)).isEqualTo("default");
-        assertThatThrownBy(() -> registry.ensureSearchable(null))
+        assertThatThrownBy(() -> registry.resolve(null))
                 .isInstanceOf(UnknownProjectException.class)
                 .hasMessageContaining("alpha");   // the available projects are listed
+        assertThatThrownBy(() -> registry.ensureSearchable(null))
+                .isInstanceOf(UnknownProjectException.class)
+                .hasMessageContaining("alpha");
     }
 
     @Test

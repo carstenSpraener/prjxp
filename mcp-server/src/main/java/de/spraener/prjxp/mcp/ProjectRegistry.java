@@ -10,7 +10,14 @@ public interface ProjectRegistry {
     /** All known project names (static: those with a store reference; hub: all registered), sorted. */
     List<String> availableProjects();
 
-    /** null/blank -> active project name (or "default"); "default" passes through; anything else as-is. Never throws. */
+    /**
+     * Resolves a requested project name.
+     * <p>
+     * A {@code null}/blank request or the legacy sentinel {@code "default"} throws
+     * {@link UnknownProjectException} — the project is required, there is no implicit default
+     * (the old active-project fallback is obsolete for the multi-project agent-facing surface).
+     * Any other name passes through as-is.
+     */
     String resolve(String requested);
 
     /** Whether the project can currently be searched (static: has store ref; hub: status READY). */

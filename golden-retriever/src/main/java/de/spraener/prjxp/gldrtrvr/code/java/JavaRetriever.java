@@ -11,6 +11,7 @@ import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -22,6 +23,8 @@ import java.util.function.Function;
 public class JavaRetriever implements GoldenRetriever {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
+    @Value("${prjxp.gldrtrvr.max-dependency-entries:10}")
+    private int maxDependencyEntries = 10;
 
     @SafeVarargs
     public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
@@ -34,7 +37,7 @@ public class JavaRetriever implements GoldenRetriever {
         JavaPromptSession session = new JavaPromptSession(chunkDao, rankingService);
         session.setMaxContentLength(params.getMaxContentLength());
         session.setChunksByScore(javaChunks);
-        prompt.append(session.buildPrompt(new JavaPromptModifier(params), contextValidators));
+        prompt.append(session.buildPrompt(new JavaPromptModifier(params, maxDependencyEntries), contextValidators));
         return prompt;
     }
 
@@ -48,7 +51,7 @@ public class JavaRetriever implements GoldenRetriever {
         }
         JavaPromptSession session = new JavaPromptSession(chunkDao, rankingService);
         session.setChunksByScore(javaChunks);
-        return session.buildSearchHits(new JavaPromptModifier(null), contextValidators);
+        return session.buildSearchHits(new JavaPromptModifier(null, maxDependencyEntries), contextValidators);
     }
 
     private List<ScoredChunk> combineScoredChunksByID(PxChunkDao chunkDao, List<ScoredChunk> chunks) {
