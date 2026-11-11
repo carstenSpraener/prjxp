@@ -86,7 +86,9 @@ public class PrjxpToolRegistration {
                         .addIntegerProperty("maxResults",
                                 "Maximum number of results to return. Default 20.")
                         .addBooleanProperty("skeletonsOnly",
-                                "True returns class skeletons only, false (default) returns full method context.")
+                                "DEPRECATED alias for contentLevel. Kept for backward compatibility.")
+                        .addStringProperty("contentLevel",
+                                "How much content to emit: FULL (full method bodies), SKELETON (signatures only — the default), or POINTERS (tool hints only). Authoritative over skeletonsOnly.")
                         .addBooleanProperty("includeTests",
                                 "Include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.")
                         .required("userQuestion", "projectName")
@@ -102,7 +104,8 @@ public class PrjxpToolRegistration {
                     }
                     String result = mcpTool.vectorSearch(question, string(params, "projectName"),
                             number(params, "similarity"), integer(params, "maxResults"),
-                            bool(params, "skeletonsOnly"), bool(params, "includeTests"));
+                            bool(params, "skeletonsOnly"), string(params, "contentLevel"),
+                            bool(params, "includeTests"));
                     return truncate(result, SEARCH_RESULT_CAP);
                 }, spec);
     }

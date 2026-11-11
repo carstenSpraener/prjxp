@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.TestPathFilter;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
@@ -65,6 +66,28 @@ public class GRPromptEnrichment {
                                 Relevante Information in '%s':
                                 %s
                                 
+                                """, projectName, context
+                        ),
+                includeTests,
+                c -> c.length() > 0);
+        String fallbackInfo = "Effektive Similarity-Schwelle: %.2f (%d Fallbacks)\n"
+                .formatted(params.getEffectiveMinScore(), params.getFallbackRounds());
+        return fallbackInfo + enrichedContext;
+    }
+
+    public String enrich(String projectName, String prompt, double distance, int maxResults,
+                         ContentLevel contentLevel, boolean includeTests) {
+        SearchParams params = new SearchParams(maxResults, distance);
+        params.setContentLevel(contentLevel);
+        params.setMaxContentLength(maxContentLength);
+        String enrichedContext = enrich(projectName, prompt, List.of(),
+                params,
+                this::reIterate,
+                (context) ->
+                        String.format("""
+                                Relevante Information in '%s':
+                                %s
+
                                 """, projectName, context
                         ),
                 includeTests,

@@ -8,6 +8,7 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
@@ -287,6 +288,39 @@ class GRPromptEnrichmentTest {
         assertThat(result).contains("PREF-CONTENT").contains("TEST-A-CONTENT");
     }
 
+    // ---- Phase 01 (Graphify-Tool-V2): the ContentLevel overload ----
+
+    @Test
+    void contentLevelOverloadWithFullBehavesLikeSkeletonsOnlyFalse() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(mixedHits());
+
+        ParamsCapturingRetriever retriever = new ParamsCapturingRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        withDao.enrich("test", "query", 0.85, 20, ContentLevel.FULL, false);
+
+        assertThat(retriever.capturedParams().isSkeletonsOnly()).isFalse();
+        assertThat(retriever.capturedParams().effectiveContentLevel()).isEqualTo(ContentLevel.FULL);
+    }
+
+    @Test
+    void contentLevelOverloadWithSkeletonBehavesLikeSkeletonsOnlyTrue() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(mixedHits());
+
+        ParamsCapturingRetriever retriever = new ParamsCapturingRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        withDao.enrich("test", "query", 0.85, 20, ContentLevel.SKELETON, false);
+
+        assertThat(retriever.capturedParams().effectiveContentLevel()).isEqualTo(ContentLevel.SKELETON);
+    }
+
     // ---- Phase 03b: size budget via doc-chunk windowing (vectorSearch path) ----
 
     @Test
@@ -448,6 +482,25 @@ class GRPromptEnrichmentTest {
                 }
             }
             return sb;
+        }
+
+        @Override
+        public List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks, Function<String, Boolean>... contextValidators) {
+            return List.of();
+        }
+    }
+
+    private static class ParamsCapturingRetriever implements GoldenRetriever {
+        private SearchParams capturedParams;
+
+        SearchParams capturedParams() {
+            return capturedParams;
+        }
+
+        @Override
+        public StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
+            this.capturedParams = params;
+            return new StringBuilder("captured");
         }
 
         @Override

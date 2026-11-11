@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.model.SymbolReadResult;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
@@ -48,10 +49,11 @@ public class PrjxpMcpTool {
             4. REWRITE the query parameter: Convert the context of the conversation into a targeted, standalone search query optimized for semantic vector retrieval.
 
             RESULT:
-            The search returns method implementations only if the vector search hits a method chunk AND skeletonsOnly is set to false.
-            Otherwise it returns simple class skeletons with imports and project dependencies for an architectural overview.
+            The search returns method implementations only if the vector search hits a method chunk AND contentLevel is FULL.
+            By default (contentLevel=SKELETON) it returns simple class skeletons with imports and project dependencies for an architectural overview.
             Use grep on the exact signature for full method bodies, or readFile for the entire file.
 
+            contentLevel: how much content to emit — FULL (full method bodies on hit), SKELETON (signatures only, the default), or POINTERS (tool hints only).
             includeTests: include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.
             """)
     public String vectorSearch(
@@ -72,9 +74,14 @@ public class PrjxpMcpTool {
                 """, required = false)
             Integer maxResults,
             @McpToolParam(description="""
-                Do you need full method context on hit methods or do you always want to see class skeletons only? Default is false (full context).
+                DEPRECATED alias for contentLevel. Kept for backward compatibility; contentLevel is now authoritative.
                 """, required = false)
             Boolean skeletonsOnly,
+            @McpToolParam(description="""
+                How much content to emit for hits: FULL (full method bodies), SKELETON (signatures only — the default), or POINTERS (tool hints only).
+                This parameter is authoritative; it overrides the deprecated skeletonsOnly flag.
+                """, required = false)
+            String contentLevel,
 
             @McpToolParam(description="""
                 Include test sources (src/test, src/testFixtures) in the results. Default is false — tests are noise for semantic discovery.
@@ -103,8 +110,13 @@ public class PrjxpMcpTool {
         if( includeTests==null) {
             includeTests = Boolean.FALSE;   // semantic discovery: tests are noise
         }
-        log.info(String.format("searching context for '%s' for project '%s'.", userQuestion, projectName));
-        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, skeletonsOnly, includeTests);
+        ContentLevel level = ContentLevel.parse(contentLevel);
+        if (contentLevel == null || contentLevel.isBlank()) {
+            // no explicit contentLevel: legacy behaviour mapped to before
+            level = Boolean.TRUE.equals(skeletonsOnly) ? ContentLevel.SKELETON : ContentLevel.SKELETON; // D2: MCP default SKELETON
+        }
+        log.info(String.format("searching context for '%s' for project '%s' (contentLevel=%s).", userQuestion, projectName, level));
+        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, level, includeTests);
 
         String result = String.format("%s\n%s", prefix, context);
         log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));

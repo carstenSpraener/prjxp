@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.code.java.JavaCodeSection;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.gldrtrvr.DependencyCompactor;
 import lombok.Data;
@@ -28,7 +29,9 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
             JavaCodeSection section = JavaCodeSection.fromName(pxChunk.getMetadata().get("java_code_section"));
             switch (section) {
                 case METHOD:
-                    if( searchParams!=null && !searchParams.isSkeletonsOnly() ) {
+                    ContentLevel level = searchParams != null ? searchParams.effectiveContentLevel() : ContentLevel.FULL;
+                    boolean reduced = level == ContentLevel.SKELETON || level == ContentLevel.POINTERS;
+                    if( !reduced ) {
                         PxChunk javaDoc = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".javadoc"));
                         if (javaDoc != null) {
                             nextPrompt = insertBefore(prompt, toMethodName(pxChunk), javaDoc.getContent());

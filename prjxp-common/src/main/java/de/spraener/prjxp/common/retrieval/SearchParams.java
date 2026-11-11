@@ -12,6 +12,7 @@ public class SearchParams {
     private int fallbackRounds = 0;
     private boolean skeletonsOnly = false;
     private boolean abort = false;
+    private ContentLevel contentLevel = ContentLevel.FULL;
 
     public SearchParams(int maxResults, double minScore) {
         this(maxResults, minScore, false);
@@ -23,5 +24,11 @@ public class SearchParams {
         this.initialMinScore = minScore;
         this.effectiveMinScore = minScore;
         this.skeletonsOnly = skeletonsOnly;
+    }
+
+    /** Effective content level: an explicit {@code contentLevel} wins; the legacy {@code skeletonsOnly} maps to SKELETON when contentLevel is still FULL. */
+    public ContentLevel effectiveContentLevel() {
+        if (contentLevel != null && contentLevel != ContentLevel.FULL) return contentLevel;
+        return skeletonsOnly ? ContentLevel.SKELETON : ContentLevel.FULL;
     }
 }
