@@ -5,6 +5,8 @@ import de.spraener.prjxp.common.model.FileView;import de.spraener.prjxp.common.m
 import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
+import de.spraener.prjxp.mcp.ClusterMember;
+import de.spraener.prjxp.mcp.ClusterView;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
@@ -24,7 +26,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Registers the eight prjxp tools in the central {@link ToolRegistry} so that they are
+ * Registers the nine prjxp tools in the central {@link ToolRegistry} so that they are
  * available for native function calling — executed in-process as plain Java calls on
  * {@link PrjxpMcpTool}, without a JSON-RPC round trip.
  * <p>
@@ -55,6 +57,7 @@ public class PrjxpToolRegistration {
         register(listFilesTool());
         register(graphFileTool());
         register(graphNodeTool());
+        register(graphClusterTool());
     }
 
     private void register(ToolDefinition tool) {
@@ -312,6 +315,34 @@ public class PrjxpToolRegistration {
                 }, spec);
     }
 
+    private ToolDefinition graphClusterTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("graphCluster")
+                .description("""
+                        STRUCTURE TOOL: Lists the most important members of one cluster (Community), ranked by degree centrality (weight = in + out).
+                        USE AFTER a cluster id is known — e.g. from vectorSearch output `[cluster:c6]` or from graphNode.
+                        Each member shows its (in, out) edge counts; call graphNode on a member for its typed edges.
+                        """)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("clusterId",
+                                "Cluster id, e.g. 'c6' (the value after 'cluster:' in vectorSearch output).")
+                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
+                        .addIntegerProperty("topN", "Number of top members to return (default 10, max 50).")
+                        .required("clusterId", "project")
+                        .build())
+                .build();
+
+        return new ToolDefinition("graphCluster", spec.description(),
+                Map.of("clusterId", "Cluster id", "project", "Required project name",
+                        "topN", "Number of top members to return"),
+                params -> {
+                    String clusterId = string(params, "clusterId");
+                    if (clusterId == null) return "ERROR: 'clusterId' parameter is required for graphCluster.";
+                    ClusterView view = mcpTool.graphCluster(clusterId, string(params, "project"), integer(params, "topN"));
+                    return formatCluster(view);
+                }, spec);
+    }
+
     // ==================== Result formatting ====================
 
     private String formatFileList(FileListResult result) {
@@ -454,6 +485,26 @@ public class PrjxpToolRegistration {
         }
         if (view.outgoing().isEmpty() && view.incoming().isEmpty()) {
             sb.append("    (no edges)\n");
+        }
+        return truncate(sb.toString(), SEARCH_RESULT_CAP);
+    }
+
+    private String formatCluster(ClusterView view) {
+        if (view == null) {
+            return "No cluster view returned.";
+        }
+        if (view.error() != null) {
+            return "ERROR: " + view.error();
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Cluster ").append(view.clusterId())
+                .append(" — ").append(view.totalMembers()).append(" members (top ")
+                .append(view.members().size()).append("):\n");
+        for (ClusterMember m : view.members()) {
+            sb.append("  ").append(String.format(java.util.Locale.ROOT, "%.2f", m.weight()))
+                    .append("  in=").append(m.inDegree()).append(" out=").append(m.outDegree())
+                    .append("  ").append(m.id())
+                    .append("  (").append(m.file()).append(")\n");
         }
         return truncate(sb.toString(), SEARCH_RESULT_CAP);
     }

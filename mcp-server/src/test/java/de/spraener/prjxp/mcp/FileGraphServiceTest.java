@@ -290,4 +290,103 @@ class FileGraphServiceTest {
         assertThat(view.outgoing()).hasSize(2);
         assertThat(view.outgoing()).noneMatch(GraphNeighbor::external);
     }
+
+    // ==================== graphCluster ====================
+
+    private CodeGraph clusterGraph() {
+        return new CodeGraph(
+                List.of(
+                        new GraphNode("demo.A", "src/A.java", "java", false, "c0", 0.9),
+                        new GraphNode("demo.B", "src/B.java", "java", false, "c0", 0.5),
+                        new GraphNode("demo.C", "src/C.java", "java", false, "c0", 0.3),
+                        new GraphNode("demo.D", "src/D.java", "java", false, "c1", 0.8)),
+                List.of(
+                        new GraphEdge("demo.A", "demo.B", EdgeType.IMPORT, false),
+                        new GraphEdge("demo.A", "demo.C", EdgeType.IMPORT, false),
+                        new GraphEdge("demo.B", "demo.A", EdgeType.CALL, false),
+                        new GraphEdge("demo.C", "demo.A", EdgeType.EXTENDS, false),
+                        new GraphEdge("demo.A", "extern.Thing", EdgeType.FIELD, true)));
+    }
+
+    @Test
+    void graphClusterReturnsTopNByWeightDescending() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(clusterGraph()));
+
+        ClusterView view = service.graphCluster("c0", "demo", 2);
+
+        assertThat(view.error()).isNull();
+        assertThat(view.project()).isEqualTo("demo");
+        assertThat(view.clusterId()).isEqualTo("c0");
+        assertThat(view.totalMembers()).isEqualTo(3);
+        assertThat(view.members()).hasSize(2);
+        assertThat(view.members())
+                .extracting(ClusterMember::id, ClusterMember::weight)
+                .containsExactly(tuple("demo.A", 0.9), tuple("demo.B", 0.5));
+    }
+
+    @Test
+    void graphClusterCountsAllEdgesIncludingExternal() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(clusterGraph()));
+
+        ClusterView view = service.graphCluster("c0", "demo", null);
+
+        assertThat(view.members())
+                .extracting(ClusterMember::id, ClusterMember::inDegree, ClusterMember::outDegree)
+                .containsExactly(
+                        // in: B->A, C->A; out: A->B, A->C, A->extern (external counted, matching weight)
+                        tuple("demo.A", 2, 3),
+                        tuple("demo.B", 1, 1),
+                        tuple("demo.C", 1, 1));
+    }
+
+    @Test
+    void graphClusterUnknownClusterReturnsError() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(clusterGraph()));
+
+        ClusterView view = service.graphCluster("c9", "demo", null);
+
+        assertThat(view.error()).contains("Cluster nicht gefunden").contains("c9");
+        assertThat(view.members()).isEmpty();
+    }
+
+    @Test
+    void graphClusterClampsTopNToMax() {
+        List<GraphNode> nodes = new ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            nodes.add(new GraphNode("hub.M" + i, "src/M" + i + ".java", "java", false, "c0", 1.0 - i * 0.01));
+        }
+        nodes.add(new GraphNode("other.X", "src/X.java", "java", false, "c1", 0.5));
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(new CodeGraph(nodes, List.of())));
+
+        ClusterView view = service.graphCluster("c0", "demo", 100);
+
+        assertThat(view.totalMembers()).isEqualTo(60);
+        assertThat(view.members()).hasSize(50);
+    }
+
+    @Test
+    void graphClusterRequiresClusterId() {
+        ClusterView view = service.graphCluster("  ", "demo", null);
+
+        assertThat(view.error()).contains("clusterId");
+        assertThat(view.members()).isEmpty();
+    }
+
+    @Test
+    void graphClusterUnknownProjectReturnsError() {
+        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
+
+        ClusterView view = service.graphCluster("c0", "nope", null);
+
+        assertThat(view.error()).contains("No searchable store").contains("nope");
+    }
+
+    @Test
+    void graphClusterMissingGraphReturnsUnavailable() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.empty());
+
+        ClusterView view = service.graphCluster("c0", "demo", null);
+
+        assertThat(view.error()).contains("Graph nicht verfügbar");
+    }
 }

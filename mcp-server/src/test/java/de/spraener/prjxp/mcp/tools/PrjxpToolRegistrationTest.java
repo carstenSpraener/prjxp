@@ -9,6 +9,8 @@ import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
+import de.spraener.prjxp.mcp.ClusterMember;
+import de.spraener.prjxp.mcp.ClusterView;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
@@ -55,7 +57,7 @@ class PrjxpToolRegistrationTest {
     void registersAllTools() {
         assertThat(registry.getTools()).extracting(ToolDefinition::getName)
                 .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles",
-                        "graphFile", "graphNode");
+                        "graphFile", "graphNode", "graphCluster");
     }
 
     @Test
@@ -63,7 +65,7 @@ class PrjxpToolRegistrationTest {
         // The second run hits name collisions — they must be logged, not thrown
         registration.registerTools();
 
-        assertThat(registry.getTools()).hasSize(8);
+        assertThat(registry.getTools()).hasSize(9);
     }
 
     @Test
@@ -78,6 +80,11 @@ class PrjxpToolRegistrationTest {
                 .filter(s -> s.name().equals("vectorSearch")).findFirst().orElseThrow();
         assertThat(vectorSearch.parameters().required()).containsExactly("userQuestion", "projectName");
         assertThat(vectorSearch.parameters().properties()).containsKeys("userQuestion", "projectName", "similarity", "maxResults", "skeletonsOnly", "includeTests");
+
+        ToolSpecification graphCluster = specs.stream()
+                .filter(s -> s.name().equals("graphCluster")).findFirst().orElseThrow();
+        assertThat(graphCluster.parameters().required()).containsExactly("clusterId", "project");
+        assertThat(graphCluster.parameters().properties()).containsKeys("clusterId", "project", "topN");
     }
 
     // ==================== vectorSearch ====================
@@ -359,6 +366,39 @@ class PrjxpToolRegistrationTest {
     void graphNodeToolRequiresSymbol() {
         assertThat(execute("graphNode", Map.of()))
                 .isEqualTo("ERROR: 'symbol' parameter is required for graphNode.");
+        verifyNoInteractions(mcpTool);
+    }
+
+    // ==================== graphCluster ====================
+
+    @Test
+    void graphClusterToolFormatsView() {
+        ClusterView view = new ClusterView("demo", "c0", 3,
+                List.of(new ClusterMember("demo.A", "src/A.java", 0.9, 2, 3),
+                        new ClusterMember("demo.B", "src/B.java", 0.5, 1, 1)),
+                null);
+        when(mcpTool.graphCluster(eq("c0"), any(), any())).thenReturn(view);
+
+        String result = execute("graphCluster", Map.of("clusterId", "c0", "project", "demo"));
+
+        assertThat(result).contains("Cluster c0 — 3 members (top 2):");
+        assertThat(result).contains("0.90  in=2 out=3  demo.A  (src/A.java)");
+        assertThat(result).contains("0.50  in=1 out=1  demo.B  (src/B.java)");
+    }
+
+    @Test
+    void graphClusterToolRendersError() {
+        when(mcpTool.graphCluster(any(), any(), any()))
+                .thenReturn(ClusterView.unavailable("Cluster nicht gefunden: c9"));
+
+        assertThat(execute("graphCluster", Map.of("clusterId", "c9", "project", "demo")))
+                .isEqualTo("ERROR: Cluster nicht gefunden: c9");
+    }
+
+    @Test
+    void graphClusterToolRequiresClusterId() {
+        assertThat(execute("graphCluster", Map.of()))
+                .isEqualTo("ERROR: 'clusterId' parameter is required for graphCluster.");
         verifyNoInteractions(mcpTool);
     }
 

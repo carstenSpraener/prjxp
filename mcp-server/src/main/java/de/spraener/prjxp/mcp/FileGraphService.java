@@ -3,6 +3,7 @@ package de.spraener.prjxp.mcp;
 import de.spraener.prjxp.common.graph.GraphMetadata;
 import de.spraener.prjxp.common.model.CodeGraph;
 import de.spraener.prjxp.common.model.EdgeType;
+import de.spraener.prjxp.common.model.GraphEdge;
 import de.spraener.prjxp.common.model.GraphNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
@@ -16,6 +17,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,6 +45,8 @@ public class FileGraphService {
     private static final int FILE_LOOKUP_LIMIT = 10_000;
     private static final int DEFAULT_MAX_EDGES = 30;
     private static final int MAX_MAX_EDGES = 100;
+    private static final int DEFAULT_TOP_N = 10;
+    private static final int MAX_TOP_N = 50;
 
     private final ProjectRegistry projectRegistry;
     private final PxChunkDaoProvider chunkDaoProvider;
@@ -158,6 +162,42 @@ public class FileGraphService {
         }
         GraphNode node = byId.get(id);
         return toView(requestedProject, node.file(), graph, node, maxEdges, includeExternal);
+    }
+
+    /**
+     * Lists the {@code topN} most important members of one Leiden cluster, ranked by
+     * {@code weight} (in + out degree), each with its (in, out) edge breakdown.
+     */
+    public ClusterView graphCluster(String clusterId, String project, Integer topN) {
+        if (StringUtils.isBlank(clusterId)) {
+            return ClusterView.unavailable("Parameter 'clusterId' ist erforderlich.");
+        }
+        try {
+            projectRegistry.ensureSearchable(project);
+        } catch (UnknownProjectException e) {
+            return ClusterView.unavailable(e.getMessage());
+        }
+        CodeGraph graph = projectGraphStore.graphFor(project).orElse(null);
+        if (graph == null) {
+            return ClusterView.unavailable("Graph nicht verfügbar, bitte reindexieren");
+        }
+        List<GraphNode> members = graph.nodeById().values().stream()
+                .filter(n -> clusterId.trim().equals(n.clusterId()))
+                .sorted(Comparator.comparingDouble(GraphNode::weight).reversed()
+                        .thenComparing(GraphNode::id))
+                .toList();
+        if (members.isEmpty()) {
+            return ClusterView.unavailable("Cluster nicht gefunden: " + clusterId);
+        }
+        int cap = (topN == null || topN < 1) ? DEFAULT_TOP_N : Math.min(topN, MAX_TOP_N);
+        Map<String, List<GraphEdge>> in = graph.edgesByTarget();
+        Map<String, List<GraphEdge>> out = graph.edgesBySource();
+        List<ClusterMember> top = members.stream().limit(cap)
+                .map(n -> new ClusterMember(n.id(), n.file(), n.weight(),
+                        in.getOrDefault(n.id(), List.of()).size(),
+                        out.getOrDefault(n.id(), List.of()).size()))
+                .toList();
+        return new ClusterView(project, clusterId.trim(), members.size(), top, null);
     }
 
     /** Returns an error view when the project is not searchable, else null. */

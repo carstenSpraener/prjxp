@@ -307,4 +307,19 @@ public class PrjxpMcpTool {
         return fileGraphService.graphNode(symbol.trim(), project, maxEdges, includeExternal);
     }
 
+    @McpTool(name = "graphCluster", description = """
+            STRUCTURE TOOL: Lists the most important members of one cluster (Community), ranked by degree centrality (weight = in + out).
+            USE AFTER a cluster id is known — e.g. from vectorSearch output `[cluster:c6]` or from graphNode.
+            Each member shows its (in, out) edge counts; call graphNode on a member for its typed edges.
+            """)
+    public ClusterView graphCluster(
+            @McpToolParam(description = "Cluster id, e.g. 'c6' (the value after 'cluster:' in vectorSearch output).", required = true)
+            String clusterId,
+            @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
+            String project,
+            @McpToolParam(description = "Number of top members to return (default 10, max 50).", required = false)
+            Integer topN) {
+        return fileGraphService.graphCluster(clusterId, project, topN);
+    }
+
 }

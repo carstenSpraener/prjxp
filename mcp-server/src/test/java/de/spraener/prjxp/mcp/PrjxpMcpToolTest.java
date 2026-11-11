@@ -255,4 +255,16 @@ class PrjxpMcpToolTest {
         assertThat(view.error()).isEqualTo("Parameter 'file' ist erforderlich.");
         verifyNoInteractions(fileGraphService);
     }
+
+    @Test
+    void graphClusterDelegatesToFileGraphService() {
+        ClusterView view = new ClusterView("myproj", "c6", 3,
+                List.of(new ClusterMember("demo.A", "src/A.java", 0.9, 2, 3)), null);
+        when(fileGraphService.graphCluster("c6", "myproj", 5)).thenReturn(view);
+
+        ClusterView result = tool.graphCluster("c6", "myproj", 5);
+
+        assertThat(result).isSameAs(view);
+        verify(fileGraphService).graphCluster("c6", "myproj", 5);
+    }
 }
