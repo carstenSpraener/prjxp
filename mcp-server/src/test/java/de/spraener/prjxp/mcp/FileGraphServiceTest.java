@@ -389,4 +389,108 @@ class FileGraphServiceTest {
 
         assertThat(view.error()).contains("Graph nicht verfügbar");
     }
+
+    // ==================== graphClusterOverview ====================
+
+    private CodeGraph overviewGraph() {
+        return new CodeGraph(
+                List.of(
+                        new GraphNode("demo.A", "src/A.java", "java", false, "c0", 0.9),
+                        new GraphNode("demo.B", "src/B.java", "java", false, "c0", 0.5),
+                        new GraphNode("demo.C", "src/C.java", "java", false, "c0", 0.3),
+                        new GraphNode("demo.D", "src/D.java", "java", false, "c1", 0.8),
+                        new GraphNode("demo.E", "src/E.java", "java", false, "c1", 0.2),
+                        new GraphNode("demo.F", "src/F.java", "java", false, "c2", 0.4),
+                        new GraphNode("demo.G", "src/G.java", "java", false, null, 0.7)),
+                List.of());
+    }
+
+    @Test
+    void graphClusterOverviewReturnsTopNClustersBySize() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(overviewGraph()));
+
+        ClusterOverviewView view = service.graphClusterOverview("demo", 2);
+
+        assertThat(view.error()).isNull();
+        assertThat(view.project()).isEqualTo("demo");
+        assertThat(view.totalClusters()).isEqualTo(3);
+        assertThat(view.clusters()).hasSize(2);
+        assertThat(view.clusters())
+                .extracting(ClusterSummary::clusterId, ClusterSummary::size)
+                .containsExactly(tuple("c0", 3), tuple("c1", 2));
+    }
+
+    @Test
+    void graphClusterOverviewTopMembersByWeightDescending() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(overviewGraph()));
+
+        ClusterOverviewView view = service.graphClusterOverview("demo", null);
+
+        assertThat(view.clusters().get(0).topMembers()).hasSizeLessThanOrEqualTo(3);
+        assertThat(view.clusters().get(0).topMembers()).containsExactly("demo.A", "demo.B", "demo.C");
+        assertThat(view.clusters().get(1).topMembers()).containsExactly("demo.D", "demo.E");
+    }
+
+    @Test
+    void graphClusterOverviewExcludesNodesWithoutCluster() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(overviewGraph()));
+
+        ClusterOverviewView view = service.graphClusterOverview("demo", null);
+
+        // demo.G has a null clusterId and must not count as a cluster
+        assertThat(view.totalClusters()).isEqualTo(3);
+        assertThat(view.clusters()).extracting(ClusterSummary::clusterId).doesNotContainNull();
+    }
+
+    @Test
+    void graphClusterOverviewClampsTopNToMax() {
+        List<GraphNode> nodes = new ArrayList<>();
+        for (int i = 0; i < 60; i++) {
+            nodes.add(new GraphNode("hub.M" + i, "src/M" + i + ".java", "java", false, "c" + i, 1.0));
+        }
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(new CodeGraph(nodes, List.of())));
+
+        ClusterOverviewView view = service.graphClusterOverview("demo", 100);
+
+        assertThat(view.totalClusters()).isEqualTo(60);
+        assertThat(view.clusters()).hasSize(50);
+    }
+
+    @Test
+    void graphClusterOverviewOrdersTiesDeterministically() {
+        CodeGraph g = new CodeGraph(
+                List.of(
+                        new GraphNode("demo.B", "src/B.java", "java", false, "c1", 0.5),
+                        new GraphNode("demo.A", "src/A.java", "java", false, "c0", 0.5),
+                        new GraphNode("demo.C", "src/C.java", "java", false, "c1", 0.5),
+                        new GraphNode("demo.D", "src/D.java", "java", false, "c0", 0.5)),
+                List.of());
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(g));
+
+        ClusterOverviewView view = service.graphClusterOverview("demo", null);
+
+        // equal sizes -> clusterId order; equal weights -> node id order
+        assertThat(view.clusters()).extracting(ClusterSummary::clusterId).containsExactly("c0", "c1");
+        assertThat(view.clusters().get(0).topMembers()).containsExactly("demo.A", "demo.D");
+        assertThat(view.clusters().get(1).topMembers()).containsExactly("demo.B", "demo.C");
+    }
+
+    @Test
+    void graphClusterOverviewUnknownProjectReturnsError() {
+        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
+
+        ClusterOverviewView view = service.graphClusterOverview("nope", null);
+
+        assertThat(view.error()).contains("No searchable store").contains("nope");
+        assertThat(view.clusters()).isEmpty();
+    }
+
+    @Test
+    void graphClusterOverviewMissingGraphReturnsUnavailable() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.empty());
+
+        ClusterOverviewView view = service.graphClusterOverview("demo", null);
+
+        assertThat(view.error()).contains("Graph nicht verfügbar");
+    }
 }

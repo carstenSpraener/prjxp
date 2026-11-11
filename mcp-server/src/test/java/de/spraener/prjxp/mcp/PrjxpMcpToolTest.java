@@ -267,4 +267,16 @@ class PrjxpMcpToolTest {
         assertThat(result).isSameAs(view);
         verify(fileGraphService).graphCluster("c6", "myproj", 5);
     }
+
+    @Test
+    void graphClusterOverviewDelegatesToFileGraphService() {
+        ClusterOverviewView view = new ClusterOverviewView("myproj", 3,
+                List.of(new ClusterSummary("c0", 3, List.of("demo.A", "demo.B", "demo.C"))), null);
+        when(fileGraphService.graphClusterOverview("myproj", 5)).thenReturn(view);
+
+        ClusterOverviewView result = tool.graphClusterOverview("myproj", 5);
+
+        assertThat(result).isSameAs(view);
+        verify(fileGraphService).graphClusterOverview("myproj", 5);
+    }
 }

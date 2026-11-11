@@ -322,4 +322,17 @@ public class PrjxpMcpTool {
         return fileGraphService.graphCluster(clusterId, project, topN);
     }
 
+    @McpTool(name = "graphClusterOverview", description = """
+            STRUCTURE TOOL: A map of the project's clusters (Communities) — the N largest, each with its size and its top members by weight.
+            USE THIS to explore the architecture WITHOUT a starting class: it answers "what are the main areas of this codebase?".
+            Then drill down with graphCluster(clusterId).
+            """)
+    public ClusterOverviewView graphClusterOverview(
+            @McpToolParam(description = "Required project name. Call listProjects to discover valid names.", required = true)
+            String project,
+            @McpToolParam(description = "Number of clusters to return (default 10, max 50).", required = false)
+            Integer topN) {
+        return fileGraphService.graphClusterOverview(project, topN);
+    }
+
 }

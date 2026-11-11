@@ -6,6 +6,8 @@ import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import de.spraener.prjxp.mcp.ClusterMember;
+import de.spraener.prjxp.mcp.ClusterOverviewView;
+import de.spraener.prjxp.mcp.ClusterSummary;
 import de.spraener.prjxp.mcp.ClusterView;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
@@ -26,7 +28,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Registers the nine prjxp tools in the central {@link ToolRegistry} so that they are
+ * Registers the ten prjxp tools in the central {@link ToolRegistry} so that they are
  * available for native function calling — executed in-process as plain Java calls on
  * {@link PrjxpMcpTool}, without a JSON-RPC round trip.
  * <p>
@@ -58,6 +60,7 @@ public class PrjxpToolRegistration {
         register(graphFileTool());
         register(graphNodeTool());
         register(graphClusterTool());
+        register(graphClusterOverviewTool());
     }
 
     private void register(ToolDefinition tool) {
@@ -343,6 +346,29 @@ public class PrjxpToolRegistration {
                 }, spec);
     }
 
+    private ToolDefinition graphClusterOverviewTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("graphClusterOverview")
+                .description("""
+                        STRUCTURE TOOL: A map of the project's clusters (Communities) — the N largest, each with its size and its top members by weight.
+                        USE THIS to explore the architecture WITHOUT a starting class: it answers "what are the main areas of this codebase?".
+                        Then drill down with graphCluster(clusterId).
+                        """)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("project", "Required project name. Call listProjects to discover valid names.")
+                        .addIntegerProperty("topN", "Number of clusters to return (default 10, max 50).")
+                        .required("project")
+                        .build())
+                .build();
+
+        return new ToolDefinition("graphClusterOverview", spec.description(),
+                Map.of("project", "Required project name", "topN", "Number of clusters to return"),
+                params -> {
+                    ClusterOverviewView view = mcpTool.graphClusterOverview(string(params, "project"), integer(params, "topN"));
+                    return formatClusterOverview(view);
+                }, spec);
+    }
+
     // ==================== Result formatting ====================
 
     private String formatFileList(FileListResult result) {
@@ -505,6 +531,25 @@ public class PrjxpToolRegistration {
                     .append("  in=").append(m.inDegree()).append(" out=").append(m.outDegree())
                     .append("  ").append(m.id())
                     .append("  (").append(m.file()).append(")\n");
+        }
+        return truncate(sb.toString(), SEARCH_RESULT_CAP);
+    }
+
+    private String formatClusterOverview(ClusterOverviewView view) {
+        if (view == null) {
+            return "No cluster overview returned.";
+        }
+        if (view.error() != null) {
+            return "ERROR: " + view.error();
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append("Clusters: ").append(view.totalClusters()).append(" total, top ")
+                .append(view.clusters().size()).append(" largest:\n");
+        for (ClusterSummary c : view.clusters()) {
+            sb.append("  ").append(c.clusterId())
+                    .append("  (").append(c.size()).append(" members):  ")
+                    .append(String.join(", ", c.topMembers()))
+                    .append("\n");
         }
         return truncate(sb.toString(), SEARCH_RESULT_CAP);
     }

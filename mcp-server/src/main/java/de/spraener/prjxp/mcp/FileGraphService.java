@@ -47,6 +47,9 @@ public class FileGraphService {
     private static final int MAX_MAX_EDGES = 100;
     private static final int DEFAULT_TOP_N = 10;
     private static final int MAX_TOP_N = 50;
+    private static final int DEFAULT_OVERVIEW_TOP_N = 10;
+    private static final int MAX_OVERVIEW_TOP_N = 50;
+    private static final int TOP_MEMBERS_PER_CLUSTER = 3;
 
     private final ProjectRegistry projectRegistry;
     private final PxChunkDaoProvider chunkDaoProvider;
@@ -198,6 +201,44 @@ public class FileGraphService {
                         out.getOrDefault(n.id(), List.of()).size()))
                 .toList();
         return new ClusterView(project, clusterId.trim(), members.size(), top, null);
+    }
+
+    /**
+     * Returns a map of the project's Leiden clusters: the {@code topN} largest by member
+     * count, each with its size and its most connected members (by {@code weight}).
+     * The from-scratch architecture entry point — no starting class needed.
+     */
+    public ClusterOverviewView graphClusterOverview(String project, Integer topN) {
+        try {
+            projectRegistry.ensureSearchable(project);
+        } catch (UnknownProjectException e) {
+            return ClusterOverviewView.unavailable(e.getMessage());
+        }
+        CodeGraph graph = projectGraphStore.graphFor(project).orElse(null);
+        if (graph == null) {
+            return ClusterOverviewView.unavailable("Graph nicht verfügbar, bitte reindexieren");
+        }
+        Map<String, List<GraphNode>> byCluster = graph.nodeById().values().stream()
+                .filter(n -> n.clusterId() != null)
+                .collect(Collectors.groupingBy(GraphNode::clusterId));
+        int cap = (topN == null || topN < 1) ? DEFAULT_OVERVIEW_TOP_N : Math.min(topN, MAX_OVERVIEW_TOP_N);
+        List<ClusterSummary> clusters = byCluster.entrySet().stream()
+                .sorted((a, b) -> {
+                    int bySize = Integer.compare(b.getValue().size(), a.getValue().size());
+                    return bySize != 0 ? bySize : a.getKey().compareTo(b.getKey());
+                })
+                .limit(cap)
+                .map(e -> new ClusterSummary(
+                        e.getKey(),
+                        e.getValue().size(),
+                        e.getValue().stream()
+                                .sorted(Comparator.comparingDouble(GraphNode::weight).reversed()
+                                        .thenComparing(GraphNode::id))
+                                .limit(TOP_MEMBERS_PER_CLUSTER)
+                                .map(GraphNode::id)
+                                .toList()))
+                .toList();
+        return new ClusterOverviewView(project, byCluster.size(), clusters, null);
     }
 
     /** Returns an error view when the project is not searchable, else null. */

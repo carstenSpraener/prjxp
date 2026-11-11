@@ -10,6 +10,8 @@ import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import de.spraener.prjxp.mcp.ClusterMember;
+import de.spraener.prjxp.mcp.ClusterOverviewView;
+import de.spraener.prjxp.mcp.ClusterSummary;
 import de.spraener.prjxp.mcp.ClusterView;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
@@ -57,7 +59,7 @@ class PrjxpToolRegistrationTest {
     void registersAllTools() {
         assertThat(registry.getTools()).extracting(ToolDefinition::getName)
                 .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles",
-                        "graphFile", "graphNode", "graphCluster");
+                        "graphFile", "graphNode", "graphCluster", "graphClusterOverview");
     }
 
     @Test
@@ -65,7 +67,7 @@ class PrjxpToolRegistrationTest {
         // The second run hits name collisions — they must be logged, not thrown
         registration.registerTools();
 
-        assertThat(registry.getTools()).hasSize(9);
+        assertThat(registry.getTools()).hasSize(10);
     }
 
     @Test
@@ -85,6 +87,11 @@ class PrjxpToolRegistrationTest {
                 .filter(s -> s.name().equals("graphCluster")).findFirst().orElseThrow();
         assertThat(graphCluster.parameters().required()).containsExactly("clusterId", "project");
         assertThat(graphCluster.parameters().properties()).containsKeys("clusterId", "project", "topN");
+
+        ToolSpecification graphClusterOverview = specs.stream()
+                .filter(s -> s.name().equals("graphClusterOverview")).findFirst().orElseThrow();
+        assertThat(graphClusterOverview.parameters().required()).containsExactly("project");
+        assertThat(graphClusterOverview.parameters().properties()).containsKeys("project", "topN");
     }
 
     // ==================== vectorSearch ====================
@@ -400,6 +407,32 @@ class PrjxpToolRegistrationTest {
         assertThat(execute("graphCluster", Map.of()))
                 .isEqualTo("ERROR: 'clusterId' parameter is required for graphCluster.");
         verifyNoInteractions(mcpTool);
+    }
+
+    // ==================== graphClusterOverview ====================
+
+    @Test
+    void graphClusterOverviewToolFormatsView() {
+        ClusterOverviewView view = new ClusterOverviewView("demo", 3,
+                List.of(new ClusterSummary("c0", 3, List.of("demo.A", "demo.B", "demo.C")),
+                        new ClusterSummary("c1", 2, List.of("demo.D", "demo.E"))),
+                null);
+        when(mcpTool.graphClusterOverview(any(), any())).thenReturn(view);
+
+        String result = execute("graphClusterOverview", Map.of("project", "demo"));
+
+        assertThat(result).contains("Clusters: 3 total, top 2 largest:");
+        assertThat(result).contains("c0  (3 members):  demo.A, demo.B, demo.C");
+        assertThat(result).contains("c1  (2 members):  demo.D, demo.E");
+    }
+
+    @Test
+    void graphClusterOverviewToolRendersError() {
+        when(mcpTool.graphClusterOverview(any(), any()))
+                .thenReturn(ClusterOverviewView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
+
+        assertThat(execute("graphClusterOverview", Map.of("project", "demo")))
+                .isEqualTo("ERROR: Graph nicht verfügbar, bitte reindexieren");
     }
 
     // ==================== argument coercion & truncation ====================
