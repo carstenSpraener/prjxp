@@ -27,9 +27,14 @@ public class EmbeddingModelConfig {
         String apiKey = EnvPlaceholderResolver.resolve(ebCfg.getApiKey());
         String modelName = EnvPlaceholderResolver.resolve(ebCfg.getModelName());
 
+        // Max texts per single provider HTTP request. Applied uniformly via CappedEmbeddingModel
+        // so every model-creation path behaves the same, independent of the concrete provider.
+        int cap = Math.max(1, ebCfg.getMaxSegmentsPerBatch());
+
         if (ebCfg.getType() == PrjXPConfig.EmbeddingModelType.OPEN_AI) {
-            log.info("Using Open-AI compatible embedding provider " + apiBaseUrl + " with model " + modelName);
-            return OpenAiEmbeddingModel.builder()
+            log.info("Using Open-AI compatible embedding provider " + apiBaseUrl + " with model " + modelName
+                    + ", cap " + cap + " segment(s) per request");
+            OpenAiEmbeddingModel model = OpenAiEmbeddingModel.builder()
                     .apiKey(apiKey)
                     .baseUrl(apiBaseUrl)
                     .modelName(modelName)
@@ -42,16 +47,19 @@ public class EmbeddingModelConfig {
                     // langchain4j defaults maxSegmentsPerBatch to 2048 -> a large embedAll() becomes
                     // one giant request that a local model times out on. Cap it so every request
                     // stays small enough to finish within the timeout (split into many requests).
-                    .maxSegmentsPerBatch(Math.max(1, ebCfg.getMaxSegmentsPerBatch()))
+                    .maxSegmentsPerBatch(cap)
                     .build();
+            return new CappedEmbeddingModel(model, cap);
         }
 
-        log.info("Using Ollama embedding model at " + apiBaseUrl + " with model " + modelName);
-        return OllamaEmbeddingModel.builder()
+        log.info("Using Ollama embedding model at " + apiBaseUrl + " with model " + modelName
+                + ", cap " + cap + " segment(s) per request");
+        OllamaEmbeddingModel model = OllamaEmbeddingModel.builder()
                 .baseUrl(apiBaseUrl)
                 .modelName(modelName)
                 .timeout(Duration.ofSeconds(ebCfg.getTimeout()))
                 .build();
+        return new CappedEmbeddingModel(model, cap);
     }
 
     private SSLContext sslContext() {

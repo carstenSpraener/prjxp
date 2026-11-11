@@ -49,6 +49,8 @@ prjxp:
     modelName: ${PRJXP_EMBEDDING_MODEL_NAME:mxbai-embed-large-v1}
     timeout: 20
     apiKey: ${EMBEDDING_API_KEY}
+    # max texts per embedding HTTP request; the per-project tibedBatchSize is split at this size
+    maxSegmentsPerBatch: 32
 
   embeddingStores:
     - projectName: cwd

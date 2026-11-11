@@ -38,6 +38,8 @@ prjxp:
     apiBaseURL: http://192.168.188.92:11434
     modelName: mxbai-embed-large
     timeout: 60
+    # max texts per embedding HTTP request; the per-project tibedBatchSize is split at this size
+    maxSegmentsPerBatch: 32
 
   embedding-model:
     server-type: "openai"

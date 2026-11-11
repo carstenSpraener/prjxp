@@ -1,5 +1,6 @@
 package de.spraener.prjxp.common.embedding;
 
+import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingModelReference;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.googleai.GoogleAiEmbeddingModel;
@@ -14,8 +15,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class EmbeddingModelProviderTest {
 
+    private final PrjXPConfig cfg = new PrjXPConfig(); // embedding.maxSegmentsPerBatch defaults to 32
     private final EmbeddingModelProvider provider = new EmbeddingModelProvider(
-            List.of(new OllamaEmbeddingModelSupplier(), new OpenAiEmbeddingModelSupplier(), new GeminiEmbeddingModelSupplier()));
+            List.of(new OllamaEmbeddingModelSupplier(), new OpenAiEmbeddingModelSupplier(), new GeminiEmbeddingModelSupplier()),
+            cfg);
 
     private PrjXPEmbeddingModelReference ref(String serverType) {
         PrjXPEmbeddingModelReference ref = new PrjXPEmbeddingModelReference();
@@ -25,36 +28,40 @@ class EmbeddingModelProviderTest {
         return ref;
     }
 
+    private CappedEmbeddingModel capped(PrjXPEmbeddingModelReference ref) {
+        return (CappedEmbeddingModel) provider.createEmbeddingModel(ref);
+    }
+
     @Test
     void ollamaType_returnsOllamaEmbeddingModel() {
-        EmbeddingModel model = provider.createEmbeddingModel(ref("ollama"));
-        assertThat(model).isInstanceOf(OllamaEmbeddingModel.class);
+        EmbeddingModel delegate = capped(ref("ollama")).delegate();
+        assertThat(delegate).isInstanceOf(OllamaEmbeddingModel.class);
     }
 
     @Test
     void openaiType_returnsOpenAiEmbeddingModel() {
-        EmbeddingModel model = provider.createEmbeddingModel(ref("openai"));
-        assertThat(model).isInstanceOf(OpenAiEmbeddingModel.class);
+        EmbeddingModel delegate = capped(ref("openai")).delegate();
+        assertThat(delegate).isInstanceOf(OpenAiEmbeddingModel.class);
     }
 
     @Test
     void openapiType_returnsOpenAiEmbeddingModel() {
-        EmbeddingModel model = provider.createEmbeddingModel(ref("openapi"));
-        assertThat(model).isInstanceOf(OpenAiEmbeddingModel.class);
+        EmbeddingModel delegate = capped(ref("openapi")).delegate();
+        assertThat(delegate).isInstanceOf(OpenAiEmbeddingModel.class);
     }
 
     @Test
     void lmStudioType_returnsOpenAiEmbeddingModel() {
-        EmbeddingModel model = provider.createEmbeddingModel(ref("lm-studio"));
-        assertThat(model).isInstanceOf(OpenAiEmbeddingModel.class);
+        EmbeddingModel delegate = capped(ref("lm-studio")).delegate();
+        assertThat(delegate).isInstanceOf(OpenAiEmbeddingModel.class);
     }
 
     @Test
     void geminiType_returnsGeminiEmbeddingModel() {
         PrjXPEmbeddingModelReference ref = ref("gemini");
         ref.setApiKey("sk-test");
-        EmbeddingModel model = provider.createEmbeddingModel(ref);
-        assertThat(model).isInstanceOf(GoogleAiEmbeddingModel.class);
+        EmbeddingModel delegate = capped(ref).delegate();
+        assertThat(delegate).isInstanceOf(GoogleAiEmbeddingModel.class);
     }
 
     @Test
@@ -68,7 +75,21 @@ class EmbeddingModelProviderTest {
     void nullTimeout_defaultsTo60() {
         PrjXPEmbeddingModelReference ref = ref("ollama");
         ref.setTimeoutSecs(null);
-        EmbeddingModel model = provider.createEmbeddingModel(ref);
-        assertThat(model).isInstanceOf(OllamaEmbeddingModel.class);
+        EmbeddingModel delegate = capped(ref).delegate();
+        assertThat(delegate).isInstanceOf(OllamaEmbeddingModel.class);
+    }
+
+    @Test
+    void returnedModel_isCappedWithConfiguredCap() {
+        PrjXPConfig cfg = new PrjXPConfig();
+        cfg.getEmbedding().setMaxSegmentsPerBatch(16);
+        EmbeddingModelProvider provider = new EmbeddingModelProvider(
+                List.of(new OllamaEmbeddingModelSupplier(), new OpenAiEmbeddingModelSupplier(), new GeminiEmbeddingModelSupplier()),
+                cfg);
+
+        CappedEmbeddingModel model = (CappedEmbeddingModel) provider.createEmbeddingModel(ref("ollama"));
+
+        assertThat(model.maxSegmentsPerBatch()).isEqualTo(16);
+        assertThat(model.delegate()).isInstanceOf(OllamaEmbeddingModel.class);
     }
 }
