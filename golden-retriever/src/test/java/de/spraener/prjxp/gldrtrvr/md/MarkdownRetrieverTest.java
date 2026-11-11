@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.config.GraphRerankConfig;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
@@ -233,5 +234,37 @@ class MarkdownRetrieverTest {
         String prompt = retriever.buildPromptForFindings("default", eightMarkdownDocs(), params).toString();
 
         assertThat(prompt.length()).isLessThan(10_000);
+    }
+
+    // ---- Phase 02: POINTERS content level ----
+
+    private SearchParams pointersParams() {
+        SearchParams params = new SearchParams(20, 0.85);
+        params.setContentLevel(ContentLevel.POINTERS);
+        return params;
+    }
+
+    @Test
+    void pointersLevelEmitsReadFileInsteadOfContent() {
+        PxChunk chunk = mdChunk("a.md", "docs/a.md", "BODY-MARKER", "PARAGRAPH");
+        db.put("a.md", List.of(chunk));
+
+        String pointersPrompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), pointersParams()).toString();
+
+        assertThat(pointersPrompt).contains("→ readFile(\"docs/a.md\")");
+        assertThat(pointersPrompt).doesNotContain("BODY-MARKER");
+
+        String fullPrompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), sp).toString();
+        assertThat(fullPrompt).contains("BODY-MARKER");
+    }
+
+    @Test
+    void pointersLevelNeverEmitsGraphNodeForDocs() {
+        PxChunk chunk = mdChunk("a.md", "docs/a.md", "BODY-MARKER", "PARAGRAPH");
+        db.put("a.md", List.of(chunk));
+
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), pointersParams()).toString();
+
+        assertThat(prompt).doesNotContain("graphNode");
     }
 }

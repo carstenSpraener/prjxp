@@ -26,7 +26,7 @@ public final class PrjxpToolDocs {
             - architecture: vectorSearch + graphNode / graphClusterOverview.
 
             RETURNS per contentLevel: POINTERS (default) emits file path plus readFile/readBySignature/graphNode hints
-            per class, roughly 50 bytes each - follow them. SKELETON emits class frames with signatures. FULL emits
+            per file or class, roughly 50 bytes each - follow them. SKELETON emits class frames with signatures. FULL emits
             the bodies of the hits.
 
             Defaults are the cheap path: contentLevel=POINTERS, sourceType=code, maxResults=10.

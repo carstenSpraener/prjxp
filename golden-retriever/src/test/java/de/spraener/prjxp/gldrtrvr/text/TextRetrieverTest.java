@@ -3,6 +3,7 @@ package de.spraener.prjxp.gldrtrvr.text;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
@@ -218,5 +219,74 @@ class TextRetrieverTest {
         String prompt = retriever.buildPromptForFindings("default", eightTextDocs(), params).toString();
 
         assertThat(prompt.length()).isLessThan(10_000);
+    }
+
+    // ---- Phase 02: POINTERS content level ----
+
+    private SearchParams pointersParams() {
+        SearchParams params = new SearchParams(20, 0.85);
+        params.setContentLevel(ContentLevel.POINTERS);
+        return params;
+    }
+
+    @Test
+    void pointersLevelEmitsReadFileInsteadOfContent() {
+        PxChunk chunk = textChunk("a.txt:text", "docs/a.txt", "BODY-MARKER", 0, 1);
+
+        String pointersPrompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), pointersParams()).toString();
+
+        assertThat(pointersPrompt).contains("→ readFile(\"docs/a.txt\")");
+        assertThat(pointersPrompt).doesNotContain("BODY-MARKER");
+
+        String fullPrompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), sp).toString();
+        assertThat(fullPrompt).contains("BODY-MARKER");
+    }
+
+    @Test
+    void pointersLevelUsesGraphNodeForDependencyChunk() {
+        PxChunk chunk = PxChunk.create(
+                c -> c.setId("de.example.Service.dependencies"),
+                c -> c.setMimeType(TextRetriever.MIME),
+                c -> c.setFile(null),
+                c -> c.setParent("de.example.Service"),
+                c -> c.setContent("BODY-MARKER"),
+                c -> c.setPart(0),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("java_code_section", "dependenciesInfo"));
+
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), pointersParams()).toString();
+
+        assertThat(prompt).contains("→ graphNode(\"de.example.Service\")");
+        assertThat(prompt).doesNotContain("BODY-MARKER");
+        assertThat(prompt).doesNotContain("null");
+    }
+
+    @Test
+    void pointersLevelOmitsChunkWithoutFileOrDependency() {
+        PxChunk chunk = PxChunk.create(
+                c -> c.setId("notes.txt:text"),
+                c -> c.setMimeType(TextRetriever.MIME),
+                c -> c.setFile(null),
+                c -> c.setParent("notes.txt"),
+                c -> c.setContent("BODY-MARKER"),
+                c -> c.setPart(0),
+                c -> c.setTotal(1));
+
+        String prompt = retriever.buildPromptForFindings("default", List.of(new ScoredChunk(chunk, 0.9)), pointersParams()).toString();
+
+        assertThat(prompt).doesNotContain("readFile");
+        assertThat(prompt).doesNotContain("graphNode");
+        assertThat(prompt).doesNotContain("BODY-MARKER");
+    }
+
+    @Test
+    void pointersLevelEmitsEachTargetOnce() {
+        PxChunk c1 = textChunk("a.txt:1", "docs/a.txt", "part one", 0, 1);
+        PxChunk c2 = textChunk("a.txt:2", "docs/a.txt", "part two", 0, 1);
+
+        String prompt = retriever.buildPromptForFindings("default",
+                List.of(new ScoredChunk(c1, 0.9), new ScoredChunk(c2, 0.8)), pointersParams()).toString();
+
+        assertThat(prompt.split("→ readFile\\(", -1).length - 1).isEqualTo(1);
     }
 }

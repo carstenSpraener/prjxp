@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.model.DocWindower;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
@@ -61,9 +62,18 @@ public class TextRetriever implements GoldenRetriever {
                 .toList();
         // Doc-specific content budget (Phase 03c): docs get a smaller budget than code
         int budget = Math.min(params.getMaxContentLength(), docMaxContentLength);
+        ContentLevel level = params.effectiveContentLevel();
+        Set<String> emittedTargets = new HashSet<>();
         int skipped = 0;
         for (var sc : textChunks) {
-            String part = formatChunk(sc.chunk());
+            PxChunk chunk = sc.chunk();
+            String part = level == ContentLevel.POINTERS ? pointerFor(chunk) : formatChunk(chunk);
+            if (part.isEmpty()) {
+                continue;   // no valid pointer target: nothing to emit, not counted as skipped
+            }
+            if (level == ContentLevel.POINTERS && !emittedTargets.add(pointerTarget(chunk))) {
+                continue;   // this target was already emitted
+            }
             if (prompt.length() + part.length() > budget) {
                 skipped++;
                 continue;
@@ -83,6 +93,43 @@ public class TextRetriever implements GoldenRetriever {
                 // the deterministic fallback (first docMaxChars chars + marker) applies.
                 + DocWindower.windowDoc(chunk.getContent(), null, chunk.getFile(),
                         chunk.getMimeType(), docMaxChars, docWindowChars) + "\n";
+    }
+
+    /**
+     * POINTERS layer: a tool-hint pointer instead of content. A chunk with a file gets a
+     * {@code readFile} pointer; a real dependency chunk (no file, Java-derived) gets a
+     * {@code graphNode} pointer for its parent (the type FQN). Returns {@code ""} when the
+     * chunk has no valid target.
+     */
+    private String pointerFor(PxChunk chunk) {
+        String file = chunk.getFile();
+        if (file != null && !file.isBlank()) {
+            return "\n## " + file + "\n→ readFile(\"" + file + "\")\n";
+        }
+        String parent = chunk.getParent();
+        if (isDependencyChunk(chunk) && parent != null && !parent.isBlank()) {
+            return "\n## " + parent + "\n→ graphNode(\"" + parent + "\")\n";
+        }
+        return "";
+    }
+
+    /** The de-duplication key for a pointer: the file path, or the parent for a dependency chunk. */
+    private String pointerTarget(PxChunk chunk) {
+        String file = chunk.getFile();
+        if (file != null && !file.isBlank()) {
+            return file;
+        }
+        String parent = chunk.getParent();
+        return isDependencyChunk(chunk) && parent != null && !parent.isBlank() ? parent : null;
+    }
+
+    /**
+     * A Java-derived dependency chunk ({@code JavaDependenciesChunker}): its {@code parent} is
+     * the type FQN, so it is a real code-graph node. Only meaningful for chunks without a file.
+     */
+    private boolean isDependencyChunk(PxChunk chunk) {
+        return "dependenciesInfo".equals(chunk.getMetadata().get("java_code_section"))
+                || (chunk.getId() != null && chunk.getId().endsWith(".dependencies"));
     }
 
     /** A "(Index-Stand ...)" freshness note when the chunk carries a {@code generated_at} watermark; null otherwise. */

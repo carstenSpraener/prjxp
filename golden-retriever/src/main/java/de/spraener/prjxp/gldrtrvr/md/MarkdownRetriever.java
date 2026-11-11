@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
@@ -43,6 +44,10 @@ public class MarkdownRetriever implements GoldenRetriever {
     public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
         StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
+        ContentLevel level = params.effectiveContentLevel();
+        if (level == ContentLevel.POINTERS) {
+            return buildPointersPrompt(chunkDao, chunks, params);
+        }
         // Die Session verwaltet den Baum-Aufbau der Dokumente
         MarkdownPromptSession session = new MarkdownPromptSession(chunkDao, rankingService);
         // Doc-specific content budget (Phase 03c): docs get a smaller budget than code
@@ -51,6 +56,50 @@ public class MarkdownRetriever implements GoldenRetriever {
 
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
         return prompt;
+    }
+
+    /**
+     * POINTERS layer: no content, only a {@code readFile} pointer per doc file (de-duplicated).
+     * Documentation is <b>not</b> in the code graph (the {@code parent} is a file name), so no
+     * {@code graphNode} pointer is ever emitted; a chunk without a file contributes nothing.
+     */
+    private StringBuilder buildPointersPrompt(PxChunkDao chunkDao, List<ScoredChunk> chunks, SearchParams params) {
+        StringBuilder prompt = new StringBuilder();
+        List<ScoredChunk> mdChunks = combineScoredChunksByID(chunkDao, chunks).stream()
+                .filter(sc -> "text/markdown".equals(sc.chunk().getMimeType()))
+                .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed())
+                .toList();
+        // Doc-specific content budget (Phase 03c): docs get a smaller budget than code
+        int budget = Math.min(params.getMaxContentLength(), docMaxContentLength);
+        Set<String> emittedFiles = new HashSet<>();
+        int skipped = 0;
+        for (var sc : mdChunks) {
+            String part = pointerFor(sc.chunk());
+            if (part.isEmpty()) {
+                continue;   // no file: nothing to emit, not counted as skipped
+            }
+            if (!emittedFiles.add(sc.chunk().getFile())) {
+                continue;   // this file was already pointed at
+            }
+            if (prompt.length() + part.length() > budget) {
+                skipped++;
+                continue;
+            }
+            prompt.append(part);
+        }
+        if (skipped > 0) {
+            prompt.append("\n[weitere ").append(skipped).append(" Klassen wegen Groessenlimit nicht enthalten]\n");
+        }
+        return prompt;
+    }
+
+    /** POINTERS layer: a {@code readFile} pointer for the doc file; {@code ""} when the chunk has no file. */
+    private String pointerFor(PxChunk chunk) {
+        String file = chunk.getFile();
+        if (file == null || file.isBlank()) {
+            return "";
+        }
+        return "\n## " + file + "\n→ readFile(\"" + file + "\")\n";
     }
 
     @Override
