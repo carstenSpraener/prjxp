@@ -95,6 +95,8 @@ public class PrjxpToolRegistration {
                                 "DEPRECATED alias for contentLevel. Kept for backward compatibility.")
                         .addStringProperty("contentLevel",
                                 "How much content to emit: FULL (full method bodies), SKELETON (signatures only — the default), or POINTERS (tool hints only). Authoritative over skeletonsOnly.")
+                        .addStringProperty("sourceType",
+                                "Filter by source type: all (default), code (everything except prose documents), or docs (only markdown/pdf prose).")
                         .addBooleanProperty("includeTests",
                                 "Include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.")
                         .required("userQuestion", "projectName")
@@ -111,7 +113,7 @@ public class PrjxpToolRegistration {
                     String result = mcpTool.vectorSearch(question, string(params, "projectName"),
                             number(params, "similarity"), integer(params, "maxResults"),
                             bool(params, "skeletonsOnly"), string(params, "contentLevel"),
-                            bool(params, "includeTests"));
+                            string(params, "sourceType"), bool(params, "includeTests"));
                     return truncate(result, SEARCH_RESULT_CAP);
                 }, spec);
     }

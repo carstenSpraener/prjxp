@@ -14,9 +14,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Function;
+import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
@@ -77,9 +81,15 @@ public class GRPromptEnrichment {
 
     public String enrich(String projectName, String prompt, double distance, int maxResults,
                          ContentLevel contentLevel, boolean includeTests) {
+        return enrich(projectName, prompt, distance, maxResults, contentLevel, includeTests, Map.of());
+    }
+
+    public String enrich(String projectName, String prompt, double distance, int maxResults,
+                         ContentLevel contentLevel, boolean includeTests, Map<String, String> vectorFilters) {
         SearchParams params = new SearchParams(maxResults, distance);
         params.setContentLevel(contentLevel);
         params.setMaxContentLength(maxContentLength);
+        params.setVectorFilters(vectorFilters == null ? Map.of() : Map.copyOf(vectorFilters));
         String enrichedContext = enrich(projectName, prompt, List.of(),
                 params,
                 this::reIterate,
@@ -132,13 +142,14 @@ public class GRPromptEnrichment {
         do {
             searchParams.setEffectiveMinScore(searchParams.getMinScore());
             PxChunkDao chunkDao = chunkDaoProvider.get(projectName).get();
-            List<ScoredChunk> similarChunks = findRelevantScored(chunkDao, prompt, searchParams.getMaxResult(), searchParams.getMinScore());
+            List<ScoredChunk> similarChunks = findRelevantScored(chunkDao, prompt, searchParams.getMaxResult(), searchParams.getMinScore(), searchParams.getVectorFilters());
             List<ScoredChunk> relevantChunks = new ArrayList<>();
             relevantChunks.addAll(prefetchedChunks.stream().map(c -> new ScoredChunk(c, 1.0)).toList());
             relevantChunks.addAll(similarChunks);
             if (!includeTests) {
                 relevantChunks.removeIf(sc -> TestPathFilter.isTestPath(sc.chunk().getFile()));
             }
+            relevantChunks = capByFile(relevantChunks, searchParams.getMaxResult());
 
             StringBuilder sb = new StringBuilder();
             int skippedRetrievers = 0;
@@ -177,10 +188,11 @@ public class GRPromptEnrichment {
         return promptFormatter.apply(overallContext.toString());
     }
 
-    private List<ScoredChunk> findRelevantScored(PxChunkDao chunkDao, String prompt, int maxResults, double minScore) {
+    private List<ScoredChunk> findRelevantScored(PxChunkDao chunkDao, String prompt, int maxResults, double minScore,
+                                                  Map<String, String> vectorFilters) {
         int retrievalWindow = Math.max(maxResults, vectorWindow);
         try {
-            return chunkDao.searchVector(prompt, Map.of(), retrievalWindow).stream()
+            return chunkDao.searchVector(prompt, vectorFilters, retrievalWindow).stream()
                     .filter(sc -> sc.score() >= minScore)
                     .toList();
         } catch (UnsupportedOperationException ignore) {
@@ -188,6 +200,31 @@ public class GRPromptEnrichment {
                     .map(c -> new ScoredChunk(c, 1.0))
                     .toList();
         }
+    }
+
+    /** Keeps at most {@code maxFiles} distinct files (ranked by best chunk score) but never splits a file. */
+    private static List<ScoredChunk> capByFile(List<ScoredChunk> chunks, int maxFiles) {
+        if (maxFiles <= 0 || chunks.isEmpty()) {
+            return chunks;
+        }
+        Map<String, Double> bestScoreByFile = new LinkedHashMap<>();
+        for (ScoredChunk sc : chunks) {
+            bestScoreByFile.merge(fileKey(sc), sc.score(), Math::max);
+        }
+        if (bestScoreByFile.size() <= maxFiles) {
+            return chunks;
+        }
+        Set<String> kept = bestScoreByFile.entrySet().stream()
+                .sorted(Map.Entry.<String, Double>comparingByValue().reversed())
+                .limit(maxFiles)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        return chunks.stream().filter(sc -> kept.contains(fileKey(sc))).toList();
+    }
+
+    private static String fileKey(ScoredChunk sc) {
+        String file = sc.chunk().getFile();
+        return file == null ? "<unknown>" : file;
     }
 
     public SearchParams reIterate(SearchParams searchParams) {

@@ -83,11 +83,12 @@ class GrepSearchServiceTest {
 
         service.search("ChunkProcess", "myproj", "java", 10);
 
+        // limit=10 -> overscan window min(max(10*4, 40), 500) = 40 raw chunks
         verify(dao).searchFullText(
                 eq("ChunkProcess"),
                 eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code",
                         PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
-                eq(10));
+                eq(40));
     }
 
     @Test
@@ -97,7 +98,7 @@ class GrepSearchServiceTest {
 
         service.search("q", "myproj", null, 10);
 
-        verify(dao).searchFullText(eq("q"), eq(FULLTEXT_FILTER), eq(10));
+        verify(dao).searchFullText(eq("q"), eq(FULLTEXT_FILTER), eq(40));
     }
 
     @Test
@@ -196,7 +197,7 @@ class GrepSearchServiceTest {
                 eq("q"),
                 eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-cobol",
                         PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
-                eq(10));
+                eq(40));
     }
 
     @Test
@@ -240,7 +241,7 @@ class GrepSearchServiceTest {
                 eq("q"),
                 eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-typescript-code",
                         PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
-                eq(10));
+                eq(40));
     }
 
     @Test
@@ -258,7 +259,7 @@ class GrepSearchServiceTest {
                 eq("q"),
                 eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-cobol",
                         PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
-                eq(10));
+                eq(40));
     }
 
     @Test
@@ -279,7 +280,7 @@ class GrepSearchServiceTest {
                 eq("q"),
                 eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-goodlang-code",
                         PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
-                eq(10));
+                eq(40));
     }
 
     @Test
@@ -300,7 +301,7 @@ class GrepSearchServiceTest {
                 eq("q"),
                 eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-plugin",
                         PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
-                eq(10));
+                eq(40));
     }
 
     // ---- Phase 02: test-class filter ----
@@ -423,6 +424,62 @@ class GrepSearchServiceTest {
         // Full text is a feature for code: snippet equals the full content, no marker
         assertThat(hit.snippet()).isEqualTo(content);
         assertThat(hit.snippet()).doesNotContain("readFile");
+    }
+
+    // ---- Phase 05: limit = max returned files, applied AFTER grouping + test filter ----
+
+    /** 4 test-file chunks (score 2.0 each) first, then 2 main-file chunks (score 1.0 each). */
+    private static List<ScoredChunk> testFirstChunks() {
+        List<ScoredChunk> chunks = new ArrayList<>();
+        for (int i = 0; i < 4; i++) {
+            chunks.add(new ScoredChunk(fileChunk("t" + i, "src/test/java/FooTest.java", "test content " + i), 2.0));
+        }
+        for (int i = 0; i < 2; i++) {
+            chunks.add(new ScoredChunk(fileChunk("m" + i, "src/main/java/Foo.java", "main content " + i), 1.0));
+        }
+        return chunks;
+    }
+
+    @Test
+    void smallLimitStillFindsNonTestFileWhenTestMatchesRankFirst() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt())).thenReturn(testFirstChunks());
+        when(retrieverRegistry.all()).thenReturn(List.of(new ContentRetriever()));
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 4, false);
+
+        assertThat(hits).isNotEmpty();
+        assertThat(hits).extracting(SearchHit::file).containsExactly("src/main/java/Foo.java");
+    }
+
+    @Test
+    void includeTestsTrueReturnsAtMostLimitEntriesSortedByScore() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt())).thenReturn(testFirstChunks());
+        when(retrieverRegistry.all()).thenReturn(List.of(new ContentRetriever()));
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 4, true);
+
+        assertThat(hits).hasSizeLessThanOrEqualTo(4);
+        // the test file has the higher total score (4*2.0 > 2*1.0) and must come first
+        assertThat(hits).extracting(SearchHit::file)
+                .containsExactly("src/test/java/FooTest.java", "src/main/java/Foo.java");
+    }
+
+    @Test
+    void limitOneStillFindsNonTestFileAndOverscans() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt())).thenReturn(testFirstChunks());
+        when(retrieverRegistry.all()).thenReturn(List.of(new ContentRetriever()));
+
+        List<SearchHit> hits = service.search("q", "myproj", null, 1, false);
+
+        assertThat(hits).extracting(SearchHit::file).containsExactly("src/main/java/Foo.java");
+        // raw window must be >= 4x the requested limit (here 40) so filtering cannot starve the result
+        verify(dao).searchFullText(eq("q"), anyMap(), eq(40));
     }
 
     private static class ContentRetriever implements GoldenRetriever {

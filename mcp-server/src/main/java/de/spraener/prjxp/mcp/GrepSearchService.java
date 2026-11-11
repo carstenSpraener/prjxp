@@ -37,6 +37,9 @@ public class GrepSearchService {
     @Value("${prjxp.mcp.grep.doc-window-chars:500}")
     int docWindowChars = 500;
 
+    /** Raw-chunk window cap for the overscan loop (SearchLimits.MAX_LIMIT * 5). */
+    private static final int MAX_WINDOW = 500;
+
     public List<SearchHit> search(String query, String project, String language, int limit) {
         return search(query, project, language, limit, true);
     }
@@ -50,13 +53,25 @@ public class GrepSearchService {
         }
 
         Map<String, String> filters = buildFilters(language);
-        List<ScoredChunk> chunks;
-        try {
-            chunks = dao.searchFullText(query, filters, limit);
-        } catch (UnsupportedOperationException e) {
-            return List.of();
+        // limit = max returned FILES, applied after grouping + test filter;
+        // overscan a larger raw window so filtering cannot starve the result.
+        int window = Math.min(Math.max(limit * 4, 40), MAX_WINDOW);
+        while (true) {
+            List<ScoredChunk> chunks;
+            try {
+                chunks = dao.searchFullText(query, filters, window);
+            } catch (UnsupportedOperationException e) {
+                return List.of();
+            }
+            List<SearchHit> hits = toHits(project, query, chunks, limit, includeTests);
+            if (includeTests || hits.size() >= limit || chunks.size() < window || window >= MAX_WINDOW) {
+                return hits;
+            }
+            window = Math.min(window * 2, MAX_WINDOW);
         }
+    }
 
+    private List<SearchHit> toHits(String project, String query, List<ScoredChunk> chunks, int limit, boolean includeTests) {
         Map<String,List<ScoredChunk>> fileToHitsMap = new HashMap<>();
         for( ScoredChunk sChunk : chunks) {
             String fileName = sChunk.chunk().getFile();
@@ -100,7 +115,8 @@ public class GrepSearchService {
         if (!includeTests) {
             searchHits.removeIf(h -> TestPathFilter.isTestPath(h.file()));
         }
-        return searchHits;
+        searchHits.sort((a, b) -> Double.compare(b.score(), a.score()));
+        return searchHits.size() > limit ? new ArrayList<>(searchHits.subList(0, limit)) : searchHits;
     }
 
     private Map<String, String> buildFilters(String language) {

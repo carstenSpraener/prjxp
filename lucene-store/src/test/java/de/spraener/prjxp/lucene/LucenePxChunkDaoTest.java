@@ -355,6 +355,33 @@ class LucenePxChunkDaoTest {
     }
 
     @Test
+    void searchVectorOrListMimeFilterMatchesAnyListedMime() {
+        addChunkWithMime("chunk-java", "text/x-java", "Java content");
+        addChunkWithMime("chunk-md", "text/markdown", "Markdown content");
+        addChunkWithMime("chunk-ts", "text/x-typescript-code", "TS content");
+
+        List<ScoredChunk> result = dao.searchVector(
+                "content", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java|text/markdown"), 10);
+
+        assertThat(result).extracting(sc -> sc.chunk().getId())
+                .containsExactlyInAnyOrder("chunk-java", "chunk-md");
+    }
+
+    @Test
+    void searchVectorNegatedOrListExcludesAllListedMimes() {
+        addChunkWithMime("chunk-java", "text/x-java-code", "Java content");
+        addChunkWithMime("chunk-md", "text/markdown", "Markdown content");
+        addChunkWithMime("chunk-pdf", "application/pdf", "PDF content");
+        addChunkWithMime("chunk-txt", "text/plain", "Plain content");
+
+        List<ScoredChunk> result = dao.searchVector(
+                "content", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf"), 10);
+
+        assertThat(result).extracting(sc -> sc.chunk().getId())
+                .containsExactlyInAnyOrder("chunk-java", "chunk-txt");
+    }
+
+    @Test
     void searchVectorRespectsLimit() {
         addChunk("chunk-1", "one");
         addChunk("chunk-2", "two");

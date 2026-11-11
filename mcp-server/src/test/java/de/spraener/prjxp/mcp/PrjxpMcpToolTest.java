@@ -11,6 +11,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
+import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.doThrow;
@@ -66,7 +67,7 @@ class PrjxpMcpToolTest {
     void vectorSearchUnknownProjectReturnsErrorString() {
         doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
 
-        String result = tool.vectorSearch("How does chunking work?", "nope", null, null, null, null, null);
+        String result = tool.vectorSearch("How does chunking work?", "nope", null, null, null, null, null, null);
 
         assertThat(result).startsWith("ERROR:").contains("nope").contains("alpha");
         verifyNoInteractions(enrichment);
@@ -75,45 +76,45 @@ class PrjxpMcpToolTest {
     @Test
     void vectorSearchResolvesProjectViaRegistry() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "How does chunking work?", 0.85, 20, ContentLevel.SKELETON, false))
+        when(enrichment.enrich("myproj", "How does chunking work?", 0.85, 20, ContentLevel.SKELETON, false, Map.of()))
                 .thenReturn("Relevante Information in 'myproj':\nchunk content");
 
-        String result = tool.vectorSearch("How does chunking work?", "myproj", null, null, null, null, null);
+        String result = tool.vectorSearch("How does chunking work?", "myproj", null, null, null, null, null, null);
 
         assertThat(result).contains("chunk content");
-        verify(enrichment).enrich("myproj", "How does chunking work?", 0.85, 20, ContentLevel.SKELETON, false);
+        verify(enrichment).enrich("myproj", "How does chunking work?", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
     }
 
     @Test
     void vectorSearchDefaultProjectResolvesViaRegistry() {
         when(projectRegistry.resolve("default")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false)).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of())).thenReturn("ctx");
 
-        String result = tool.vectorSearch("q", "default", null, null, null, null, null);
+        String result = tool.vectorSearch("q", "default", null, null, null, null, null, null);
 
         assertThat(result).contains("ctx");
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false);
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
     }
 
     @Test
     void vectorSearchDefaultsIncludeTestsToFalse() {
         // Semantic discovery: tests are noise — null includeTests must default to false
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false)).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of())).thenReturn("ctx");
 
-        tool.vectorSearch("q", "myproj", null, null, null, null, null);
+        tool.vectorSearch("q", "myproj", null, null, null, null, null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false);
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
     }
 
     @Test
     void vectorSearchPassesExplicitIncludeTestsThrough() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, true)).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, true, Map.of())).thenReturn("ctx");
 
-        tool.vectorSearch("q", "myproj", null, null, null, null, true);
+        tool.vectorSearch("q", "myproj", null, null, null, null, null, true);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, true);
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, true, Map.of());
     }
 
     // ---- Phase 01 (Graphify-Tool-V2): the contentLevel knob ----
@@ -122,43 +123,43 @@ class PrjxpMcpToolTest {
     void vectorSearchWithoutContentLevelDefaultsToSkeleton() {
         // D2: the MCP vectorSearch defaults to SKELETON (token economy)
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false)).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of())).thenReturn("ctx");
 
-        tool.vectorSearch("q", "myproj", null, null, null, null, null);
+        tool.vectorSearch("q", "myproj", null, null, null, null, null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false);
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
     }
 
     @Test
     void vectorSearchWithContentLevelFullPassesFull() {
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false)).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false, Map.of())).thenReturn("ctx");
 
-        tool.vectorSearch("q", "myproj", null, null, null, "FULL", null);
+        tool.vectorSearch("q", "myproj", null, null, null, "FULL", null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false);
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false, Map.of());
     }
 
     @Test
     void vectorSearchWithSkeletonsOnlyTruePassesSkeleton() {
         // the deprecated skeletonsOnly alias still maps to SKELETON
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false)).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of())).thenReturn("ctx");
 
-        tool.vectorSearch("q", "myproj", null, null, true, null, null);
+        tool.vectorSearch("q", "myproj", null, null, true, null, null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false);
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.SKELETON, false, Map.of());
     }
 
     @Test
     void vectorSearchContentLevelWinsOverSkeletonsOnly() {
         // an explicit contentLevel is authoritative over the deprecated alias
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false)).thenReturn("ctx");
+        when(enrichment.enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false, Map.of())).thenReturn("ctx");
 
-        tool.vectorSearch("q", "myproj", null, null, true, "FULL", null);
+        tool.vectorSearch("q", "myproj", null, null, true, "FULL", null, null);
 
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false);
+        verify(enrichment).enrich("myproj", "q", 0.85, 20, ContentLevel.FULL, false, Map.of());
     }
 
     @Test

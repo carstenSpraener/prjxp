@@ -55,6 +55,7 @@ public class PrjxpMcpTool {
 
             contentLevel: how much content to emit — FULL (full method bodies on hit), SKELETON (signatures only, the default), or POINTERS (tool hints only).
             includeTests: include test sources (default: false for vectorSearch, true for grep). Pass true to vectorSearch when asking about tests.
+            sourceType: filter by source type — all (default), code (everything except prose documents), or docs (only markdown/pdf prose).
             """)
     public String vectorSearch(
             @McpToolParam(description = "A targeted, standalone search prompt optimized for vector retrieval based on what you need to find.", required = true)
@@ -70,7 +71,7 @@ public class PrjxpMcpTool {
                 """, required = false)
             Double similarity,
             @McpToolParam(description="""
-                Maximum number of results to return. Default is 20.
+                Maximum number of source files in the response. Default is 20 (max 20). The candidate window stays at 50, so a smaller value trims the response without degrading ranking.
                 """, required = false)
             Integer maxResults,
             @McpToolParam(description="""
@@ -82,6 +83,13 @@ public class PrjxpMcpTool {
                 This parameter is authoritative; it overrides the deprecated skeletonsOnly flag.
                 """, required = false)
             String contentLevel,
+
+            @McpToolParam(description="""
+                Filter by source type: all (default), code (everything except prose documents),
+                or docs (only markdown/pdf prose). Use code to keep documentation chunks out of a
+                code question; they routinely make up most of the context.
+                """, required = false)
+            String sourceType,
 
             @McpToolParam(description="""
                 Include test sources (src/test, src/testFixtures) in the results. Default is false — tests are noise for semantic discovery.
@@ -116,7 +124,7 @@ public class PrjxpMcpTool {
             level = Boolean.TRUE.equals(skeletonsOnly) ? ContentLevel.SKELETON : ContentLevel.SKELETON; // D2: MCP default SKELETON
         }
         log.info(String.format("searching context for '%s' for project '%s' (contentLevel=%s).", userQuestion, projectName, level));
-        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, level, includeTests);
+        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, level, includeTests, SourceTypeFilter.mimeFilters(sourceType));
 
         String result = String.format("%s\n%s", prefix, context);
         log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));
@@ -170,6 +178,7 @@ public class PrjxpMcpTool {
             limit = 0;
         }
         if( limit == 0 ) limit = SearchLimits.DEFAULT_LIMIT;
+        limit = SearchLimits.clamp(limit);
         if( includeTests==null) {
             includeTests = Boolean.TRUE;   // exact search: tests are deliberate intent
         }

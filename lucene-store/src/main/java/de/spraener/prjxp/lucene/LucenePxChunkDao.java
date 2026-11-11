@@ -12,6 +12,8 @@ import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.comparison.IsNotEqualTo;
 import dev.langchain4j.store.embedding.filter.logical.And;
+import dev.langchain4j.store.embedding.filter.logical.Not;
+import dev.langchain4j.store.embedding.filter.logical.Or;
 import de.spraener.prjxp.common.config.PrjXPEmbeddingStoreReference;
 import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.PxChunk;
@@ -262,6 +264,10 @@ public class LucenePxChunkDao implements PxChunkDao {
         return (p.contains("*") || p.contains("?")) ? p : p + "*";
     }
 
+    /**
+     * Combines the filter map into one LangChain4j filter (AND of all entries).
+     * Value syntax per entry: "a" = equals; "!a" = not equals; "a|b" = a OR b; "!a|b" = NOT (a OR b).
+     */
     private Filter buildFilter(Map<String, String> filters) {
         if (filters == null || filters.isEmpty()) {
             return null;
@@ -269,12 +275,25 @@ public class LucenePxChunkDao implements PxChunkDao {
         Filter combinedFilter = null;
         for (Map.Entry<String, String> entry : filters.entrySet()) {
             String key = PxChunk.metadataFieldKey(entry.getKey());
-            Filter currentFilter = entry.getValue().startsWith("!")
-                    ? new IsNotEqualTo(key, entry.getValue().substring(1))
-                    : new IsEqualTo(key, entry.getValue());
+            Filter currentFilter = filterFor(key, entry.getValue());
             combinedFilter = (combinedFilter == null) ? currentFilter : new And(combinedFilter, currentFilter);
         }
         return combinedFilter;
+    }
+
+    /** "a" = equals; "!a" = not equals; "a|b" = a OR b; "!a|b" = NOT (a OR b). */
+    private static Filter filterFor(String key, String spec) {
+        boolean negated = spec.startsWith("!");
+        String values = negated ? spec.substring(1) : spec;
+        if (!values.contains("|")) {
+            return negated ? new IsNotEqualTo(key, values) : new IsEqualTo(key, values);
+        }
+        Filter or = null;
+        for (String value : values.split("\\|")) {
+            Filter equalTo = new IsEqualTo(key, value);
+            or = (or == null) ? equalTo : new Or(or, equalTo);
+        }
+        return negated ? new Not(or) : or;
     }
 
     private Query buildFilterQuery(Map<String, String> filters) {

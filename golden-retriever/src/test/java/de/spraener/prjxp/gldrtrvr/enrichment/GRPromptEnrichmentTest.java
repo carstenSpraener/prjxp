@@ -321,6 +321,47 @@ class GRPromptEnrichmentTest {
         assertThat(retriever.capturedParams().effectiveContentLevel()).isEqualTo(ContentLevel.SKELETON);
     }
 
+    // ---- Phase 05: maxResults caps the number of distinct files ----
+
+    private static List<ScoredChunk> threeFileHits() {
+        return List.of(
+                new ScoredChunk(chunk("a", "a/A.java", "A-CONTENT"), 0.99),
+                new ScoredChunk(chunk("b", "b/B.java", "B-CONTENT"), 0.95),
+                new ScoredChunk(chunk("c", "c/C.java", "C-CONTENT"), 0.90));
+    }
+
+    @Test
+    void maxResultsOneCapsToBestFile() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(threeFileHits());
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        withDao.enrich("test", "query", 0.85, 1, ContentLevel.FULL, false);
+
+        assertThat(retriever.captured()).extracting(sc -> sc.chunk().getFile())
+                .containsExactly("a/A.java");
+    }
+
+    @Test
+    void maxResultsThreeKeepsAllThreeFiles() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(threeFileHits());
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        withDao.enrich("test", "query", 0.85, 3, ContentLevel.FULL, false);
+
+        assertThat(retriever.captured()).extracting(sc -> sc.chunk().getFile())
+                .containsExactly("a/A.java", "b/B.java", "c/C.java");
+    }
+
     // ---- Phase 03b: size budget via doc-chunk windowing (vectorSearch path) ----
 
     @Test

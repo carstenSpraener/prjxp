@@ -98,7 +98,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void vectorSearchPassesTypedArguments() {
-        when(mcpTool.vectorSearch(eq("find foo"), eq("p1"), eq(0.7), eq(5), eq(true), any(), any())).thenReturn("ctx");
+        when(mcpTool.vectorSearch(eq("find foo"), eq("p1"), eq(0.7), eq(5), eq(true), any(), any(), any())).thenReturn("ctx");
 
         String result = execute("vectorSearch", Map.of(
                 "userQuestion", "find foo", "projectName", "p1",
@@ -109,21 +109,21 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void vectorSearchCoercesStringNumbers() {
-        when(mcpTool.vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false), any(), any())).thenReturn("ctx");
+        when(mcpTool.vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false), any(), any(), any())).thenReturn("ctx");
 
         execute("vectorSearch", Map.of(
                 "userQuestion", "q", "similarity", "0.9", "maxResults", "3", "skeletonsOnly", "false"));
 
-        verify(mcpTool).vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false), any(), any());
+        verify(mcpTool).vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false), any(), any(), any());
     }
 
     @Test
     void vectorSearchPassesIncludeTestsThrough() {
-        when(mcpTool.vectorSearch(eq("q"), any(), any(), any(), any(), any(), eq(true))).thenReturn("ctx");
+        when(mcpTool.vectorSearch(eq("q"), any(), any(), any(), any(), any(), any(), eq(true))).thenReturn("ctx");
 
         execute("vectorSearch", Map.of("userQuestion", "q", "includeTests", true));
 
-        verify(mcpTool).vectorSearch(eq("q"), any(), any(), any(), any(), any(), eq(true));
+        verify(mcpTool).vectorSearch(eq("q"), any(), any(), any(), any(), any(), any(), eq(true));
     }
 
     @Test

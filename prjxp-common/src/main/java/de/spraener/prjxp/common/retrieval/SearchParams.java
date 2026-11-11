@@ -2,6 +2,9 @@ package de.spraener.prjxp.common.retrieval;
 
 import lombok.Data;
 
+import java.util.HashMap;
+import java.util.Map;
+
 @Data
 public class SearchParams {
     private int maxResult = 8;
@@ -13,6 +16,7 @@ public class SearchParams {
     private boolean skeletonsOnly = false;
     private boolean abort = false;
     private ContentLevel contentLevel = ContentLevel.FULL;
+    private Map<String, String> vectorFilters = new HashMap<>();
 
     public SearchParams(int maxResults, double minScore) {
         this(maxResults, minScore, false);
