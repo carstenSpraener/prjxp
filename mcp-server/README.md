@@ -138,9 +138,11 @@ Complete implementation of a symbol (javadoc + body) by name.
 
 | Parameter | Type | Required | Description |
 |-----------|------|----------|-------------|
-| `method` | string | ✅ | Method name or FQN (`com.example.Foo#bar`); class FQNs return the class frame |
+| `method` | string | ✅ | Method name or `FQN#name` (`com.example.Foo#bar`) for the body; a class FQN returns the class frame (signatures only) |
 | `container` | string | | Containing class FQN to disambiguate |
 | `project` | string | ✅ | Project name |
+
+**Strategy:** For a method body, pass `FQN#name` — it returns javadoc + body only (no imports, no class frame), which is cheaper than `grep` with `FULL`. A class FQN returns the class frame; use it to discover method names, then call again with `FQN#name`.
 
 ### 5. `listProjects`
 

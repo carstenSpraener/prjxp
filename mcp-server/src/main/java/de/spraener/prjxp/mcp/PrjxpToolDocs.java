@@ -19,7 +19,7 @@ public final class PrjxpToolDocs {
             Semantic entry point. Use it first for "where is X", "how does Y work", "which classes are involved".
 
             FLOWS
-            - discover: vectorSearch -> readFile(path) for a whole file, readBySignature(fqn) for one method.
+            - discover: vectorSearch -> readFile(path) for a whole file, readBySignature(FQN#name) for one method body.
             - enumerate implementations: grep("@Annotation", contentLevel=POINTERS) - implementations discovered at
               runtime have no edge in the code graph, so vectorSearch cannot find them.
             - call sites: grep("symbolName", contentLevel=POINTERS) - cheaper than graphNode.
@@ -33,7 +33,8 @@ public final class PrjxpToolDocs {
             """;
 
     public static final String GREP = """
-            Exact full-text search. Jobs: exact signature -> FULL body; annotation -> enumerate implementations; symbol -> call sites.
+            Exact full-text search. Jobs: annotation -> enumerate implementations; symbol -> call sites; exact signature -> FULL body
+            (class frame + body; readBySignature(FQN#name) is cheaper).
             contentLevel=POINTERS enumerates (cheap); FULL (default) fetches a body. includeTests defaults true; limit = hits after grouping, max 100.
             """;
 
@@ -44,7 +45,8 @@ public final class PrjxpToolDocs {
 
     public static final String READ_BY_SIGNATURE = """
             Complete implementation of a symbol (javadoc + body) by name, any indexed language.
-            'method' is a name or 'FQN#name'; class FQNs return the class frame. container disambiguates a bare name.
+            Method body: pass 'FQN#name' (or bare name + container) - returns javadoc + body only, no imports or class frame.
+            Class FQN: returns the class frame (signatures, no bodies) - use it to discover method names, then call with FQN#name.
             """;
 
     public static final String LIST_PROJECTS = """

@@ -36,6 +36,19 @@ class PrjxpToolDocsTest {
     }
 
     @Test
+    void readBySignatureDocumentsTheMethodBodyForm() {
+        // Regression guard: a class FQN returns only the class frame, so the descriptions must
+        // steer the model to the 'FQN#name' form for method bodies (and away from grep FULL).
+        assertThat(PrjxpToolDocs.READ_BY_SIGNATURE)
+                .contains("'FQN#name'")
+                .contains("class frame");
+        assertThat(PrjxpToolDocs.VECTOR_SEARCH)
+                .contains("readBySignature(FQN#name)");
+        assertThat(PrjxpToolDocs.GREP)
+                .contains("readBySignature(FQN#name)");
+    }
+
+    @Test
     void toolAndParameterDescriptionsStayWithinBudget() {
         Retention retention = McpToolParam.class.getAnnotation(Retention.class);
         if (retention == null || retention.value() != RetentionPolicy.RUNTIME) {
@@ -58,8 +71,10 @@ class PrjxpToolDocsTest {
             }
         }
 
+        // Raised 4000 -> 4250: the readBySignature/grep texts now steer the model to the
+        // 'FQN#name' method-body form (cheaper than grep FULL), which costs ~200 chars per request.
         assertThat(total)
                 .as("sum of all tool texts + parameter descriptions (was %d)", total)
-                .isLessThan(4000);
+                .isLessThan(4250);
     }
 }

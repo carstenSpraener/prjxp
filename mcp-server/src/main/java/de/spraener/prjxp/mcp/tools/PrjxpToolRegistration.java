@@ -178,7 +178,7 @@ public class PrjxpToolRegistration {
                 .description(PrjxpToolDocs.READ_BY_SIGNATURE)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("method",
-                                "Method name or FQN; class FQNs return the class frame.")
+                                "Method name or 'FQN#name' for the body; class FQNs return the class frame.")
                         .addStringProperty("container",
                                 "Optional containing class FQN to disambiguate.")
                         .addStringProperty("project", "Project name (listProjects).")

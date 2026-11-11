@@ -176,7 +176,7 @@ public class PrjxpMcpTool {
 
     @McpTool(name = "readBySignature", description = PrjxpToolDocs.READ_BY_SIGNATURE)
     public SymbolReadResult readBySignature(
-            @McpToolParam(description = "Method name or FQN; class FQNs return the class frame.", required = true)
+            @McpToolParam(description = "Method name or 'FQN#name' for the body; class FQNs return the class frame.", required = true)
             String method,
 
             @McpToolParam(description = "Optional containing class FQN to disambiguate.", required = false)
