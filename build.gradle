@@ -140,11 +140,13 @@ subprojects {
 // ---------------------------------------------------------------------------
 def lpCsharpDir = new File(rootDir, 'lp-csharp')
 def lpCsharpJar = new File(lpCsharpDir, 'build/libs/lp-csharp-plugin.jar')
+def pluginGradleCommand = System.getProperty('os.name').toLowerCase(Locale.ROOT).contains('windows')
+        ? ['cmd.exe', '/c', 'gradlew.bat'] : ['./gradlew']
 
 tasks.register('buildLpCsharpPlugin', Exec) {
     dependsOn ':prjxp-common:publishToMavenLocal'
     workingDir = lpCsharpDir
-    commandLine './gradlew', 'shadowJar', '--console=plain'
+    commandLine pluginGradleCommand + ['shadowJar', '--console=plain']
     // Rebuild when the plugin sources, its build scripts, or the host API it
     // compiles against change (the inner build is up-to-date-checked itself).
     inputs.dir(new File(lpCsharpDir, 'src'))
@@ -167,7 +169,7 @@ def lpGdscriptJar = new File(lpGdscriptDir, 'build/libs/lp-gdscript-plugin.jar')
 tasks.register('buildLpGdscriptPlugin', Exec) {
     dependsOn ':prjxp-common:publishToMavenLocal'
     workingDir = lpGdscriptDir
-    commandLine './gradlew', 'shadowJar', '--console=plain'
+    commandLine pluginGradleCommand + ['shadowJar', '--console=plain']
     // Rebuild when the plugin sources, its build scripts, or the host API it
     // compiles against change (the inner build is up-to-date-checked itself).
     inputs.dir(new File(lpGdscriptDir, 'src'))

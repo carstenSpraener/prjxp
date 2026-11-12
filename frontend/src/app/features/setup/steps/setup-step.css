@@ -1,0 +1,7 @@
+:host { display: block; }
+form { display: grid; gap: .8rem; max-width: 48rem; }
+label { display: grid; gap: .3rem; }
+input, select { padding: .6rem; color: var(--text-primary, #ddd); background: var(--bg-secondary, #18202b); border: 1px solid #526477; border-radius: .3rem; }
+button { padding: .6rem; cursor: pointer; }
+button:disabled { opacity: .5; cursor: default; }
+p { line-height: 1.5; }

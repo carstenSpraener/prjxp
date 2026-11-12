@@ -165,4 +165,22 @@ describe('GlobalsService', () => {
     expect(req.request.method).toBe('GET');
     req.flush(['c']);
   });
+  it('retains raw chat test adapter, adopts post-observation ETag and uses it for CRUD', () => {
+    service.chatVersion = 'old';
+    const candidate: ChatModelReference = {stereoType: 'default', modelName: 'chat', serverType: 'ollama',
+      prompt: 'instructions', args: {option: '${ENV}'}};
+    service.testChatModel(candidate).subscribe(result => expect(result.response).toBe('hello'));
+    const test = httpMock.expectOne(`${baseUrl}/chat-models/test`);
+    expect(test.request.body).toEqual(candidate);
+    expect(test.request.body.configVersion).toBeUndefined();
+    expect(test.request.headers.get('If-Match')).toBe('"old"');
+    test.flush({success: true, response: 'hello', message: 'OK', latencyMs: 1, dimensions: null},
+      {headers: {ETag: '"observed"'}});
+    expect(service.chatVersion).toBe('observed');
+    service.updateChatModel('default', candidate).subscribe();
+    const save = httpMock.expectOne(`${baseUrl}/chat-models/default`);
+    expect(save.request.headers.get('If-Match')).toBe('"observed"');
+    save.flush(candidate, {headers: {ETag: '"saved"'}});
+    expect(service.chatVersion).toBe('saved');
+  });
 });

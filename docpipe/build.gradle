@@ -43,6 +43,20 @@ application {
     mainClass = 'de.spraener.prjxp.docpipe.DocPipeCliApp'
 }
 
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            element = 'CLASS'
+            includes = ['de.spraener.prjxp.docpipe.DocPipeCliApp']
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
+}
+
 shadowJar {
     zip64=true
     exclude 'application.yaml'

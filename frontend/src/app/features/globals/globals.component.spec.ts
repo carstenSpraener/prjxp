@@ -6,9 +6,12 @@ import { ChatModelEditorDialogComponent } from '../../components/chat-model-edit
 import { EmbeddingModelCardComponent } from '../../components/embedding-model-card/embedding-model-card.component';
 import { EmbeddingModelEditorDialogComponent } from '../../components/embedding-model-editor-dialog/embedding-model-editor-dialog.component';
 import { ChatModelReference } from '../../models/chat-model-reference.model';
-import { EmbeddingModelReference } from '../../models/embedding-model-reference.model';
+import { EmbeddingConfig } from '../../models/embedding-config.model';
 import { of } from 'rxjs';
 import { vi } from 'vitest';
+import { SetupService } from '../../services/setup.service';
+import { signal } from '@angular/core';
+import { provideRouter } from '@angular/router';
 
 describe('GlobalsComponent', () => {
   let component: GlobalsComponent;
@@ -24,11 +27,11 @@ describe('GlobalsComponent', () => {
     temperature: 0.7
   };
 
-  const sampleEmbeddingModel: EmbeddingModelReference = {
-    serverType: 'ollama',
+  const sampleEmbeddingModel: EmbeddingConfig = {
+    type: 'OLLAMA',
     modelName: 'mxbai-embed-large',
-    providerUrl: 'http://localhost:11434',
-    timeoutSecs: 60
+    apiBaseURL: 'http://localhost:11434',
+    timeout: 20
   };
 
   beforeEach(async () => {
@@ -36,20 +39,26 @@ describe('GlobalsComponent', () => {
       getChatModels: vi.fn().mockReturnValue(of([sampleModel])),
       createChatModel: vi.fn().mockReturnValue(of(sampleModel)),
       updateChatModel: vi.fn().mockReturnValue(of(sampleModel)),
-      deleteChatModel: vi.fn().mockReturnValue(of()),
-      getEmbeddingModel: vi.fn().mockReturnValue(of(sampleEmbeddingModel)),
-      updateEmbeddingModel: vi.fn().mockReturnValue(of(sampleEmbeddingModel))
+      deleteChatModel: vi.fn().mockReturnValue(of(undefined)),
+      getEmbeddingConfig: vi.fn().mockReturnValue(of(sampleEmbeddingModel)),
+      updateEmbeddingConfig: vi.fn().mockReturnValue(of(sampleEmbeddingModel)),
+      getServerTypes: vi.fn().mockReturnValue(of(['ollama'])),
+      chatVersion: 'v1', embeddingVersion: 'v1'
     };
 
     await TestBed.configureTestingModule({
       imports: [GlobalsComponent],
       providers: [
-        { provide: GlobalsService, useValue: mockGlobalsService }
+        { provide: GlobalsService, useValue: mockGlobalsService },
+        provideRouter([]),
+        {provide: SetupService, useValue: {status: signal(null), error: signal(null), loading: signal(false), getStatus: () => of(null)}}
       ]
     }).compileComponents();
 
     fixture = TestBed.createComponent(GlobalsComponent);
     component = fixture.componentInstance;
+    component.ngOnInit();
+    vi.spyOn(window, 'confirm').mockReturnValue(true);
   });
 
   it('should create', () => {
@@ -62,7 +71,7 @@ describe('GlobalsComponent', () => {
   });
 
   it('should have correct initial state', () => {
-    expect(component.chatModels()).toEqual([]);
+    expect(component.chatModels()).toEqual([sampleModel]);
     expect(component.searchFilter()).toBe('');
     expect(component.isEditing()).toBe(false);
   });
@@ -127,19 +136,19 @@ describe('GlobalsComponent', () => {
 
   it('handleDelete should call service and reload', () => {
     component.handleDelete(sampleModel);
-    expect(mockGlobalsService.deleteChatModel).toHaveBeenCalledWith('default');
+    expect(mockGlobalsService.deleteChatModel).toHaveBeenCalledWith('default', 'v1');
   });
 
   it('onModelSaved with existing model should call update', () => {
     component.openEditor(sampleModel);
     component.onModelSaved(sampleModel);
-    expect(mockGlobalsService.updateChatModel).toHaveBeenCalledWith('default', sampleModel);
+    expect(mockGlobalsService.updateChatModel).toHaveBeenCalledWith('default', sampleModel, 'v1');
   });
 
   it('onModelSaved with new model should call create', () => {
     component.openEditor(); // null = new
     component.onModelSaved(sampleModel);
-    expect(mockGlobalsService.createChatModel).toHaveBeenCalledWith(sampleModel);
+    expect(mockGlobalsService.createChatModel).toHaveBeenCalledWith(sampleModel, 'v1');
   });
 
   it('should have globals title with neon glow', () => {
@@ -153,11 +162,11 @@ describe('GlobalsComponent', () => {
   // Embedding Model tests
   it('ngOnInit should load embedding model', () => {
     component.ngOnInit();
-    expect(mockGlobalsService.getEmbeddingModel).toHaveBeenCalled();
+    expect(mockGlobalsService.getEmbeddingConfig).toHaveBeenCalled();
   });
 
   it('should have correct initial embedding model state', () => {
-    expect(component.embeddingModel()).toEqual({});
+    expect(component.embeddingModel()).toEqual(sampleEmbeddingModel);
     expect(component.isEditingEmbedding()).toBe(false);
   });
 
@@ -173,8 +182,9 @@ describe('GlobalsComponent', () => {
   });
 
   it('onEmbeddingSaved should call update service', () => {
+    component.openEmbeddingEditor();
     component.onEmbeddingSaved(sampleEmbeddingModel);
-    expect(mockGlobalsService.updateEmbeddingModel).toHaveBeenCalledWith(sampleEmbeddingModel);
+    expect(mockGlobalsService.updateEmbeddingConfig).toHaveBeenCalledWith(sampleEmbeddingModel, 'v1', undefined);
   });
 
   it('should render embedding model card', () => {

@@ -78,7 +78,7 @@ public class MavenCentralClient {
     }
 
     private String classifierUrl(MavenCoordinates c, String classifier) {
-        return repoBase + "/" + c.repoPath() + "/" + c.artifactId() + "-" + c.version() + "-" + classifier + ".jar";
+        return c.classifierUrl(repoBase, classifier);
     }
     private HttpRequest get(String url) {
         return HttpRequest.newBuilder(URI.create(url)).timeout(requestTimeout).GET().build();

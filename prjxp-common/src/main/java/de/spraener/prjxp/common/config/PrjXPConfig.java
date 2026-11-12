@@ -16,6 +16,18 @@ import java.util.Optional;
 @ConfigurationProperties(prefix = "prjxp") // <--- Das magische Prefix
 @Data
 public class PrjXPConfig {
+    private boolean setupCompleted;
+    @lombok.ToString.Exclude
+    private SetupState setupState = new SetupState();
+
+    @lombok.Data
+    public static class SetupState {
+        private String completionMode = "NONE";
+        private Map<String, String> savedSteps = new LinkedHashMap<>();
+        @lombok.ToString.Exclude
+        private Map<String, Map<String, Object>> tests = new LinkedHashMap<>();
+    }
+
     private String activeProject = "cwd";
     private List<ProjectDefinition> projects = new ArrayList<>();
     // In PrjXPConfig.java ergänzen:

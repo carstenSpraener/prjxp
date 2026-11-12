@@ -5,8 +5,10 @@ import { ProjectsComponent } from './features/projects/projects.component';
 import { GlobalsComponent } from './features/globals/globals.component';
 import { ChatComponent } from './features/chat/chat.component';
 import { DocsComponent } from './features/docs/docs.component';
+import { SetupWizardComponent, setupCanDeactivate } from './features/setup/setup-wizard.component';
 
 export const routes: Routes = [
+  { path: 'setup', component: SetupWizardComponent, canDeactivate: [setupCanDeactivate] },
   { path: 'dashboard', component: DashboardComponent },
   { path: 'import', component: ImportComponent },
   { path: 'projects', component: ProjectsComponent },

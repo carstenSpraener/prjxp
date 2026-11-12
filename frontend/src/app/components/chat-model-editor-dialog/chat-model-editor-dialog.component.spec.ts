@@ -5,10 +5,12 @@ import { ChatModelReference } from '../../models/chat-model-reference.model';
 import { GlobalsService } from '../../services/globals.service';
 import { of, throwError } from 'rxjs';
 import { vi } from 'vitest';
+import { SetupService } from '../../services/setup.service';
 
 const mockGlobalsService = {
   testChatModel: vi.fn(), testEmbeddingModel: vi.fn(),
-  listChatModels: vi.fn(), listEmbeddingModels: vi.fn()
+  listChatModels: vi.fn(), listEmbeddingModels: vi.fn(),
+  getServerTypes: vi.fn(() => of(['ollama', 'openapi', 'lm-studio', 'gemini', 'custom']))
 };
 
 describe('ChatModelEditorDialogComponent', () => {
@@ -29,11 +31,13 @@ describe('ChatModelEditorDialogComponent', () => {
 
     await TestBed.configureTestingModule({
       imports: [ChatModelEditorDialogComponent],
-      providers: [{ provide: GlobalsService, useValue: mockGlobalsService }]
+      providers: [{ provide: GlobalsService, useValue: mockGlobalsService },
+        {provide: SetupService, useValue: {getStatus: () => of(null)}}]
     }).compileComponents();
 
     fixture = TestBed.createComponent(ChatModelEditorDialogComponent);
     component = fixture.componentInstance;
+    component.configVersion = 'v1';
   });
 
   it('should create', () => {
@@ -221,7 +225,7 @@ describe('ChatModelEditorDialogComponent', () => {
     component.model = null;
     fixture.detectChanges();
 
-    component.form.get('timeoutSecs')?.setValue(5);
+    component.form.get('timeoutSecs')?.setValue(0);
     expect(component.form.get('timeoutSecs')?.invalid).toBe(true);
 
     component.form.get('timeoutSecs')?.setValue(10);

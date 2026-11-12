@@ -10,6 +10,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
+import java.net.ServerSocket;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -118,6 +119,14 @@ class MavenCentralClientTest {
     }
 
     @Test
+    void existsSupportsCustomClassifierWithUrlSeparators() throws MavenDependencyException {
+        String path = "/org/example/demo/1.0.0/demo-1.0.0-tests.jar";
+        routes.put(path, Route.of(200, "test-jar"));
+        assertThat(client(1024).exists(COORD, "tests")).isTrue();
+        assertThat(lastRequestedPath.get()).isEqualTo(path);
+    }
+
+    @Test
     void existsFalseWhenMissing() throws MavenDependencyException {
         assertThat(client(1024).exists(COORD, "sources")).isFalse();
     }
@@ -180,5 +189,38 @@ class MavenCentralClientTest {
 
         assertThat(lastRequestedPath.get()).isEqualTo(pathWithoutSlash);
         assertThat(lastRequestedPath.get()).isEqualTo(POM_PATH);
+    }
+
+    @Test
+    void transportTimeoutsAreReportedForEveryOperation() throws IOException {
+        try (ServerSocket listener = new ServerSocket()) {
+            listener.bind(new InetSocketAddress("127.0.0.1", 0));
+            MavenCentralClient client = new MavenCentralClient("http://127.0.0.1:" + listener.getLocalPort(),
+                    Duration.ofSeconds(1), Duration.ofMillis(200), 1024);
+            assertThatThrownBy(() -> client.fetchPom(COORD))
+                    .isInstanceOf(MavenDependencyException.class).hasMessageContaining("POM fetch failed")
+                    .hasCauseInstanceOf(IOException.class);
+            assertThatThrownBy(() -> client.exists(COORD, "sources"))
+                    .isInstanceOf(MavenDependencyException.class).hasMessageContaining("HEAD failed")
+                    .hasCauseInstanceOf(IOException.class);
+            Path target = tempDir.resolve("timeout.jar");
+            assertThatThrownBy(() -> client.download(COORD, "sources", target))
+                    .isInstanceOf(MavenDependencyException.class).hasMessageContaining("Download failed")
+                    .hasCauseInstanceOf(IOException.class);
+            assertThat(target).doesNotExist();
+        }
+    }
+
+    @Test
+    void interruptedRequestPreservesInterruptFlag() {
+        MavenCentralClient client = client(1024);
+        Thread.currentThread().interrupt();
+        try {
+            assertThatThrownBy(() -> client.fetchPom(COORD))
+                    .isInstanceOf(MavenDependencyException.class).hasCauseInstanceOf(InterruptedException.class);
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
+        } finally {
+            Thread.interrupted();
+        }
     }
 }

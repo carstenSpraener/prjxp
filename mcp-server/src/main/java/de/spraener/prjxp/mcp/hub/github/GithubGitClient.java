@@ -28,7 +28,7 @@ public class GithubGitClient {
     private static final Logger log = LoggerFactory.getLogger(GithubGitClient.class);
 
     private final HubProperties props;
-    private final Path gitExecutable;
+    private final List<String> gitExecutable;
 
     /** Production: uses the {@code git} on PATH. */
     @Autowired
@@ -38,8 +38,12 @@ public class GithubGitClient {
 
     /** Test hook: inject a fake {@code git} executable. */
     public GithubGitClient(HubProperties props, Path gitExecutable) {
+        this(props, List.of(gitExecutable.toString()));
+    }
+
+    GithubGitClient(HubProperties props, List<String> gitExecutable) {
         this.props = props;
-        this.gitExecutable = gitExecutable;
+        this.gitExecutable = List.copyOf(gitExecutable);
     }
 
     /**
@@ -62,9 +66,10 @@ public class GithubGitClient {
         try {
             Files.createDirectories(targetDir.getParent());
         } catch (IOException e) {
-            throw new GithubGitException("Could not create parent of " + targetDir + ": " + e.getMessage(), e);
+            throw new GithubGitException(redact("Could not create parent of " + targetDir + ": " + e.getMessage(), token),
+                    safeCause(e, token));
         }
-        run("clone", command(token, "clone", "--depth", String.valueOf(props.getGithubCloneDepth()),
+        run("clone", token, command(token, "clone", "--depth", String.valueOf(props.getGithubCloneDepth()),
                 "--", url, targetDir.toString()));
         log.info("Cloned {} into {}", url, targetDir);
     }
@@ -81,7 +86,7 @@ public class GithubGitClient {
      * {@link #clone(String, Path, String)}). Throws on any git failure/timeout.
      */
     public void pull(Path dir, String token) throws GithubGitException {
-        run("pull", command(token, "-C", dir.toString(), "pull", "--ff-only"));
+        run("pull", token, command(token, "-C", dir.toString(), "pull", "--ff-only"));
         log.info("Pulled {}", dir);
     }
 
@@ -92,7 +97,7 @@ public class GithubGitClient {
      */
     private String[] command(String token, String... args) {
         List<String> command = new ArrayList<>();
-        command.add(gitExecutable.toString());
+        command.addAll(gitExecutable);
         if (token != null && !token.isBlank()) {
             command.add("-c");
             command.add("http.extraheader=Authorization: Bearer " + token);
@@ -104,7 +109,7 @@ public class GithubGitClient {
     }
 
     /** Shared runner: start the process, read all output before waiting, enforce the timeout. */
-    private void run(String verb, String[] command) throws GithubGitException {
+    private void run(String verb, String token, String[] command) throws GithubGitException {
         try {
             ProcessBuilder pb = new ProcessBuilder(command).redirectErrorStream(true);
             Process p = pb.start();
@@ -116,14 +121,23 @@ public class GithubGitClient {
             }
             if (p.exitValue() != 0) {
                 throw new GithubGitException("git " + verb + " exited with code " + p.exitValue()
-                        + ": " + tail(output));
+                        + ": " + tail(redact(output, token)));
             }
         } catch (IOException e) {
-            throw new GithubGitException("Failed to run git: " + e.getMessage(), e);
+            throw new GithubGitException("Failed to run git: " + redact(e.getMessage(), token), safeCause(e, token));
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            throw new GithubGitException("Interrupted while running git", e);
+            throw new GithubGitException("Interrupted while running git");
         }
+    }
+
+    private static String redact(String text, String token) {
+        return text == null || token == null || token.isEmpty() ? text : text.replace(token, "[REDACTED]");
+    }
+
+    private static IOException safeCause(IOException error, String token) {
+        String message = redact(error.getMessage(), token);
+        return java.util.Objects.equals(message, error.getMessage()) ? error : new IOException(message);
     }
 
     /** Keep exception messages bounded: last ~200 chars of the (possibly long) git output. */

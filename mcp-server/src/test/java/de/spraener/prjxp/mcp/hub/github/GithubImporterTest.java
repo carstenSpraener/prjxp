@@ -6,6 +6,7 @@ import de.spraener.prjxp.mcp.hub.HubProjectRegistry;
 import de.spraener.prjxp.mcp.hub.PipelineOrchestrator;
 import de.spraener.prjxp.mcp.hub.ProjectConfigFileParser;
 import de.spraener.prjxp.mcp.hub.ProjectEntry;
+import de.spraener.prjxp.mcp.testsupport.TestProcess;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,6 +14,7 @@ import org.springframework.mock.env.MockEnvironment;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -26,7 +28,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Phase 03: {@link GithubImporter} — clone → generate prjxp.yaml → register (source "github") →
- * enqueue. Uses a REAL {@link GithubGitClient} pointed at a fake {@code git} shell script, a REAL
+ * enqueue. Uses a REAL {@link GithubGitClient} pointed at a fake {@code git} JVM process, a REAL
  * {@link ProjectConfigFileParser}, and Mockito mocks for the registry + orchestrator.
  */
 class GithubImporterTest {
@@ -64,37 +66,17 @@ class GithubImporterTest {
      * {@code .git-pull-ran} marker next to the {@code -C} dir. When {@code fail} is set it exits
      * non-zero (after writing the marker, so async tests can observe the task ran).
      */
-    private Path writeFakeGit(String fileName, boolean fail) throws Exception {
-        Path script = tempDir.resolve(fileName);
-        Files.writeString(script, """
-                #!/bin/sh
-                for a in "$@"; do
-                  if [ "$a" = "clone" ]; then
-                    target=""
-                    for b in "$@"; do target="$b"; done
-                    mkdir -p "$target/.git"
-                    touch "$target/.git-clone-ran"
-                    exit %d
-                  fi
-                  if [ "$a" = "pull" ]; then
-                    dir=""
-                    prev=""
-                    for b in "$@"; do
-                      if [ "$prev" = "-C" ]; then dir="$b"; fi
-                      prev="$b"
-                    done
-                    touch "$dir/.git-pull-ran"
-                    exit %d
-                  fi
-                done
-                exit 1
-                """.formatted(fail ? 1 : 0, fail ? 1 : 0));
-        script.toFile().setExecutable(true);
-        return script;
+    private List<String> writeFakeGit(String fileName, boolean fail) throws Exception {
+        return TestProcess.git(tempDir.resolve(fileName), fail ? 1 : 0, null);
     }
 
-    private GithubImporter importerWith(Path gitScript) {
+    private GithubImporter importerWith(List<String> gitScript) {
         return new GithubImporter(props, new GithubGitClient(props, gitScript),
+                configParser, registry, orchestrator, tracker, tokenCipher);
+    }
+
+    private GithubImporter importerWith(Path executable) {
+        return new GithubImporter(props, new GithubGitClient(props, executable),
                 configParser, registry, orchestrator, tracker, tokenCipher);
     }
 
@@ -102,24 +84,8 @@ class GithubImporterTest {
      * Like {@link #writeFakeGit} but additionally appends every invocation's arguments to
      * {@code logFile} — lets the tests assert on the {@code http.extraheader} token flow.
      */
-    private Path writeFakeGitWithArgLog(String fileName, boolean fail, Path logFile) throws Exception {
-        Path script = tempDir.resolve(fileName);
-        Files.writeString(script, """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                for a in "$@"; do
-                  if [ "$a" = "clone" ]; then
-                    target=""
-                    for b in "$@"; do target="$b"; done
-                    mkdir -p "$target/.git"
-                    touch "$target/.git-clone-ran"
-                    exit %d
-                  fi
-                done
-                exit 1
-                """.formatted(logFile.toString(), fail ? 1 : 0));
-        script.toFile().setExecutable(true);
-        return script;
+    private List<String> writeFakeGitWithArgLog(String fileName, boolean fail, Path logFile) throws Exception {
+        return TestProcess.git(tempDir.resolve(fileName), fail ? 1 : 0, logFile);
     }
 
     // ------------------------------------------------------------------ deriveName

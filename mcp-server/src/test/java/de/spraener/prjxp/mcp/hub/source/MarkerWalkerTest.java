@@ -132,13 +132,28 @@ class MarkerWalkerTest {
     }
 
     @Test
-    void walkMarkersTerminatesOnSymlinkCycle() throws IOException {
+    void walkMarkersTerminatesOnSymlinkCycle() throws Exception {
         Path a = Files.createDirectories(root.resolve("a"));
-        Files.createSymbolicLink(a.resolve("link"), a);   // a/link -> a (its own ancestor)
-
-        Map<String, Path> found = walker.walkMarkers(root);   // must terminate via the real-path guard
-
-        assertThat(found).isEmpty();
+        Path link = a.resolve("link");
+        if (System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT).contains("windows")) {
+            Process process = new ProcessBuilder("cmd.exe", "/c", "mklink", "/J", link.toString(), a.toString())
+                    .redirectErrorStream(true).start();
+            try {
+                assertThat(process.waitFor(10, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+                assertThat(process.exitValue())
+                        .as(new String(process.getInputStream().readAllBytes(), java.nio.charset.StandardCharsets.UTF_8))
+                        .isZero();
+            } finally {
+                if (process.isAlive()) process.destroyForcibly();
+            }
+        } else {
+            Files.createSymbolicLink(link, a);
+        }
+        try {
+            assertThat(walker.walkMarkers(root)).isEmpty();
+        } finally {
+            Files.delete(link);
+        }
     }
 
     @Test

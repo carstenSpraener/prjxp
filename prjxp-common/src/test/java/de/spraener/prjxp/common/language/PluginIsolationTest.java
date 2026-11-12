@@ -2,6 +2,7 @@ package de.spraener.prjxp.common.language;
 
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxChunker;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -25,6 +26,14 @@ class PluginIsolationTest {
 
     @TempDir
     Path pluginDir;
+    private LanguagePackPluginLoader loader;
+
+    @AfterEach
+    void closeLoader() {
+        if (loader != null) {
+            loader.close();
+        }
+    }
 
     @Test
     void twoPluginsWithIncompatiblePrivateLibraryVersions_bothLoadIsolated() throws IOException {
@@ -37,7 +46,7 @@ class PluginIsolationTest {
                         "de/spraener/prjxp/pluginfix/privlibb/PrivLibBPackProvider.java"),
                 "de.spraener.prjxp.pluginfix.privlibb.PrivLibBPackProvider");
 
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        loader = new LanguagePackPluginLoader(pluginDir.toFile());
         List<LanguagePack> packs = loader.loadAll();
 
         assertThat(packs).hasSize(2);
