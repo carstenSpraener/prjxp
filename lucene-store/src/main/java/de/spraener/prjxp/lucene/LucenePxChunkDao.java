@@ -236,7 +236,7 @@ public class LucenePxChunkDao implements PxChunkDao {
                             break;
                         }
                     }
-                    boolean moreDocs = consumed < (sliceEnd - from) || sliceEnd < topDocs.totalHits.value;
+                    boolean moreDocs = consumed < (sliceEnd - from) || sliceEnd < topDocs.totalHits.value();
                     if (files.size() >= limit) {
                         truncated = moreDocs;
                         break;

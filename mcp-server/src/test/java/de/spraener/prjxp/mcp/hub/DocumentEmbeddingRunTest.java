@@ -154,14 +154,14 @@ class DocumentEmbeddingRunTest {
             c.getMetadata().put(DocumentSource.DOCPIPE_GENERATED, "true");
         }
         TextSegment seg = PxChunk2TextSegmentConverter.convert(c);
-        luceneStore.addAll(List.of(Embedding.from(new float[8])), List.of(seg));
+        luceneStore.addAll(List.of(Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})), List.of(seg));
     }
 
     /** Makes the mocked embedChunks actually write to the real store (simulating the real embedder). */
     private void mockEmbeddingWritesToStore() {
         doAnswer(inv -> {
             List<PxChunk> chunks = inv.getArgument(2);
-            List<Embedding> embeddings = chunks.stream().map(c -> Embedding.from(new float[8])).toList();
+            List<Embedding> embeddings = chunks.stream().map(c -> Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})).toList();
             List<TextSegment> segments = chunks.stream().map(PxChunk2TextSegmentConverter::convert).toList();
             luceneStore.addAll(embeddings, segments);
             return null;

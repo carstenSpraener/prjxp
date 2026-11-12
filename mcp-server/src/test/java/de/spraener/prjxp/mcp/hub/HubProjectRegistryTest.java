@@ -113,7 +113,7 @@ class HubProjectRegistryTest {
 
     private void indexChunkFor(String project) {
         luceneStore.addAll(
-                List.of(Embedding.from(new float[8])),
+                List.of(Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})),
                 List.of(TextSegment.from("content of " + project,
                         Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, project)))));
     }
@@ -1200,7 +1200,7 @@ class HubProjectRegistryTest {
         metadata.put(PxChunk.PXCHUNK_ID, "test-id-" + System.currentTimeMillis());
 
         TextSegment segment = new TextSegment("test content", metadata);
-        Embedding embedding = new Embedding(new float[8]); // matches vectorDimension=8 in setUp
+        Embedding embedding = new Embedding(new float[]{1, 1, 1, 1, 1, 1, 1, 1}); // matches vectorDimension=8 in setUp
 
         luceneStore.add(embedding, segment);
     }

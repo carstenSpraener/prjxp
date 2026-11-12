@@ -28,7 +28,7 @@ opennlp = "2.5.12"   # pinned: langchain4j pulls 2.5.4 transitively (CVE-2026-42
 handlebars = "4.5.1"
 cwts = "1.3.0"       # CWTS Leiden community detection (MIT)
 
-lucene = "9.12.0"
+lucene = "10.6.0"
 
 # Test
 mockito = "5.11.0"

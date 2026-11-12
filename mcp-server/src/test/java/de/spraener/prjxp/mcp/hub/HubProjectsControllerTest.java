@@ -447,7 +447,7 @@ class HubProjectsControllerTest {
 
         // Mock ObjectMapper to return a valid record
         when(objMapper.readValue(anyString(), any(Class.class)))
-                .thenReturn(createEmbeddedChunkRecord("c1", "test content", new float[8]));
+                .thenReturn(createEmbeddedChunkRecord("c1", "test content", new float[]{1, 1, 1, 1, 1, 1, 1, 1}));
 
         // Direct controller call — returns ResponseEntity with bad request status
         var response = controller.importEmbeddings("alpha", new MockMultipartFile("file", "test.jsonl", "application/json",
@@ -466,7 +466,7 @@ class HubProjectsControllerTest {
                 .thenReturn(new EmbeddingCompatibilityChecker.CheckReport(0.99f, 4, EmbeddingCompatibilityChecker.Verdict.COMPATIBLE));
 
         // Mock ObjectMapper to return a valid record with a vector
-        EmbeddedChunkRecord mockRecord = createEmbeddedChunkRecord("c1", "test content", new float[8]);
+        EmbeddedChunkRecord mockRecord = createEmbeddedChunkRecord("c1", "test content", new float[]{1, 1, 1, 1, 1, 1, 1, 1});
         when(objMapper.readValue(anyString(), any(Class.class)))
                 .thenReturn(mockRecord);
 
@@ -488,7 +488,7 @@ class HubProjectsControllerTest {
         when(compatibilityChecker.check(any(List.class), any(EmbeddingModel.class), anyInt(), anyFloat(), anyFloat()))
                 .thenReturn(new EmbeddingCompatibilityChecker.CheckReport(0.99f, 4, EmbeddingCompatibilityChecker.Verdict.COMPATIBLE));
         when(objMapper.readValue(anyString(), any(Class.class)))
-                .thenReturn(createEmbeddedChunkRecord("c1", "test content", new float[8]));
+                .thenReturn(createEmbeddedChunkRecord("c1", "test content", new float[]{1, 1, 1, 1, 1, 1, 1, 1}));
 
         var response = controller.importEmbeddings("alpha", new MockMultipartFile("file", "test.jsonl", "application/json",
                 "{\"id\":\"c1\",\"content\":\"test\"}".getBytes()));
@@ -504,7 +504,7 @@ class HubProjectsControllerTest {
         when(compatibilityChecker.check(any(List.class), any(EmbeddingModel.class), anyInt(), anyFloat(), anyFloat()))
                 .thenReturn(new EmbeddingCompatibilityChecker.CheckReport(0.99f, 4, EmbeddingCompatibilityChecker.Verdict.COMPATIBLE));
         when(objMapper.readValue(anyString(), any(Class.class)))
-                .thenReturn(createEmbeddedChunkRecord("c1", "test content", new float[8]));
+                .thenReturn(createEmbeddedChunkRecord("c1", "test content", new float[]{1, 1, 1, 1, 1, 1, 1, 1}));
 
         var response = controller.importEmbeddings("alpha", new MockMultipartFile("file", "test.jsonl", "application/json",
                 "{\"id\":\"c1\",\"content\":\"test\"}".getBytes()));

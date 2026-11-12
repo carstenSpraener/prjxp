@@ -262,7 +262,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             try {
                 Query luceneQuery = LuceneFilterConverter.convert(filter);
                 TopDocs topDocs = searcher.search(luceneQuery, 1);
-                return topDocs.totalHits != null && topDocs.totalHits.value > 0;
+                return topDocs.totalHits != null && topDocs.totalHits.value() > 0;
             } finally {
                 releaseSearcher(searcher);
             }
@@ -412,7 +412,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
                         String file = d.get(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_FILE);
                         if (file != null) files.add(file);
                     }
-                    if (sliceEnd < docs.totalHits.value) {
+                    if (sliceEnd < docs.totalHits.value()) {
                         from += size;
                     } else {
                         break;
@@ -457,7 +457,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
                         String file = d.get(de.spraener.prjxp.common.model.PxChunk.PXCHUNK_FILE);
                         if (file != null) files.add(file);
                     }
-                    if (sliceEnd < docs.totalHits.value) {
+                    if (sliceEnd < docs.totalHits.value()) {
                         from += size;
                     } else {
                         break;

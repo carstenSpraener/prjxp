@@ -168,7 +168,7 @@ class PipelineOrchestratorTest {
         TextSegment stamped = TextSegment.from(
                 "old content of " + id,
                 Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, project, PxChunk.PXCHUNK_ID, id)));
-        luceneStore.addAll(List.of(Embedding.from(new float[8])), List.of(stamped));
+        luceneStore.addAll(List.of(Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})), List.of(stamped));
     }
 
     @Test
@@ -793,7 +793,7 @@ class PipelineOrchestratorTest {
         TextSegment stamped = TextSegment.from(
                 "old content of " + id,
                 Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, project, PxChunk.PXCHUNK_ID, id, PxChunk.PXCHUNK_FILE, file)));
-        luceneStore.addAll(List.of(Embedding.from(new float[8])), List.of(stamped));
+        luceneStore.addAll(List.of(Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})), List.of(stamped));
     }
 
     private PxChunk chunk(String id, String file, String content) {

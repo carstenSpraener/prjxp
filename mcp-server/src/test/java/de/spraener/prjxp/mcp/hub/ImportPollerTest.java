@@ -106,7 +106,7 @@ class ImportPollerTest {
 
     private void indexChunkFor(String project) {
         luceneStore.addAll(
-                List.of(Embedding.from(new float[8])),
+                List.of(Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})),
                 List.of(TextSegment.from("content of " + project,
                         Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, project)))));
     }
