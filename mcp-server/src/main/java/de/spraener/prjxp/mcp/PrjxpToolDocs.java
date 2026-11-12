@@ -1,7 +1,7 @@
 package de.spraener.prjxp.mcp;
 
 /**
- * Single source of truth for the ten prjxp tool descriptions.
+ * Single source of truth for the thirteen prjxp tool descriptions.
  * <p>
  * Both the MCP path ({@link PrjxpMcpTool} via {@code @McpTool}) and the hub chat path
  * ({@link de.spraener.prjxp.mcp.tools.PrjxpToolRegistration}) read their tool-level text from here,
@@ -16,41 +16,27 @@ public final class PrjxpToolDocs {
     }
 
     public static final String VECTOR_SEARCH = """
-            Semantic entry point. Use it first for "where is X", "how does Y work", "which classes are involved".
-
-            FLOWS
-            - discover: vectorSearch -> readFile(path) for a whole file, readBySignature(FQN#name) for one method body.
-            - enumerate implementations: grep("@Annotation", contentLevel=POINTERS) - implementations discovered at
-              runtime have no edge in the code graph, so vectorSearch cannot find them.
-            - call sites: grep("symbolName", contentLevel=POINTERS) - cheaper than graphNode.
-            - architecture: vectorSearch + graphNode / graphClusterOverview.
-
-            RETURNS per contentLevel: POINTERS (default) emits file path plus readFile/readBySignature/graphNode hints
-            per file or class, roughly 50 bytes each - follow them. SKELETON emits class frames with signatures. FULL emits
-            the bodies of the hits.
-
-            Defaults are the cheap path: contentLevel=POINTERS, sourceType=code, maxResults=10.
+            Start here for where/how questions. Follow POINTERS to readFile, readBySignature(FQN#name), or graphNode.
+            Use grep("@Annotation", POINTERS) for implementations and grep(symbol, POINTERS) for call sites.
+            Defaults: POINTERS, sourceType=code, maxResults=10; use sourceType=all for prose.
             """;
 
     public static final String GREP = """
-            Exact full-text search. Jobs: annotation -> enumerate implementations; symbol -> call sites; exact signature -> FULL body
-            (class frame + body; readBySignature(FQN#name) is cheaper).
-            contentLevel=POINTERS enumerates (cheap); FULL (default) fetches a body. includeTests defaults true; limit = hits after grouping, max 100.
+            Exact text search: annotations for implementations, symbols for call sites, signatures for code bodies.
+            Use readBySignature(FQN#name) for one method. POINTERS enumerates; FULL returns bodies. Tests default true; max 100 hits.
             """;
 
     public static final String READ_FILE = """
-            Complete source view of one file, reconstructed from the index. Use after vectorSearch/grep.
-            'file' is lenient (exact -> suffix -> basename); offset/limit page large files.
+            Reads a complete file from the index. Path lookup is exact -> suffix -> basename; offset/limit page large files.
             """;
 
     public static final String READ_BY_SIGNATURE = """
-            Complete implementation of a symbol (javadoc + body) by name, any indexed language.
-            Method body: pass 'FQN#name' (or bare name + container) - returns javadoc + body only, no imports or class frame.
-            Class FQN: returns the class frame (signatures, no bodies) - use it to discover method names, then call with FQN#name.
+            Reads a symbol in any indexed language. Use 'FQN#name' (or name + container) for javadoc and method body.
+            A class FQN returns its class frame with signatures only.
             """;
 
     public static final String LIST_PROJECTS = """
-            Lists searchable projects with their last index update. Call before the search tools to learn valid 'project' values.
+            Lists searchable projects and last index update. Call before search tools to learn valid project values.
             """;
 
     public static final String LIST_FILES = """
@@ -58,20 +44,30 @@ public final class PrjxpToolDocs {
             """;
 
     public static final String GRAPH_FILE = """
-            Typed code-graph neighbours of one file (import/extends/implements/field/param/return/call edges).
-            includeExternal reveals JDK/library edges (hidden by default).
+            Typed code-graph neighbours of a file (imports, inheritance, calls, and related edges). includeExternal adds library edges.
             """;
 
     public static final String GRAPH_NODE = """
-            Typed code-graph neighbours of one node id (FQN or FQN#name(params)). Expensive for call sites - grep(symbol, POINTERS) is cheaper.
-            includeExternal reveals JDK/library edges (hidden by default).
+            Typed neighbours of a class or method id. For call sites, grep(symbol, POINTERS) is cheaper. includeExternal adds library edges.
             """;
 
     public static final String GRAPH_CLUSTER = """
-            Most important members of one cluster, ranked by degree centrality. Use after a cluster id is known (from vectorSearch [cluster:cN] or graphNode).
+            Important typed-code cluster members ranked by degree. Use with a cluster id from vectorSearch or graphNode.
             """;
 
     public static final String GRAPH_CLUSTER_OVERVIEW = """
-            Map of the project's clusters - the N largest with size and top members. Use to explore the architecture without a starting class; then graphCluster.
+            Largest typed-code clusters with sizes and top members. Use to explore architecture without a starting class.
+            """;
+
+    public static final String SEMANTIC_GRAPH_CLUSTER = """
+            Semantic cluster members across docs and class frames. Not the typed code graph (graphCluster).
+            """;
+
+    public static final String SEMANTIC_GRAPH_NODE = """
+            Project-scoped semantic neighbours with files and scores. Not typed code relationships (graphNode).
+            """;
+
+    public static final String SEMANTIC_GRAPH_OVERVIEW = """
+            Largest semantic clusters with member counts, top files, model, and calibration warning. Not graphClusterOverview.
             """;
 }

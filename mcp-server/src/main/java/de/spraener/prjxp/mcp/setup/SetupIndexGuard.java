@@ -7,6 +7,7 @@ import de.spraener.prjxp.mcp.hub.HubProperties;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.KnnVectorValues;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.store.FSDirectory;
 
@@ -71,14 +72,16 @@ public final class SetupIndexGuard {
                                 if (vectors == null) continue;
                                 if (dimension != 0 && dimension != vectors.dimension()) throw incompatible();
                                 dimension = vectors.dimension();
+                                KnnVectorValues.DocIndexIterator vectorIterator = vectors.iterator();
                                 int doc;
-                                while (samples.size() < count && (doc = vectors.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
+                                while (samples.size() < count
+                                        && (doc = vectorIterator.nextDoc()) != DocIdSetIterator.NO_MORE_DOCS) {
                                     var live = leaf.reader().getLiveDocs();
                                     if (live != null && !live.get(doc)) continue;
                                     var stored = leaf.reader().storedFields().document(doc);
                                     String id = stored.get("_id"), content = stored.get("content");
                                     if (id == null || content == null || content.isBlank()) throw incompatible();
-                                    float[] vector = vectors.vectorValue().clone();
+                                    float[] vector = vectors.vectorValue(vectorIterator.index()).clone();
                                     PxChunk chunk = PxChunk.fromContentAndMap(content, Map.of(PxChunk.PXCHUNK_ID, id));
                                     samples.add(EmbeddedChunkRecord.from(chunk, vector));
                                 }

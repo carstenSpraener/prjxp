@@ -28,10 +28,13 @@ class PrjxpToolDocsTest {
                 + PrjxpToolDocs.GRAPH_FILE.length()
                 + PrjxpToolDocs.GRAPH_NODE.length()
                 + PrjxpToolDocs.GRAPH_CLUSTER.length()
-                + PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW.length();
+                + PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW.length()
+                + PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER.length()
+                + PrjxpToolDocs.SEMANTIC_GRAPH_NODE.length()
+                + PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW.length();
 
         assertThat(total)
-                .as("sum of the ten tool texts (was %d)", total)
+                .as("sum of the thirteen tool texts (was %d)", total)
                 .isLessThan(2600);
     }
 

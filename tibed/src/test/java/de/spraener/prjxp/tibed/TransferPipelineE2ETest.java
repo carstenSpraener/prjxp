@@ -16,6 +16,7 @@ import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import de.spraener.prjxp.tibed.embedder.LangChain4JEmbedderImpl;
+import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
 import dev.langchain4j.data.segment.TextSegment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -119,7 +120,8 @@ class TransferPipelineE2ETest {
                 new PrjXPJsonStreamProvider(cfg),
                 resolver,
                 new StoreIdChecker(cfg),
-                cfg
+                cfg,
+                Mockito.mock(SemanticGraphBatch.class)
         ).execute();
         return logService;
     }

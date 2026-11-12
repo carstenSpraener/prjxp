@@ -8,6 +8,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
+import de.spraener.prjxp.common.model.PxChunk;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
 import org.apache.lucene.document.KnnFloatVectorField;
@@ -17,22 +18,39 @@ import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexableField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.FloatVectorValues;
+import org.apache.lucene.index.KnnVectorValues;
+import org.apache.lucene.index.LeafReader;
+import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.VectorSimilarityFunction;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.KnnFloatVectorQuery;
+import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.Scorer;
+import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
+import org.apache.lucene.search.Weight;
+import org.apache.lucene.index.Term;
 import org.apache.lucene.store.NIOFSDirectory;
+import org.apache.lucene.util.Bits;
 
 import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.locks.ReadWriteLock;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
@@ -41,6 +59,11 @@ import java.util.stream.Collectors;
 
 @Log
 public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.springframework.beans.factory.DisposableBean {
+    private static final String VECTOR_FIELD = "vector";
+    private static final String ID_FIELD = "_id";
+    private static final String SEMANTIC_NODE_ID_FIELD =
+            PxChunk.PXCHUNK_METADATA + ".semantic_node_id";
+
     private final Path indexPath;
     private final int vectorDimension;
     private IndexWriter writer;
@@ -177,8 +200,9 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
     }
 
     private void addInternal(String id, Embedding embedding, TextSegment textSegment) {
-        ensureOpen();
+        lock.writeLock().lock();
         try {
+            ensureOpen();
             Document doc = createDocument(id, embedding, textSegment);
             writer.addDocument(doc);
             writer.commit();
@@ -189,13 +213,15 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             searcherManager.maybeRefreshBlocking();
         } catch (IOException e) {
             throw new RuntimeException("Failed to add document", e);
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 
     private Document createDocument(String id, Embedding embedding, TextSegment textSegment) {
         Document doc = new Document();
-        doc.add(new KnnFloatVectorField("vector", embedding.vector(), VectorSimilarityFunction.COSINE));
-        doc.add(new StringField("_id", id, Field.Store.YES));
+        doc.add(new KnnFloatVectorField(VECTOR_FIELD, embedding.vector(), VectorSimilarityFunction.COSINE));
+        doc.add(new StringField(ID_FIELD, id, Field.Store.YES));
 
         if (textSegment != null) {
             doc.add(new TextField("content", textSegment.text(), Field.Store.YES));
@@ -279,7 +305,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
         Metadata metadata = new Metadata();
         for (IndexableField field : doc.getFields()) {
             String name = field.name();
-            if (name.equals("_id") || name.equals("content") || name.equals("vector")) {
+            if (name.equals(ID_FIELD) || name.equals("content") || name.equals(VECTOR_FIELD)) {
                 continue;
             }
             String value = field.stringValue();
@@ -288,6 +314,395 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             }
         }
         return TextSegment.from(content, metadata);
+    }
+
+    /**
+     * Reads all live vector documents matching {@code filter}. The returned vector arrays are
+     * detached from Lucene's reusable vector buffers.
+     */
+    public List<VectorChunk> readAllVectors(Filter filter) throws IOException {
+        ensureOpen();
+        IndexSearcher searcher = getSearcher();
+        try {
+            Query query = filter == null ? new MatchAllDocsQuery() : LuceneFilterConverter.convert(filter);
+            Weight weight = searcher.createWeight(
+                    searcher.rewrite(query), ScoreMode.COMPLETE_NO_SCORES, 1f);
+            List<VectorChunk> chunks = new ArrayList<>();
+            for (LeafReaderContext leafContext : searcher.getIndexReader().leaves()) {
+                LeafReader leaf = leafContext.reader();
+                FloatVectorValues values = leaf.getFloatVectorValues(VECTOR_FIELD);
+                if (values == null) {
+                    continue;
+                }
+
+                Scorer scorer = weight.scorer(leafContext);
+                DocIdSetIterator matches = scorer == null
+                        ? DocIdSetIterator.empty()
+                        : scorer.iterator();
+                Bits liveDocs = leaf.getLiveDocs();
+                KnnVectorValues.DocIndexIterator vectors = values.iterator();
+                for (int docId = vectors.nextDoc();
+                     docId != DocIdSetIterator.NO_MORE_DOCS;
+                     docId = vectors.nextDoc()) {
+                    if (liveDocs != null && !liveDocs.get(docId)) {
+                        continue;
+                    }
+                    if (matches.advance(docId) != docId) {
+                        continue;
+                    }
+
+                    float[] vector = values.vectorValue(vectors.index()).clone();
+                    Document document = searcher.storedFields().document(leafContext.docBase + docId);
+                    chunks.add(toVectorChunk(document, vector));
+                }
+            }
+            return chunks;
+        } finally {
+            releaseSearcher(searcher);
+        }
+    }
+
+    /** Reads one live document by its semantic node id, restricted to the owning project. */
+    public Optional<VectorChunk> readChunkById(String nodeId, String project) throws IOException {
+        ensureOpen();
+        IndexSearcher searcher = getSearcher();
+        try {
+            Query identity = new BooleanQuery.Builder()
+                    .add(new TermQuery(new Term(SEMANTIC_NODE_ID_FIELD, nodeId)), BooleanClause.Occur.FILTER)
+                    .add(new TermQuery(new Term(PxChunk.PXCHUNK_PROJECT, project)), BooleanClause.Occur.FILTER)
+                    .build();
+            TopDocs topDocs = searcher.search(identity, 1);
+            if (topDocs.totalHits.value() == 0) {
+                return Optional.empty();
+            }
+
+            int globalDocId = topDocs.scoreDocs[0].doc;
+            for (LeafReaderContext leafContext : searcher.getIndexReader().leaves()) {
+                int localDocId = globalDocId - leafContext.docBase;
+                LeafReader leaf = leafContext.reader();
+                if (localDocId < 0 || localDocId >= leaf.maxDoc()) {
+                    continue;
+                }
+                Bits liveDocs = leaf.getLiveDocs();
+                if (liveDocs != null && !liveDocs.get(localDocId)) {
+                    return Optional.empty();
+                }
+
+                FloatVectorValues values = leaf.getFloatVectorValues(VECTOR_FIELD);
+                if (values == null) {
+                    return Optional.empty();
+                }
+                KnnVectorValues.DocIndexIterator vectors = values.iterator();
+                if (vectors.advance(localDocId) != localDocId) {
+                    return Optional.empty();
+                }
+
+                Document document = searcher.storedFields().document(globalDocId);
+                float[] vector = values.vectorValue(vectors.index()).clone();
+                return Optional.of(toVectorChunk(document, vector));
+            }
+            return Optional.empty();
+        } finally {
+            releaseSearcher(searcher);
+        }
+    }
+
+    /**
+     * Searches the vector field using Lucene's kNN query and optional pre-filter. Lucene 10.6
+     * does not expose a public efSearch setter for this query.
+     */
+    public List<EmbeddingMatch<TextSegment>> searchKnn(
+            Embedding queryEmbedding, int k, double minScore, Filter filter) throws IOException {
+        ensureOpen();
+        IndexSearcher searcher = getSearcher();
+        try {
+            Query filterQuery = filter == null ? null : LuceneFilterConverter.convert(filter);
+            KnnFloatVectorQuery query = new KnnFloatVectorQuery(
+                    VECTOR_FIELD, queryEmbedding.vector(), k, filterQuery);
+            TopDocs topDocs = searcher.search(query, k);
+            List<EmbeddingMatch<TextSegment>> matches = new ArrayList<>(topDocs.scoreDocs.length);
+            for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                Document document = searcher.storedFields().document(scoreDoc.doc);
+                double score = normalizeScore(scoreDoc.score);
+                if (minScore > 0 && score < minScore) {
+                    continue;
+                }
+                matches.add(new EmbeddingMatch<>(
+                        score, semanticNodeId(document), null, reconstructSegment(document)));
+            }
+            return matches;
+        } finally {
+            releaseSearcher(searcher);
+        }
+    }
+
+    private VectorChunk toVectorChunk(Document document, float[] vector) {
+        String id = document.get(PxChunk.PXCHUNK_ID);
+        if (id == null) {
+            id = document.get(ID_FIELD);
+        }
+        String project = document.get(PxChunk.PXCHUNK_PROJECT);
+        String partValue = document.get(PxChunk.PXCHUNK_PART);
+        int part = partValue == null ? 0 : Integer.parseInt(partValue);
+        String content = document.get("content");
+        Map<String, String> metadata = new HashMap<>();
+        for (IndexableField field : document.getFields()) {
+            String name = field.name();
+            if (name.equals(ID_FIELD) || name.equals("content") || name.equals(VECTOR_FIELD)) {
+                continue;
+            }
+            String value = field.stringValue();
+            if (value != null) {
+                metadata.put(name, value);
+            }
+        }
+        return new VectorChunk(semanticNodeId(document), id, project, part, vector, content, metadata);
+    }
+
+    private String semanticNodeId(Document document) {
+        String storedNodeId = document.get(SEMANTIC_NODE_ID_FIELD);
+        if (storedNodeId != null) {
+            return storedNodeId;
+        }
+        String project = document.get(PxChunk.PXCHUNK_PROJECT);
+        String id = document.get(PxChunk.PXCHUNK_ID);
+        if (id == null) {
+            id = document.get(ID_FIELD);
+        }
+        String partValue = document.get(PxChunk.PXCHUNK_PART);
+        int part = partValue == null ? 0 : Integer.parseInt(partValue);
+        return VectorChunk.nodeIdFor(project == null ? "" : project, id, part);
+    }
+
+    private record ExistingDoc(Document stored, float[] vector) {}
+
+    /**
+     * Replaces the exact (project, logical chunk id, part) records in one commit.
+     * Null vectors/content preserve existing values; null values in the metadata patch remove keys.
+     */
+    public void upsertAll(List<VectorChunk> updates) {
+        if (updates.isEmpty()) {
+            return;
+        }
+
+        lock.writeLock().lock();
+        IndexSearcher searcher = null;
+        try {
+            ensureOpen();
+            Set<String> seenNodeIds = new HashSet<>();
+            for (VectorChunk update : updates) {
+                String expectedNodeId = VectorChunk.nodeIdFor(
+                        update.project(), update.id(), update.part());
+                if (!expectedNodeId.equals(update.nodeId())) {
+                    throw new IllegalArgumentException(
+                            "Semantic node id does not match project/id/part: " + update.nodeId());
+                }
+                if (!seenNodeIds.add(update.nodeId())) {
+                    throw new IllegalArgumentException("Duplicate semantic node id: " + update.nodeId());
+                }
+            }
+
+            searcher = getSearcher();
+            List<Document> documents = new ArrayList<>(updates.size());
+            for (VectorChunk update : updates) {
+                ExistingDoc existing = findExisting(
+                        searcher, update.project(), update.id(), update.part());
+                float[] vector = update.vector();
+                String content = update.content();
+                if (existing != null) {
+                    if (vector == null) {
+                        vector = existing.vector();
+                    }
+                    if (content == null) {
+                        content = existing.stored().get("content");
+                    }
+                } else if (vector == null) {
+                    throw new IllegalArgumentException(
+                            "A new document requires a vector: " + update.nodeId());
+                }
+
+                if (vector == null) {
+                    throw new IllegalStateException(
+                            "Existing document has no vector: " + update.nodeId());
+                }
+                validateDimension(Embedding.from(vector));
+
+                Map<String, String> metadata = mergeMetadata(
+                        existing == null ? null : existing.stored(), update.metadata());
+                metadata.put(PxChunk.PXCHUNK_ID, update.id());
+                metadata.put(PxChunk.PXCHUNK_PROJECT, update.project());
+                metadata.put(PxChunk.PXCHUNK_PART, Integer.toString(update.part()));
+                metadata.put(SEMANTIC_NODE_ID_FIELD, update.nodeId());
+                documents.add(buildDocument(update.id(), vector, content, metadata));
+            }
+
+            for (VectorChunk update : updates) {
+                writer.deleteDocuments(identityQuery(update.project(), update.id(), update.part()));
+            }
+            for (Document document : documents) {
+                writer.addDocument(document);
+            }
+            writer.commit();
+            searcherManager.maybeRefreshBlocking();
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to upsert documents", e);
+        } finally {
+            if (searcher != null) {
+                releaseSearcher(searcher);
+            }
+            lock.writeLock().unlock();
+        }
+    }
+
+    private ExistingDoc findExisting(IndexSearcher searcher, String project, String id, int part)
+            throws IOException {
+        TopDocs topDocs = searcher.search(identityQuery(project, id, part), 2);
+        if (topDocs.totalHits.value() > 1) {
+            throw new IllegalStateException(
+                    "Multiple live documents share semantic identity " + project + "/" + id + "/" + part);
+        }
+        if (topDocs.scoreDocs.length == 0) {
+            return null;
+        }
+
+        int globalDocId = topDocs.scoreDocs[0].doc;
+        for (LeafReaderContext leafContext : searcher.getIndexReader().leaves()) {
+            int localDocId = globalDocId - leafContext.docBase;
+            LeafReader leaf = leafContext.reader();
+            if (localDocId < 0 || localDocId >= leaf.maxDoc()) {
+                continue;
+            }
+            Bits liveDocs = leaf.getLiveDocs();
+            if (liveDocs != null && !liveDocs.get(localDocId)) {
+                return null;
+            }
+
+            FloatVectorValues values = leaf.getFloatVectorValues(VECTOR_FIELD);
+            if (values == null) {
+                return new ExistingDoc(searcher.storedFields().document(globalDocId), null);
+            }
+            KnnVectorValues.DocIndexIterator vectors = values.iterator();
+            float[] vector = vectors.advance(localDocId) == localDocId
+                    ? values.vectorValue(vectors.index()).clone()
+                    : null;
+            return new ExistingDoc(searcher.storedFields().document(globalDocId), vector);
+        }
+        return null;
+    }
+
+    private Map<String, String> mergeMetadata(Document existing, Map<String, String> provided) {
+        Map<String, String> merged = new HashMap<>();
+        if (existing != null) {
+            for (IndexableField field : existing.getFields()) {
+                String name = field.name();
+                if (name.equals(ID_FIELD) || name.equals("content") || name.equals(VECTOR_FIELD)) {
+                    continue;
+                }
+                String value = field.stringValue();
+                if (value != null) {
+                    merged.put(name, value);
+                }
+            }
+        }
+        if (provided != null) {
+            provided.forEach((key, value) -> {
+                if (value == null) {
+                    merged.remove(key);
+                } else {
+                    merged.put(key, value);
+                }
+            });
+        }
+        return merged;
+    }
+
+    private Query identityQuery(String project, String id, int part) {
+        return new BooleanQuery.Builder()
+                .add(new TermQuery(new Term(ID_FIELD, id)), BooleanClause.Occur.FILTER)
+                .add(new TermQuery(new Term(PxChunk.PXCHUNK_PROJECT, project)), BooleanClause.Occur.FILTER)
+                .add(new TermQuery(new Term(PxChunk.PXCHUNK_PART, Integer.toString(part))),
+                        BooleanClause.Occur.FILTER)
+                .build();
+    }
+
+    private Document buildDocument(String id, float[] vector, String content, Map<String, String> metadata) {
+        Document document = new Document();
+        document.add(new KnnFloatVectorField(VECTOR_FIELD, vector, VectorSimilarityFunction.COSINE));
+        document.add(new StringField(ID_FIELD, id, Field.Store.YES));
+        if (content != null) {
+            document.add(new TextField("content", content, Field.Store.YES));
+        }
+        metadata.forEach((key, value) -> {
+            if (value != null) {
+                document.add(new StringField(key, value, Field.Store.NO));
+                document.add(new StoredField(key, value));
+            }
+        });
+        return document;
+    }
+
+    /**
+     * Returns live documents with an exact stored field value, optionally filtered further.
+     * The vector is omitted because these metadata views do not need it.
+     */
+    public List<VectorChunk> searchByMetadata(String field, String value, Filter projectFilter, int max) {
+        if (max < 1) {
+            return List.of();
+        }
+        ensureOpen();
+        IndexSearcher searcher = null;
+        try {
+            searcher = getSearcher();
+            BooleanQuery.Builder query = new BooleanQuery.Builder()
+                    .add(new TermQuery(new Term(field, value)), BooleanClause.Occur.MUST);
+            if (projectFilter != null) {
+                query.add(LuceneFilterConverter.convert(projectFilter), BooleanClause.Occur.FILTER);
+            }
+            TopDocs topDocs = searcher.search(query.build(), max);
+            List<VectorChunk> chunks = new ArrayList<>(topDocs.scoreDocs.length);
+            for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                Document document = searcher.storedFields().document(scoreDoc.doc);
+                chunks.add(toVectorChunk(document, null));
+            }
+            return chunks;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to search by metadata", e);
+        } finally {
+            if (searcher != null) {
+                releaseSearcher(searcher);
+            }
+        }
+    }
+
+    /** Counts every live stored-field value, optionally restricted by a Lucene filter. */
+    public Map<String, Long> countByMetadata(String field, Filter projectFilter) {
+        ensureOpen();
+        IndexSearcher searcher = null;
+        try {
+            searcher = getSearcher();
+            Query query = projectFilter == null
+                    ? new MatchAllDocsQuery()
+                    : LuceneFilterConverter.convert(projectFilter);
+            int maxDoc = searcher.getIndexReader().maxDoc();
+            Map<String, Long> counts = new LinkedHashMap<>();
+            if (maxDoc == 0) {
+                return counts;
+            }
+            TopDocs topDocs = searcher.search(query, maxDoc);
+            for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                String value = searcher.storedFields().document(scoreDoc.doc).get(field);
+                if (value != null) {
+                    counts.merge(value, 1L, Long::sum);
+                }
+            }
+            return counts;
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to count by metadata", e);
+        } finally {
+            if (searcher != null) {
+                releaseSearcher(searcher);
+            }
+        }
     }
 
     private double normalizeScore(float rawScore) {
@@ -302,8 +717,9 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
 
     @Override
     public void removeAll(Filter filter) {
-        ensureOpen();
+        lock.writeLock().lock();
         try {
+            ensureOpen();
             Query luceneQuery = LuceneFilterConverter.convert(filter);
             writer.deleteDocuments(luceneQuery);
             writer.commit();
@@ -312,6 +728,8 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             searcherManager.maybeRefreshBlocking();
         } catch (IOException e) {
             throw new RuntimeException("Failed to remove documents", e);
+        } finally {
+            lock.writeLock().unlock();
         }
     }
 

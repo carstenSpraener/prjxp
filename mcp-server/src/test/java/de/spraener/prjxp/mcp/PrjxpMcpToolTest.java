@@ -42,12 +42,15 @@ class PrjxpMcpToolTest {
     private FileListService fileListService;
     @Mock
     private FileGraphService fileGraphService;
+    @Mock
+    private SemanticGraphService semanticGraphService;
 
     private PrjxpMcpTool tool;
 
     @BeforeEach
     void setUp() {
-        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService, projectRegistry, fileListService, fileGraphService);
+        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService,
+                projectRegistry, fileListService, fileGraphService, semanticGraphService);
     }
 
     @Test

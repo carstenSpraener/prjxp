@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.md;
 
 import de.spraener.prjxp.common.model.DocWindower;
+import de.spraener.prjxp.common.graph.GraphMetadata;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -93,13 +94,20 @@ public class MarkdownRetriever implements GoldenRetriever {
         return prompt;
     }
 
-    /** POINTERS layer: a {@code readFile} pointer for the doc file; {@code ""} when the chunk has no file. */
+    /** POINTERS layer: a {@code readFile} pointer and, when indexed, its semantic graph pointer. */
     private String pointerFor(PxChunk chunk) {
         String file = chunk.getFile();
         if (file == null || file.isBlank()) {
             return "";
         }
-        return "\n## " + file + "\n→ readFile(\"" + file + "\")\n";
+        StringBuilder pointer = new StringBuilder("\n## " + file + "\n→ readFile(\"" + file + "\")\n");
+        String clusterId = chunk.getMetadata().get(GraphMetadata.SEMANTIC_CLUSTER_ID);
+        String nodeId = chunk.getMetadata().get(GraphMetadata.SEMANTIC_NODE_ID);
+        if (clusterId != null && !clusterId.isBlank() && nodeId != null && !nodeId.isBlank()) {
+            pointer.append("[semantic-cluster:").append(clusterId).append("]\n")
+                    .append("→ semanticGraphNode(\"").append(nodeId).append("\")\n");
+        }
+        return pointer.toString();
     }
 
     @Override

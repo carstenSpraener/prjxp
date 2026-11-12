@@ -1,6 +1,7 @@
 package de.spraener.prjxp.gldrtrvr.text;
 
 import de.spraener.prjxp.common.model.DocWindower;
+import de.spraener.prjxp.common.graph.GraphMetadata;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
@@ -103,14 +104,24 @@ public class TextRetriever implements GoldenRetriever {
      */
     private String pointerFor(PxChunk chunk) {
         String file = chunk.getFile();
+        String base;
         if (file != null && !file.isBlank()) {
-            return "\n## " + file + "\n→ readFile(\"" + file + "\")\n";
+            base = "\n## " + file + "\n→ readFile(\"" + file + "\")\n";
+        } else {
+            String parent = chunk.getParent();
+            base = isDependencyChunk(chunk) && parent != null && !parent.isBlank()
+                    ? "\n## " + parent + "\n→ graphNode(\"" + parent + "\")\n"
+                    : "";
         }
-        String parent = chunk.getParent();
-        if (isDependencyChunk(chunk) && parent != null && !parent.isBlank()) {
-            return "\n## " + parent + "\n→ graphNode(\"" + parent + "\")\n";
+        if (base.isEmpty()) {
+            return "";
         }
-        return "";
+        String clusterId = chunk.getMetadata().get(GraphMetadata.SEMANTIC_CLUSTER_ID);
+        String nodeId = chunk.getMetadata().get(GraphMetadata.SEMANTIC_NODE_ID);
+        if (clusterId == null || clusterId.isBlank() || nodeId == null || nodeId.isBlank()) {
+            return base;
+        }
+        return base + "[semantic-cluster:" + clusterId + "]\n→ semanticGraphNode(\"" + nodeId + "\")\n";
     }
 
     /** The de-duplication key for a pointer: the file path, or the parent for a dependency chunk. */

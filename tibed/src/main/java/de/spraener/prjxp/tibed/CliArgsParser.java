@@ -86,6 +86,12 @@ public class CliArgsParser {
         if (cmd.hasOption("no-encrypt")) {
             cfg.getTransfer().setEncrypt(TransferEncryptMode.FALSE);
         }
+        if (cmd.hasOption("no-semantic-graph")) {
+            cfg.getSemanticGraph().setEnabled(false);
+        }
+        if (cmd.hasOption("calibrate")) {
+            cfg.getSemanticGraph().setCalibrate(true);
+        }
         TransferConfigValidator.validate(cfg.getTransfer());
     }
 
@@ -123,6 +129,14 @@ public class CliArgsParser {
         options.addOption(Option.builder()
                 .longOpt("no-encrypt")
                 .desc("force plaintext output, even if a transfer password is available.")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("no-semantic-graph")
+                .desc("skip semantic graph clustering and index write-back.")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("calibrate")
+                .desc("run the gamma calibration sweep without writing cluster metadata.")
                 .build());
         options.addOption(Option.builder("h")
                 .longOpt("help")

@@ -18,6 +18,12 @@ import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
 import de.spraener.prjxp.mcp.PrjxpToolDocs;
 import de.spraener.prjxp.mcp.ProjectSummary;
+import de.spraener.prjxp.mcp.SemanticClusterSummary;
+import de.spraener.prjxp.mcp.SemanticClusterView;
+import de.spraener.prjxp.mcp.SemanticMember;
+import de.spraener.prjxp.mcp.SemanticNeighbor;
+import de.spraener.prjxp.mcp.SemanticNodeView;
+import de.spraener.prjxp.mcp.SemanticOverviewView;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -60,7 +66,8 @@ class PrjxpToolRegistrationTest {
     void registersAllTools() {
         assertThat(registry.getTools()).extracting(ToolDefinition::getName)
                 .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles",
-                        "graphFile", "graphNode", "graphCluster", "graphClusterOverview");
+                        "graphFile", "graphNode", "graphCluster", "graphClusterOverview",
+                        "semanticGraphCluster", "semanticGraphNode", "semanticGraphOverview");
     }
 
     @Test
@@ -68,7 +75,7 @@ class PrjxpToolRegistrationTest {
         // The second run hits name collisions — they must be logged, not thrown
         registration.registerTools();
 
-        assertThat(registry.getTools()).hasSize(10);
+        assertThat(registry.getTools()).hasSize(13);
     }
 
     @Test
@@ -93,22 +100,30 @@ class PrjxpToolRegistrationTest {
                 .filter(s -> s.name().equals("graphClusterOverview")).findFirst().orElseThrow();
         assertThat(graphClusterOverview.parameters().required()).containsExactly("project");
         assertThat(graphClusterOverview.parameters().properties()).containsKeys("project", "topN");
+
+        ToolSpecification semanticNode = specs.stream()
+                .filter(s -> s.name().equals("semanticGraphNode")).findFirst().orElseThrow();
+        assertThat(semanticNode.parameters().required()).containsExactly("nodeId", "project");
+        assertThat(semanticNode.parameters().properties()).containsKeys("nodeId", "project", "maxEdges");
     }
 
     @Test
     void descriptionsShareTheSingleSourceOfTruth() {
         // The hub chat path must carry exactly the same tool text as the MCP path (PrjxpToolDocs).
-        Map<String, String> expected = Map.of(
-                "vectorSearch", PrjxpToolDocs.VECTOR_SEARCH,
-                "grep", PrjxpToolDocs.GREP,
-                "readFile", PrjxpToolDocs.READ_FILE,
-                "readBySignature", PrjxpToolDocs.READ_BY_SIGNATURE,
-                "listProjects", PrjxpToolDocs.LIST_PROJECTS,
-                "listFiles", PrjxpToolDocs.LIST_FILES,
-                "graphFile", PrjxpToolDocs.GRAPH_FILE,
-                "graphNode", PrjxpToolDocs.GRAPH_NODE,
-                "graphCluster", PrjxpToolDocs.GRAPH_CLUSTER,
-                "graphClusterOverview", PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW);
+        Map<String, String> expected = Map.ofEntries(
+                Map.entry("vectorSearch", PrjxpToolDocs.VECTOR_SEARCH),
+                Map.entry("grep", PrjxpToolDocs.GREP),
+                Map.entry("readFile", PrjxpToolDocs.READ_FILE),
+                Map.entry("readBySignature", PrjxpToolDocs.READ_BY_SIGNATURE),
+                Map.entry("listProjects", PrjxpToolDocs.LIST_PROJECTS),
+                Map.entry("listFiles", PrjxpToolDocs.LIST_FILES),
+                Map.entry("graphFile", PrjxpToolDocs.GRAPH_FILE),
+                Map.entry("graphNode", PrjxpToolDocs.GRAPH_NODE),
+                Map.entry("graphCluster", PrjxpToolDocs.GRAPH_CLUSTER),
+                Map.entry("graphClusterOverview", PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW),
+                Map.entry("semanticGraphCluster", PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER),
+                Map.entry("semanticGraphNode", PrjxpToolDocs.SEMANTIC_GRAPH_NODE),
+                Map.entry("semanticGraphOverview", PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW));
 
         for (ToolSpecification spec : registry.specifications()) {
             assertThat(spec.description())
@@ -467,6 +482,54 @@ class PrjxpToolRegistrationTest {
                 .isEqualTo("ERROR: Graph nicht verfügbar, bitte reindexieren");
     }
 
+    @Test
+    void semanticGraphClusterToolFormatsMembers() {
+        when(mcpTool.semanticGraphCluster(eq("s3"), eq("demo"), eq(5)))
+                .thenReturn(new SemanticClusterView("semantic", "demo", "s3", 1,
+                        List.of(new SemanticMember("node-1", "src/A.md", "text/markdown", "preview")), null));
+
+        String result = execute("semanticGraphCluster",
+                Map.of("clusterId", "s3", "project", "demo", "topN", 5));
+
+        assertThat(result).contains("Semantic cluster: s3", "Total members: 1", "node-1", "preview");
+        verify(mcpTool).semanticGraphCluster("s3", "demo", 5);
+    }
+
+    @Test
+    void semanticGraphNodeToolFormatsNeighbours() {
+        when(mcpTool.semanticGraphNode(eq("node-1"), eq("demo"), eq(5)))
+                .thenReturn(new SemanticNodeView("semantic", "demo", "node-1", "src/A.md",
+                        "text/markdown", "s3",
+                        List.of(new SemanticNeighbor("node-2", "src/B.java", "text/x-java-code", 0.96)), null));
+
+        String result = execute("semanticGraphNode",
+                Map.of("nodeId", "node-1", "project", "demo", "maxEdges", 5));
+
+        assertThat(result).contains("Semantic node: node-1", "Semantic cluster: s3", "node-2",
+                "score=0.9600", "src/B.java");
+        verify(mcpTool).semanticGraphNode("node-1", "demo", 5);
+    }
+
+    @Test
+    void semanticGraphOverviewToolFormatsSummaryAndWarning() {
+        when(mcpTool.semanticGraphOverview("demo", 3))
+                .thenReturn(new SemanticOverviewView("semantic", "demo", 1,
+                        List.of(new SemanticClusterSummary("s3", 2, List.of("a.md", "B.java"))),
+                        "model-v1", "sidecar warning", null));
+
+        String result = execute("semanticGraphOverview", Map.of("project", "demo", "topN", 3));
+
+        assertThat(result).contains("Semantic clusters: 1", "Embedding model: model-v1",
+                "sidecar warning", "s3 (2 members)");
+        verify(mcpTool).semanticGraphOverview("demo", 3);
+    }
+
+    @Test
+    void semanticGraphClusterRequiresClusterId() {
+        assertThat(execute("semanticGraphCluster", Map.of("project", "demo")))
+                .isEqualTo("ERROR: 'clusterId' parameter is required for semanticGraphCluster.");
+    }
+
     // ==================== argument coercion & truncation ====================
 
     @Test
@@ -496,4 +559,3 @@ class PrjxpToolRegistrationTest {
         assertThat(PrjxpToolRegistration.truncate(null, 10)).isEqualTo("(null)");
     }
 }
-

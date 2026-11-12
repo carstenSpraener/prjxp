@@ -14,6 +14,10 @@ import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
 import de.spraener.prjxp.mcp.PrjxpToolDocs;
 import de.spraener.prjxp.mcp.ProjectSummary;
+import de.spraener.prjxp.mcp.SemanticClusterView;
+import de.spraener.prjxp.mcp.SemanticNeighbor;
+import de.spraener.prjxp.mcp.SemanticNodeView;
+import de.spraener.prjxp.mcp.SemanticOverviewView;
 import dev.langchain4j.agent.tool.ToolSpecification;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import jakarta.annotation.PostConstruct;
@@ -29,7 +33,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Registers the ten prjxp tools in the central {@link ToolRegistry} so that they are
+ * Registers the thirteen prjxp tools in the central {@link ToolRegistry} so that they are
  * available for native function calling — executed in-process as plain Java calls on
  * {@link PrjxpMcpTool}, without a JSON-RPC round trip.
  * <p>
@@ -62,6 +66,9 @@ public class PrjxpToolRegistration {
         register(graphNodeTool());
         register(graphClusterTool());
         register(graphClusterOverviewTool());
+        register(semanticGraphClusterTool());
+        register(semanticGraphNodeTool());
+        register(semanticGraphOverviewTool());
     }
 
     private void register(ToolDefinition tool) {
@@ -341,7 +348,141 @@ public class PrjxpToolRegistration {
                 }, spec);
     }
 
+    private ToolDefinition semanticGraphClusterTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("semanticGraphCluster")
+                .description(PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("clusterId", "Semantic cluster id (sN).")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("topN", "Top members to return (default 10, max 50).")
+                        .required("clusterId", "project")
+                        .build())
+                .build();
+        return new ToolDefinition("semanticGraphCluster", spec.description(),
+                Map.of("clusterId", "Semantic cluster id", "project", "Required project name",
+                        "topN", "Number of members to return"),
+                params -> {
+                    String clusterId = string(params, "clusterId");
+                    if (clusterId == null) {
+                        return "ERROR: 'clusterId' parameter is required for semanticGraphCluster.";
+                    }
+                    return formatSemanticCluster(mcpTool.semanticGraphCluster(
+                            clusterId, string(params, "project"), integer(params, "topN")));
+                }, spec);
+    }
+
+    private ToolDefinition semanticGraphNodeTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("semanticGraphNode")
+                .description(PrjxpToolDocs.SEMANTIC_GRAPH_NODE)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("nodeId", "Semantic node id from a semantic pointer or graph result.")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("maxEdges", "Maximum neighbours (default 20, max 100).")
+                        .required("nodeId", "project")
+                        .build())
+                .build();
+        return new ToolDefinition("semanticGraphNode", spec.description(),
+                Map.of("nodeId", "Semantic node id", "project", "Required project name",
+                        "maxEdges", "Maximum neighbours to return"),
+                params -> {
+                    String nodeId = string(params, "nodeId");
+                    if (nodeId == null) {
+                        return "ERROR: 'nodeId' parameter is required for semanticGraphNode.";
+                    }
+                    return formatSemanticNode(mcpTool.semanticGraphNode(
+                            nodeId, string(params, "project"), integer(params, "maxEdges")));
+                }, spec);
+    }
+
+    private ToolDefinition semanticGraphOverviewTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("semanticGraphOverview")
+                .description(PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("topN", "Clusters to return (default 10, max 50).")
+                        .required("project")
+                        .build())
+                .build();
+        return new ToolDefinition("semanticGraphOverview", spec.description(),
+                Map.of("project", "Required project name", "topN", "Number of clusters to return"),
+                params -> formatSemanticOverview(mcpTool.semanticGraphOverview(
+                        string(params, "project"), integer(params, "topN"))), spec);
+    }
+
     // ==================== Result formatting ====================
+
+    private String formatSemanticCluster(SemanticClusterView view) {
+        if (view == null) {
+            return "No semantic cluster view returned.";
+        }
+        if (view.error() != null) {
+            return "ERROR: " + view.error();
+        }
+        StringBuilder result = new StringBuilder()
+                .append("Project: ").append(view.project())
+                .append("\nSemantic cluster: ").append(view.clusterId())
+                .append("\nTotal members: ").append(view.totalMembers()).append("\n");
+        for (var member : view.members()) {
+            result.append("  - ").append(member.id());
+            if (member.file() != null) result.append(" (").append(member.file()).append(")");
+            if (member.mime() != null) result.append(" [").append(member.mime()).append("]");
+            if (member.preview() != null && !member.preview().isBlank()) {
+                result.append("\n    ").append(member.preview());
+            }
+            result.append("\n");
+        }
+        return truncate(result.toString(), SEARCH_RESULT_CAP);
+    }
+
+    private String formatSemanticNode(SemanticNodeView view) {
+        if (view == null) {
+            return "No semantic node view returned.";
+        }
+        if (view.error() != null) {
+            return "ERROR: " + view.error();
+        }
+        StringBuilder result = new StringBuilder()
+                .append("Project: ").append(view.project())
+                .append("\nSemantic node: ").append(view.nodeId());
+        if (view.file() != null) result.append("\nFile: ").append(view.file());
+        if (view.mime() != null) result.append("\nMIME: ").append(view.mime());
+        if (view.clusterId() != null) result.append("\nSemantic cluster: ").append(view.clusterId());
+        result.append("\nNeighbours:\n");
+        for (SemanticNeighbor neighbor : view.neighbors()) {
+            result.append("  - ").append(neighbor.id())
+                    .append(" score=").append(String.format(java.util.Locale.ROOT, "%.4f", neighbor.score()));
+            if (neighbor.file() != null) result.append(" (").append(neighbor.file()).append(")");
+            result.append("\n");
+        }
+        return truncate(result.toString(), SEARCH_RESULT_CAP);
+    }
+
+    private String formatSemanticOverview(SemanticOverviewView view) {
+        if (view == null) {
+            return "No semantic overview returned.";
+        }
+        if (view.error() != null) {
+            return "ERROR: " + view.error();
+        }
+        StringBuilder result = new StringBuilder()
+                .append("Project: ").append(view.project())
+                .append("\nSemantic clusters: ").append(view.totalClusters());
+        if (view.model() != null) result.append("\nEmbedding model: ").append(view.model());
+        if (view.warning() != null) result.append("\nWarning: ").append(view.warning());
+        result.append("\n");
+        for (var cluster : view.clusters()) {
+            result.append("  - ").append(cluster.clusterId()).append(" (")
+                    .append(cluster.size()).append(" members)");
+            if (!cluster.topFiles().isEmpty()) {
+                result.append(": ").append(String.join(", ", cluster.topFiles()));
+            }
+            result.append("\n");
+        }
+        return truncate(result.toString(), SEARCH_RESULT_CAP);
+    }
 
     private String formatFileList(FileListResult result) {
         if (result == null || result.files().isEmpty()) {
@@ -575,7 +716,4 @@ public class PrjxpToolRegistration {
         return text.substring(0, maxChars) + "\n... [truncated, total " + text.length() + " chars]";
     }
 }
-
-
-
 

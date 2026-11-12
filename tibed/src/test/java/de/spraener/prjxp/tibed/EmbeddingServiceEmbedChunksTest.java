@@ -7,6 +7,7 @@ import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
+import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -52,7 +53,8 @@ class EmbeddingServiceEmbedChunksTest {
         transferPasswordResolver = mock(TransferPasswordResolver.class);
         storeIdChecker = mock(StoreIdChecker.class);
         cfg = new PrjXPConfig();
-        uut = new EmbeddingService(logService, objMapper, embedder, storeSupplier, streamProvider, transferPasswordResolver, storeIdChecker, cfg);
+        uut = new EmbeddingService(logService, objMapper, embedder, storeSupplier, streamProvider,
+                transferPasswordResolver, storeIdChecker, cfg, mock(SemanticGraphBatch.class));
         store = mock(EmbeddingStore.class);
     }
 

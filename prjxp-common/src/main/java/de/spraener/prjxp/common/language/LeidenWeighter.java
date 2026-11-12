@@ -3,6 +3,7 @@ package de.spraener.prjxp.common.language;
 import de.spraener.prjxp.common.model.CodeGraph;
 import de.spraener.prjxp.common.model.GraphEdge;
 import de.spraener.prjxp.common.model.GraphNode;
+import de.spraener.prjxp.common.model.WeightedEdge;
 import nl.cwts.networkanalysis.Clustering;
 import nl.cwts.networkanalysis.LeidenAlgorithm;
 import nl.cwts.networkanalysis.Network;
@@ -12,6 +13,7 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.stereotype.Component;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
@@ -64,6 +66,76 @@ public class LeidenWeighter implements GraphWeighter {
                 .map(n -> n.withRating(clusters.get(n.id()), weights.getOrDefault(n.id(), 0.0)))
                 .toList();
         return new CodeGraph(rated, graph.edges());
+    }
+
+    /**
+     * Clusters an explicit weighted undirected graph. The supplied gamma is used directly;
+     * the code-graph resolution heuristic remains unchanged.
+     */
+    public Map<String, String> clusterWeighted(
+            List<String> nodeIds, List<WeightedEdge> weightedEdges, double gamma) {
+        Map<String, Integer> index = new LinkedHashMap<>();
+        for (String id : nodeIds) {
+            index.putIfAbsent(id, index.size());
+        }
+
+        int nodeCount = index.size();
+        Map<String, String> clusterOf = new LinkedHashMap<>();
+        if (nodeCount == 0) {
+            return clusterOf;
+        }
+        if (nodeCount == 1) {
+            clusterOf.put(index.keySet().iterator().next(), "s0");
+            return clusterOf;
+        }
+
+        Map<Long, double[]> aggregated = new LinkedHashMap<>();
+        for (WeightedEdge edge : weightedEdges) {
+            Integer first = index.get(edge.source());
+            Integer second = index.get(edge.target());
+            if (first == null || second == null || first.equals(second)) {
+                continue;
+            }
+
+            int low = Math.min(first, second);
+            int high = Math.max(first, second);
+            long key = ((long) low << 32) | (high & 0xffffffffL);
+            double[] entry = aggregated.get(key);
+            if (entry == null) {
+                aggregated.put(key, new double[]{low, high, edge.weight()});
+            } else {
+                entry[2] += edge.weight();
+            }
+        }
+
+        if (aggregated.isEmpty()) {
+            int cluster = 0;
+            for (String id : index.keySet()) {
+                clusterOf.put(id, "s" + cluster++);
+            }
+            return clusterOf;
+        }
+
+        int edgeCount = aggregated.size();
+        LargeIntArray[] edges = {new LargeIntArray(edgeCount), new LargeIntArray(edgeCount)};
+        LargeDoubleArray edgeWeights = new LargeDoubleArray(edgeCount);
+        int edgeIndex = 0;
+        for (double[] entry : aggregated.values()) {
+            edges[0].set(edgeIndex, (int) entry[0]);
+            edges[1].set(edgeIndex, (int) entry[1]);
+            edgeWeights.set(edgeIndex, entry[2]);
+            edgeIndex++;
+        }
+
+        Network network = new Network(nodeCount, false, edges, edgeWeights, false, true);
+        LeidenAlgorithm algorithm = new LeidenAlgorithm(
+                gamma, N_ITERATIONS, RANDOMNESS, new Random(SEED));
+        Clustering clustering = algorithm.findClustering(network);
+        clustering.orderClustersByNNodes();
+        for (Map.Entry<String, Integer> entry : index.entrySet()) {
+            clusterOf.put(entry.getKey(), "s" + clustering.getCluster(entry.getValue()));
+        }
+        return clusterOf;
     }
 
     /** Maps every node id to its Leiden cluster id ({@code c0}, {@code c1}, …). */

@@ -8,6 +8,7 @@ import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
+import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import org.junit.jupiter.api.BeforeEach;
@@ -70,7 +71,9 @@ class EmbeddingServiceForProjectTest {
     @BeforeEach
     void setUp() {
         when(cfg.getTransfer()).thenReturn(new PrjXPConfig.TransferConfig());
-        service = new EmbeddingService(logService, objMapper, embedder, storeSupplier, streamProvider, transferPasswordResolver, storeIdChecker, cfg);
+        service = new EmbeddingService(logService, objMapper, embedder, storeSupplier,
+                streamProvider, transferPasswordResolver, storeIdChecker, cfg,
+                mock(SemanticGraphBatch.class));
     }
 
     private ProjectDefinition projectWithJsonl(String name) throws Exception {

@@ -80,6 +80,13 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                     if (clusterId != null && !clusterId.isBlank()) {
                         nextPrompt += "[cluster:" + clusterId + "]\n";
                     }
+                    String semanticClusterId = pxChunk.getMetadata().get(GraphMetadata.SEMANTIC_CLUSTER_ID);
+                    String semanticNodeId = pxChunk.getMetadata().get(GraphMetadata.SEMANTIC_NODE_ID);
+                    if (semanticClusterId != null && !semanticClusterId.isBlank()
+                            && semanticNodeId != null && !semanticNodeId.isBlank()) {
+                        nextPrompt += "[semantic-cluster:" + semanticClusterId + "]\n";
+                        nextPrompt += "→ semanticGraphNode(\"" + semanticNodeId + "\")\n";
+                    }
                     String file = pxChunk.getFile();
                     if (file != null && !file.isBlank()) {
                         nextPrompt += "→ readFile(\"" + file + "\")\n";

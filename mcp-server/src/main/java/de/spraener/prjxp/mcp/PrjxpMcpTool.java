@@ -34,6 +34,7 @@ public class PrjxpMcpTool {
     private final FileListService fileListService;
 
     private final FileGraphService fileGraphService;
+    private final SemanticGraphService semanticGraphService;
 
     @McpTool(name = "vectorSearch", description = PrjxpToolDocs.VECTOR_SEARCH)
     public String vectorSearch(
@@ -261,6 +262,43 @@ public class PrjxpMcpTool {
             @McpToolParam(description = "Clusters to return (default 10, max 50).", required = false)
             Integer topN) {
         return fileGraphService.graphClusterOverview(project, topN);
+    }
+
+    @McpTool(name = "semanticGraphCluster", description = PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER)
+    public SemanticClusterView semanticGraphCluster(
+            @McpToolParam(description = "Semantic cluster id (sN).", required = true)
+            String clusterId,
+            @McpToolParam(description = "Project name.", required = true)
+            String project,
+            @McpToolParam(description = "Max members, default 10 (max 50).", required = false)
+            Integer topN) {
+        if (StringUtils.isBlank(clusterId)) {
+            return SemanticClusterView.unavailable("Parameter 'clusterId' ist erforderlich.");
+        }
+        return semanticGraphService.semanticCluster(clusterId.trim(), project, topN);
+    }
+
+    @McpTool(name = "semanticGraphNode", description = PrjxpToolDocs.SEMANTIC_GRAPH_NODE)
+    public SemanticNodeView semanticGraphNode(
+            @McpToolParam(description = "Semantic node id.", required = true)
+            String nodeId,
+            @McpToolParam(description = "Project name.", required = true)
+            String project,
+            @McpToolParam(description = "Max neighbours, default 20 (max 100).", required = false)
+            Integer maxEdges) {
+        if (StringUtils.isBlank(nodeId)) {
+            return SemanticNodeView.unavailable("Parameter 'nodeId' ist erforderlich.");
+        }
+        return semanticGraphService.semanticNode(nodeId.trim(), project, maxEdges);
+    }
+
+    @McpTool(name = "semanticGraphOverview", description = PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW)
+    public SemanticOverviewView semanticGraphOverview(
+            @McpToolParam(description = "Project name.", required = true)
+            String project,
+            @McpToolParam(description = "Max clusters, default 10 (max 50).", required = false)
+            Integer topN) {
+        return semanticGraphService.semanticOverview(project, topN);
     }
 
 }

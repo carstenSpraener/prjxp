@@ -46,6 +46,7 @@ public class PrjXPConfig {
     /** Maximum characters returned by the readFile MCP tool (0 = uncapped). Property: prjxp.reader-max-output-chars */
     private int readerMaxOutputChars = 100_000;
     private EmbeddingConfig embedding = new EmbeddingConfig();
+    private SemanticGraphConfig semanticGraph = new SemanticGraphConfig();
     // User-configurable single embedding model (Globals panel)
     private PrjXPEmbeddingModelReference embeddingModel;
 
@@ -79,6 +80,16 @@ public class PrjXPConfig {
          * enough to complete within {@link #timeout}. Only applies to the OpenAI-compatible model.
          */
         private int maxSegmentsPerBatch = 32;
+    }
+
+    @lombok.Data
+    public static class SemanticGraphConfig {
+        private boolean enabled = true;
+        private boolean calibrate;
+        private double gamma = 1.0;
+        private double threshold = 0.85;
+        private int k = 20;
+        private boolean requireMutual = true;
     }
 
     // --- Transfer Sektion (externes Embedding) ---

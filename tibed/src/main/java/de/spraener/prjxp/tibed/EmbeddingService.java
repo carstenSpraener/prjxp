@@ -10,6 +10,7 @@ import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
@@ -19,8 +20,11 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.util.Arrays;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metadataKey;
 
@@ -37,6 +41,7 @@ public class EmbeddingService {
     private final TransferPasswordResolver transferPasswordResolver;
     private final StoreIdChecker storeIdChecker;
     private final PrjXPConfig cfg;
+    private final SemanticGraphBatch semanticGraphBatch;
 
     public void execute() {
         ProjectDefinition pd = cfg.getActiveProject().orElseThrow(()->new IllegalStateException(
@@ -48,6 +53,7 @@ public class EmbeddingService {
 
     /** Runs the embedding pipeline for an explicitly given project + store (hub in-process use). */
     public void executeForProject(ProjectDefinition pd, EmbeddingStore<TextSegment> store) {
+        AtomicBoolean ingestionSucceeded = new AtomicBoolean(true);
         // Free choice per project (prjxp.yaml tibedBatchSize): the embedding provider's own limits apply —
         // a batch it rejects fails per-batch in embedChunk (logged, pipeline continues). Only non-positive
         // values are guarded, since BatchingUtils.pack would divide by zero / allocate negative capacity.
@@ -72,15 +78,26 @@ public class EmbeddingService {
             log.info("Reading JSONL from " + pd.resolvedJsonlFile() + " for project '" + pd.getName() + "': chunk batch " + effectiveBatchSize);
             reader.readChunksFromJsonlStreamBatched(streamProvider.getTransferJsonlStream(pd.resolvedJsonlFile(), password), effectiveBatchSize, this::fromJSONL)
                     .forEach(batch -> {
-                        embedChunk(store, pd.getName(), batch);
+                        if (!embedChunk(store, pd.getName(), batch)) {
+                            ingestionSucceeded.set(false);
+                        }
                     });
-            ;
         } catch (Exception e) {
             logService.error(e, "Error during chunk processing: "+e.getMessage());
+            ingestionSucceeded.set(false);
+        }
+
+        if (ingestionSucceeded.get() && store instanceof LuceneEmbeddingStore luceneStore
+                && cfg.getSemanticGraph().isEnabled()) {
+            try {
+                semanticGraphBatch.run(pd.getName(), luceneStore);
+            } catch (IOException e) {
+                throw new UncheckedIOException("Semantic-graph step failed for " + pd.getName(), e);
+            }
         }
     }
 
-    private void embedChunk(EmbeddingStore<TextSegment> store, String projectName, PxChunk[] chunks) {
+    private boolean embedChunk(EmbeddingStore<TextSegment> store, String projectName, PxChunk[] chunks) {
         try {
             embedder.execute(store, Arrays.asList(chunks)
                     .stream()
@@ -89,8 +106,10 @@ public class EmbeddingService {
                     .toList()
             );
             log.info("Embedded chunk batch of " + chunks.length + " chunks for project " + projectName);
+            return true;
         } catch (Exception e) {
             logService.error(e, "Embedding of chunk batch failed: %s", e.getMessage());
+            return false;
         }
     }
 
