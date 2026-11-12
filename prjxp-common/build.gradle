@@ -39,3 +39,26 @@ publishing {
 test {
     useJUnitPlatform()
 }
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            element = 'CLASS'
+            includes = [
+                    'de.spraener.prjxp.common.config.EnvFileWriter',
+                    'de.spraener.prjxp.common.config.ConfigFileLocator',
+                    'de.spraener.prjxp.common.config.ConfigSecretResolver',
+                    'de.spraener.prjxp.common.config.PrjXPConfig',
+                    'de.spraener.prjxp.common.config.PrjXPConfig$SetupState',
+                    'de.spraener.prjxp.common.PrjXPCli',
+                    'de.spraener.prjxp.common.embedding.EmbeddingModelFactory*',
+                    'de.spraener.prjxp.common.embedding.EmbeddingModelConfig'
+            ]
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
+}

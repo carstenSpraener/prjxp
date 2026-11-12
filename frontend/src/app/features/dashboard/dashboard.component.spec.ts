@@ -6,8 +6,11 @@ import { ChartPanelComponent } from '../../components/chart-panel/chart-panel.co
 import { SystemHealth } from '../../models/system-health.model';
 import { QueryStats } from '../../models/query-stats.model';
 import { ProjectInfo } from '../../models/project-info.model';
-import { of } from 'rxjs';
+import { of, Subject, throwError } from 'rxjs';
 import { vi } from 'vitest';
+import { SetupService } from '../../services/setup.service';
+import { signal } from '@angular/core';
+import { provideRouter } from '@angular/router';
 
 describe('DashboardComponent', () => {
   let component: DashboardComponent;
@@ -25,7 +28,9 @@ describe('DashboardComponent', () => {
     await TestBed.configureTestingModule({
       imports: [DashboardComponent],
       providers: [
-        { provide: DashboardService, useValue: mockDashboardService }
+        { provide: DashboardService, useValue: mockDashboardService },
+        provideRouter([]),
+        {provide: SetupService, useValue: {status: signal(null), error: signal(null), loading: signal(false), getStatus: () => of(null)}}
       ]
     }).compileComponents();
 
@@ -35,6 +40,34 @@ describe('DashboardComponent', () => {
 
   it('should create', () => {
     expect(component).toBeTruthy();
+  });
+  it('renders populated health, query summary and project rows', () => {
+    const service = TestBed.inject(DashboardService);
+    vi.mocked(service.pollHealth).mockReturnValue(of({cpuUsage: .2, totalMemory: 16, usedMemory: 8,
+      freeDiskSpace: 10, totalDiskSpace: 20, activeConnections: 2}));
+    vi.mocked(service.pollQueryStats).mockReturnValue(of({totalQueries: 9, avgResponseTimeMs: 12,
+      p95ResponseTimeMs: 22, cacheHits: 5, cacheMisses: 4, recentQueries: []}));
+    vi.mocked(service.pollProjects).mockReturnValue(of([{name: 'demo', status: 'READY', chunkCount: 3,
+      embeddingCount: 3, fileCount: 1, liveUpdate: {status: 'IDLE'}}]));
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Total Queries');
+    expect(fixture.nativeElement.textContent).toContain('demo');
+    expect(fixture.nativeElement.querySelectorAll('tbody tr')).toHaveLength(1);
+    expect(component.queryTimesData()[0].value).toBe(12);
+  });
+  it('renders loading states and tolerates polling failures', () => {
+    const service = TestBed.inject(DashboardService);
+    vi.mocked(service.pollHealth).mockReturnValue(new Subject<SystemHealth>());
+    vi.mocked(service.pollProjects).mockReturnValue(new Subject<ProjectInfo[]>());
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Loading system health');
+    expect(fixture.nativeElement.textContent).toContain('Loading projects');
+    vi.mocked(service.pollHealth).mockReturnValue(throwError(() => ({})));
+    vi.mocked(service.pollQueryStats).mockReturnValue(throwError(() => ({})));
+    vi.mocked(service.pollProjects).mockReturnValue(throwError(() => ({})));
+    component.ngOnInit();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('No projects found');
   });
 
   it('ngOnInit should set up observables', () => {

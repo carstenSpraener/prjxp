@@ -1,78 +1,26 @@
-<div class="editor-dialog glass-panel" (click)="$event.stopPropagation()">
-  <div class="dialog-header">
-    <h2 class="text-cyan mb-0">Edit Embedding Model</h2>
-    <button class="btn-close" (click)="onClose()">✕</button>
-  </div>
-
+<div class="editor-dialog glass-panel" role="dialog" aria-label="Edit Embedding Model">
+  <div class="dialog-header"><h2>Edit Embedding Model</h2><button type="button" class="btn-close" (click)="onClose()" [disabled]="busy || testLoading || listLoading">✕</button></div>
   <form [formGroup]="form" (ngSubmit)="onSave()" class="editor-form">
-    <!-- Server Type -->
-    <div class="form-group">
-      <label class="form-label text-secondary">Server Type <span class="text-magenta">*</span></label>
-      <select formControlName="serverType" class="form-input">
-        @for (option of serverTypeOptions; track option.value) {
-          <option [value]="option.value">{{ option.label }}</option>
-        }
-      </select>
-    </div>
-
-    <!-- Provider URL -->
-    <div class="form-group">
-      <label class="form-label text-secondary">Provider URL <span class="text-magenta">*</span></label>
-      <input type="text" formControlName="providerUrl" class="form-input" placeholder="http://localhost:11434" />
-      @if (form.get('providerUrl')?.errors?.['required'] && form.get('providerUrl')?.touched) {
-        <span class="form-error text-magenta">Provider URL is required</span>
-      } @if (form.get('providerUrl')?.errors?.['urlOrEnv'] && form.get('providerUrl')?.touched) {
-        <span class="form-error text-magenta">Use http(s)://... or &#36;&#123;ENV_VAR&#125;</span>
-      }
-      <span class="text-secondary">Supports env placeholders like &#36;&#123;MY_EMBEDDING_URL&#125; or &#36;&#123;MY_EMBEDDING_URL:http://localhost:1234/v1&#125;.</span>
-    </div>
-
-    <!-- Model Name -->
-    <div class="form-group">
-      <label class="form-label text-secondary">Model Name <span class="text-magenta">*</span></label>
-      <input type="text" formControlName="modelName" class="form-input" list="embedding-model-names" placeholder="e.g. mxbai-embed-large" />
-      <datalist id="embedding-model-names">
-        @for (m of availableModels; track m) { <option [value]="m"></option> }
-      </datalist>
-      @if (form.get('modelName')?.invalid && form.get('modelName')?.touched) {
-        <span class="form-error text-magenta">Model name is required</span>
-      }
-    </div>
-
-    <!-- API Key (always visible) -->
-    <div class="form-group">
-      <label class="form-label text-secondary">API Key / Token</label>
-      <input type="password" formControlName="apiKey" class="form-input" autocomplete="new-password" placeholder="Enter API key or ENV placeholder (optional)" />
-      <span class="text-secondary">Prefer env placeholders (&#36;&#123;MY_API_KEY&#125;) instead of plain secrets; placeholders are resolved at runtime.</span>
-    </div>
-
-    <!-- Timeout -->
-    <div class="form-group">
-      <label class="form-label text-secondary">Timeout (seconds) <span class="text-magenta">*</span></label>
-      <input type="number" formControlName="timeoutSecs" class="form-input" min="10" />
-      @if (form.get('timeoutSecs')?.errors?.['min'] && form.get('timeoutSecs')?.touched) {
-        <span class="form-error text-magenta">Minimum timeout is 10 seconds</span>
-      }
-    </div>
-
-    @if (testResult) {
-      <div class="form-group">
-        <div class="test-result" [class.test-success]="testResult.success" [class.test-error]="!testResult.success">
-          <span>{{ testResult.message }} ({{ testResult.latencyMs }}ms)</span>
-          @if (testResult.dimensions != null) { <div class="test-response">Vector dimensions: {{ testResult.dimensions }}</div> }
-        </div>
-      </div>
-    }
-    @if (listError) {
-      <div class="form-group"><div class="test-result test-error">{{ listError }}</div></div>
-    }
-
-    <!-- Action Buttons -->
+    <label class="form-group">Type<select formControlName="type" class="form-input"><option value="OLLAMA">Ollama</option><option value="OPEN_AI">OpenAI</option></select></label>
+    <p>Gemeinsame Laufzeitkonfiguration. Alte Gemini/Custom-Embedding-Typen werden nicht unterstützt; bitte Ollama oder OpenAI-kompatiblen Anbieter wählen.</p>
+    <label class="form-group">API base URL<input formControlName="apiBaseURL" class="form-input" placeholder="http://localhost:11434"></label>
+    <label class="form-group">Model name<input formControlName="modelName" class="form-input" list="embedding-model-names"></label>
+    <datalist id="embedding-model-names">@for(model of availableModels; track model) { <option [value]="model"></option> }</datalist>
+    <label class="form-group">API key<input type="password" autocomplete="new-password" formControlName="apiKey" class="form-input"></label>
+    <p>ENV-Referenzen oder ******** behalten bestehende Secrets. Leer löscht das Secret.</p>
+    <label class="form-group">Dimensions override<input type="number" min="1" step="1" formControlName="dimensions" class="form-input"></label>
+    <label class="form-group">Timeout (seconds)<input type="number" min="1" step="1" formControlName="timeout" class="form-input"></label>
+    <label class="form-group">Max segments per batch<input type="number" min="1" step="1" formControlName="maxSegmentsPerBatch" class="form-input"></label>
+    @if(form.invalid) { <p role="status">HTTP(S)/ENV-URL, Modellname und positive ganze Zahlen prüfen.</p> }
+    @if(!testId) { <p>Speichern ohne passenden Test erlaubt; geänderte Einstellungen machen den Setup-Nachweis ungültig.</p> }
+    @if(testResult) { <p aria-live="polite" [class.test-error]="!testResult.success">{{ testResult.success ? 'Test erfolgreich' : testResult.message }} — {{ testResult.latencyMs }} ms @if(testId) { ({{ testResult.dimensions }} Dimensionen) }</p> }
+    @if(listError) { <p role="alert">{{ listError }}</p> }
+    @if(saveError) { <p role="alert">{{ saveError }}</p> }
     <div class="form-actions">
-      <button type="button" class="btn-cancel" (click)="onClose()">Cancel</button>
-      <button type="button" class="btn-test" (click)="onTest()" [disabled]="testLoading">{{ testLoading ? 'Testing…' : 'Test' }}</button>
-      <button type="button" class="btn-test" (click)="onReadModels()" [disabled]="listLoading">{{ listLoading ? 'Loading…' : 'Read Models' }}</button>
-      <button type="submit" class="btn-save text-cyan">Save</button>
+      <button type="button" (click)="onClose()" [disabled]="busy || testLoading || listLoading">Cancel</button>
+      <button type="button" (click)="onTest()" [disabled]="busy || testLoading || listLoading || form.invalid || !configVersion">{{ testLoading ? 'Testing…' : 'Test' }}</button>
+      <button type="button" (click)="onReadModels()" [disabled]="busy || testLoading || listLoading">{{ listLoading ? 'Loading…' : 'Read Models' }}</button>
+      <button type="submit" [disabled]="busy || testLoading || listLoading || form.invalid || !configVersion">Save</button>
     </div>
   </form>
 </div>

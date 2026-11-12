@@ -1,11 +1,13 @@
 package de.spraener.prjxp.mcp.hub.github;
 
 import de.spraener.prjxp.mcp.hub.HubProjectRegistry;
+import de.spraener.prjxp.mcp.hub.HubProperties;
 import de.spraener.prjxp.mcp.hub.PipelineOrchestrator;
 import de.spraener.prjxp.mcp.hub.ProjectEntry;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -27,7 +29,7 @@ public class GithubUpdater {
     private final GithubGitClient git;
     private final PipelineOrchestrator orchestrator;
     private final GithubOperationTracker tracker;
-    private final TokenCipher tokenCipher;
+    private final GithubTokenResolver tokens;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "prjxp-github-update");
@@ -37,8 +39,14 @@ public class GithubUpdater {
 
     public GithubUpdater(HubProjectRegistry registry, GithubGitClient git, PipelineOrchestrator orchestrator,
                          GithubOperationTracker tracker, TokenCipher tokenCipher) {
+        this(registry, git, orchestrator, tracker, new GithubTokenResolver(new HubProperties(), tokenCipher));
+    }
+
+    @Autowired
+    public GithubUpdater(HubProjectRegistry registry, GithubGitClient git, PipelineOrchestrator orchestrator,
+                         GithubOperationTracker tracker, GithubTokenResolver tokens) {
         this.registry = registry; this.git = git; this.orchestrator = orchestrator; this.tracker = tracker;
-        this.tokenCipher = tokenCipher;
+        this.tokens = tokens;
     }
 
     @PreDestroy
@@ -75,11 +83,7 @@ public class GithubUpdater {
             log.info("Skipping GitHub update of '{}' — not a GitHub project", name);
             return false;
         }
-        String token = null;
-        String encrypted = entry.getDefinition().getGitToken();
-        if (encrypted != null && !encrypted.isBlank()) {
-            token = tokenCipher.decrypt(encrypted);   // throws TokenCipherException on missing/wrong key
-        }
+        String token = tokens.forProject(entry.getDefinition().getGitToken());
         git.pull(entry.getRootDir(), token);
         orchestrator.enqueueForced(name);
         log.info("Updated GitHub project '{}' (pulled + re-embedded)", name);

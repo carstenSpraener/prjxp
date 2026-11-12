@@ -1,0 +1,14 @@
+<form [formGroup]="form">
+  <label>Embedding type<select formControlName="type"><option value="OLLAMA">Ollama</option><option value="OPEN_AI">OpenAI</option></select></label>
+  <label>API base URL<input formControlName="apiBaseURL" placeholder="http://localhost:11434"></label>
+  <label>Model name<input formControlName="modelName"></label>
+  <label>API key<input type="password" autocomplete="new-password" formControlName="apiKey"></label>
+  <p>HTTP(S) oder ENV-Referenz. ******** / ENV behalten Secrets; leer löscht. OpenAI benötigt je nach Anbieter einen API-Key.</p>
+  <label>Dimensions override<input type="number" min="1" step="1" formControlName="dimensions"></label>
+  <label>Timeout (seconds)<input type="number" min="1" step="1" formControlName="timeout"></label>
+  <label>Max segments per batch<input type="number" min="1" step="1" formControlName="maxSegmentsPerBatch"></label>
+  <button type="button" (click)="requestTest()" [disabled]="busy || form.invalid">Test Embedding</button>
+  @if (testValid) { <p>Gespeicherter Stand / aktueller Entwurf getestet.</p> }
+  @if (result) { <p aria-live="polite">{{ result.success ? 'Test erfolgreich' : 'Test fehlgeschlagen' }} — {{ result.latencyMs }} ms @if(result.success) { ({{ result.dimensions }} Dimensionen) }</p> }
+  @if(form.invalid) { <p role="status">Bitte URL, Namen und positive ganze Zahlen prüfen.</p> }
+</form>

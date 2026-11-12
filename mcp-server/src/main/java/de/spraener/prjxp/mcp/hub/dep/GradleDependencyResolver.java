@@ -22,7 +22,7 @@ public class GradleDependencyResolver implements DependencyResolver {
 
     private final BuildGradleParser parser;
     private final int gradleTimeoutSeconds;
-    private final Path gradleExecutable;
+    private final List<String> gradleExecutable;
 
     /** Production: uses {@code gradle} from the PATH. */
     public GradleDependencyResolver(BuildGradleParser parser, int gradleTimeoutSeconds) {
@@ -31,9 +31,13 @@ public class GradleDependencyResolver implements DependencyResolver {
 
     /** Testable: explicit executable (e.g. a fake {@code gradle} script in a temp dir). */
     public GradleDependencyResolver(BuildGradleParser parser, int gradleTimeoutSeconds, Path gradleExecutable) {
+        this(parser, gradleTimeoutSeconds, List.of(gradleExecutable.toString()));
+    }
+
+    GradleDependencyResolver(BuildGradleParser parser, int gradleTimeoutSeconds, List<String> gradleExecutable) {
         this.parser = parser;
         this.gradleTimeoutSeconds = gradleTimeoutSeconds;
-        this.gradleExecutable = gradleExecutable;
+        this.gradleExecutable = List.copyOf(gradleExecutable);
     }
 
     @Override
@@ -59,8 +63,9 @@ public class GradleDependencyResolver implements DependencyResolver {
     /** Run {@code gradle -q dependencies --configuration runtimeClasspath --console plain}. */
     private String runGradleDependencies(Path projectRoot) throws MavenDependencyException {
         try {
-            ProcessBuilder pb = new ProcessBuilder(
-                    gradleExecutable.toString(), "-q", "dependencies", "--configuration", "runtimeClasspath", "--console", "plain")
+            List<String> command = new ArrayList<>(gradleExecutable);
+            command.addAll(List.of("-q", "dependencies", "--configuration", "runtimeClasspath", "--console", "plain"));
+            ProcessBuilder pb = new ProcessBuilder(command)
                     .directory(projectRoot.toFile())
                     .redirectErrorStream(true);
             Process p = pb.start();

@@ -8,11 +8,12 @@ import { SystemHealth } from '../../models/system-health.model';
 import { QueryStats } from '../../models/query-stats.model';
 import { ProjectInfo } from '../../models/project-info.model';
 import { Observable, catchError, map, of, tap } from 'rxjs';
+import { SetupStatusBannerComponent } from '../../components/setup-status-banner/setup-status-banner.component';
 
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [AsyncPipe, MetricCardComponent, ChartPanelComponent, LiveUpdateIndicatorComponent],
+  imports: [AsyncPipe, MetricCardComponent, ChartPanelComponent, LiveUpdateIndicatorComponent, SetupStatusBannerComponent],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.css'
 })

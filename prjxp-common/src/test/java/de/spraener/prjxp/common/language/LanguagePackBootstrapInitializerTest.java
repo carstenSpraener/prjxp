@@ -61,7 +61,7 @@ class LanguagePackBootstrapInitializerTest {
     void defaultDirectoryIsLanguagePacks() {
         LanguagePackPluginLoader loader = initializeAndRefresh(newContext(Map.of()));
 
-        assertThat(loader.pluginDir().getPath()).isEqualTo(LanguagePackBootstrapInitializer.DEFAULT_DIR);
+        assertThat(loader.pluginDir().toPath()).isEqualTo(Path.of(LanguagePackBootstrapInitializer.DEFAULT_DIR));
         assertThat(loader.loadedPacks()).isEmpty();
     }
 

@@ -6,6 +6,7 @@ import de.spraener.prjxp.mcp.hub.HubProperties;
 import de.spraener.prjxp.mcp.hub.HubProjectRegistry;
 import de.spraener.prjxp.mcp.hub.PipelineOrchestrator;
 import de.spraener.prjxp.mcp.hub.ProjectEntry;
+import de.spraener.prjxp.mcp.testsupport.TestProcess;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -13,6 +14,7 @@ import org.springframework.mock.env.MockEnvironment;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.List;
 import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -25,7 +27,7 @@ import static org.mockito.Mockito.when;
 
 /**
  * Phase 03: {@link GithubUpdater} — pull + forced re-embed, gated on the {@code gitUrl} origin
- * marker. Uses a REAL {@link GithubGitClient} pointed at a fake {@code git} shell script and
+ * marker. Uses a REAL {@link GithubGitClient} pointed at a fake {@code git} JVM process and
  * Mockito mocks for the registry + orchestrator.
  */
 class GithubUpdaterTest {
@@ -68,29 +70,11 @@ class GithubUpdaterTest {
      * next to the {@code -C} dir. When {@code fail} is set it exits non-zero (after writing the
      * marker, so the async test can observe the task ran).
      */
-    private Path writeFakeGit(String fileName, boolean fail) throws Exception {
-        Path script = tempDir.resolve(fileName);
-        Files.writeString(script, """
-                #!/bin/sh
-                for a in "$@"; do
-                  if [ "$a" = "pull" ]; then
-                    dir=""
-                    prev=""
-                    for b in "$@"; do
-                      if [ "$prev" = "-C" ]; then dir="$b"; fi
-                      prev="$b"
-                    done
-                    touch "$dir/.git-pull-ran"
-                    exit %d
-                  fi
-                done
-                exit 1
-                """.formatted(fail ? 1 : 0));
-        script.toFile().setExecutable(true);
-        return script;
+    private List<String> writeFakeGit(String fileName, boolean fail) throws Exception {
+        return TestProcess.git(tempDir.resolve(fileName), fail ? 1 : 0, null);
     }
 
-    private GithubUpdater updaterWith(Path gitScript) {
+    private GithubUpdater updaterWith(List<String> gitScript) {
         return new GithubUpdater(registry, new GithubGitClient(new HubProperties(), gitScript),
                 orchestrator, tracker, tokenCipher);
     }
@@ -99,27 +83,8 @@ class GithubUpdaterTest {
      * Like {@link #writeFakeGit} but additionally appends every invocation's arguments to
      * {@code logFile} — lets the tests assert on the {@code http.extraheader} token flow.
      */
-    private Path writeFakeGitWithArgLog(String fileName, boolean fail, Path logFile) throws Exception {
-        Path script = tempDir.resolve(fileName);
-        Files.writeString(script, """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                for a in "$@"; do
-                  if [ "$a" = "pull" ]; then
-                    dir=""
-                    prev=""
-                    for b in "$@"; do
-                      if [ "$prev" = "-C" ]; then dir="$b"; fi
-                      prev="$b"
-                    done
-                    touch "$dir/.git-pull-ran"
-                    exit %d
-                  fi
-                done
-                exit 1
-                """.formatted(logFile.toString(), fail ? 1 : 0));
-        script.toFile().setExecutable(true);
-        return script;
+    private List<String> writeFakeGitWithArgLog(String fileName, boolean fail, Path logFile) throws Exception {
+        return TestProcess.git(tempDir.resolve(fileName), fail ? 1 : 0, logFile);
     }
 
     @Test

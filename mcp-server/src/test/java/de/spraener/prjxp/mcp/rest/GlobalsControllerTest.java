@@ -1,309 +1,130 @@
 package de.spraener.prjxp.mcp.rest;
 
-import de.spraener.prjxp.common.config.PrjXPChatModelReference;
-import de.spraener.prjxp.common.config.PrjXPEmbeddingModelReference;
-import org.junit.jupiter.api.AfterEach;
+import de.spraener.prjxp.common.chat.KIChatModelProvider;
+import de.spraener.prjxp.common.model.ModelLister;
+import de.spraener.prjxp.mcp.setup.*;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.List;
-import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
 class GlobalsControllerTest {
+    @TempDir Path directory;
+    GlobalsTestFixture f;
+    MockMvc mvc;
+    ModelLister models;
 
-    private MockMvc mockMvc;
-    private GlobalsService globalsService;
-    private PrjXPChatModelReference sampleModel;
-    private Path yamlPath;
-
-    @BeforeEach
-    void setUp() throws Exception {
-        globalsService = mock(GlobalsService.class);
-
-        sampleModel = new PrjXPChatModelReference();
-        sampleModel.setStereoType("default");
-        sampleModel.setServerType("ollama");
-        sampleModel.setModelName("llama3");
-        sampleModel.setProviderUrl("http://localhost:11434");
-        sampleModel.setTimeoutSecs(60);
-        sampleModel.setTemperature(0.7);
-
-        yamlPath = Files.createTempFile("test-application", ".yaml");
-
-        GlobalsController controller = new GlobalsController(globalsService);
-        mockMvc = standaloneSetup(controller).build();
+    @BeforeEach void start() throws Exception {
+        f = new GlobalsTestFixture(directory);
+        models = mock(ModelLister.class);
+        var service = new GlobalsService(f.globals, mock(SetupModelTestService.class), mock(KIChatModelProvider.class), models);
+        mvc = standaloneSetup(new GlobalsController(service)).build();
     }
 
-    @AfterEach
-    void cleanup() throws Exception {
-        Files.deleteIfExists(yamlPath);
+    String etag() throws Exception {
+        return mvc.perform(get("/api/globals/embedding-config")).andExpect(status().isOk())
+                .andReturn().getResponse().getHeader("ETag");
     }
 
-    @Test
-    void getChatModels_returnsList() throws Exception {
-        sampleModel.setApiKey("sk-real-secret");
-        when(globalsService.getChatModels()).thenReturn(List.of(sampleModel));
-
-        mockMvc.perform(get("/api/globals/chat-models"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].stereoType").value("default"))
-                .andExpect(jsonPath("$[0].serverType").value("ollama"))
-                .andExpect(jsonPath("$[0].modelName").value("llama3"))
-                .andExpect(jsonPath("$[0].apiKey").value("********"));
+    @Test void freshGetHasQuotedETagAndLegacyShapeRemainsSeparate() throws Exception {
+        String version = etag();
+        assertThat(version).startsWith("\"").endsWith("\"");
+        mvc.perform(get("/api/globals/embedding-model")).andExpect(status().isOk())
+                .andExpect(header().string("ETag", version)).andExpect(jsonPath("$.serverType").value("ollama"))
+                .andExpect(jsonPath("$.modelName").value("original")).andExpect(jsonPath("$.type").doesNotExist());
+        mvc.perform(get("/api/globals/chat-models")).andExpect(status().isOk())
+                .andExpect(header().string("ETag", version)).andExpect(jsonPath("$[0].prompt").value("instructions"));
     }
 
-    @Test
-    void getChatModels_returnsEnvPlaceholderForApiKey() throws Exception {
-        sampleModel.setApiKey("${OPENAI_API_KEY}");
-        when(globalsService.getChatModels()).thenReturn(List.of(sampleModel));
-
-        mockMvc.perform(get("/api/globals/chat-models"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].apiKey").value("${OPENAI_API_KEY}"));
+    @Test void mutationsRequireIfMatchAndStaleVersionsAreExplicitConflict() throws Exception {
+        mvc.perform(put("/api/globals/embedding-config").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().is(428)).andExpect(jsonPath("$.code").value("PRECONDITION_REQUIRED"));
+        mvc.perform(post("/api/globals/chat-models").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().is(428));
+        mvc.perform(put("/api/globals/chat-models/default").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().is(428));
+        mvc.perform(delete("/api/globals/chat-models/default")).andExpect(status().is(428));
+        mvc.perform(put("/api/globals/embedding-model").contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().is(428));
+        mvc.perform(put("/api/globals/embedding-config").header("If-Match", "\"old\"")
+                .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFIG_CHANGED"));
     }
 
-    @Test
-    void getChatModels_masksConcreteArgsButReturnsEnvPlaceholders() throws Exception {
-        sampleModel.setArgs(Map.of(
-                "api-key", "azure-secret-value",
-                "Authorization", "Bearer actual-token",
-                "header-token", "${HEADER_TOKEN}",
-                "api-version", "2024-10-21"));
-        when(globalsService.getChatModels()).thenReturn(List.of(sampleModel));
-
-        mockMvc.perform(get("/api/globals/chat-models"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].args.api-key").value("********"))
-                .andExpect(jsonPath("$[0].args.Authorization").value("********"))
-                .andExpect(jsonPath("$[0].args.header-token").value("${HEADER_TOKEN}"))
-                .andExpect(jsonPath("$[0].args.api-version").value("********"));
+    @Test void newEmbeddingUpdateSupportsPartialMaskClearAndTestReceiptHeader() throws Exception {
+        var proof = f.embeddingReceipt(f.embeddingChange("tested"));
+        mvc.perform(put("/api/globals/embedding-config").header("If-Match", "\"" + proof.configVersion() + "\"")
+                .header("X-Setup-Test-Id", proof.testId()).contentType(MediaType.APPLICATION_JSON).content("""
+                        {"modelName":"tested","apiKey":"new-secret"}
+                        """))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("TEST_RECEIPT_INVALID"));
+        mvc.perform(put("/api/globals/embedding-config").header("If-Match", etag())
+                .header("X-Setup-Test-Id", proof.testId()).contentType(MediaType.APPLICATION_JSON).content("{\"modelName\":\"tested\"}"))
+                .andExpect(status().isOk()).andExpect(header().exists("ETag")).andExpect(jsonPath("$.modelName").value("tested"));
+        mvc.perform(put("/api/globals/embedding-config").header("If-Match", etag())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"apiKey\":\"literal\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.apiKey").value(org.hamcrest.Matchers.startsWith("${PRJXP_EMBEDDING_API_KEY_")));
+        assertThat(Files.readString(f.yaml)).doesNotContain("literal");
     }
 
-    @Test
-    void getChatModels_emptyList() throws Exception {
-        when(globalsService.getChatModels()).thenReturn(List.of());
-
-        mockMvc.perform(get("/api/globals/chat-models"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$").isArray())
-                .andExpect(jsonPath("$").isEmpty());
+    @Test void legacyPutSupportsOnlyRuntimeProvidersAndKeepsOldSection() throws Exception {
+        mvc.perform(put("/api/globals/embedding-model").header("If-Match", etag())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"serverType\":\"gemini\"}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_CONFIG"));
+        mvc.perform(put("/api/globals/embedding-model").header("If-Match", etag())
+                .contentType(MediaType.APPLICATION_JSON).content("{\"modelName\":\"legacy-client\",\"timeoutSecs\":40}"))
+                .andExpect(status().isOk()).andExpect(header().exists("ETag"))
+                .andExpect(jsonPath("$.modelName").value("legacy-client")).andExpect(jsonPath("$.timeoutSecs").value(40));
+        assertThat(Files.readString(f.yaml)).contains("untouched");
     }
 
-    @Test
-    void createChatModel_createsNew() throws Exception {
-        when(globalsService.createChatModel(any(PrjXPChatModelReference.class))).thenReturn(sampleModel);
-
-        String body = """
-                {
-                    "stereoType": "coder",
-                    "serverType": "lm-studio",
-                    "modelName": "gemma-4-31b",
-                    "providerUrl": "http://localhost:1234"
-                }
-                """;
-
-        mockMvc.perform(post("/api/globals/chat-models")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stereoType").value("default"));
-
-        verify(globalsService).createChatModel(any(PrjXPChatModelReference.class));
+    @Test void chatCrudETagsAndAllRequestFieldsRoundtripThroughRealStore() throws Exception {
+        var created = mvc.perform(post("/api/globals/chat-models").header("If-Match", etag())
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"stereoType":"reviewer","serverType":"ollama","modelName":"model","apiKey":"key",
+                         "providerUrl":"http://localhost:11434","timeoutSecs":30,"temperature":0.5,
+                         "prompt":"review instructions","args":{"keep":"value","api-key":"argument-key"}}
+                        """))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.stereoType").value("reviewer"))
+                .andExpect(jsonPath("$.prompt").value("review instructions")).andReturn().getResponse();
+        var updated = mvc.perform(put("/api/globals/chat-models/reviewer").header("If-Match", created.getHeader("ETag"))
+                .contentType(MediaType.APPLICATION_JSON).content("{\"modelName\":\"updated\",\"apiKey\":\"********\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.modelName").value("updated"))
+                .andExpect(jsonPath("$.serverType").value("ollama")).andReturn().getResponse();
+        mvc.perform(delete("/api/globals/chat-models/reviewer").header("If-Match", updated.getHeader("ETag")))
+                .andExpect(status().isOk()).andExpect(header().exists("ETag"));
+        mvc.perform(get("/api/globals/chat-models")).andExpect(jsonPath("$.length()").value(2));
     }
 
-    @Test
-    void updateChatModel_updatesExisting() throws Exception {
-        when(globalsService.updateChatModel(eq("default"), any(GlobalsService.PrjXPChatModelRequest.class)))
-                .thenReturn(sampleModel);
-
-        String body = """
-                {
-                    "modelName": "llama3.1",
-                    "temperature": 0.8
-                }
-                """;
-
-        mockMvc.perform(put("/api/globals/chat-models/default")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.stereoType").value("default"));
-
-        verify(globalsService).updateChatModel(eq("default"), any(GlobalsService.PrjXPChatModelRequest.class));
+    @Test void malformedBodiesAndInvalidETagFormsAreRedacted() throws Exception {
+        mvc.perform(put("/api/globals/embedding-config").header("If-Match", etag())
+                .contentType(MediaType.APPLICATION_JSON).content("{secret-body"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.code").value("INVALID_REQUEST"))
+                .andExpect(content().string(org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("secret-body"))));
+        for (String header : new String[]{"*", "W/\"version\"", "\"one\",\"two\""}) {
+            mvc.perform(put("/api/globals/embedding-config").header("If-Match", header)
+                    .contentType(MediaType.APPLICATION_JSON).content("{}")).andExpect(status().isConflict());
+        }
     }
 
-    @Test
-    void deleteChatModel_deletes() throws Exception {
-        doNothing().when(globalsService).deleteChatModel("default");
-
-        mockMvc.perform(delete("/api/globals/chat-models/default"))
-                .andExpect(status().isOk());
-
-        verify(globalsService).deleteChatModel("default");
-    }
-
-    @Test
-    void getServerTypes_returnsList() throws Exception {
-        when(globalsService.getServerTypes()).thenReturn(List.of("ollama", "openapi", "lm-studio", "gemini", "custom"));
-
-        mockMvc.perform(get("/api/globals/server-types"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0]").value("ollama"))
-                .andExpect(jsonPath("$[1]").value("openapi"))
-                .andExpect(jsonPath("$[4]").value("custom"));
-    }
-
-    @Test
-    void createChatModel_withArgs() throws Exception {
-        PrjXPChatModelReference modelWithArgs = new PrjXPChatModelReference();
-        modelWithArgs.setStereoType("custom-model");
-        modelWithArgs.setServerType("custom");
-        modelWithArgs.setModelName("my-model");
-        modelWithArgs.setProviderUrl("http://custom.example.com");
-        modelWithArgs.setArgs(Map.of("header", "value"));
-
-        when(globalsService.createChatModel(any(PrjXPChatModelReference.class))).thenReturn(modelWithArgs);
-
-        String body = """
-                {
-                    "stereoType": "custom-model",
-                    "serverType": "custom",
-                    "modelName": "my-model",
-                    "providerUrl": "http://custom.example.com",
-                    "args": {"header": "value"}
-                }
-                """;
-
-        mockMvc.perform(post("/api/globals/chat-models")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.args.header").value("********"));
-    }
-
-    @Test
-    void getEmbeddingModel_returnsDefaultWhenNotConfigured() throws Exception {
-        PrjXPEmbeddingModelReference defaultModel = new PrjXPEmbeddingModelReference();
-        when(globalsService.getEmbeddingModel()).thenReturn(defaultModel);
-
-        mockMvc.perform(get("/api/globals/embedding-model"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.serverType").value("ollama"))
-                .andExpect(jsonPath("$.timeoutSecs").value(60));
-    }
-
-    @Test
-    void getEmbeddingModel_returnsConfiguredModel() throws Exception {
-        PrjXPEmbeddingModelReference configured = new PrjXPEmbeddingModelReference();
-        configured.setServerType("openai");
-        configured.setProviderUrl("https://api.openai.com/v1");
-        configured.setModelName("text-embedding-3-small");
-        configured.setApiKey("sk-test-key");
-        configured.setTimeoutSecs(30);
-        when(globalsService.getEmbeddingModel()).thenReturn(configured);
-
-        mockMvc.perform(get("/api/globals/embedding-model"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.serverType").value("openai"))
-                .andExpect(jsonPath("$.providerUrl").value("https://api.openai.com/v1"))
-                .andExpect(jsonPath("$.modelName").value("text-embedding-3-small"))
-                .andExpect(jsonPath("$.apiKey").value("********"))
-                .andExpect(jsonPath("$.timeoutSecs").value(30));
-    }
-
-    @Test
-    void updateEmbeddingModel_savesAndPersists() throws Exception {
-        PrjXPEmbeddingModelReference saved = new PrjXPEmbeddingModelReference();
-        saved.setServerType("gemini");
-        saved.setProviderUrl("https://generativelanguage.googleapis.com/v1beta");
-        saved.setModelName("embedding-gecko-001");
-        saved.setApiKey("gemini-key-123");
-        saved.setTimeoutSecs(45);
-        when(globalsService.updateEmbeddingModel(any(GlobalsService.PrjXPEmbeddingModelRequest.class)))
-                .thenReturn(saved);
-
-        String body = """
-                {
-                    "serverType": "gemini",
-                    "providerUrl": "https://generativelanguage.googleapis.com/v1beta",
-                    "modelName": "embedding-gecko-001",
-                    "apiKey": "gemini-key-123",
-                    "timeoutSecs": 45
-                }
-                """;
-
-        mockMvc.perform(put("/api/globals/embedding-model")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.serverType").value("gemini"))
-                .andExpect(jsonPath("$.modelName").value("embedding-gecko-001"));
-
-        verify(globalsService).updateEmbeddingModel(any(GlobalsService.PrjXPEmbeddingModelRequest.class));
-    }
-
-    @Test
-    void updateEmbeddingModel_partialUpdate() throws Exception {
-        PrjXPEmbeddingModelReference saved = new PrjXPEmbeddingModelReference();
-        saved.setServerType("ollama");
-        saved.setModelName("nomic-embed-text");
-        when(globalsService.updateEmbeddingModel(any(GlobalsService.PrjXPEmbeddingModelRequest.class)))
-                .thenReturn(saved);
-
-        String body = """
-                {
-                    "modelName": "nomic-embed-text"
-                }
-                """;
-
-        mockMvc.perform(put("/api/globals/embedding-model")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.modelName").value("nomic-embed-text"));
-
-        verify(globalsService).updateEmbeddingModel(any(GlobalsService.PrjXPEmbeddingModelRequest.class));
-    }
-
-    @Test
-    void getChatModels_returnsPromptUnmasked() throws Exception {
-        sampleModel.setPrompt("Be concise.");
-        when(globalsService.getChatModels()).thenReturn(List.of(sampleModel));
-
-        mockMvc.perform(get("/api/globals/chat-models"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0].prompt").value("Be concise."));
-    }
-
-    @Test
-    void updateChatModel_passesPromptToService() throws Exception {
-        when(globalsService.updateChatModel(eq("default"), any(GlobalsService.PrjXPChatModelRequest.class)))
-                .thenReturn(sampleModel);
-
-        String body = """
-                { "prompt": "Be concise." }
-                """;
-
-        mockMvc.perform(put("/api/globals/chat-models/default")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(body))
-                .andExpect(status().isOk());
-
-        org.mockito.ArgumentCaptor<GlobalsService.PrjXPChatModelRequest> captor =
-                org.mockito.ArgumentCaptor.forClass(GlobalsService.PrjXPChatModelRequest.class);
-        verify(globalsService).updateChatModel(eq("default"), captor.capture());
-        assertThat(captor.getValue().getPrompt()).isEqualTo("Be concise.");
+    @Test void serverTypesAndRawListParametersRemainCompatible() throws Exception {
+        when(models.listModels("ollama", "http://models", "", 30)).thenReturn(java.util.List.of("available"));
+        mvc.perform(get("/api/globals/server-types")).andExpect(status().isOk()).andExpect(jsonPath("$").isArray());
+        mvc.perform(get("/api/globals/embedding-model/models").param("serverType", "ollama")
+                .param("providerUrl", "http://models").param("apiKey", ""))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0]").value("available"));
+        mvc.perform(get("/api/globals/chat-models/models").param("serverType", "ollama")
+                .param("providerUrl", "http://models").param("apiKey", "").param("stereoType", "coder"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[0]").value("available"));
     }
 }

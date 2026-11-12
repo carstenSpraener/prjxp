@@ -12,6 +12,7 @@ dependencies {
     // Hub-Registry kompiliert direkt gegen LuceneEmbeddingStore/LucenePxChunkDao
     // (golden-retriever exposes lucene-store only as `implementation` — not visible to mcp-server)
     implementation project(':lucene-store')
+    implementation libs.bundles.lucene
     // In-Prozess-Pipeline fuer den Hub-Modus (Phase 01 DockerHub)
     implementation project(':chunk-norris')
     implementation project(':tibed')
@@ -24,6 +25,7 @@ dependencies {
     // Spring Boot
     implementation libs.spring.boot.starter.json
     implementation libs.spring.boot.starter.web
+    implementation libs.spring.boot.starter.validation
     implementation libs.spring.boot.openapi.starter.webmvc.ui
     implementation libs.bundles.spring.ai
 
@@ -97,6 +99,39 @@ test {
     // (the property is only consumed by that test, via @DynamicPropertySource).
     dependsOn 'stageLpGdscriptPlugin'
     systemProperty 'prjxp.gdscript.e2e.pluginDir', lpGdscriptStageDir.get().asFile.absolutePath
+}
+
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            element = 'CLASS'
+            includes = [
+                    'de.spraener.prjxp.mcp.setup.*',
+                    'de.spraener.prjxp.mcp.hub.HubProperties',
+                    'de.spraener.prjxp.mcp.hub.HubConfig',
+                    'de.spraener.prjxp.mcp.hub.HubPropertiesConfiguration',
+                    'de.spraener.prjxp.mcp.WebConfig',
+                    'de.spraener.prjxp.mcp.rest.GlobalsService',
+                    'de.spraener.prjxp.mcp.rest.GlobalsController*',
+                    'de.spraener.prjxp.mcp.hub.github.TokenCipher',
+                    'de.spraener.prjxp.mcp.hub.github.TokenCipherException',
+                    'de.spraener.prjxp.mcp.hub.github.GithubTokenResolver*',
+                    'de.spraener.prjxp.mcp.hub.github.GithubApiClient*',
+                    'de.spraener.prjxp.mcp.hub.github.GithubUserResult',
+                    'de.spraener.prjxp.mcp.hub.github.GithubImporter',
+                    'de.spraener.prjxp.mcp.hub.github.GithubUpdater',
+                    'de.spraener.prjxp.mcp.hub.github.GithubGitClient',
+                    'de.spraener.prjxp.mcp.hub.dep.GradleDependencyResolver',
+                    'de.spraener.prjxp.mcp.hub.dep.MavenCoordinates',
+                    'de.spraener.prjxp.mcp.hub.dep.MavenCentralClient'
+            ]
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
 }
 
 jar {

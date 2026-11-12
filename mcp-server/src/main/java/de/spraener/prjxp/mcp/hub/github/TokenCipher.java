@@ -1,6 +1,7 @@
 package de.spraener.prjxp.mcp.hub.github;
 
 import de.spraener.prjxp.mcp.hub.HubProperties;
+import de.spraener.prjxp.mcp.setup.ConfigurationStore;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.env.Environment;
@@ -40,16 +41,39 @@ public class TokenCipher {
 
     private final HubProperties props;
     private final Environment env;
+    private final ConfigurationStore store;
+
+    public TokenCipher(HubProperties props, Environment env) {
+        this(props, env, null);
+    }
 
     @Autowired
-    public TokenCipher(HubProperties props, Environment env) {
+    public TokenCipher(HubProperties props, Environment env, ConfigurationStore store) {
         this.props = props;
         this.env = env;
+        this.store = store;
     }
 
     /** The key passphrase from the configured env var, or {@code null} when unset/blank. */
-    char[] resolveKey() {
-        String key = env.getProperty(props.getGithubTokenKeyEnv());
+    char[] resolveKey() throws TokenCipherException {
+        return resolveKey(currentKeyName());
+    }
+
+    private String currentKeyName() {
+        return store == null ? props.getGithubTokenKeyEnv()
+                : store.bindForDisplay(store.readSnapshot().root(), "prjxp.hub", HubProperties.class).getGithubTokenKeyEnv();
+    }
+
+    private char[] resolveKey(String name) throws TokenCipherException {
+        if (name == null || !name.matches("[A-Za-z_][A-Za-z0-9_]*")) {
+            throw new TokenCipherException("Invalid token key environment name");
+        }
+        String key;
+        try {
+            key = store == null ? env.getProperty(name) : store.resolve("${" + name + ":}");
+        } catch (java.io.IOException error) {
+            throw new TokenCipherException("Cannot read token key environment");
+        }
         if (key == null || key.isBlank()) {
             return null;
         }
@@ -58,10 +82,14 @@ public class TokenCipher {
 
     /** Encrypts a plaintext token. Throws when no key is configured or on crypto failure. */
     public String encrypt(String plaintext) throws TokenCipherException {
+        return encrypt(plaintext, currentKeyName());
+    }
+
+    public String encrypt(String plaintext, String tokenKeyEnv) throws TokenCipherException {
         if (plaintext == null || plaintext.isBlank()) {
             throw new TokenCipherException("No token to encrypt");
         }
-        char[] key = requireKey();
+        char[] key = requireKey(tokenKeyEnv);
         try {
             byte[] salt = randomBytes(SALT_SIZE);
             byte[] iv = randomBytes(IV_SIZE);
@@ -78,10 +106,14 @@ public class TokenCipher {
 
     /** Decrypts a {@code v1:} ciphertext. Throws on bad version/key/format or auth failure. */
     public String decrypt(String ciphertext) throws TokenCipherException {
+        return decrypt(ciphertext, currentKeyName());
+    }
+
+    public String decrypt(String ciphertext, String tokenKeyEnv) throws TokenCipherException {
         if (ciphertext == null || !ciphertext.startsWith(VERSION_PREFIX)) {
             throw new TokenCipherException("Not a v1 token ciphertext");
         }
-        char[] key = requireKey();
+        char[] key = requireKey(tokenKeyEnv);
         try {
             String[] parts = ciphertext.substring(VERSION_PREFIX.length()).split(":");
             if (parts.length != 3) {
@@ -100,11 +132,11 @@ public class TokenCipher {
         }
     }
 
-    private char[] requireKey() throws TokenCipherException {
-        char[] key = resolveKey();
+    private char[] requireKey(String tokenKeyEnv) throws TokenCipherException {
+        char[] key = resolveKey(tokenKeyEnv);
         if (key == null) {
-            throw new TokenCipherException("No token key configured — set the "
-                    + props.getGithubTokenKeyEnv() + " environment variable");
+            throw new TokenCipherException("MISSING_SECRET", "No token key configured — set the "
+                    + tokenKeyEnv + " environment variable", null);
         }
         return key;
     }

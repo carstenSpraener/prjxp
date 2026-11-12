@@ -1,0 +1,16 @@
+<form [formGroup]="form">
+  <p>Verifizierte Dimension: {{ measuredDimension ?? 'noch nicht bestätigt' }}. Dimension wird automatisch gespeichert.</p>
+  @if(retestRequired) { <p role="status">Batch/Timeout geändert: gesamter Embedding-Kandidat wird vor dem Abschluss erneut getestet.</p> }
+  <label>Vector dimension (must match)<input type="number" min="1" step="1" formControlName="vectorDimension"></label>
+  <label>Max segments per batch<input type="number" min="1" step="1" formControlName="maxSegmentsPerBatch"></label>
+  <label>Embedding timeout (seconds)<input type="number" min="1" step="1" formControlName="embeddingTimeout"></label>
+  <label>Docpipe max threads<input type="number" min="1" step="1" formControlName="docpipeMaxThreads"></label>
+  <label>Reader max output chars (0 = unlimited)<input type="number" min="0" step="1" formControlName="readerMaxOutputChars"></label>
+  <details><summary>Advanced reranking</summary>
+    <label>Floor<input type="number" min="0" max="1" step="0.1" formControlName="graphRerankFloor"></label>
+    <label>Graph boost<input type="number" min="0" step="0.1" formControlName="graphRerankBGraph"></label>
+    <label>Cap<input type="number" min="0.01" step="0.1" formControlName="graphRerankCap"></label>
+    <label>Base weight<input type="number" min="0" step="0.1" formControlName="graphRerankWBase"></label>
+  </details>
+  @if(form.invalid) { <p role="status">Wertebereiche und Dimension prüfen. Kein automatisches Clamping.</p> }
+</form>

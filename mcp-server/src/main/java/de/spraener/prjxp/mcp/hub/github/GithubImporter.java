@@ -10,6 +10,7 @@ import de.spraener.prjxp.mcp.hub.source.GithubSource;
 import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
@@ -39,6 +40,7 @@ public class GithubImporter {
     private final PipelineOrchestrator orchestrator;
     private final GithubOperationTracker tracker;
     private final TokenCipher tokenCipher;
+    private final GithubTokenResolver tokens;
 
     private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> {
         Thread t = new Thread(r, "prjxp-github");
@@ -49,9 +51,18 @@ public class GithubImporter {
     public GithubImporter(HubProperties props, GithubGitClient git, ProjectConfigFileParser configParser,
                           HubProjectRegistry registry, PipelineOrchestrator orchestrator,
                           GithubOperationTracker tracker, TokenCipher tokenCipher) {
+        this(props, git, configParser, registry, orchestrator, tracker, tokenCipher,
+                new GithubTokenResolver(props, tokenCipher));
+    }
+
+    @Autowired
+    public GithubImporter(HubProperties props, GithubGitClient git, ProjectConfigFileParser configParser,
+                          HubProjectRegistry registry, PipelineOrchestrator orchestrator,
+                          GithubOperationTracker tracker, TokenCipher tokenCipher, GithubTokenResolver tokens) {
         this.props = props; this.git = git; this.configParser = configParser;
         this.registry = registry; this.orchestrator = orchestrator; this.tracker = tracker;
         this.tokenCipher = tokenCipher;
+        this.tokens = tokens;
     }
 
     @PreDestroy
@@ -114,9 +125,9 @@ public class GithubImporter {
             // silently re-running the old project (the clone dir would be orphaned).
             throw new IllegalStateException("Project '" + name + "' already exists — delete it first");
         }
-        String trimmedToken = (token == null || token.isBlank()) ? null : token.trim();
-        String encryptedToken = trimmedToken == null ? null : tokenCipher.encrypt(trimmedToken);
-        git.clone(url, dir, trimmedToken);
+        String resolvedToken = tokens.forImport(token);
+        String encryptedToken = resolvedToken == null ? null : tokenCipher.encrypt(resolvedToken);
+        git.clone(url, dir, resolvedToken);
         generateYaml(dir, name, url, encryptedToken);
         if (!registry.entry(name).isPresent()) {
             // SNAPSHOT kind (hub-owned) but source "github" — the source-based vanish filter + the

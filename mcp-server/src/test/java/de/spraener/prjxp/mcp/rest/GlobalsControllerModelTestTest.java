@@ -1,98 +1,75 @@
 package de.spraener.prjxp.mcp.rest;
 
+import de.spraener.prjxp.mcp.setup.*;
+import de.spraener.prjxp.mcp.setup.GlobalsConfigurationService.Versioned;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
-import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import java.util.List;
-
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.nullable;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.setup.MockMvcBuilders.standaloneSetup;
 
 class GlobalsControllerModelTestTest {
-
-    private GlobalsService globalsService;
-    private MockMvc mockMvc;
-
-    @BeforeEach
-    void setUp() {
-        globalsService = mock(GlobalsService.class);
-        mockMvc = MockMvcBuilders.standaloneSetup(new GlobalsController(globalsService)).build();
+    GlobalsService service;
+    MockMvc mvc;
+    @BeforeEach void start() {
+        service = mock(GlobalsService.class);
+        mvc = standaloneSetup(new GlobalsController(service)).build();
     }
 
-    @Test
-    void testChatModel_endpoint() throws Exception {
-        when(globalsService.testChatModel(any())).thenReturn(
-                ModelTestResult.success("Chat test succeeded", 42, "Hello!", null));
-
-        mockMvc.perform(post("/api/globals/chat-models/test")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"stereoType":"default","serverType":"ollama","modelName":"llama3","providerUrl":"http://localhost:11434"}
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.response").value("Hello!"));
+    @Test void newTestReturnsSetupContractWithResponseVersion() throws Exception {
+        when(service.testEmbeddingConfig(any())).thenReturn(new SetupTestResult(true, "ok", 1, null, 64, "receipt", "after"));
+        mvc.perform(post("/api/globals/embedding-config/test").header("If-Match", "\"before\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"configVersion":"before","configuration":{"type":"OLLAMA","modelName":"draft"}}
+                        """))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", "\"after\""))
+                .andExpect(jsonPath("$.testId").value("receipt")).andExpect(jsonPath("$.configVersion").value("after"))
+                .andExpect(jsonPath("$.dimensions").value(64));
     }
 
-    @Test
-    void testEmbeddingModel_endpoint() throws Exception {
-        when(globalsService.testEmbeddingModel(any())).thenReturn(
-                ModelTestResult.success("Embedding test succeeded", 17, null, 1024));
-
-        mockMvc.perform(post("/api/globals/embedding-model/test")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"serverType":"ollama","providerUrl":"http://localhost:11434","modelName":"mxbai-embed-large"}
-                                """))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.success").value(true))
-                .andExpect(jsonPath("$.dimensions").value(1024));
+    @Test void testHeadersRequiredAndEnvelopeVersionMustMatch() throws Exception {
+        for (String path : new String[]{"embedding-config/test", "embedding-model/test", "chat-models/test"}) {
+            mvc.perform(post("/api/globals/" + path).contentType(MediaType.APPLICATION_JSON).content("{}"))
+                    .andExpect(status().is(428));
+        }
+        mvc.perform(post("/api/globals/embedding-config/test").header("If-Match", "\"loaded\"")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"configVersion\":\"different\",\"configuration\":{}}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("CONFIG_CHANGED"));
+        verifyNoInteractions(service);
     }
 
-    @Test
-    void listChatModels_endpoint() throws Exception {
-        when(globalsService.listChatModels(eq("ollama"), eq("http://x"), nullable(String.class), nullable(String.class)))
-                .thenReturn(List.of("a", "b"));
-
-        mockMvc.perform(get("/api/globals/chat-models/models")
-                        .param("serverType", "ollama")
-                        .param("providerUrl", "http://x"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0]").value("a"))
-                .andExpect(jsonPath("$[1]").value("b"));
+    @Test void legacyTestsRetainOnlyModelTestResultFieldsAndQuotedETag() throws Exception {
+        when(service.testEmbeddingModel(eq("version"), any())).thenReturn(new Versioned<>("after",
+                ModelTestResult.success("ok", 2, null, 64)));
+        when(service.testChatModel(eq("version"), any())).thenReturn(new Versioned<>("after",
+                ModelTestResult.failure("redacted failure", 2)));
+        mvc.perform(post("/api/globals/embedding-model/test").header("If-Match", "\"version\"")
+                .contentType(MediaType.APPLICATION_JSON).content("""
+                        {"serverType":"ollama","providerUrl":"http://localhost:11434","modelName":"embed","apiKey":"********","timeoutSecs":25}
+                        """))
+                .andExpect(status().isOk()).andExpect(header().string("ETag", "\"after\""))
+                .andExpect(jsonPath("$.success").value(true)).andExpect(jsonPath("$.dimensions").value(64))
+                .andExpect(jsonPath("$.testId").doesNotExist()).andExpect(jsonPath("$.configVersion").doesNotExist());
+        mvc.perform(post("/api/globals/chat-models/test").header("If-Match", "version")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"stereoType\":\"default\"}"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.message").value("redacted failure")).andExpect(jsonPath("$.testId").doesNotExist());
     }
 
-    @Test
-    void listEmbeddingModels_endpoint() throws Exception {
-        when(globalsService.listEmbeddingModels(eq("ollama"), eq("http://x"), nullable(String.class)))
-                .thenReturn(List.of("mxbai-embed-large"));
-
-        mockMvc.perform(get("/api/globals/embedding-model/models")
-                        .param("serverType", "ollama")
-                        .param("providerUrl", "http://x"))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$[0]").value("mxbai-embed-large"));
-    }
-
-    @Test
-    void listChatModels_customType_returns400() throws Exception {
-        when(globalsService.listChatModels(anyString(), anyString(), nullable(String.class), nullable(String.class)))
-                .thenThrow(new IllegalArgumentException("Model listing is not supported for server type 'custom'"));
-
-        mockMvc.perform(get("/api/globals/chat-models/models")
-                        .param("serverType", "custom")
-                        .param("providerUrl", "http://x"))
-                .andExpect(status().isBadRequest());
+    @Test void setupErrorsUseStableRedactedContractAndIllegalArgumentsNeverReflectMessage() throws Exception {
+        when(service.testEmbeddingModel(anyString(), any())).thenThrow(new SetupException("INDEX_REBUILD_REQUIRED", "embedding", 409, "Reindex explicitly"));
+        mvc.perform(post("/api/globals/embedding-model/test").header("If-Match", "\"version\"")
+                .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.step").value("embedding"))
+                .andExpect(jsonPath("$.code").value("INDEX_REBUILD_REQUIRED"));
+        when(service.testChatModel(anyString(), any())).thenThrow(new IllegalArgumentException("secret-provider-body"));
+        mvc.perform(post("/api/globals/chat-models/test").header("If-Match", "\"version\"")
+                .contentType(MediaType.APPLICATION_JSON).content("{}"))
+                .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Invalid Globals request"));
     }
 }

@@ -94,4 +94,16 @@ class TokenCipherTest {
         assertThatThrownBy(() -> cipher.encrypt(null)).isInstanceOf(TokenCipherException.class);
         assertThatThrownBy(() -> cipher.encrypt("   ")).isInstanceOf(TokenCipherException.class);
     }
+
+    @Test
+    void explicitCandidateKeyDoesNotMutateConfiguredKey() throws Exception {
+        HubProperties properties = new HubProperties();
+        TokenCipher cipher = new TokenCipher(properties, new MockEnvironment()
+                .withProperty(KEY_ENV, "old-key").withProperty("CANDIDATE_KEY", "new-key"));
+        String encrypted = cipher.encrypt("candidate-pat", "CANDIDATE_KEY");
+        assertThat(cipher.decrypt(encrypted, "CANDIDATE_KEY")).isEqualTo("candidate-pat");
+        assertThatThrownBy(() -> cipher.decrypt(encrypted)).isInstanceOf(TokenCipherException.class);
+        assertThat(properties.getGithubTokenKeyEnv()).isEqualTo(KEY_ENV);
+        assertThatThrownBy(() -> cipher.encrypt("pat", "INVALID\nNAME")).isInstanceOf(TokenCipherException.class);
+    }
 }

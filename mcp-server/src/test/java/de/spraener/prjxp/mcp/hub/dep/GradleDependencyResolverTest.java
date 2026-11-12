@@ -1,19 +1,19 @@
 package de.spraener.prjxp.mcp.hub.dep;
 
+import de.spraener.prjxp.mcp.testsupport.TestProcess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Phase 04: {@link GradleDependencyResolver} — runs a fake {@code gradle} executable
- * (a shell script in a temp dir, injected via the test constructor) so no real Gradle
+ * (a JVM subprocess, injected via the test constructor) so no real Gradle
  * build and no network are involved.
  */
 class GradleDependencyResolverTest {
@@ -23,15 +23,12 @@ class GradleDependencyResolverTest {
     @TempDir
     Path tempDir;
 
-    private Path writeExecutable(String name, String script) throws IOException {
-        Path file = tempDir.resolve(name);
-        Files.writeString(file, script);
-        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rwxr-xr-x"));
-        return file;
-    }
-
     private GradleDependencyResolver resolverWith(Path gradleExecutable) {
         return new GradleDependencyResolver(new BuildGradleParser(), TIMEOUT_SECONDS, gradleExecutable);
+    }
+
+    private GradleDependencyResolver resolverWith(List<String> command) {
+        return new GradleDependencyResolver(new BuildGradleParser(), TIMEOUT_SECONDS, command);
     }
 
     private static DependencyResolveConfig config(int maxDepth) {
@@ -59,13 +56,12 @@ class GradleDependencyResolverTest {
 
     @Test
     void resolveParsesGradleTreeOutputWithDepths() throws Exception {
-        Path fakeGradle = writeExecutable("gradle", """
-                #!/bin/sh
-                echo "runtimeClasspath"
-                echo "+--- org.jsoup:jsoup:1.23.2"
-                echo "|    \\--- com.example:transitive:1.0"
-                echo "\\--- com.google.guava:guava:31.1-jre"
-                """);
+        List<String> fakeGradle = TestProcess.output(tempDir.resolve("gradle"), """
+                runtimeClasspath
+                +--- org.jsoup:jsoup:1.23.2
+                |    \\--- com.example:transitive:1.0
+                \\--- com.google.guava:guava:31.1-jre
+                """, 0);
         Files.writeString(tempDir.resolve("build.gradle"), "dependencies { }");
 
         DependencyResolution res = resolverWith(fakeGradle).resolve(tempDir, config(10));
@@ -78,7 +74,7 @@ class GradleDependencyResolverTest {
 
     @Test
     void resolveFallsBackToBuildGradleParserWhenGradleFails() throws Exception {
-        Path failingGradle = writeExecutable("gradle", "#!/bin/sh\nexit 1\n");
+        List<String> failingGradle = TestProcess.output(tempDir.resolve("gradle"), "", 1);
         Files.writeString(tempDir.resolve("build.gradle"), """
                 dependencies {
                     implementation "org.jsoup:jsoup:1.23.2"

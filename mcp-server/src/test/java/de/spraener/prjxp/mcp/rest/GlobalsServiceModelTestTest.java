@@ -2,229 +2,196 @@ package de.spraener.prjxp.mcp.rest;
 
 import de.spraener.prjxp.common.chat.KIChat;
 import de.spraener.prjxp.common.chat.KIChatModelProvider;
-import de.spraener.prjxp.common.config.PrjXPChatModelReference;
-import de.spraener.prjxp.common.config.PrjXPEmbeddingModelReference;
+import de.spraener.prjxp.common.config.EnvFileWriter;
 import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.common.embedding.EmbeddingModelProvider;
+import de.spraener.prjxp.common.embedding.EmbeddingModelFactory;
 import de.spraener.prjxp.common.model.ModelLister;
+import de.spraener.prjxp.mcp.setup.*;
 import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.exception.HttpException;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.mockito.ArgumentCaptor;
-import org.mockito.Mock;
-import org.mockito.MockitoAnnotations;
+import org.springframework.beans.factory.ObjectProvider;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyInt;
-import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
+import static org.assertj.core.api.Assertions.*;
+import static org.mockito.Mockito.*;
 
 class GlobalsServiceModelTestTest {
+    @TempDir Path directory;
+    GlobalsTestFixture f;
+    GlobalsService service;
+    EmbeddingModelFactory factory;
+    KIChatModelProvider chats;
+    ModelLister lister;
+    EmbeddingModel model;
 
-    @Mock
-    private KIChatModelProvider kiChatModelProvider;
+    @BeforeEach void start() throws Exception {
+        f = new GlobalsTestFixture(directory);
+        factory = mock(EmbeddingModelFactory.class);
+        chats = mock(KIChatModelProvider.class);
+        lister = mock(ModelLister.class);
+        model = mock(EmbeddingModel.class);
+        when(factory.create(any())).thenReturn(model);
+        when(model.embedAll(anyList())).thenReturn(Response.from(List.of(Embedding.from(new float[]{1, 0, 1}))));
+        service = new GlobalsService(f.globals, new SetupModelTestService(f.setup, factory, chats, mock(ObjectProvider.class)), chats, lister);
+    }
 
-    @Mock
-    private EmbeddingModelProvider embeddingModelProvider;
+    @Test void newEmbeddingTestUsesSharedFactorySettingsAndPersistsMatchingObservation() {
+        var response = service.testEmbeddingConfig(new SetupTestRequest<>(f.version(), f.embeddingChange(null)));
+        assertThat(response.success()).isTrue();
+        assertThat(response.dimensions()).isEqualTo(3);
+        assertThat(response.testId()).isNotBlank();
+        assertThat(response.configVersion()).isEqualTo(f.version());
+        assertThat(f.setup.readStatus().embedding().tested()).isTrue();
+        var candidate = ArgumentCaptor.forClass(PrjXPConfig.EmbeddingConfig.class);
+        verify(factory).create(candidate.capture());
+        assertThat(candidate.getValue().getApiBaseURL()).isEqualTo("http://localhost:11434");
+        assertThat(candidate.getValue().getMaxSegmentsPerBatch()).isEqualTo(32);
+        assertThat(candidate.getValue().isTrustAllCerts()).isTrue();
+        assertThat(candidate.getValue().getCustomHeaders()).containsEntry("X-Keep", "value");
+        assertThat(candidate.getValue().getCustomQueryParams()).containsKey("keep");
+    }
 
-    @Mock
-    private ModelLister modelLister;
+    @Test void legacyTestOnlyReturnsModelTestResultAndAlsoUpdatesSharedProof() {
+        var request = new GlobalsController.PrjXPEmbeddingModelRequest();
+        request.setServerType("ollama");
+        var response = service.testEmbeddingModel(f.version(), request);
+        assertThat(response.value().isSuccess()).isTrue();
+        assertThat(response.value().getDimensions()).isEqualTo(3);
+        assertThat(f.setup.readStatus().embedding().tested()).isTrue();
+        assertThat(response.value().getClass()).isEqualTo(ModelTestResult.class);
+    }
 
-    private PrjXPConfig prjXPConfig;
-    private GlobalsService globalsService;
+    @Test void defaultChatUsesFreshSharedTestAndPreservesPromptArgs() {
+        KIChat chat = mock(KIChat.class);
+        when(chats.createFreshKIChat(any())).thenReturn(chat);
+        when(chat.chat("Say hello")).thenReturn("hello");
+        var request = new GlobalsController.PrjXPChatModelRequest();
+        request.setStereoType("default");
+        var response = service.testChatModel(f.version(), request);
+        assertThat(response.value().isSuccess()).isTrue();
+        assertThat(f.setup.readStatus().chat().tested()).isTrue();
+        var captured = ArgumentCaptor.forClass(de.spraener.prjxp.common.config.PrjXPChatModelReference.class);
+        verify(chats).createFreshKIChat(captured.capture());
+        assertThat(captured.getValue().getPrompt()).isEqualTo("instructions");
+        assertThat(captured.getValue().getArgs()).containsEntry("keep", "original");
+        verify(chats, never()).clearCache();
+    }
 
-    @TempDir
-    Path tempDir;
+    @Test void defaultLegacyDraftPromptAndPartialSecretArgsReachFreshProviderWithoutWritingDraft() throws Exception {
+        new EnvFileWriter(f.env).upsert("DRAFT_ARGUMENT", "argument-secret");
+        var before = f.root();
+        KIChat chat = mock(KIChat.class);
+        when(chats.createFreshKIChat(any())).thenReturn(chat);
+        when(chat.chat("Say hello")).thenReturn("draft hello");
+        var request = new GlobalsController.PrjXPChatModelRequest();
+        request.setStereoType("default");
+        request.setPrompt("draft instructions");
+        request.setArgs(java.util.Map.of("Authorization", "${DRAFT_ARGUMENT}", "keep", "********"));
+        var response = service.testChatModel(f.version(), request);
+        assertThat(response.value().isSuccess()).isTrue();
+        assertThat(response.configVersion()).isEqualTo(f.version());
+        var captured = ArgumentCaptor.forClass(de.spraener.prjxp.common.config.PrjXPChatModelReference.class);
+        verify(chats).createFreshKIChat(captured.capture());
+        assertThat(captured.getValue().getPrompt()).isEqualTo("draft instructions");
+        assertThat(captured.getValue().getArgs()).containsEntry("Authorization", "argument-secret")
+                .containsEntry("keep", "original").containsEntry("trust-all-certs", "true");
+        assertThat(f.root()).isEqualTo(before);
+        assertThat(f.setup.readStatus().chat().tested()).isFalse();
+        assertThat(service.getChatModels().value()).anySatisfy(model -> {
+            assertThat(model.getStereoType()).isEqualTo("coder");
+            assertThat(model.getPrompt()).isEqualTo("code instructions");
+        });
+    }
 
-    @BeforeEach
-    void setUp() throws Exception {
-        MockitoAnnotations.openMocks(this);
+    @Test void defaultLegacyTestForwardsRawPromptAndArgsToSharedOverload() {
+        var tests = mock(SetupModelTestService.class);
+        var request = new GlobalsController.PrjXPChatModelRequest();
+        request.setPrompt("submitted prompt");
+        request.setArgs(java.util.Map.of("api-key", "********"));
+        String version = f.version();
+        when(tests.testChat(any(), eq("submitted prompt"), eq(request.getArgs())))
+                .thenReturn(new SetupTestResult(true, "ok", 1, "hello", null, "receipt", "post-test-version"));
+        var globals = new GlobalsService(f.globals, tests, chats, lister);
+        var result = globals.testChatModel(version, request);
+        assertThat(result.configVersion()).isEqualTo("post-test-version");
+        assertThat(result.value().getResponse()).isEqualTo("hello");
+        var captured = ArgumentCaptor.forClass(SetupTestRequest.class);
+        verify(tests).testChat(captured.capture(), eq("submitted prompt"), eq(request.getArgs()));
+        assertThat(captured.getValue().configVersion()).isEqualTo(version);
+    }
 
-        prjXPConfig = new PrjXPConfig();
-        prjXPConfig.setChatModels(new ArrayList<>());
+    @Test void failedSharedTestRedactsProviderMessageAndInvalidatesMatchingProof() {
+        service.testEmbeddingConfig(new SetupTestRequest<>(f.version(), f.embeddingChange(null)));
+        when(factory.create(any())).thenThrow(new HttpException(401, "Authorization secret body"));
+        var response = service.testEmbeddingModel(f.version(), new GlobalsController.PrjXPEmbeddingModelRequest());
+        assertThat(response.value().isSuccess()).isFalse();
+        assertThat(response.value().getMessage()).doesNotContain("Authorization", "secret", "body");
+        assertThat(f.setup.readStatus().embedding().tested()).isFalse();
+    }
 
-        // Create a dummy application.yaml so the service can find it
-        Path yamlPath = tempDir.resolve("application.yaml");
-        Files.writeString(yamlPath, "prjxp:\n  chat-models: []\n");
+    @Test void nonDefaultChatTestIsFreshAndDoesNotInvalidateDefaultProof() {
+        f.chatReceipt(f.chatChange("default", null));
+        KIChat chat = mock(KIChat.class);
+        when(chats.createFreshKIChat(any())).thenReturn(chat);
+        when(chat.chat("Say hello")).thenReturn("hello");
+        var request = new GlobalsController.PrjXPChatModelRequest();
+        request.setStereoType("coder");
+        request.setPrompt("draft prompt");
+        var response = service.testChatModel(f.version(), request);
+        assertThat(response.value().isSuccess()).isTrue();
+        assertThat(f.setup.readStatus().chat().tested()).isTrue();
+        when(chat.chat("Say hello")).thenReturn(" ");
+        assertThat(service.testChatModel(f.version(), request).value().isSuccess()).isFalse();
+        when(chats.createFreshKIChat(any())).thenThrow(new HttpException(500, "secret provider body"));
+        assertThat(service.testChatModel(f.version(), request).value().getMessage()).doesNotContain("secret", "body");
+    }
 
-        // Temporarily set user.dir to tempDir so the service finds our test file
-        String originalUserDir = System.getProperty("user.dir");
-        System.setProperty("user.dir", tempDir.toString());
+    @Test void modelListRetainsRawParameterContractButResolvesCurrentMaskAndEnv() throws Exception {
+        new EnvFileWriter(f.env).upsert("LIST_SECRET", "resolved-key");
+        new EnvFileWriter(f.env).upsert("LIST_URL", "https://models.test");
+        f.globals.updateEmbedding(f.version(), new EmbeddingConfigRequest(null, null, "${LIST_SECRET}", null, null, null, null, false), null);
+        when(lister.listModels("openai", "https://models.test", "resolved-key", 30)).thenReturn(List.of("model"));
+        assertThat(service.listEmbeddingModels("openai", "${LIST_URL}", "********")).containsExactly("model");
+        assertThat(service.listChatModels("ollama", "http://host", "", "coder")).isEmpty();
+        verify(lister).listModels("ollama", "http://host", "", 30);
+        Files.writeString(f.env, Files.readString(f.env).replace("resolved-key", "fresh-key"));
+        service.listEmbeddingModels("openai", "${LIST_URL}", "********");
+        verify(lister).listModels("openai", "https://models.test", "fresh-key", 30);
+    }
+
+    @Test void unexpectedInternalErrorIsNotDisguisedAsProviderFailure() {
+        when(factory.create(any())).thenThrow(new IllegalStateException("internal"));
+        assertThatThrownBy(() -> service.testEmbeddingConfig(new SetupTestRequest<>(f.version(), f.embeddingChange(null))))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
+    @Test void nondefaultProviderEchoesAreRedactedAndInterruptedTransportRestoresFlag() {
+        KIChat chat = mock(KIChat.class);
+        when(chats.createFreshKIChat(any())).thenReturn(chat);
+        when(chat.chat("Say hello")).thenReturn("echo secret and argument-secret");
+        var request = new GlobalsController.PrjXPChatModelRequest();
+        request.setStereoType("coder");
+        request.setApiKey("secret");
+        request.setArgs(java.util.Map.of("Authorization", "argument-secret"));
+        assertThat(service.testChatModel(f.version(), request).value().getResponse())
+                .doesNotContain("secret").contains("[REDACTED]");
+        var interrupted = new HttpException(500, "private");
+        interrupted.initCause(new InterruptedException());
+        doThrow(interrupted).when(chat).chat("Say hello");
         try {
-            globalsService = new GlobalsService(prjXPConfig, kiChatModelProvider, embeddingModelProvider, modelLister);
+            assertThat(service.testChatModel(f.version(), request).value().getMessage()).contains("interrupted");
+            assertThat(Thread.currentThread().isInterrupted()).isTrue();
         } finally {
-            System.setProperty("user.dir", originalUserDir);
+            Thread.interrupted();
         }
-    }
-
-    @Test
-    void testChatModel_success() {
-        KIChat kiChat = mock(KIChat.class);
-        when(kiChat.chat("Say hello")).thenReturn("Hello!");
-        when(kiChatModelProvider.createFreshKIChat(any())).thenReturn(kiChat);
-
-        GlobalsController.PrjXPChatModelRequest request = new GlobalsController.PrjXPChatModelRequest();
-        request.setStereoType("default");
-        request.setServerType("ollama");
-        request.setModelName("llama3");
-        request.setProviderUrl("http://localhost:11434");
-
-        ModelTestResult result = globalsService.testChatModel(request);
-
-        assertThat(result.isSuccess()).isTrue();
-        assertThat(result.getResponse()).isEqualTo("Hello!");
-        assertThat(result.getDimensions()).isNull();
-        assertThat(result.getLatencyMs()).isGreaterThanOrEqualTo(0);
-    }
-
-    @Test
-    void testChatModel_maskedKeyResolvedFromSaved() {
-        PrjXPChatModelReference saved = new PrjXPChatModelReference();
-        saved.setStereoType("default");
-        saved.setApiKey("sk-real");
-        prjXPConfig.getChatModels().add(saved);
-
-        KIChat kiChat = mock(KIChat.class);
-        when(kiChat.chat("Say hello")).thenReturn("Hello!");
-        when(kiChatModelProvider.createFreshKIChat(any())).thenReturn(kiChat);
-
-        GlobalsController.PrjXPChatModelRequest request = new GlobalsController.PrjXPChatModelRequest();
-        request.setStereoType("default");
-        request.setApiKey("********");
-
-        globalsService.testChatModel(request);
-
-        ArgumentCaptor<PrjXPChatModelReference> captor = ArgumentCaptor.forClass(PrjXPChatModelReference.class);
-        verify(kiChatModelProvider).createFreshKIChat(captor.capture());
-        assertThat(captor.getValue().getApiKey()).isEqualTo("sk-real");
-    }
-
-    @Test
-    void testChatModel_failureReturnsFailure() {
-        when(kiChatModelProvider.createFreshKIChat(any())).thenThrow(new RuntimeException("boom"));
-
-        GlobalsController.PrjXPChatModelRequest request = new GlobalsController.PrjXPChatModelRequest();
-        request.setServerType("ollama");
-        request.setModelName("llama3");
-        request.setProviderUrl("http://localhost:11434");
-
-        ModelTestResult result = globalsService.testChatModel(request);
-
-        assertThat(result.isSuccess()).isFalse();
-        assertThat(result.getMessage()).contains("Chat test failed");
-    }
-
-    @Test
-    void testEmbeddingModel_success() {
-        EmbeddingModel model = mock(EmbeddingModel.class);
-        when(model.embed("test")).thenReturn(new Response<>(new Embedding(new float[]{1, 2, 3})));
-        when(embeddingModelProvider.createEmbeddingModel(any())).thenReturn(model);
-
-        GlobalsController.PrjXPEmbeddingModelRequest request = new GlobalsController.PrjXPEmbeddingModelRequest();
-        request.setServerType("ollama");
-        request.setProviderUrl("http://localhost:11434");
-        request.setModelName("mxbai-embed-large");
-
-        ModelTestResult result = globalsService.testEmbeddingModel(request);
-
-        assertThat(result.isSuccess()).isTrue();
-        assertThat(result.getDimensions()).isEqualTo(3);
-        assertThat(result.getResponse()).isNull();
-    }
-
-    @Test
-    void testEmbeddingModel_maskedKeyResolvedFromSaved() {
-        PrjXPEmbeddingModelReference saved = new PrjXPEmbeddingModelReference();
-        saved.setApiKey("sk-emb");
-        prjXPConfig.setEmbeddingModel(saved);
-
-        EmbeddingModel model = mock(EmbeddingModel.class);
-        when(model.embed("test")).thenReturn(new Response<>(new Embedding(new float[]{1, 2, 3})));
-        when(embeddingModelProvider.createEmbeddingModel(any())).thenReturn(model);
-
-        GlobalsController.PrjXPEmbeddingModelRequest request = new GlobalsController.PrjXPEmbeddingModelRequest();
-        request.setServerType("openai");
-        request.setApiKey("********");
-
-        globalsService.testEmbeddingModel(request);
-
-        ArgumentCaptor<PrjXPEmbeddingModelReference> captor = ArgumentCaptor.forClass(PrjXPEmbeddingModelReference.class);
-        verify(embeddingModelProvider).createEmbeddingModel(captor.capture());
-        assertThat(captor.getValue().getApiKey()).isEqualTo("sk-emb");
-    }
-
-    @Test
-    void testEmbeddingModel_failureReturnsFailure() {
-        when(embeddingModelProvider.createEmbeddingModel(any())).thenThrow(new RuntimeException("no provider"));
-
-        GlobalsController.PrjXPEmbeddingModelRequest request = new GlobalsController.PrjXPEmbeddingModelRequest();
-        request.setServerType("custom");
-
-        ModelTestResult result = globalsService.testEmbeddingModel(request);
-
-        assertThat(result.isSuccess()).isFalse();
-        assertThat(result.getMessage()).contains("Embedding test failed");
-    }
-
-    @Test
-    void listChatModels_delegatesToLister() {
-        when(modelLister.listModels("ollama", "http://x", null, 30)).thenReturn(List.of("a", "b"));
-
-        List<String> names = globalsService.listChatModels("ollama", "http://x", null, null);
-
-        assertThat(names).containsExactly("a", "b");
-    }
-
-    @Test
-    void listChatModels_maskedKeyResolved() {
-        PrjXPChatModelReference saved = new PrjXPChatModelReference();
-        saved.setStereoType("default");
-        saved.setApiKey("sk-real");
-        prjXPConfig.getChatModels().add(saved);
-
-        when(modelLister.listModels(anyString(), anyString(), anyString(), anyInt())).thenReturn(List.of());
-
-        globalsService.listChatModels("openai", "http://x", "********", "default");
-
-        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(modelLister).listModels(eq("openai"), eq("http://x"), keyCaptor.capture(), eq(30));
-        assertThat(keyCaptor.getValue()).isEqualTo("sk-real");
-    }
-
-    @Test
-    void listEmbeddingModels_delegatesToLister() {
-        when(modelLister.listModels("ollama", "http://x", null, 30))
-                .thenReturn(List.of("mxbai-embed-large", "nomic-embed-text"));
-
-        List<String> names = globalsService.listEmbeddingModels("ollama", "http://x", null);
-
-        assertThat(names).containsExactly("mxbai-embed-large", "nomic-embed-text");
-    }
-
-    @Test
-    void listEmbeddingModels_maskedKeyResolved() {
-        PrjXPEmbeddingModelReference saved = new PrjXPEmbeddingModelReference();
-        saved.setApiKey("sk-emb");
-        prjXPConfig.setEmbeddingModel(saved);
-
-        when(modelLister.listModels(anyString(), anyString(), anyString(), anyInt())).thenReturn(List.of());
-
-        globalsService.listEmbeddingModels("openai", "http://x", "********");
-
-        ArgumentCaptor<String> keyCaptor = ArgumentCaptor.forClass(String.class);
-        verify(modelLister).listModels(eq("openai"), eq("http://x"), keyCaptor.capture(), eq(30));
-        assertThat(keyCaptor.getValue()).isEqualTo("sk-emb");
     }
 }

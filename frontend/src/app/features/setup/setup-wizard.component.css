@@ -1,0 +1,7 @@
+.setup { padding: 2rem; max-width: 64rem; margin: auto; }
+ol { display: flex; flex-wrap: wrap; gap: 2rem; padding: 1rem; }
+li[aria-current] { font-weight: bold; color: #45d9ed; }
+nav { display: flex; flex-wrap: wrap; gap: .8rem; margin-top: 1.5rem; }
+button { padding: .6rem; }
+button:disabled { opacity: .5; }
+[role=alert] { border: 1px solid #ef729b; padding: 1rem; }

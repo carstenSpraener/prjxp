@@ -92,4 +92,6 @@ public class HubProperties {
     private int githubTimeoutSeconds = 300;
     /** Env-var name holding the token-encryption key passphrase (default PRJXP_HUB_GITHUB_TOKEN_KEY). Only the NAME is stored, never the value. */
     private String githubTokenKeyEnv = "PRJXP_HUB_GITHUB_TOKEN_KEY";
+    @lombok.ToString.Exclude
+    private String githubDefaultPat;
 }

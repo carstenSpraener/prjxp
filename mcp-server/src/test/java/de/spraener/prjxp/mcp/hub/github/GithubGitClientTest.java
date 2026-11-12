@@ -1,13 +1,13 @@
 package de.spraener.prjxp.mcp.hub.github;
 
 import de.spraener.prjxp.mcp.hub.HubProperties;
+import de.spraener.prjxp.mcp.testsupport.TestProcess;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.attribute.PosixFilePermissions;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
 
@@ -16,7 +16,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Phase 02: {@link GithubGitClient} — runs a fake {@code git} executable
- * (a shell script in a temp dir, injected via the test constructor) so no real
+ * (a JVM subprocess, injected via the test constructor) so no real
  * git binary and no network are involved.
  */
 class GithubGitClientTest {
@@ -26,18 +26,18 @@ class GithubGitClientTest {
     @TempDir
     Path tempDir;
 
-    private Path writeExecutable(String name, String script) throws IOException {
-        Path file = tempDir.resolve(name);
-        Files.writeString(file, script);
-        Files.setPosixFilePermissions(file, PosixFilePermissions.fromString("rwxr-xr-x"));
-        return file;
-    }
-
     private GithubGitClient clientWith(Path gitExecutable, int timeoutSeconds) {
         HubProperties props = new HubProperties();
         props.setGithubCloneDepth(1);
         props.setGithubTimeoutSeconds(timeoutSeconds);
         return new GithubGitClient(props, gitExecutable);
+    }
+
+    private GithubGitClient clientWith(List<String> command, int timeoutSeconds) {
+        HubProperties props = new HubProperties();
+        props.setGithubCloneDepth(1);
+        props.setGithubTimeoutSeconds(timeoutSeconds);
+        return new GithubGitClient(props, command);
     }
 
     private static List<String> logLines(Path logFile) throws IOException {
@@ -47,13 +47,7 @@ class GithubGitClientTest {
     @Test
     void cloneInvokesGitCloneWithDepthUrlAndTargetDir() throws Exception {
         Path logFile = tempDir.resolve("git-args.log");
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                for last; do :; done
-                mkdir -p "$last"
-                echo sentinel > "$last/.git-cloned"
-                """.formatted(logFile));
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 0, logFile);
         Path targetDir = tempDir.resolve("clones").resolve("repo");
 
         clientWith(fakeGit, 30).clone(URL, targetDir);
@@ -66,11 +60,7 @@ class GithubGitClientTest {
 
     @Test
     void cloneCreatesMissingParentDirectory() throws Exception {
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                for last; do :; done
-                mkdir -p "$last"
-                """);
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 0, null);
         Path targetDir = tempDir.resolve("a").resolve("b").resolve("repo");
 
         clientWith(fakeGit, 30).clone(URL, targetDir);
@@ -87,11 +77,7 @@ class GithubGitClientTest {
 
     @Test
     void cloneNonZeroExitThrowsWithExitCodeAndOutputTail() throws Exception {
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "fatal: repository not found"
-                exit 3
-                """);
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 3, null);
 
         assertThatThrownBy(() -> clientWith(fakeGit, 30).clone(URL, tempDir.resolve("repo")))
                 .isInstanceOf(GithubGitException.class)
@@ -102,14 +88,7 @@ class GithubGitClientTest {
     @Test
     void cloneTimeoutThrowsAndDestroysProcess() throws Exception {
         Path pidFile = tempDir.resolve("git.pid");
-        // Close BOTH fds: with redirectErrorStream(true) stderr shares the stdout pipe,
-        // so the parent's readAllBytes only sees EOF once the script drops both.
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo $$ > "%s"
-                exec 1>/dev/null 2>/dev/null
-                sleep 5
-                """.formatted(pidFile));
+        List<String> fakeGit = TestProcess.timeout(tempDir.resolve("git"), pidFile);
 
         long start = System.nanoTime();
         assertThatThrownBy(() -> clientWith(fakeGit, 1).clone(URL, tempDir.resolve("repo")))
@@ -140,10 +119,7 @@ class GithubGitClientTest {
     @Test
     void pullInvokesGitPullFfOnlyInDirectory() throws Exception {
         Path logFile = tempDir.resolve("git-args.log");
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                """.formatted(logFile));
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 0, logFile);
         Path dir = tempDir.resolve("repo");
         Files.createDirectories(dir);
 
@@ -157,12 +133,7 @@ class GithubGitClientTest {
     @Test
     void cloneWithTokenPassesExtraheaderAfterExecutable() throws Exception {
         Path logFile = tempDir.resolve("git-args.log");
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                for last; do :; done
-                mkdir -p "$last"
-                """.formatted(logFile));
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 0, logFile);
         Path targetDir = tempDir.resolve("clones").resolve("repo");
 
         clientWith(fakeGit, 30).clone(URL, targetDir, "ghp_secret123");
@@ -174,12 +145,7 @@ class GithubGitClientTest {
     @Test
     void cloneWithNullTokenHasNoExtraheader() throws Exception {
         Path logFile = tempDir.resolve("git-args.log");
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                for last; do :; done
-                mkdir -p "$last"
-                """.formatted(logFile));
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 0, logFile);
         Path targetDir = tempDir.resolve("clones").resolve("repo");
 
         clientWith(fakeGit, 30).clone(URL, targetDir, null);
@@ -191,12 +157,7 @@ class GithubGitClientTest {
     @Test
     void twoArgCloneHasNoExtraheader() throws Exception {
         Path logFile = tempDir.resolve("git-args.log");
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                for last; do :; done
-                mkdir -p "$last"
-                """.formatted(logFile));
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 0, logFile);
         Path targetDir = tempDir.resolve("clones").resolve("repo");
 
         clientWith(fakeGit, 30).clone(URL, targetDir);   // the existing 2-arg delegate
@@ -207,10 +168,7 @@ class GithubGitClientTest {
     @Test
     void pullWithTokenPassesExtraheaderAfterExecutable() throws Exception {
         Path logFile = tempDir.resolve("git-args.log");
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                """.formatted(logFile));
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 0, logFile);
         Path dir = tempDir.resolve("repo");
         Files.createDirectories(dir);
 
@@ -223,10 +181,7 @@ class GithubGitClientTest {
     @Test
     void pullWithNullTokenHasNoExtraheader() throws Exception {
         Path logFile = tempDir.resolve("git-args.log");
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "$@" >> "%s"
-                """.formatted(logFile));
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 0, logFile);
         Path dir = tempDir.resolve("repo");
         Files.createDirectories(dir);
 
@@ -237,11 +192,7 @@ class GithubGitClientTest {
 
     @Test
     void pullNonZeroExitThrows() throws Exception {
-        Path fakeGit = writeExecutable("git", """
-                #!/bin/sh
-                echo "fatal: not a git repository"
-                exit 2
-                """);
+        List<String> fakeGit = TestProcess.git(tempDir.resolve("git"), 2, null);
         Path dir = tempDir.resolve("repo");
         Files.createDirectories(dir);
 
@@ -256,6 +207,34 @@ class GithubGitClientTest {
         assertThat(GithubGitClient.tail("x".repeat(200))).isEqualTo("x".repeat(200));
         assertThat(GithubGitClient.tail("  short  ")).isEqualTo("short");
         assertThat(GithubGitClient.tail(null)).isEmpty();
+    }
+
+    @Test
+    void failureOutputCannotExposeTokenEvenWhenLongerThanTail() throws Exception {
+        String token = "private-test-pat-" + "x".repeat(250);
+        List<String> command = TestProcess.output(tempDir.resolve("git"), "fatal: rejected " + token, 1);
+        assertThatThrownBy(() -> clientWith(command, 30).clone(URL, tempDir.resolve("repo"), token))
+                .isInstanceOf(GithubGitException.class).hasMessageContaining("exited with code 1")
+                .hasMessageNotContaining("x".repeat(100));
+    }
+
+    @Test
+    void processStartupExceptionAndCauseAreRedacted() {
+        String token = "private-test-pat";
+        var client = clientWith(List.of(tempDir.resolve(token).toString()), 30);
+        assertThatThrownBy(() -> client.clone(URL, tempDir.resolve("repo"), token))
+                .isInstanceOf(GithubGitException.class).hasMessageNotContaining(token)
+                .satisfies(error -> assertThat(error.getCause()).hasMessageNotContaining(token));
+    }
+
+    @Test
+    void directoryCreationExceptionAndCauseAreRedacted() throws Exception {
+        String token = "private-test-pat";
+        Path parent = tempDir.resolve(token);
+        Files.writeString(parent, "blocking file");
+        assertThatThrownBy(() -> clientWith(List.of("git"), 30).clone(URL, parent.resolve("repo"), token))
+                .isInstanceOf(GithubGitException.class).hasMessageNotContaining(token)
+                .satisfies(error -> assertThat(error.getCause()).hasMessageNotContaining(token));
     }
 
     @Test

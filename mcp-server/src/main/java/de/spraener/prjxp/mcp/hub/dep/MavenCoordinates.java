@@ -15,12 +15,20 @@ public record MavenCoordinates(String groupId, String artifactId, String version
     public Path repoPath() { return Path.of(groupId.replace('.', '/'), artifactId, version); }
 
     public String pomUrl(String repoBase) {
-        return repoBase + "/" + repoPath() + "/" + artifactId + "-" + version + ".pom";
+        return artifactUrl(repoBase, ".pom");
     }
     public String sourcesUrl(String repoBase) {
-        return repoBase + "/" + repoPath() + "/" + artifactId + "-" + version + "-sources.jar";
+        return classifierUrl(repoBase, "sources");
     }
     public String javadocUrl(String repoBase) {
-        return repoBase + "/" + repoPath() + "/" + artifactId + "-" + version + "-javadoc.jar";
+        return classifierUrl(repoBase, "javadoc");
+    }
+
+    public String classifierUrl(String repoBase, String classifier) {
+        return artifactUrl(repoBase, "-" + classifier + ".jar");
+    }
+
+    private String artifactUrl(String repoBase, String suffix) {
+        return repoBase + "/" + groupId.replace('.', '/') + "/" + artifactId + "/" + version + "/" + name() + suffix;
     }
 }
