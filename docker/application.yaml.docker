@@ -12,7 +12,7 @@ prjxp:
     timeout: ${EMBEDDING_TIMEOUT:180}
     apiKey: ${EMBEDDING_API_KEY:dummy}
     # max texts per embedding HTTP request; the per-project tibedBatchSize is split at this size
-    maxSegmentsPerBatch: 32
+    maxSegmentsPerBatch: 250
 
   chatModels:
     - stereotype: detailed
