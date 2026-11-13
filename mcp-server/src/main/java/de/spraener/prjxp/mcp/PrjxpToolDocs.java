@@ -1,7 +1,7 @@
 package de.spraener.prjxp.mcp;
 
 /**
- * Single source of truth for the thirteen prjxp tool descriptions.
+ * Single source of truth for the fourteen prjxp tool descriptions.
  * <p>
  * Both the MCP path ({@link PrjxpMcpTool} via {@code @McpTool}) and the hub chat path
  * ({@link de.spraener.prjxp.mcp.tools.PrjxpToolRegistration}) read their tool-level text from here,
@@ -18,12 +18,12 @@ public final class PrjxpToolDocs {
     public static final String VECTOR_SEARCH = """
             Start here for where/how questions. Follow POINTERS to readFile, readBySignature(FQN#name), or graphNode.
             Use grep("@Annotation", POINTERS) for implementations and grep(symbol, POINTERS) for call sites.
-            Defaults: POINTERS, sourceType=code, maxResults=10; use sourceType=all for prose.
+            Defaults: POINTERS, sourceType=code, maxResults=10; use sourceType=all for prose. contentLevel=NAMES = filenames only.
             """;
 
     public static final String GREP = """
-            Exact text search: annotations for implementations, symbols for call sites, signatures for code bodies.
-            Use readBySignature(FQN#name) for one method. POINTERS enumerates; FULL returns bodies. Tests default true; max 100 hits.
+            Exact text search. Default NAMES = grep -l: one line per file "count  path", sorted by hit count — the cheap "where is X" answer.
+            FULL returns bodies; SKELETON signatures; POINTERS enumerates. Use readBySignature(FQN#name) for one method. Tests default true; max 100 files.
             """;
 
     public static final String READ_FILE = """
@@ -45,10 +45,12 @@ public final class PrjxpToolDocs {
 
     public static final String GRAPH_FILE = """
             Typed code-graph neighbours of a file (imports, inheritance, calls, and related edges). includeExternal adds library edges.
+            maxEdges max 500; offset pages; totals = full count.
             """;
 
     public static final String GRAPH_NODE = """
             Typed neighbours of a class or method id. For call sites, grep(symbol, POINTERS) is cheaper. includeExternal adds library edges.
+            maxEdges max 500; offset pages; totals = full count.
             """;
 
     public static final String GRAPH_CLUSTER = """
@@ -70,4 +72,9 @@ public final class PrjxpToolDocs {
     public static final String SEMANTIC_GRAPH_OVERVIEW = """
             Largest semantic clusters with member counts, top files, model, and calibration warning. Not graphClusterOverview.
             """;
+
+    public static final String READ_CHUNKS = """
+            Read the full content of one or more chunks by their chunk_id (from vectorSearch neighbours or chunk_id fields). \
+            Returns the recombined content of each chunk. Use this to explore neighbours listed in a vectorSearch result. \
+            Parameters: project (required), ids (comma-separated chunk_ids, max 10).""";
 }

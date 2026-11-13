@@ -8,6 +8,7 @@ import de.spraener.prjxp.common.model.GraphNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.reader.ReaderSupport;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import lombok.RequiredArgsConstructor;
@@ -44,12 +45,20 @@ public class FileGraphService {
 
     private static final int FILE_LOOKUP_LIMIT = 10_000;
     private static final int DEFAULT_MAX_EDGES = 30;
-    private static final int MAX_MAX_EDGES = 100;
+    /** Raised 100 -> 500 (efficiency measure 2): a widely-used class (hundreds of refs) fits in
+     *  one page; {@code offset} pages anything beyond that. */
+    private static final int MAX_MAX_EDGES = 500;
     private static final int DEFAULT_TOP_N = 10;
     private static final int MAX_TOP_N = 50;
     private static final int DEFAULT_OVERVIEW_TOP_N = 10;
     private static final int MAX_OVERVIEW_TOP_N = 50;
     private static final int TOP_MEMBERS_PER_CLUSTER = 3;
+    /** Efficiency measure 5: most-referenced classes listed per module group in the AGGREGATED view. */
+    private static final int TOP_CLASSES_PER_MODULE = 5;
+    /** Module label for edges whose neighbour is external (no file in the graph). */
+    private static final String EXTERNAL_MODULE = "(external)";
+    /** Module label for neighbours whose file path has no directory component. */
+    private static final String ROOT_MODULE = "(root)";
 
     private final ProjectRegistry projectRegistry;
     private final PxChunkDaoProvider chunkDaoProvider;
@@ -72,6 +81,14 @@ public class FileGraphService {
      * and the graph supplies the edges.
      */
     public GraphView graphFile(String file, String project, Integer maxEdges, Boolean includeExternal) {
+        return graphFile(file, project, maxEdges, includeExternal, 0, ContentLevel.FULL);
+    }
+
+    public GraphView graphFile(String file, String project, Integer maxEdges, Boolean includeExternal, Integer offset) {
+        return graphFile(file, project, maxEdges, includeExternal, offset, ContentLevel.FULL);
+    }
+
+    public GraphView graphFile(String file, String project, Integer maxEdges, Boolean includeExternal, Integer offset, ContentLevel contentLevel) {
         if (StringUtils.isBlank(file)) {
             return GraphView.unavailable("Parameter 'file' ist erforderlich.");
         }
@@ -125,7 +142,7 @@ public class FileGraphService {
         if (node == null) {
             return GraphView.unavailable("Node nicht im Graph — bitte reindexieren");
         }
-        return toView(requestedProject, located.matchedFile(), graph, node, maxEdges, includeExternal);
+        return toView(requestedProject, located.matchedFile(), graph, node, maxEdges, includeExternal, offset, contentLevel);
     }
 
     /**
@@ -133,6 +150,14 @@ public class FileGraphService {
      * graph's node ids (exact, then suffix), ambiguous symbols yield a candidate list.
      */
     public GraphView graphNode(String symbol, String project, Integer maxEdges, Boolean includeExternal) {
+        return graphNode(symbol, project, maxEdges, includeExternal, 0, ContentLevel.FULL);
+    }
+
+    public GraphView graphNode(String symbol, String project, Integer maxEdges, Boolean includeExternal, Integer offset) {
+        return graphNode(symbol, project, maxEdges, includeExternal, offset, ContentLevel.FULL);
+    }
+
+    public GraphView graphNode(String symbol, String project, Integer maxEdges, Boolean includeExternal, Integer offset, ContentLevel contentLevel) {
         if (StringUtils.isBlank(symbol)) {
             return GraphView.unavailable("Parameter 'symbol' ist erforderlich.");
         }
@@ -164,7 +189,7 @@ public class FileGraphService {
             id = matches.get(0);
         }
         GraphNode node = byId.get(id);
-        return toView(requestedProject, node.file(), graph, node, maxEdges, includeExternal);
+        return toView(requestedProject, node.file(), graph, node, maxEdges, includeExternal, offset, contentLevel);
     }
 
     /**
@@ -293,29 +318,111 @@ public class FileGraphService {
         return Located.matched(matches.get(0), byFile.get(matches.get(0)));
     }
 
-    /** Builds the view: per-direction edge lists (capped, external filtered) with neighbour files. */
+    /**
+     * Builds the view: per-direction edge lists (external filtered, then paged by
+     * {@code offset} and capped by {@code maxEdges}) with neighbour files. The full
+     * per-direction counts (after the external filter, before paging) are exposed as
+     * {@code totalOutgoing} / {@code totalIncoming} so the caller can page the rest.
+     * <p>
+     * With a non-{@link ContentLevel#FULL} content level (efficiency measure 5) the raw
+     * edge lists are replaced by the module-level aggregation: the aggregation covers
+     * ALL edges, so paging is meaningless and the edge lists come back empty.
+     */
     private GraphView toView(String project, String file, CodeGraph graph, GraphNode node,
-                             Integer maxEdges, Boolean includeExternal) {
-        int cap = cap(maxEdges);
+                             Integer maxEdges, Boolean includeExternal, Integer offset, ContentLevel contentLevel) {
         boolean withExternal = Boolean.TRUE.equals(includeExternal);
         Map<String, GraphNode> byId = graph.nodeById();
-        List<GraphNeighbor> outgoing = graph.edgesBySource().getOrDefault(node.id(), List.of()).stream()
+        List<GraphEdge> outEdges = graph.edgesBySource().getOrDefault(node.id(), List.of()).stream()
                 .filter(e -> withExternal || !e.external())
-                .limit(cap)
+                .toList();
+        List<GraphEdge> inEdges = graph.edgesByTarget().getOrDefault(node.id(), List.of()).stream()
+                .filter(e -> withExternal || !e.external())
+                .toList();
+        ContentLevel level = contentLevel == null ? ContentLevel.FULL : contentLevel;
+        if (level != ContentLevel.FULL) {
+            return new GraphView(project, file, node.id(), node.clusterId(), node.weight(),
+                    List.of(), List.of(), List.of(), null, outEdges.size(), inEdges.size(),
+                    aggregate(outEdges, false, byId), aggregate(inEdges, true, byId));
+        }
+        int cap = cap(maxEdges);
+        int skip = offset == null || offset < 0 ? 0 : offset;
+        List<GraphNeighbor> outgoing = outEdges.stream().skip(skip).limit(cap)
                 .map(e -> neighbor(e.type(), e.target(), byId, e.external()))
                 .toList();
-        List<GraphNeighbor> incoming = graph.edgesByTarget().getOrDefault(node.id(), List.of()).stream()
-                .filter(e -> withExternal || !e.external())
-                .limit(cap)
+        List<GraphNeighbor> incoming = inEdges.stream().skip(skip).limit(cap)
                 .map(e -> neighbor(e.type(), e.source(), byId, e.external()))   // incoming: SOURCE, never target
                 .toList();
         return new GraphView(project, file, node.id(), node.clusterId(), node.weight(),
-                outgoing, incoming, List.of(), null);
+                outgoing, incoming, List.of(), null, outEdges.size(), inEdges.size(), null, null);
     }
 
     private GraphNeighbor neighbor(EdgeType type, String id, Map<String, GraphNode> byId, boolean external) {
         GraphNode n = byId.get(id);
         return new GraphNeighbor(type, id, n != null ? n.file() : null, external);
+    }
+
+    /**
+     * Collapses one direction's edges into module groups (efficiency measure 5): the
+     * neighbour's file path yields the module (first path segment), method ids collapse
+     * to their class, and each group carries its edge count, distinct-class count,
+     * edge-type breakdown, and the most-referenced classes. Groups are sorted by edge
+     * count descending (ties by module name) so the most important modules lead.
+     */
+    private List<GraphAggregate> aggregate(List<GraphEdge> edges, boolean incoming, Map<String, GraphNode> byId) {
+        Map<String, List<GraphEdge>> byModule = new LinkedHashMap<>();
+        for (GraphEdge e : edges) {
+            String id = incoming ? e.source() : e.target();
+            GraphNode n = byId.get(id);
+            String module = moduleOf(n != null ? n.file() : null, e.external());
+            byModule.computeIfAbsent(module, k -> new ArrayList<>()).add(e);
+        }
+        return byModule.entrySet().stream()
+                .sorted((a, b) -> {
+                    int byCount = Integer.compare(b.getValue().size(), a.getValue().size());
+                    return byCount != 0 ? byCount : a.getKey().compareTo(b.getKey());
+                })
+                .map(en -> {
+                    List<GraphEdge> group = en.getValue();
+                    Map<String, Integer> classCounts = new LinkedHashMap<>();
+                    Map<EdgeType, Integer> typeCounts = new LinkedHashMap<>();
+                    for (GraphEdge e : group) {
+                        String id = incoming ? e.source() : e.target();
+                        classCounts.merge(classNameOf(id), 1, Integer::sum);
+                        typeCounts.merge(e.type(), 1, Integer::sum);
+                    }
+                    Map<EdgeType, Integer> typesSorted = typeCounts.entrySet().stream()
+                            .sorted((x, y) -> {
+                                int byCount = Integer.compare(y.getValue(), x.getValue());
+                                return byCount != 0 ? byCount : x.getKey().name().compareTo(y.getKey().name());
+                            })
+                            .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
+                    List<GraphAggregate.ClassCount> top = classCounts.entrySet().stream()
+                            .sorted((x, y) -> {
+                                int byCount = Integer.compare(y.getValue(), x.getValue());
+                                return byCount != 0 ? byCount : x.getKey().compareTo(y.getKey());
+                            })
+                            .limit(TOP_CLASSES_PER_MODULE)
+                            .map(en2 -> new GraphAggregate.ClassCount(en2.getKey(), en2.getValue()))
+                            .toList();
+                    return new GraphAggregate(en.getKey(), group.size(), classCounts.size(), typesSorted, top);
+                })
+                .toList();
+    }
+
+    /** The module of a neighbour: the first path segment of its file, or a fallback label. */
+    private String moduleOf(String file, boolean external) {
+        if (external || file == null || file.isBlank()) {
+            return EXTERNAL_MODULE;
+        }
+        String path = file.startsWith("/") ? file.substring(1) : file;
+        int slash = path.indexOf('/');
+        return slash > 0 ? path.substring(0, slash) : ROOT_MODULE;
+    }
+
+    /** A node id's class: method ids ({@code FQN#name}) collapse to their class FQN. */
+    private String classNameOf(String id) {
+        int hash = id.indexOf('#');
+        return hash >= 0 ? id.substring(0, hash) : id;
     }
 
     private int cap(Integer maxEdges) {

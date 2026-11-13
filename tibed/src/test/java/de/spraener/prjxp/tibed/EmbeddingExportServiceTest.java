@@ -5,6 +5,7 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
+import de.spraener.prjxp.common.graph.SignatureMetadata;
 import de.spraener.prjxp.common.model.EmbeddedChunkRecord;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
@@ -68,13 +69,15 @@ class EmbeddingExportServiceTest {
     }
 
     private EmbeddingExportService uut(PrjXPConfig cfg, FakeEmbeddingModel model) {
+        TransferPasswordResolver resolver = resolverWith("PRJXP_TEST_PASSWORD_XYZ", null);
         return new EmbeddingExportService(
                 org.mockito.Mockito.mock(PxLogService.class),
                 new ObjectMapper(),
                 new LangChain4JEmbedderImpl(model, Mockito.mock(EmbeddingStoreSupplier.class)),
                 new PrjXPJsonStreamProvider(cfg),
-                resolverWith("PRJXP_TEST_PASSWORD_XYZ", null),
-                cfg
+                resolver,
+                cfg,
+                new AstNeighboursLoader(new ObjectMapper(), resolver, cfg)
         );
     }
 
@@ -155,13 +158,15 @@ class EmbeddingExportServiceTest {
         cfg.getTransfer().setPasswordEnv("PRJXP_TEST_PASSWORD_XYZ");
         writeInput(cfg, "alpha");
 
+        TransferPasswordResolver resolver = resolverWith("PRJXP_TEST_PASSWORD_XYZ", "env-pw");
         EmbeddingExportService uut = new EmbeddingExportService(
                 org.mockito.Mockito.mock(PxLogService.class),
                 new ObjectMapper(),
                 new LangChain4JEmbedderImpl(new FakeEmbeddingModel(DIMENSION), Mockito.mock(EmbeddingStoreSupplier.class)),
                 new PrjXPJsonStreamProvider(cfg),
-                resolverWith("PRJXP_TEST_PASSWORD_XYZ", "env-pw"),
-                cfg
+                resolver,
+                cfg,
+                new AstNeighboursLoader(new ObjectMapper(), resolver, cfg)
         );
         uut.execute();
 
@@ -211,13 +216,46 @@ class EmbeddingExportServiceTest {
                 new LangChain4JEmbedderImpl(new FakeEmbeddingModel(DIMENSION), Mockito.mock(EmbeddingStoreSupplier.class)),
                 new PrjXPJsonStreamProvider(cfg),
                 resolverWith("PRJXP_TEST_PASSWORD_XYZ", "env-pw"),
-                cfg
+                cfg,
+                new AstNeighboursLoader(mapper, resolverWith("PRJXP_TEST_PASSWORD_XYZ", "env-pw"), cfg)
         );
         uut.execute();
 
         List<EmbeddedChunkRecord> records = readRecords(tempDir.resolve("embedding.jsonl").toString());
         assertThat(records).hasSize(1);
         assertThat(records.get(0).id()).isEqualTo("chunk-0");
+    }
+
+    @Test
+    void exportForProject_mergesAstNeighboursFromSidecar() throws Exception {
+        PrjXPConfig cfg = configWith(tempDir.resolve("in.jsonl").toString(), null);
+        writeInput(cfg, "alpha", "bravo");
+        // Sidecar derived from the graph file (in.jsonl -> in.graph.json -> in.ast-neighbours.json)
+        Files.writeString(tempDir.resolve("in.ast-neighbours.json"),
+                "{\"chunk-0\":[\"chunk-1\"],\"chunk-1\":[\"chunk-0\"]}");
+
+        Path output = tempDir.resolve("hub-embedded.jsonl");
+        uut(cfg, new FakeEmbeddingModel(DIMENSION)).exportForProject(cfg.getActiveProject().orElseThrow(), output);
+
+        List<EmbeddedChunkRecord> records = readRecords(output.toString());
+        assertThat(records).hasSize(2);
+        assertThat(records.get(0).metadata())
+                .containsEntry(SignatureMetadata.AST_NEIGHBOURS, "chunk-1");
+        assertThat(records.get(1).metadata())
+                .containsEntry(SignatureMetadata.AST_NEIGHBOURS, "chunk-0");
+    }
+
+    @Test
+    void exportForProject_withoutSidecar_writesNoAstNeighbours() throws Exception {
+        PrjXPConfig cfg = configWith(tempDir.resolve("in.jsonl").toString(), null);
+        writeInput(cfg, "alpha");
+
+        Path output = tempDir.resolve("hub-embedded.jsonl");
+        uut(cfg, new FakeEmbeddingModel(DIMENSION)).exportForProject(cfg.getActiveProject().orElseThrow(), output);
+
+        List<EmbeddedChunkRecord> records = readRecords(output.toString());
+        assertThat(records).hasSize(1);
+        assertThat(records.get(0).metadata()).doesNotContainKey(SignatureMetadata.AST_NEIGHBOURS);
     }
 
     @Test

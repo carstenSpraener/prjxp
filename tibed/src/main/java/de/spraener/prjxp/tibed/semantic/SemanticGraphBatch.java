@@ -3,6 +3,7 @@ package de.spraener.prjxp.tibed.semantic;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.graph.GraphMetadata;
+import de.spraener.prjxp.common.graph.SignatureMetadata;
 import de.spraener.prjxp.common.language.LeidenWeighter;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SemanticGraphSidecar;
@@ -21,8 +22,11 @@ import java.nio.file.Path;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 @Service
@@ -34,6 +38,11 @@ public class SemanticGraphBatch {
             PxChunk.PXCHUNK_METADATA + "." + GraphMetadata.SEMANTIC_NODE_ID;
     private static final String CLUSTER_ID_FIELD =
             PxChunk.PXCHUNK_METADATA + "." + GraphMetadata.SEMANTIC_CLUSTER_ID;
+    private static final String NEIGHBOURS_FIELD =
+            PxChunk.PXCHUNK_METADATA + "." + SignatureMetadata.SEMANTIC_NEIGHBOURS;
+
+    /** Maximum number of semantic neighbours written per chunk. */
+    static final int MAX_SEMANTIC_NEIGHBOURS = 10;
 
     private final SemanticEdgeBuilder edgeBuilder;
     private final LeidenWeighter leidenWeighter;
@@ -42,6 +51,9 @@ public class SemanticGraphBatch {
 
     public void run(String project, LuceneEmbeddingStore store) throws IOException {
         PrjXPConfig.SemanticGraphConfig graphConfig = config.getSemanticGraph();
+        if (graphConfig == null || !graphConfig.isEnabled()) {
+            return;
+        }
         if (graphConfig.isCalibrate()) {
             calibrateGamma(project, store, graphConfig);
             return;
@@ -49,8 +61,7 @@ public class SemanticGraphBatch {
 
         List<VectorChunk> projectChunks = store.readAllVectors(projectFilter(project));
         List<VectorChunk> input = edgeBuilder.selectInputChunks(projectChunks);
-        EdgeConfig edgeConfig = new EdgeConfig(
-                graphConfig.getK(), graphConfig.getThreshold(), graphConfig.isRequireMutual());
+        EdgeConfig edgeConfig = edgeConfigOf(graphConfig);
         List<SemanticEdge> edges = input.isEmpty()
                 ? List.of()
                 : edgeBuilder.buildSemanticEdges(store, project, input, edgeConfig);
@@ -64,6 +75,16 @@ public class SemanticGraphBatch {
         Map<String, Long> clusterSizes = clusterByNode.values().stream()
                 .collect(Collectors.groupingBy(cluster -> cluster, Collectors.counting()));
 
+        // Node id → logical chunk id of the semantic-graph members, plus undirected adjacency of
+        // the semantic edges: both feed the semantic_neighbours metadata of the pointer block.
+        Map<String, String> nodeIdToChunkId = input.stream()
+                .collect(Collectors.toMap(VectorChunk::nodeId, VectorChunk::id, (a, b) -> a));
+        Map<String, Set<String>> adjacency = new HashMap<>();
+        for (SemanticEdge edge : edges) {
+            adjacency.computeIfAbsent(edge.source(), k -> new LinkedHashSet<>()).add(edge.target());
+            adjacency.computeIfAbsent(edge.target(), k -> new LinkedHashSet<>()).add(edge.source());
+        }
+
         List<VectorChunk> updates = new ArrayList<>(projectChunks.size());
         for (VectorChunk chunk : projectChunks) {
             String clusterId = clusterByNode.get(chunk.nodeId());
@@ -74,6 +95,7 @@ public class SemanticGraphBatch {
             Map<String, String> metadataPatch = new HashMap<>();
             metadataPatch.put(NODE_ID_FIELD, chunk.nodeId());
             metadataPatch.put(CLUSTER_ID_FIELD, clusterId);
+            metadataPatch.put(NEIGHBOURS_FIELD, semanticNeighbours(chunk, adjacency, nodeIdToChunkId));
             updates.add(new VectorChunk(chunk.nodeId(), chunk.id(), chunk.project(), chunk.part(),
                     null, null, metadataPatch));
         }
@@ -89,8 +111,7 @@ public class SemanticGraphBatch {
             String project, LuceneEmbeddingStore store, PrjXPConfig.SemanticGraphConfig graphConfig)
             throws IOException {
         List<VectorChunk> input = edgeBuilder.selectInputChunks(store.readAllVectors(projectFilter(project)));
-        EdgeConfig edgeConfig = new EdgeConfig(
-                graphConfig.getK(), graphConfig.getThreshold(), graphConfig.isRequireMutual());
+        EdgeConfig edgeConfig = edgeConfigOf(graphConfig);
         List<SemanticEdge> edges = input.isEmpty()
                 ? List.of()
                 : edgeBuilder.buildSemanticEdges(store, project, input, edgeConfig);
@@ -112,8 +133,32 @@ public class SemanticGraphBatch {
         }
     }
 
+    private EdgeConfig edgeConfigOf(PrjXPConfig.SemanticGraphConfig graphConfig) {
+        return new EdgeConfig(
+                graphConfig.getK(), graphConfig.getThreshold(), graphConfig.isRequireMutual(),
+                graphConfig.getParallelism());
+    }
+
     private Filter projectFilter(String project) {
         return new IsEqualTo(PxChunk.PXCHUNK_PROJECT, project);
+    }
+
+    /**
+     * Comma-separated chunk ids of the chunk's semantic neighbours, or {@code null} to delete the
+     * key (non-input chunks — e.g. methods — never appear in the semantic graph).
+     */
+    private String semanticNeighbours(VectorChunk chunk, Map<String, Set<String>> adjacency,
+                                      Map<String, String> nodeIdToChunkId) {
+        Set<String> neighbourNodeIds = adjacency.get(chunk.nodeId());
+        if (neighbourNodeIds == null || neighbourNodeIds.isEmpty()) {
+            return null;
+        }
+        String neighbours = neighbourNodeIds.stream()
+                .map(nodeIdToChunkId::get)
+                .filter(Objects::nonNull)
+                .limit(MAX_SEMANTIC_NEIGHBOURS)
+                .collect(Collectors.joining(SignatureMetadata.LIST_SEPARATOR));
+        return neighbours.isEmpty() ? null : neighbours;
     }
 
     private void writeSidecar(

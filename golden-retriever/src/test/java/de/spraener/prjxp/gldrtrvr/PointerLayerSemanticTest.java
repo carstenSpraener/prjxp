@@ -34,20 +34,21 @@ class PointerLayerSemanticTest {
                 "p", List.of(new ScoredChunk(chunk, 0.9)), pointerParams()).toString();
 
         assertThat(prompt).contains("→ readFile(\"a.md\")")
-                .contains("[semantic-cluster:s3]")
+                .contains("cluster_id: \"s3\"")
                 .contains("→ semanticGraphNode(\"n1\")");
     }
 
     @Test
-    void markdownPointerIsDormantWithoutClusterMetadata() {
+    void markdownPointerOmitsClusterLineWithoutClusterMetadata() {
         PxChunk chunk = chunk("c1", "text/markdown", "a.md", null,
                 Map.of(GraphMetadata.SEMANTIC_NODE_ID, "n1"));
         String prompt = markdownRetriever(chunk).buildPromptForFindings(
                 "p", List.of(new ScoredChunk(chunk, 0.9)), pointerParams()).toString();
 
+        // The renderer emits each field independently: no cluster id, but the node pointer stays.
         assertThat(prompt).contains("→ readFile(\"a.md\")")
-                .doesNotContain("[semantic-cluster:")
-                .doesNotContain("semanticGraphNode");
+                .doesNotContain("cluster_id:")
+                .contains("→ semanticGraphNode(\"n1\")");
     }
 
     @Test
@@ -59,7 +60,7 @@ class PointerLayerSemanticTest {
                 "p", List.of(new ScoredChunk(chunk, 0.9)), pointerParams()).toString();
 
         assertThat(prompt).contains("→ readFile(\"notes.txt\")")
-                .contains("[semantic-cluster:s2]")
+                .contains("cluster_id: \"s2\"")
                 .contains("→ semanticGraphNode(\"node-2\")");
     }
 
@@ -73,7 +74,7 @@ class PointerLayerSemanticTest {
                 "p", List.of(new ScoredChunk(chunk, 0.9)), pointerParams()).toString();
 
         assertThat(prompt).contains("→ graphNode(\"de.ex.Foo\")")
-                .contains("[semantic-cluster:s1]")
+                .contains("cluster_id: \"s1\"")
                 .contains("→ semanticGraphNode(\"node-3\")");
     }
 

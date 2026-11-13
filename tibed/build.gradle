@@ -38,6 +38,13 @@ application {
     mainClass = 'de.spraener.prjxp.tibed.TiBedCliApp'
 }
 
+run {
+    // Lucene 10 falls back to scalar distance math unless the (incubator) Vector API is readable;
+    // enabling it makes the flat kNN scan several times faster. Lucene detects it at runtime and
+    // falls back gracefully on JDKs without the module, so this is safe.
+    jvmArgs '--add-modules', 'jdk.incubator.vector'
+}
+
 import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
 
 shadowJar {

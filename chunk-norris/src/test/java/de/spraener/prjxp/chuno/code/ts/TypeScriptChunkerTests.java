@@ -81,6 +81,27 @@ public class TypeScriptChunkerTests {
     }
 
     @Test
+    public void testControlFlowBlocksAreNotChunkedAsMethods() throws Exception {
+        List<PxChunk> chunkList = chhunkTypeScriptString("""
+                export class MetricCardComponent {
+                  get percentage(): number {
+                    if (this.maxValue && this.value) {
+                      return 1;
+                    }
+                    if (this.unit === 'GB') {
+                      return 2;
+                    }
+                    return 0;
+                  }
+                }
+                """);
+
+        List<String> ids = chunkList.stream().map(PxChunk::getId).toList();
+        Assertions.assertThat(ids).doesNotHaveDuplicates();
+        Assertions.assertThat(ids).noneMatch(id -> id.endsWith(".if"));
+    }
+
+    @Test
     public void testGlobalFunction() throws Exception {
 
     }

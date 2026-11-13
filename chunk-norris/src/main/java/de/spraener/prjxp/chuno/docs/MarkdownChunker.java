@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.io.PrintWriter;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
@@ -91,10 +92,15 @@ public class MarkdownChunker {
 
             List<String> currentHeaders = new ArrayList<>();
             int[] sectionCounters = new int[10];
+            // A section number is not a chunk identity: a section can contain many paragraph
+            // blocks (and '#'-style headers never incremented the old paragraph counter), so
+            // all of them produced the same id+part. The store rejected the duplicates as
+            // "Duplicate semantic node id". Both counters make the ids unique per file.
+            Map<String, Integer> chunkCounters = new HashMap<>();
+            Map<String, Integer> sectionChunkCounters = new HashMap<>();
             StringBuilder paragraphContent = new StringBuilder();
             int sectionStartLine = 0;
             boolean inTOC = false;
-            int paragraphCount = 0;
             for ( String line = scanner.getCurrentLine(); scanner.getCurrentLine()!=LineScanner.EOF; line = scanner.nextLine()) {
                 line = preprocessLine(scanner);
                 if (line.startsWith("#")) {
@@ -104,7 +110,7 @@ public class MarkdownChunker {
                     // the whole document would accumulate in one buffer and end up attributed
                     // to the last section.
                     if ( !paragraphContent.isEmpty() ) {
-                        processSection(originalFile, chunkList, paragraphContent, currentHeaders, paragraphCount, sectionCounters, sectionStartLine, scanner.getGlobalLineIndex());
+                        processSection(originalFile, chunkList, paragraphContent, currentHeaders, chunkCounters, sectionCounters, sectionStartLine, scanner.getGlobalLineIndex());
                         paragraphContent = new StringBuilder();
                     }
                     sectionStartLine = skipToNextNonEmptyLine(scanner);
@@ -112,12 +118,10 @@ public class MarkdownChunker {
                     while (level < line.length() && line.charAt(level) == '#') level++;
                     String headerText = line.substring(level).trim();
                     updateHierarchy(currentHeaders, sectionCounters, level, headerText);
-                    paragraphCount = 0;
-                    chunkList.add(createSectionChunk(originalFile, sectionCounters, currentHeaders));
+                    chunkList.add(createSectionChunk(originalFile, sectionCounters, currentHeaders, sectionChunkCounters));
                 } else if( isEndOfParagraph(scanner) ) {
-                    paragraphCount++;
                     paragraphContent.append(line).append('\n');
-                    processSection(originalFile, chunkList, paragraphContent, currentHeaders, paragraphCount, sectionCounters, sectionStartLine, scanner.getGlobalLineIndex());
+                    processSection(originalFile, chunkList, paragraphContent, currentHeaders, chunkCounters, sectionCounters, sectionStartLine, scanner.getGlobalLineIndex());
                     paragraphContent = new StringBuilder();
                     sectionStartLine = skipToNextNonEmptyLine(scanner);
                 }else {
@@ -127,7 +131,7 @@ public class MarkdownChunker {
                     }
                 }
             }
-            processSection(originalFile, chunkList, paragraphContent, currentHeaders, paragraphCount, sectionCounters, sectionStartLine, scanner.getGlobalLineIndex());
+            processSection(originalFile, chunkList, paragraphContent, currentHeaders, chunkCounters, sectionCounters, sectionStartLine, scanner.getGlobalLineIndex());
 
             if( !metaInf.isEmpty() ) {
                 for (PxChunk c : chunkList) {
@@ -141,15 +145,23 @@ public class MarkdownChunker {
         }
     }
 
-    private PxChunk createSectionChunk(File file, int[] sectionCounters, List<String> headers) {
+    private PxChunk createSectionChunk(File file, int[] sectionCounters, List<String> headers,
+                                       Map<String, Integer> sectionChunkCounters) {
         String sectionNumber = formatSectionNumber(sectionCounters);
+        // '#'-level headers can repeat the same number (e.g. numbered list items converted to
+        // headers), so the section id needs an occurrence suffix to stay unique.
+        int occurrence = sectionChunkCounters.merge(sectionNumber, 1, Integer::sum) - 1;
+        String sectionId = sectionNumber + (occurrence == 0 ? "" : "#" + occurrence);
         return PxChunk.create(
                 c -> c.setMimeType(MIME_TYPE),
-                c->c.setId(file.getName()+":"+sectionNumber),
+                c->c.setId(file.getName()+":"+sectionId),
                 c->c.setParent(file.getName()),
                 c->c.setContent(""),
                 c->c.setFile(file.getAbsolutePath()),
                 c->c.getMetadata().put("pxchunk_type", "SECTION"),
+                // Section chunks are the ones a doc search usually hits first; without the
+                // hierarchy the pointer block would have no chapter line.
+                c->c.getMetadata().put("hierarchy", String.join(" > ", headers)),
                 c->c.setContent(headers.getLast())
         );
     }
@@ -216,7 +228,7 @@ public class MarkdownChunker {
     private void processSection(File file, List<PxChunk> list,
                                 StringBuilder content,
                                 List<String> headers,
-                                int paragraphCount,
+                                Map<String, Integer> chunkCounters,
                                 int[] counters,
                                 int startLine,
                                 int currentLine) {
@@ -224,7 +236,9 @@ public class MarkdownChunker {
 
         final String sectionId = String.join(" > ", headers);
         final String sectionNum = formatSectionNumber(counters);
-        final ValueContainer<Integer> partCounter = new ValueContainer<>(0);
+        // One processSection call = one logical chunk block. The per-section counter makes its
+        // id unique even when several blocks share the same section number.
+        final int chunkInSection = chunkCounters.merge(sectionNum, 1, Integer::sum) - 1;
         final ValueContainer<Integer> totalCounter = new ValueContainer<>(0);
 
         // Nutzt deinen ContentSplitter für i of N Splitting
@@ -233,7 +247,7 @@ public class MarkdownChunker {
                         c -> c.setMimeType(MIME_TYPE),
                         c -> c.setFile(file.getAbsolutePath()),
                         c -> {
-                            c.setId(file.getName()+":"+sectionNum+":"+String.format("%02d",paragraphCount));
+                            c.setId(file.getName()+":"+sectionNum+":"+String.format("%02d",chunkInSection));
                             c.getMetadata().put("section_number", sectionNum);
                             c.getMetadata().put("hierarchy", sectionId);
                             c.setPart(totalCounter.getValue());

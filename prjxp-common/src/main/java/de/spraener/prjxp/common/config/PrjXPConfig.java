@@ -47,6 +47,13 @@ public class PrjXPConfig {
     private int readerMaxOutputChars = 100_000;
     private EmbeddingConfig embedding = new EmbeddingConfig();
     private SemanticGraphConfig semanticGraph = new SemanticGraphConfig();
+    private SignatureConfig signature = new SignatureConfig();
+    /**
+     * When true, the tibed pipeline skips the ingestion (JSONL read + embedding) and runs only
+     * the enrichment (semantic graph + signatures) against the existing index. Set by the
+     * {@code --enrich-only} CLI flag; never true in the hub (in-process pipeline always ingests).
+     */
+    private boolean enrichOnly;
     // User-configurable single embedding model (Globals panel)
     private PrjXPEmbeddingModelReference embeddingModel;
 
@@ -90,6 +97,25 @@ public class PrjXPConfig {
         private double threshold = 0.85;
         private int k = 20;
         private boolean requireMutual = true;
+        /**
+         * Thread pool size for the per-chunk kNN neighbour search (the dominant cost of the
+         * semantic graph batch). 0 (default) = available processors. The search is read-only
+         * and Lucene's SearcherManager is thread-safe, so the speedup is near-linear.
+         */
+        private int parallelism = 0;
+    }
+
+    /**
+     * Null-LLM signature layer (paper §3.3): TF-IDF keywords per chunk and c-TF-IDF keywords per
+     * cluster, written as chunk metadata after embedding.
+     */
+    @lombok.Data
+    public static class SignatureConfig {
+        private boolean enabled = true;
+        /** Number of keywords written per chunk and per cluster. */
+        private int topN = 8;
+        /** Shortest accepted term length. */
+        private int minTermLength = 3;
     }
 
     // --- Transfer Sektion (externes Embedding) ---

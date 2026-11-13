@@ -3,7 +3,9 @@ package de.spraener.prjxp.lpgdscript;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.PointerRenderer;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
@@ -31,6 +33,7 @@ import java.util.stream.Collectors;
 public class GdscriptRetriever implements GoldenRetriever {
 
     private final PxChunkDaoProvider chunkDaoProvider;
+    private final PointerRenderer pointerRenderer = new PointerRenderer();
 
     public GdscriptRetriever() {
         this(null);
@@ -57,6 +60,9 @@ public class GdscriptRetriever implements GoldenRetriever {
                                                       Function<String, Boolean>... contextValidators) {
         PxChunkDao dao = resolveDao(projectName);
         List<Ranked> ranked = filterAndCombine(dao, chunks);
+        if (params.effectiveContentLevel() == ContentLevel.POINTERS) {
+            return buildPointersPrompt(projectName, ranked, params);
+        }
         Set<String> hitIds = hitIds(ranked);
 
         StringBuilder prompt = new StringBuilder();
@@ -100,6 +106,27 @@ public class GdscriptRetriever implements GoldenRetriever {
             hits.add(SearchHit.from(enriched, r.score(), SearchHit.preview(enriched.getContent()), "gdscript"));
         }
         return hits;
+    }
+
+    /**
+     * POINTERS layer: one dual-graph reference block per hit instead of the rendered section,
+     * bounded by {@code maxResult} and the content budget.
+     */
+    private StringBuilder buildPointersPrompt(String projectName, List<Ranked> ranked, SearchParams params) {
+        StringBuilder prompt = new StringBuilder();
+        int count = 0;
+        for (Ranked r : ranked) {
+            if (count >= params.getMaxResult()) {
+                break;
+            }
+            String block = pointerRenderer.render(projectName, r.chunk(), r.score());
+            if (prompt.length() + block.length() > params.getMaxContentLength()) {
+                break;
+            }
+            prompt.append(block);
+            count++;
+        }
+        return prompt;
     }
 
     // ------------------------------------------------------------------

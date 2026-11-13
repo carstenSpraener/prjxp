@@ -13,8 +13,10 @@ import de.spraener.prjxp.mcp.ClusterMember;
 import de.spraener.prjxp.mcp.ClusterOverviewView;
 import de.spraener.prjxp.mcp.ClusterSummary;
 import de.spraener.prjxp.mcp.ClusterView;
+import de.spraener.prjxp.mcp.GraphAggregate;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
+import de.spraener.prjxp.mcp.GrepResult;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
 import de.spraener.prjxp.mcp.PrjxpToolDocs;
 import de.spraener.prjxp.mcp.ProjectSummary;
@@ -67,7 +69,7 @@ class PrjxpToolRegistrationTest {
         assertThat(registry.getTools()).extracting(ToolDefinition::getName)
                 .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles",
                         "graphFile", "graphNode", "graphCluster", "graphClusterOverview",
-                        "semanticGraphCluster", "semanticGraphNode", "semanticGraphOverview");
+                        "semanticGraphCluster", "semanticGraphNode", "semanticGraphOverview", "readChunks");
     }
 
     @Test
@@ -75,7 +77,7 @@ class PrjxpToolRegistrationTest {
         // The second run hits name collisions — they must be logged, not thrown
         registration.registerTools();
 
-        assertThat(registry.getTools()).hasSize(13);
+        assertThat(registry.getTools()).hasSize(14);
     }
 
     @Test
@@ -105,6 +107,11 @@ class PrjxpToolRegistrationTest {
                 .filter(s -> s.name().equals("semanticGraphNode")).findFirst().orElseThrow();
         assertThat(semanticNode.parameters().required()).containsExactly("nodeId", "project");
         assertThat(semanticNode.parameters().properties()).containsKeys("nodeId", "project", "maxEdges");
+
+        ToolSpecification readChunks = specs.stream()
+                .filter(s -> s.name().equals("readChunks")).findFirst().orElseThrow();
+        assertThat(readChunks.parameters().required()).containsExactly("project", "ids");
+        assertThat(readChunks.parameters().properties()).containsKeys("project", "ids");
     }
 
     @Test
@@ -123,7 +130,8 @@ class PrjxpToolRegistrationTest {
                 Map.entry("graphClusterOverview", PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW),
                 Map.entry("semanticGraphCluster", PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER),
                 Map.entry("semanticGraphNode", PrjxpToolDocs.SEMANTIC_GRAPH_NODE),
-                Map.entry("semanticGraphOverview", PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW));
+                Map.entry("semanticGraphOverview", PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW),
+                Map.entry("readChunks", PrjxpToolDocs.READ_CHUNKS));
 
         for (ToolSpecification spec : registry.specifications()) {
             assertThat(spec.description())
@@ -174,7 +182,8 @@ class PrjxpToolRegistrationTest {
     @Test
     void grepFormatsHits() {
         SearchHit hit = new SearchHit("chunk-1", 0.9, "Foo.java", 10, 20, "public void foo()", "java", Map.of());
-        when(mcpTool.grep(eq("foo"), eq("p1"), any(), any(), any(), any())).thenReturn(List.of(hit));
+        when(mcpTool.grep(eq("foo"), eq("p1"), any(), any(), any(), any()))
+                .thenReturn(GrepResult.of(List.of(hit), 1));
 
         String result = execute("grep", Map.of("query", "foo", "project", "p1"));
 
@@ -186,8 +195,21 @@ class PrjxpToolRegistrationTest {
     }
 
     @Test
+    void grepAppendsTruncationNote() {
+        SearchHit hit = new SearchHit("chunk-1", 0.9, "Foo.java", 10, 20, "public void foo()", "java", Map.of());
+        when(mcpTool.grep(eq("foo"), eq("p1"), any(), any(), any(), any()))
+                .thenReturn(GrepResult.of(List.of(hit), 3));
+
+        String result = execute("grep", Map.of("query", "foo", "project", "p1"));
+
+        assertThat(result).contains("showing 1 of 3");
+        assertThat(result).contains("2 more not shown");
+    }
+
+    @Test
     void grepWithoutHitsMentionsProject() {
-        when(mcpTool.grep(any(), eq("p1"), any(), any(), any(), any())).thenReturn(List.of());
+        when(mcpTool.grep(any(), eq("p1"), any(), any(), any(), any()))
+                .thenReturn(GrepResult.of(List.of(), 0));
 
         String result = execute("grep", Map.of("query", "nothing", "project", "p1"));
 
@@ -197,7 +219,8 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void grepPassesIncludeTestsThrough() {
-        when(mcpTool.grep(eq("q"), any(), any(), any(), any(), eq(false))).thenReturn(List.of());
+        when(mcpTool.grep(eq("q"), any(), any(), any(), any(), eq(false)))
+                .thenReturn(GrepResult.of(List.of(), 0));
 
         execute("grep", Map.of("query", "q", "includeTests", false));
 
@@ -206,7 +229,8 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void grepPassesContentLevelThrough() {
-        when(mcpTool.grep(eq("q"), any(), any(), any(), eq("POINTERS"), any())).thenReturn(List.of());
+        when(mcpTool.grep(eq("q"), any(), any(), any(), eq("POINTERS"), any()))
+                .thenReturn(GrepResult.of(List.of(), 0));
 
         execute("grep", Map.of("query", "q", "contentLevel", "POINTERS"));
 
@@ -362,8 +386,8 @@ class PrjxpToolRegistrationTest {
         GraphView view = new GraphView("demo", "src/A.java", "demo.A", "c0", 0.9,
                 List.of(new GraphNeighbor(EdgeType.IMPORT, "demo.B", "src/B.java", false)),
                 List.of(new GraphNeighbor(EdgeType.EXTENDS, "demo.C", "src/C.java", false)),
-                List.of(), null);
-        when(mcpTool.graphFile(eq("src/A.java"), any(), any(), any())).thenReturn(view);
+                List.of(), null, 1, 1, null, null);
+        when(mcpTool.graphFile(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
 
         String result = execute("graphFile", Map.of("file", "src/A.java"));
 
@@ -377,8 +401,37 @@ class PrjxpToolRegistrationTest {
     }
 
     @Test
+    void graphFileToolShowsTotalsAndTruncationHint() {
+        // 120 outgoing edges, page of 30 -> header must show the full count and the truncation hint
+        GraphView view = new GraphView("demo", "src/A.java", "demo.A", "c0", 0.9,
+                List.of(new GraphNeighbor(EdgeType.IMPORT, "demo.B", "src/B.java", false)),
+                List.of(),
+                List.of(), null, 120, 0, null, null);
+        when(mcpTool.graphFile(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
+
+        String result = execute("graphFile", Map.of("file", "src/A.java"));
+
+        assertThat(result).contains("[out:120, in:0]");
+        assertThat(result).contains("page truncated");
+    }
+
+    @Test
+    void graphFileToolShowsTotalsWithoutHintWhenComplete() {
+        GraphView view = new GraphView("demo", "src/A.java", "demo.A", "c0", 0.9,
+                List.of(new GraphNeighbor(EdgeType.IMPORT, "demo.B", "src/B.java", false)),
+                List.of(),
+                List.of(), null, 1, 0, null, null);
+        when(mcpTool.graphFile(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
+
+        String result = execute("graphFile", Map.of("file", "src/A.java"));
+
+        assertThat(result).contains("[out:1, in:0]");
+        assertThat(result).doesNotContain("page truncated");
+    }
+
+    @Test
     void graphFileToolRendersError() {
-        when(mcpTool.graphFile(any(), any(), any(), any()))
+        when(mcpTool.graphFile(any(), any(), any(), any(), any(), any()))
                 .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
 
         assertThat(execute("graphFile", Map.of("file", "src/A.java")))
@@ -387,7 +440,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void graphFileToolRendersCandidates() {
-        when(mcpTool.graphFile(any(), any(), any(), any()))
+        when(mcpTool.graphFile(any(), any(), any(), any(), any(), any()))
                 .thenReturn(GraphView.ambiguous("demo", "A.java", List.of("src/x/A.java", "src/y/A.java")));
 
         String result = execute("graphFile", Map.of("file", "A.java"));
@@ -399,7 +452,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void graphFileToolRendersNullView() {
-        when(mcpTool.graphFile(any(), any(), any(), any())).thenReturn(null);
+        when(mcpTool.graphFile(any(), any(), any(), any(), any(), any())).thenReturn(null);
 
         assertThat(execute("graphFile", Map.of("file", "src/A.java"))).isEqualTo("No graph view returned.");
     }
@@ -407,8 +460,8 @@ class PrjxpToolRegistrationTest {
     @Test
     void graphNodeToolRendersNodeHeaderWhenNoFile() {
         GraphView view = new GraphView("demo", null, "demo.A", null, null,
-                List.of(), List.of(), List.of(), null);
-        when(mcpTool.graphNode(any(), any(), any(), any())).thenReturn(view);
+                List.of(), List.of(), List.of(), null, null, null, null, null);
+        when(mcpTool.graphNode(any(), any(), any(), any(), any(), any())).thenReturn(view);
 
         String result = execute("graphNode", Map.of("symbol", "demo.A"));
 
@@ -421,6 +474,66 @@ class PrjxpToolRegistrationTest {
         assertThat(execute("graphNode", Map.of()))
                 .isEqualTo("ERROR: 'symbol' parameter is required for graphNode.");
         verifyNoInteractions(mcpTool);
+    }
+
+    // ---- Efficiency measure 5: contentLevel=AGGREGATED rendering ----
+
+    @Test
+    void graphNodeToolRendersAggregatedView() {
+        GraphView view = new GraphView("demo", null, "core.Model", "c0", 1.0,
+                List.of(), List.of(), List.of(), null, 2, 7,
+                List.of(new GraphAggregate("core", 1, 1, Map.of(EdgeType.IMPORT, 1),
+                        List.of(new GraphAggregate.ClassCount("core.A", 1)))),
+                List.of(
+                        new GraphAggregate("core", 4, 2,
+                                Map.of(EdgeType.IMPORT, 2, EdgeType.PARAM, 1, EdgeType.RETURN, 1),
+                                List.of(new GraphAggregate.ClassCount("core.A", 3),
+                                        new GraphAggregate.ClassCount("core.B", 1))),
+                        new GraphAggregate("web", 3, 3,
+                                Map.of(EdgeType.IMPORT, 1, EdgeType.CALL, 1, EdgeType.FIELD, 1),
+                                List.of(new GraphAggregate.ClassCount("web.C", 1),
+                                        new GraphAggregate.ClassCount("web.D", 1),
+                                        new GraphAggregate.ClassCount("web.E", 1)))));
+        when(mcpTool.graphNode(any(), any(), any(), any(), any(), any())).thenReturn(view);
+
+        String result = execute("graphNode", Map.of("symbol", "core.Model", "contentLevel", "AGGREGATED"));
+
+        assertThat(result).contains("Aggregated by module");
+        assertThat(result).contains("core: 4 edges, 2 classes");
+        assertThat(result).contains("IMPORT 2");
+        assertThat(result).contains("core.A(3)");
+        assertThat(result).contains("web: 3 edges, 3 classes");
+        // the aggregation is complete by construction: no misleading hints
+        assertThat(result).doesNotContain("(no edges)");
+        assertThat(result).doesNotContain("page truncated");
+    }
+
+    @Test
+    void graphNodeToolPassesContentLevelThrough() {
+        when(mcpTool.graphNode(any(), any(), any(), any(), any(), any()))
+                .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
+
+        execute("graphNode", Map.of("symbol", "demo.A", "contentLevel", "AGGREGATED"));
+
+        verify(mcpTool).graphNode("demo.A", null, null, null, null, "AGGREGATED");
+    }
+
+    @Test
+    void graphFileToolPassesContentLevelThrough() {
+        when(mcpTool.graphFile(any(), any(), any(), any(), any(), any()))
+                .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
+
+        execute("graphFile", Map.of("file", "src/A.java", "contentLevel", "AGGREGATED"));
+
+        verify(mcpTool).graphFile("src/A.java", null, null, null, null, "AGGREGATED");
+    }
+
+    @Test
+    void graphNodeSpecificationCarriesContentLevel() {
+        ToolSpecification spec = registry.specifications().stream()
+                .filter(s -> s.name().equals("graphNode")).findFirst().orElseThrow();
+
+        assertThat(spec.parameters().properties()).containsKeys("symbol", "project", "maxEdges", "includeExternal", "offset", "contentLevel");
     }
 
     // ==================== graphCluster ====================
@@ -528,6 +641,23 @@ class PrjxpToolRegistrationTest {
     void semanticGraphClusterRequiresClusterId() {
         assertThat(execute("semanticGraphCluster", Map.of("project", "demo")))
                 .isEqualTo("ERROR: 'clusterId' parameter is required for semanticGraphCluster.");
+    }
+
+    @Test
+    void readChunksToolDelegatesAndFormatsContent() {
+        when(mcpTool.readChunks(eq("demo"), eq("c1,c2"))).thenReturn("## c1\nbody one\n\n## c2\nbody two");
+
+        String result = execute("readChunks", Map.of("project", "demo", "ids", "c1,c2"));
+
+        assertThat(result).contains("## c1", "body one", "## c2", "body two");
+        verify(mcpTool).readChunks("demo", "c1,c2");
+    }
+
+    @Test
+    void readChunksRequiresIds() {
+        assertThat(execute("readChunks", Map.of("project", "demo")))
+                .isEqualTo("ERROR: 'project' and 'ids' are required for readChunks.");
+        verifyNoInteractions(mcpTool);
     }
 
     // ==================== argument coercion & truncation ====================

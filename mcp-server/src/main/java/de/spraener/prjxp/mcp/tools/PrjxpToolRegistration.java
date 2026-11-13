@@ -9,8 +9,10 @@ import de.spraener.prjxp.mcp.ClusterMember;
 import de.spraener.prjxp.mcp.ClusterOverviewView;
 import de.spraener.prjxp.mcp.ClusterSummary;
 import de.spraener.prjxp.mcp.ClusterView;
+import de.spraener.prjxp.mcp.GraphAggregate;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
+import de.spraener.prjxp.mcp.GrepResult;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
 import de.spraener.prjxp.mcp.PrjxpToolDocs;
 import de.spraener.prjxp.mcp.ProjectSummary;
@@ -33,7 +35,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 /**
- * Registers the thirteen prjxp tools in the central {@link ToolRegistry} so that they are
+ * Registers the fourteen prjxp tools in the central {@link ToolRegistry} so that they are
  * available for native function calling — executed in-process as plain Java calls on
  * {@link PrjxpMcpTool}, without a JSON-RPC round trip.
  * <p>
@@ -69,6 +71,7 @@ public class PrjxpToolRegistration {
         register(semanticGraphClusterTool());
         register(semanticGraphNodeTool());
         register(semanticGraphOverviewTool());
+        register(readChunksTool());
     }
 
     private void register(ToolDefinition tool) {
@@ -97,7 +100,7 @@ public class PrjxpToolRegistration {
                         .addBooleanProperty("skeletonsOnly",
                                 "Deprecated; contentLevel wins. Legacy TRUE still means SKELETON.")
                         .addStringProperty("contentLevel",
-                                "POINTERS (default) hints only, SKELETON signatures, FULL bodies.")
+                                "POINTERS (default) hints, SKELETON signatures, FULL bodies, NAMES = filenames.")
                         .addStringProperty("sourceType",
                                 "code (default) | docs | all. Retry with all for prose documentation.")
                         .addBooleanProperty("includeTests",
@@ -131,7 +134,7 @@ public class PrjxpToolRegistration {
                         .addStringProperty("language", "Optional language filter (e.g. 'java').")
                         .addIntegerProperty("limit", "Max hits after grouping, default 10 (max 100).")
                         .addStringProperty("contentLevel",
-                                "POINTERS enumerates, SKELETON signatures, FULL (default) bodies.")
+                                "NAMES (default) = grep -l: 'count  path' per file, sorted by count; SKELETON signatures; FULL bodies; POINTERS enumerates.")
                         .addBooleanProperty("includeTests",
                                 "Include test sources (default true).")
                         .required("query", "project")
@@ -146,9 +149,9 @@ public class PrjxpToolRegistration {
                         return "ERROR: 'query' parameter is required for grep.";
                     }
                     String project = string(params, "project");
-                    List<SearchHit> hits = mcpTool.grep(query, project, string(params, "language"),
+                    GrepResult result = mcpTool.grep(query, project, string(params, "language"),
                             integer(params, "limit"), string(params, "contentLevel"), bool(params, "includeTests"));
-                    return formatHits(query, project, hits);
+                    return formatHits(query, project, result);
                 }, spec);
     }
 
@@ -257,22 +260,27 @@ public class PrjxpToolRegistration {
                         .addStringProperty("file",
                                 "File path (absolute, relative, or name; lenient).")
                         .addStringProperty("project", "Project name (listProjects).")
-                        .addIntegerProperty("maxEdges", "Max neighbours per direction (default 30, max 100).")
+                        .addIntegerProperty("maxEdges", "Max neighbours per direction (default 30, max 500).")
                         .addBooleanProperty("includeExternal", "Include JDK/library edges (default false).")
+                        .addIntegerProperty("offset", "Skip this many per direction (default 0).")
+                        .addStringProperty("contentLevel",
+                                "FULL (default) = all edges; AGGREGATED = per-module counts + top classes.")
                         .required("file", "project")
                         .build())
                 .build();
 
         return new ToolDefinition("graphFile", spec.description(),
                 Map.of("file", "File path", "project", "Required project name",
-                        "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges"),
+                        "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges",
+                        "offset", "Pagination offset per direction", "contentLevel", "FULL or AGGREGATED"),
                 params -> {
                     String file = string(params, "file");
                     if (file == null) {
                         return "ERROR: 'file' parameter is required for graphFile.";
                     }
                     GraphView view = mcpTool.graphFile(file, string(params, "project"),
-                            integer(params, "maxEdges"), bool(params, "includeExternal"));
+                            integer(params, "maxEdges"), bool(params, "includeExternal"), integer(params, "offset"),
+                            string(params, "contentLevel"));
                     return formatGraph(view);
                 }, spec);
     }
@@ -285,22 +293,27 @@ public class PrjxpToolRegistration {
                         .addStringProperty("symbol",
                                 "Node id: class FQN or method id; bare names match as suffix.")
                         .addStringProperty("project", "Project name (listProjects).")
-                        .addIntegerProperty("maxEdges", "Max neighbours per direction (default 30, max 100).")
+                        .addIntegerProperty("maxEdges", "Max neighbours per direction (default 30, max 500).")
                         .addBooleanProperty("includeExternal", "Include JDK/library edges (default false).")
+                        .addIntegerProperty("offset", "Skip this many per direction (default 0).")
+                        .addStringProperty("contentLevel",
+                                "FULL (default) = all edges; AGGREGATED = per-module counts + top classes.")
                         .required("symbol", "project")
                         .build())
                 .build();
 
         return new ToolDefinition("graphNode", spec.description(),
                 Map.of("symbol", "Node id (FQN or method id)", "project", "Required project name",
-                        "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges"),
+                        "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges",
+                        "offset", "Pagination offset per direction", "contentLevel", "FULL or AGGREGATED"),
                 params -> {
                     String symbol = string(params, "symbol");
                     if (symbol == null) {
                         return "ERROR: 'symbol' parameter is required for graphNode.";
                     }
                     GraphView view = mcpTool.graphNode(symbol, string(params, "project"),
-                            integer(params, "maxEdges"), bool(params, "includeExternal"));
+                            integer(params, "maxEdges"), bool(params, "includeExternal"), integer(params, "offset"),
+                            string(params, "contentLevel"));
                     return formatGraph(view);
                 }, spec);
     }
@@ -412,6 +425,29 @@ public class PrjxpToolRegistration {
                         string(params, "project"), integer(params, "topN"))), spec);
     }
 
+    private ToolDefinition readChunksTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("readChunks")
+                .description(PrjxpToolDocs.READ_CHUNKS)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addStringProperty("ids", "Comma-separated chunk_ids (from vectorSearch output), max 10.")
+                        .required("project", "ids")
+                        .build())
+                .build();
+
+        return new ToolDefinition("readChunks", spec.description(),
+                Map.of("project", "Required project name", "ids", "Comma-separated chunk_ids"),
+                params -> {
+                    String project = string(params, "project");
+                    String ids = string(params, "ids");
+                    if (project == null || ids == null) {
+                        return "ERROR: 'project' and 'ids' are required for readChunks.";
+                    }
+                    return truncate(mcpTool.readChunks(project, ids), SEARCH_RESULT_CAP);
+                }, spec);
+    }
+
     // ==================== Result formatting ====================
 
     private String formatSemanticCluster(SemanticClusterView view) {
@@ -500,8 +536,9 @@ public class PrjxpToolRegistration {
         return truncate(sb.toString(), SEARCH_RESULT_CAP);
     }
 
-    private String formatHits(String query, String project, List<SearchHit> hits) {
-        if (hits == null || hits.isEmpty()) {
+    private String formatHits(String query, String project, GrepResult result) {
+        List<SearchHit> hits = result == null ? List.of() : result.hits();
+        if (hits.isEmpty()) {
             return "No results found for grep query: \"" + query + "\""
                     + (project != null ? " in project \"" + project + "\"" : "");
         }
@@ -518,6 +555,11 @@ public class PrjxpToolRegistration {
             if (hit.snippet() != null) sb.append("  Snippet:\n").append(hit.snippet()).append("\n");
             if (hit.chunkId() != null) sb.append("  Chunk: ").append(hit.chunkId()).append("\n");
             sb.append("\n");
+        }
+        // Tell the model when the list was cut off so it can raise the limit instead of
+        // assuming it has seen every matching file.
+        if (result.note() != null) {
+            sb.append(result.note()).append("\n");
         }
         return truncate(sb.toString(), SEARCH_RESULT_CAP);
     }
@@ -611,21 +653,70 @@ public class PrjxpToolRegistration {
                     .append(", weight:").append(view.weight() == null ? "?" : String.format(java.util.Locale.ROOT, "%.2f", view.weight()))
                     .append("]");
         }
+        // Efficiency measure 5: the AGGREGATED view carries module groups instead of raw edges.
+        boolean aggregated = view.outgoingByModule() != null || view.incomingByModule() != null;
+        // Full per-direction counts in the header (always visible, before the edge list that may be
+        // truncated): lets the model tell the page is partial and page the rest via offset/maxEdges.
+        if (view.totalOutgoing() != null || view.totalIncoming() != null) {
+            sb.append("   [out:").append(view.totalOutgoing() == null ? "?" : view.totalOutgoing())
+                    .append(", in:").append(view.totalIncoming() == null ? "?" : view.totalIncoming()).append("]");
+            // The aggregation covers all edges by construction — no truncation hint in that mode.
+            if (!aggregated
+                    && ((view.totalOutgoing() != null && view.outgoing().size() < view.totalOutgoing())
+                    || (view.totalIncoming() != null && view.incoming().size() < view.totalIncoming()))) {
+                sb.append("  (page truncated — raise maxEdges or use offset)");
+            }
+        }
         sb.append("\n");
-        for (GraphNeighbor n : view.outgoing()) {
-            sb.append("    ").append(n.type()).append(" -> ").append(n.neighborId())
-                    .append(n.neighborFile() != null ? "  [" + n.neighborFile() + "]" : "")
-                    .append("\n");
-        }
-        for (GraphNeighbor n : view.incoming()) {
-            sb.append("    <- ").append(n.type()).append("  ").append(n.neighborId())
-                    .append(n.neighborFile() != null ? "  [" + n.neighborFile() + "]" : "")
-                    .append("\n");
-        }
-        if (view.outgoing().isEmpty() && view.incoming().isEmpty()) {
-            sb.append("    (no edges)\n");
+        if (aggregated) {
+            sb.append("Aggregated by module:\n");
+            if (view.outgoingByModule() != null) {
+                sb.append("  outgoing (").append(view.totalOutgoing() == null ? "?" : view.totalOutgoing())
+                        .append(" edges, ").append(view.outgoingByModule().size()).append(" modules):\n");
+                for (GraphAggregate a : view.outgoingByModule()) {
+                    renderAggregate(sb, a);
+                }
+            }
+            if (view.incomingByModule() != null) {
+                sb.append("  incoming (").append(view.totalIncoming() == null ? "?" : view.totalIncoming())
+                        .append(" edges, ").append(view.incomingByModule().size()).append(" modules):\n");
+                for (GraphAggregate a : view.incomingByModule()) {
+                    renderAggregate(sb, a);
+                }
+            }
+        } else {
+            for (GraphNeighbor n : view.outgoing()) {
+                sb.append("    ").append(n.type()).append(" -> ").append(n.neighborId())
+                        .append(n.neighborFile() != null ? "  [" + n.neighborFile() + "]" : "")
+                        .append("\n");
+            }
+            for (GraphNeighbor n : view.incoming()) {
+                sb.append("    <- ").append(n.type()).append("  ").append(n.neighborId())
+                        .append(n.neighborFile() != null ? "  [" + n.neighborFile() + "]" : "")
+                        .append("\n");
+            }
+            if (view.outgoing().isEmpty() && view.incoming().isEmpty()) {
+                sb.append("    (no edges)\n");
+            }
         }
         return truncate(sb.toString(), SEARCH_RESULT_CAP);
+    }
+
+    /** One module group of the AGGREGATED view: counts, edge-type breakdown, and top classes. */
+    private void renderAggregate(StringBuilder sb, GraphAggregate a) {
+        sb.append("    ").append(a.module()).append(": ").append(a.edgeCount()).append(" edges, ")
+                .append(a.classCount()).append(" classes");
+        if (!a.typeCounts().isEmpty()) {
+            sb.append(" [").append(a.typeCounts().entrySet().stream()
+                    .map(en -> en.getKey() + " " + en.getValue())
+                    .collect(Collectors.joining(", "))).append("]");
+        }
+        if (!a.topClasses().isEmpty()) {
+            sb.append(" — ").append(a.topClasses().stream()
+                    .map(c -> c.className() + "(" + c.count() + ")")
+                    .collect(Collectors.joining(", ")));
+        }
+        sb.append("\n");
     }
 
     private String formatCluster(ClusterView view) {

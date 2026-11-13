@@ -542,6 +542,160 @@ class GrepSearchServiceTest {
         assertThat(fake.lastParams.effectiveContentLevel()).isEqualTo(ContentLevel.FULL);
     }
 
+    // ---- Efficiency measure 1: NAMES returns filenames only ----
+
+    @Test
+    void namesModeReturnsFilenamesOnlyWithoutBodyOrPointers() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        String bodyMarker = "return !vetoRegistry.shouldVeto(p);";
+        PxChunk chunk = fileChunk("v1", "src/main/java/DirectoryVetos.java",
+                "public boolean shouldVeto(PxChunk p) {\n    " + bodyMarker + "\n}");
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 1.0)));
+
+        SearchHit hit = service.search("@ChunkVeto", "myproj", "java", 10, true, ContentLevel.NAMES).get(0);
+
+        // grep -l: one line per file with the hit-count prefix, no body, no pointers
+        assertThat(hit.snippet()).isEqualTo("1  src/main/java/DirectoryVetos.java");
+        assertThat(hit.snippet()).doesNotContain(bodyMarker);
+        assertThat(hit.snippet()).doesNotContain("readFile");
+        assertThat(hit.file()).isEqualTo("src/main/java/DirectoryVetos.java");
+    }
+
+    @Test
+    void namesModeListsEachMatchingFileOnce() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(fileChunk("m1", "src/main/java/A.java", "PxChunk a"), 1.0),
+                        new ScoredChunk(fileChunk("m2", "src/main/java/B.java", "PxChunk b"), 1.0),
+                        new ScoredChunk(fileChunk("m3", "src/main/java/A.java", "PxChunk a2"), 1.0)));
+
+        List<SearchHit> hits = service.search("PxChunk", "myproj", null, 10, true, ContentLevel.NAMES);
+
+        // A.java has 2 matching chunks, B.java has 1 — sorted by count descending
+        assertThat(hits).extracting(SearchHit::snippet)
+                .containsExactly("2  src/main/java/A.java", "1  src/main/java/B.java");
+    }
+
+    // ---- grep -l mode: NAMES renders "count  path" sorted by hit count ----
+
+    @Test
+    void namesModeRendersHitCountPrefix() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(fileChunk("m1", "src/main/java/A.java", "PxChunk a"), 1.0),
+                        new ScoredChunk(fileChunk("m2", "src/main/java/A.java", "PxChunk a2"), 1.0),
+                        new ScoredChunk(fileChunk("m3", "src/main/java/B.java", "PxChunk b"), 1.0)));
+
+        List<SearchHit> hits = service.search("PxChunk", "myproj", null, 10, true, ContentLevel.NAMES);
+
+        // A.java has 2 matching chunks, B.java has 1
+        SearchHit a = hits.stream().filter(h -> h.file().equals("src/main/java/A.java")).findFirst().orElseThrow();
+        SearchHit b = hits.stream().filter(h -> h.file().equals("src/main/java/B.java")).findFirst().orElseThrow();
+        assertThat(a.snippet()).isEqualTo("2  src/main/java/A.java");
+        assertThat(b.snippet()).isEqualTo("1  src/main/java/B.java");
+    }
+
+    @Test
+    void namesModeSortsByHitCountDescending() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        // B.java has 3 chunks (higher count) but a LOWER score; A.java has 1 chunk (higher score).
+        // The grep -l sort must be by COUNT, not score, so B.java comes first.
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(fileChunk("a1", "src/main/java/A.java", "x"), 9.0),
+                        new ScoredChunk(fileChunk("b1", "src/main/java/B.java", "x"), 1.0),
+                        new ScoredChunk(fileChunk("b2", "src/main/java/B.java", "x"), 1.0),
+                        new ScoredChunk(fileChunk("b3", "src/main/java/B.java", "x"), 1.0)));
+
+        List<SearchHit> hits = service.search("x", "myproj", null, 10, true, ContentLevel.NAMES);
+
+        assertThat(hits).extracting(SearchHit::file)
+                .containsExactly("src/main/java/B.java", "src/main/java/A.java");
+    }
+
+    @Test
+    void fullModeStillSortsByScoreNotCount() {
+        // Regression guard: the count-based sort must NOT leak into FULL/SKELETON/POINTERS.
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(retrieverRegistry.all()).thenReturn(List.of(new ContentRetriever()));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(fileChunk("a1", "src/main/java/A.java", "x"), 9.0),
+                        new ScoredChunk(fileChunk("b1", "src/main/java/B.java", "x"), 1.0),
+                        new ScoredChunk(fileChunk("b2", "src/main/java/B.java", "x"), 1.0)));
+
+        List<SearchHit> hits = service.search("x", "myproj", null, 10, true, ContentLevel.FULL);
+
+        // A.java has the higher total score (9.0 > 2.0) and must come first, despite B.java having more chunks.
+        assertThat(hits).extracting(SearchHit::file)
+                .containsExactly("src/main/java/A.java", "src/main/java/B.java");
+    }
+
+    // ---- Efficiency measure 5: AGGREGATED is an alias for NAMES in search tools ----
+
+    @Test
+    void aggregatedModeBehavesLikeNames() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        String bodyMarker = "return !vetoRegistry.shouldVeto(p);";
+        PxChunk chunk = fileChunk("v1", "src/main/java/DirectoryVetos.java",
+                "public boolean shouldVeto(PxChunk p) {\n    " + bodyMarker + "\n}");
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 1.0)));
+
+        SearchHit hit = service.search("@ChunkVeto", "myproj", "java", 10, true, ContentLevel.AGGREGATED).get(0);
+
+        // AGGREGATED is an alias for NAMES in search tools: one line per file with the count prefix
+        assertThat(hit.snippet()).isEqualTo("1  src/main/java/DirectoryVetos.java");
+        assertThat(hit.snippet()).doesNotContain(bodyMarker);
+    }
+
+    // ---- Truncation note: the caller must know when files were cut off ----
+
+    @Test
+    void detailedResultCarriesNoteWhenFilesAreTruncated() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(fileChunk("a1", "src/main/java/A.java", "x"), 3.0),
+                        new ScoredChunk(fileChunk("b1", "src/main/java/B.java", "x"), 2.0),
+                        new ScoredChunk(fileChunk("c1", "src/main/java/C.java", "x"), 1.0)));
+
+        GrepResult result = service.searchDetailed("x", "myproj", null, 2, true, ContentLevel.NAMES);
+
+        assertThat(result.hits()).hasSize(2);
+        assertThat(result.totalFiles()).isEqualTo(3);
+        assertThat(result.truncated()).isTrue();
+        assertThat(result.note()).contains("showing 2 of 3").contains("1 more");
+    }
+
+    @Test
+    void detailedResultHasNoNoteWhenEverythingFits() {
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+        when(dao.searchFullText(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(fileChunk("a1", "src/main/java/A.java", "x"), 2.0),
+                        new ScoredChunk(fileChunk("b1", "src/main/java/B.java", "x"), 1.0)));
+
+        GrepResult result = service.searchDetailed("x", "myproj", null, 10, true, ContentLevel.NAMES);
+
+        assertThat(result.hits()).hasSize(2);
+        assertThat(result.truncated()).isFalse();
+        assertThat(result.note()).isNull();
+    }
+
     private static class ContentRetriever implements GoldenRetriever {
         /** Last SearchParams handed in — captured so tests can assert on the content level. */
         SearchParams lastParams;

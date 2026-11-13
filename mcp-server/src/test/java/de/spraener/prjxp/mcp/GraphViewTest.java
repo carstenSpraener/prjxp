@@ -22,6 +22,12 @@ class GraphViewTest {
         assertThat(view.outgoing()).isEmpty();
         assertThat(view.incoming()).isEmpty();
         assertThat(view.candidates()).isEmpty();
+        // no node resolved -> no per-direction counts
+        assertThat(view.totalOutgoing()).isNull();
+        assertThat(view.totalIncoming()).isNull();
+        // no node resolved -> no module aggregation
+        assertThat(view.outgoingByModule()).isNull();
+        assertThat(view.incomingByModule()).isNull();
     }
 
     @Test
@@ -35,6 +41,12 @@ class GraphViewTest {
         assertThat(view.nodeId()).isNull();
         assertThat(view.outgoing()).isEmpty();
         assertThat(view.incoming()).isEmpty();
+        // candidates instead of edges -> no per-direction counts
+        assertThat(view.totalOutgoing()).isNull();
+        assertThat(view.totalIncoming()).isNull();
+        // candidates instead of edges -> no module aggregation
+        assertThat(view.outgoingByModule()).isNull();
+        assertThat(view.incomingByModule()).isNull();
     }
 
     @Test

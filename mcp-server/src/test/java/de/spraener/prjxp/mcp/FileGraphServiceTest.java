@@ -7,6 +7,7 @@ import de.spraener.prjxp.common.model.GraphEdge;
 import de.spraener.prjxp.common.model.GraphNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import org.junit.jupiter.api.BeforeEach;
@@ -85,6 +86,27 @@ class FileGraphServiceTest {
         when(provider.get("demo")).thenReturn(Optional.of(dao));
     }
 
+    /** A hub file with {@code n} outgoing IMPORT edges to {@code hub.T0..Tn-1} (insertion order). */
+    private CodeGraph hubGraph(int n) {
+        List<GraphNode> nodes = new ArrayList<>();
+        List<GraphEdge> edges = new ArrayList<>();
+        nodes.add(new GraphNode("hub.H", "src/H.java", "java", false, "c0", 1.0));
+        for (int i = 0; i < n; i++) {
+            nodes.add(new GraphNode("hub.T" + i, "src/T" + i + ".java", "java", false, "c1", 0.1));
+            edges.add(new GraphEdge("hub.H", "hub.T" + i, EdgeType.IMPORT, false));
+        }
+        return new CodeGraph(nodes, edges);
+    }
+
+    /** Stubs the hub-file lookup so {@code graphFile("src/H.java", ...)} resolves to {@code hub.H}. */
+    private void stubHub(int n) {
+        when(projectRegistry.resolve("demo")).thenReturn("demo");
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(hubGraph(n)));
+        when(provider.get("demo")).thenReturn(Optional.of(dao));
+        when(dao.searchByIndex(eq(Map.of(PxChunk.PXCHUNK_FILE, "src/H.java")), anyInt()))
+                .thenReturn(scored(chunk("src/H.java", "hub.H")));
+    }
+
     // ==================== graphFile ====================
 
     @Test
@@ -137,22 +159,71 @@ class FileGraphServiceTest {
 
     @Test
     void graphFileCapsEdgesPerDirection() {
-        List<GraphNode> nodes = new ArrayList<>();
-        List<GraphEdge> edges = new ArrayList<>();
-        nodes.add(new GraphNode("hub.H", "src/H.java", "java", false, "c0", 1.0));
-        for (int i = 0; i < 120; i++) {
-            nodes.add(new GraphNode("hub.T" + i, "src/T" + i + ".java", "java", false, "c1", 0.1));
-            edges.add(new GraphEdge("hub.H", "hub.T" + i, EdgeType.IMPORT, false));
-        }
-        when(projectRegistry.resolve("demo")).thenReturn("demo");
-        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(new CodeGraph(nodes, edges)));
-        when(provider.get("demo")).thenReturn(Optional.of(dao));
-        when(dao.searchByIndex(eq(Map.of(PxChunk.PXCHUNK_FILE, "src/H.java")), anyInt()))
-                .thenReturn(scored(chunk("src/H.java", "hub.H")));
+        stubHub(120);
 
         assertThat(service.graphFile("src/H.java", "demo", 5, false).outgoing()).hasSize(5);
         assertThat(service.graphFile("src/H.java", "demo", null, false).outgoing()).hasSize(30);
-        assertThat(service.graphFile("src/H.java", "demo", 500, false).outgoing()).hasSize(100);
+        // cap raised 100 -> 500 (efficiency measure 2): all 120 edges now fit in one page
+        assertThat(service.graphFile("src/H.java", "demo", 500, false).outgoing()).hasSize(120);
+        assertThat(service.graphFile("src/H.java", "demo", 500, false).totalOutgoing()).isEqualTo(120);
+    }
+
+    // ---- Efficiency measure 2: offset pagination + full per-direction totals ----
+
+    @Test
+    void graphFilePagesWithOffset() {
+        stubHub(120);
+
+        GraphView view = service.graphFile("src/H.java", "demo", 5, false, 50);
+
+        assertThat(view.outgoing()).hasSize(5);
+        assertThat(view.outgoing())
+                .extracting(GraphNeighbor::neighborId)
+                .containsExactly("hub.T50", "hub.T51", "hub.T52", "hub.T53", "hub.T54");
+        // totals are the full count, independent of the page
+        assertThat(view.totalOutgoing()).isEqualTo(120);
+        assertThat(view.totalIncoming()).isEqualTo(0);
+    }
+
+    @Test
+    void graphFileOffsetBeyondEndReturnsEmptyPageWithTotals() {
+        stubHub(120);
+
+        GraphView view = service.graphFile("src/H.java", "demo", 30, false, 200);
+
+        assertThat(view.outgoing()).isEmpty();
+        assertThat(view.totalOutgoing()).isEqualTo(120);
+    }
+
+    @Test
+    void graphFileNegativeOffsetTreatedAsZero() {
+        stubHub(120);
+
+        GraphView view = service.graphFile("src/H.java", "demo", 5, false, -10);
+
+        assertThat(view.outgoing()).hasSize(5);
+        assertThat(view.outgoing().get(0).neighborId()).isEqualTo("hub.T0");
+    }
+
+    @Test
+    void graphFileCapsAt500ForVeryLargeHubs() {
+        stubHub(600);
+
+        GraphView view = service.graphFile("src/H.java", "demo", 1000, false);
+
+        assertThat(view.outgoing()).hasSize(500);
+        assertThat(view.totalOutgoing()).isEqualTo(600);
+    }
+
+    @Test
+    void graphFileTotalsReflectExternalFilter() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(graph()));
+
+        GraphView view = service.graphNode("demo.A", "demo", null, null);
+
+        // demo.A has 3 outgoing edges, one external -> 2 internal; 1 incoming
+        assertThat(view.totalOutgoing()).isEqualTo(2);
+        assertThat(view.totalIncoming()).isEqualTo(1);
     }
 
     @Test
@@ -289,6 +360,142 @@ class FileGraphServiceTest {
         // demo.A has 3 outgoing edges, one of them external -> 2 internal remain
         assertThat(view.outgoing()).hasSize(2);
         assertThat(view.outgoing()).noneMatch(GraphNeighbor::external);
+    }
+
+    // ---- Efficiency measure 5: contentLevel=AGGREGATED (module-level aggregation) ----
+
+    /**
+     * A hub node {@code core.Model} referenced from two modules: {@code core} (4 edges,
+     * 2 classes — method ids collapse to their class) and {@code web} (3 edges, 3 classes),
+     * plus one outgoing edge per module and one external edge.
+     */
+    private CodeGraph multiModuleGraph() {
+        return new CodeGraph(
+                List.of(
+                        new GraphNode("core.Model", "core/src/Model.java", "java", false, "c0", 1.0),
+                        new GraphNode("core.A", "core/src/A.java", "java", false, "c1", 0.5),
+                        new GraphNode("core.B", "core/src/B.java", "java", false, "c1", 0.4),
+                        new GraphNode("web.C", "web/src/C.java", "java", false, "c2", 0.3),
+                        new GraphNode("web.D", "web/src/D.java", "java", false, "c2", 0.2),
+                        new GraphNode("web.E", "web/src/E.java", "java", false, "c2", 0.1),
+                        new GraphNode("core.A#foo()", "core/src/A.java", "java", true, "c1", 0.3),
+                        new GraphNode("core.A#bar()", "core/src/A.java", "java", true, "c1", 0.2)),
+                List.of(
+                        new GraphEdge("core.A", "core.Model", EdgeType.IMPORT, false),
+                        new GraphEdge("core.B", "core.Model", EdgeType.IMPORT, false),
+                        new GraphEdge("core.A#foo()", "core.Model", EdgeType.PARAM, false),
+                        new GraphEdge("core.A#bar()", "core.Model", EdgeType.RETURN, false),
+                        new GraphEdge("web.C", "core.Model", EdgeType.IMPORT, false),
+                        new GraphEdge("web.D", "core.Model", EdgeType.CALL, false),
+                        new GraphEdge("web.E", "core.Model", EdgeType.FIELD, false),
+                        new GraphEdge("core.Model", "core.A", EdgeType.IMPORT, false),
+                        new GraphEdge("core.Model", "web.C", EdgeType.IMPORT, false),
+                        new GraphEdge("core.Model", "extern.Thing", EdgeType.FIELD, true)));
+    }
+
+    @Test
+    void graphNodeAggregatedGroupsByModule() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(multiModuleGraph()));
+
+        GraphView view = service.graphNode("core.Model", "demo", null, false, null, ContentLevel.AGGREGATED);
+
+        assertThat(view.error()).isNull();
+        // raw edge lists are empty in aggregated mode; the totals keep the full counts
+        assertThat(view.outgoing()).isEmpty();
+        assertThat(view.incoming()).isEmpty();
+        assertThat(view.totalIncoming()).isEqualTo(7);
+        assertThat(view.totalOutgoing()).isEqualTo(2);   // external edge filtered
+        // modules sorted by edge count descending
+        assertThat(view.incomingByModule())
+                .extracting(GraphAggregate::module, GraphAggregate::edgeCount, GraphAggregate::classCount)
+                .containsExactly(
+                        tuple("core", 4, 2),
+                        tuple("web", 3, 3));
+        GraphAggregate core = view.incomingByModule().get(0);
+        // method ids collapse to their class: A, A#foo(), A#bar() -> core.A(3)
+        assertThat(core.topClasses())
+                .extracting(GraphAggregate.ClassCount::className, GraphAggregate.ClassCount::count)
+                .containsExactly(tuple("core.A", 3), tuple("core.B", 1));
+        assertThat(core.typeCounts())
+                .containsEntry(EdgeType.IMPORT, 2)
+                .containsEntry(EdgeType.PARAM, 1)
+                .containsEntry(EdgeType.RETURN, 1);
+    }
+
+    @Test
+    void graphNodeAggregatedIgnoresPaging() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(multiModuleGraph()));
+
+        GraphView view = service.graphNode("core.Model", "demo", 2, false, 5, ContentLevel.AGGREGATED);
+
+        // maxEdges/offset must not truncate the aggregation — it covers all edges
+        assertThat(view.incomingByModule())
+                .extracting(GraphAggregate::edgeCount)
+                .containsExactly(4, 3);
+        assertThat(view.totalIncoming()).isEqualTo(7);
+    }
+
+    @Test
+    void graphNodeAggregatedGroupsExternalUnderExternalModule() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(multiModuleGraph()));
+
+        GraphView view = service.graphNode("core.Model", "demo", null, true, null, ContentLevel.AGGREGATED);
+
+        // all three outgoing edges have count 1 -> ties break by module name
+        assertThat(view.outgoingByModule())
+                .extracting(GraphAggregate::module, GraphAggregate::edgeCount)
+                .containsExactly(
+                        tuple("(external)", 1),
+                        tuple("core", 1),
+                        tuple("web", 1));
+    }
+
+    @Test
+    void graphNodeFullLevelLeavesByModuleNull() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(multiModuleGraph()));
+
+        GraphView view = service.graphNode("core.Model", "demo", null, false, null, ContentLevel.FULL);
+
+        assertThat(view.outgoingByModule()).isNull();
+        assertThat(view.incomingByModule()).isNull();
+        assertThat(view.incoming()).hasSize(7);
+    }
+
+    @Test
+    void graphNodeNullContentLevelDefaultsToFull() {
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(multiModuleGraph()));
+
+        GraphView view = service.graphNode("core.Model", "demo", null, false, null, null);
+
+        assertThat(view.outgoingByModule()).isNull();
+        assertThat(view.incoming()).hasSize(7);
+    }
+
+    @Test
+    void graphNodeNonFullLevelAggregates() {
+        // any non-FULL level (e.g. NAMES from the economical hint) yields the cheap aggregated view
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(multiModuleGraph()));
+
+        GraphView view = service.graphNode("core.Model", "demo", null, false, null, ContentLevel.NAMES);
+
+        assertThat(view.incomingByModule()).isNotNull();
+        assertThat(view.incoming()).isEmpty();
+    }
+
+    @Test
+    void graphFileAggregatedGroupsByModule() {
+        when(projectRegistry.resolve("demo")).thenReturn("demo");
+        when(projectGraphStore.graphFor("demo")).thenReturn(Optional.of(multiModuleGraph()));
+        when(provider.get("demo")).thenReturn(Optional.of(dao));
+        when(dao.searchByIndex(eq(Map.of(PxChunk.PXCHUNK_FILE, "core/src/Model.java")), anyInt()))
+                .thenReturn(scored(chunk("core/src/Model.java", "core.Model")));
+
+        GraphView view = service.graphFile("core/src/Model.java", "demo", null, false, null, ContentLevel.AGGREGATED);
+
+        assertThat(view.error()).isNull();
+        assertThat(view.incomingByModule())
+                .extracting(GraphAggregate::module, GraphAggregate::edgeCount)
+                .containsExactly(tuple("core", 4), tuple("web", 3));
     }
 
     // ==================== graphCluster ====================

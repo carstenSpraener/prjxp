@@ -1,5 +1,6 @@
 <tool_call>
 <function=listProjects()
+</parameter>
 </function>
 </tool_call>
 

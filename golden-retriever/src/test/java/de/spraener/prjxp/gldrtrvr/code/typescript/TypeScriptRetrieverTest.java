@@ -116,6 +116,43 @@ class TypeScriptRetrieverTest {
         assertThat(skeletonPrompt).contains("de.example.HiddenNeighbour");
     }
 
+    @Test
+    void pointersLevelRespectsBudget() {
+        PxChunk chunk = classFrameChunk();
+        TypeScriptRetriever retriever = retrieverWith(mock(PxChunkDao.class));
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+        pointers.setMaxContentLength(10);
+
+        String prompt = retriever.buildPromptForFindings("proj", List.of(new ScoredChunk(chunk, 1.0)), pointers).toString();
+
+        assertThat(prompt).contains("[weitere 1 Klassen wegen Groessenlimit nicht enthalten]");
+    }
+
+    @Test
+    void pointerBlockIsRenderedForFileChunks() {
+        PxChunk chunk = PxChunk.create(
+                c -> c.setId("com/example/Method.ts"),
+                c -> c.setFile("src/com/example/Foo.ts"),
+                c -> c.setContent("export function method() {}"),
+                c -> c.setTotal(1),
+                c -> c.getMetadata().put("typescript_code_section", "method"),
+                c -> c.getMetadata().put("graph_node", "com/example/Foo#method()"),
+                c -> c.getMetadata().put("keywords", "method, export"));
+        TypeScriptRetriever retriever = retrieverWith(mock(PxChunkDao.class));
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+
+        String prompt = retriever.buildPromptForFindings("proj", List.of(new ScoredChunk(chunk, 0.9)), pointers).toString();
+
+        assertThat(prompt).contains("file: \"src/com/example/Foo.ts\"")
+                .contains("→ readFile(\"src/com/example/Foo.ts\")")
+                .contains("→ readBySignature(\"method\", \"com/example/Foo\")")
+                .contains("keywords: [\"method\", \"export\"]");
+        assertThat(prompt).doesNotContain("export function method()")
+                .doesNotContain("Hier ein Rumpf");
+    }
+
     private static int countOccurrences(String haystack, String needle) {
         int count = 0;
         int idx = 0;
@@ -159,7 +196,7 @@ class TypeScriptRetrieverTest {
                 List.of(new ScoredChunk(dep1, 1.0), new ScoredChunk(dep2, 1.0)), pointers).toString();
 
         // the pointer is emitted exactly once (by the first dep chunk); the second is skipped
-        assertThat(countOccurrences(prompt, "## Dependencies of")).isEqualTo(1);
+        assertThat(countOccurrences(prompt, "chunk_id:")).isEqualTo(1);
         assertThat(countOccurrences(prompt, "→ graphNode(\"com/example/Other.ts\")")).isEqualTo(1);
     }
 

@@ -17,6 +17,13 @@ public class SearchParams {
     private boolean abort = false;
     private ContentLevel contentLevel = ContentLevel.FULL;
     private Map<String, String> vectorFilters = new HashMap<>();
+    /**
+     * Efficiency measure 4 — maximum number of chunks kept per distinct file. A long document
+     * split into many chunks would otherwise flood the context with near-duplicate pointer
+     * blocks; only the highest-scoring {@code maxChunksPerFile} chunks of each file are kept.
+     * A value {@code <= 0} disables the per-file cap.
+     */
+    private int maxChunksPerFile = 3;
 
     public SearchParams(int maxResults, double minScore) {
         this(maxResults, minScore, false);

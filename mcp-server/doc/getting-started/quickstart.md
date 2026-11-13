@@ -1,10 +1,6 @@
 <tool_call>
-<function=listProjects()
-</parameter>
-</function>
-</tool_call>
-<tool_call>
-<function=listFiles(path="*", project="prjxp")
+function
+listProjects()
 </parameter>
 </function>
 </tool_call>

@@ -8,6 +8,7 @@ import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
 import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.EmbeddingStore;
 import dev.langchain4j.store.embedding.filter.Filter;
+import de.spraener.prjxp.common.model.ChunkPathPreference;
 import de.spraener.prjxp.common.model.PxChunk;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
@@ -30,7 +31,6 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.KnnFloatVectorQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
-import org.apache.lucene.search.Scorer;
 import org.apache.lucene.search.ScoreMode;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.ScoreDoc;
@@ -40,6 +40,7 @@ import org.apache.lucene.search.Weight;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.store.NIOFSDirectory;
 import org.apache.lucene.util.Bits;
+import org.apache.lucene.util.FixedBitSet;
 
 import java.io.IOException;
 import java.nio.file.Path;
@@ -146,9 +147,8 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             throw new IllegalArgumentException("embeddings and textSegments must have the same size");
         }
         List<String> ids = new ArrayList<>();
-        for (int i = 0; i < embeddings.size(); i++) {
-            String id = add(embeddings.get(i), textSegments.get(i));
-            ids.add(id);
+        for (int i : firstOccurrences(textSegments)) {
+            ids.add(add(embeddings.get(i), textSegments.get(i)));
         }
         return ids;
     }
@@ -165,7 +165,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
         ensureOpen();
         lock.writeLock().lock();
         try {
-            for (int i = 0; i < embeddings.size(); i++) {
+            for (int i : firstOccurrences(textSegments)) {
                 validateDimension(embeddings.get(i));
                 String id = extractId(textSegments.get(i));
                 writer.addDocument(createDocument(id, embeddings.get(i), textSegments.get(i)));
@@ -186,6 +186,56 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
             throw new IllegalArgumentException(
                     "Vector dimension mismatch: expected " + vectorDimension + ", got " + embedding.vector().length);
         }
+    }
+
+    /**
+     * Indices of the first occurrence of each (project, id, part) identity in a batch.
+     * <p>
+     * Chunk ids are not unique across source roots — the same FQN may be chunked from two test
+     * fixtures, for example. The store identity is (project, id, part), so writing both would
+     * leave the index in an inconsistent state and make {@link #upsertAll} reject the project
+     * with "Duplicate semantic node id". Keeping the first occurrence makes the import
+     * idempotent; the dropped duplicate is logged.
+     */
+    private List<Integer> firstOccurrences(List<TextSegment> textSegments) {
+        Map<String, Integer> kept = new LinkedHashMap<>();
+        for (int i = 0; i < textSegments.size(); i++) {
+            TextSegment segment = textSegments.get(i);
+            String identity = storeIdentity(segment);
+            Integer previousIndex = kept.get(identity);
+            if (previousIndex == null) {
+                kept.put(identity, i);
+                continue;
+            }
+            String previousFile = fileOf(textSegments.get(previousIndex));
+            String file = fileOf(segment);
+            if (ChunkPathPreference.prefer(file, previousFile)) {
+                kept.put(identity, i);
+                log.warning("Dropping duplicate chunk identity " + identity
+                        + " from " + previousFile + " (keeping production " + file + ")");
+            } else {
+                log.warning("Dropping duplicate chunk identity " + identity
+                        + " from " + file + " (keeping " + previousFile + ")");
+            }
+        }
+        return new ArrayList<>(kept.values());
+    }
+
+    private static String fileOf(TextSegment segment) {
+        return segment.metadata() == null ? null : segment.metadata().getString(PxChunk.PXCHUNK_FILE);
+    }
+
+    /** (project, id, part) — the identity a Lucene document is keyed by at import time. */
+    private static String storeIdentity(TextSegment segment) {
+        Metadata metadata = segment.metadata();
+        String id = metadata.getString(PxChunk.PXCHUNK_ID);
+        if (id == null) {
+            // No chunk identity (plain embeddingStore.addAll callers): never deduplicate.
+            return "unique:" + UUID.randomUUID();
+        }
+        return metadata.getString(PxChunk.PXCHUNK_PROJECT) + '/'
+                + id + '/'
+                + metadata.getString(PxChunk.PXCHUNK_PART);
     }
 
     private String extractId(TextSegment textSegment) {
@@ -335,10 +385,9 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
                     continue;
                 }
 
-                Scorer scorer = weight.scorer(leafContext);
-                DocIdSetIterator matches = scorer == null
-                        ? DocIdSetIterator.empty()
-                        : scorer.iterator();
+                // Random-access filter membership: the vector iterator is denser than the
+                // filter iterator, and DocIdSetIterator only guarantees forward motion.
+                FixedBitSet matches = FilterDocs.matchingDocs(weight, leafContext);
                 Bits liveDocs = leaf.getLiveDocs();
                 KnnVectorValues.DocIndexIterator vectors = values.iterator();
                 for (int docId = vectors.nextDoc();
@@ -347,7 +396,7 @@ public class LuceneEmbeddingStore implements EmbeddingStore<TextSegment>, org.sp
                     if (liveDocs != null && !liveDocs.get(docId)) {
                         continue;
                     }
-                    if (matches.advance(docId) != docId) {
+                    if (!matches.get(docId)) {
                         continue;
                     }
 

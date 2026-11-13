@@ -13,6 +13,7 @@ import de.spraener.prjxp.common.language.CodeGraphBuilder;
 import de.spraener.prjxp.common.language.LanguagePack;
 import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.model.CodeGraph;
+import de.spraener.prjxp.common.model.GraphEdge;
 import de.spraener.prjxp.common.model.GraphNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
@@ -26,11 +27,16 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Log
@@ -46,6 +52,14 @@ public class ChunkProcess {
     private final TransferPasswordResolver transferPasswordResolver;
     private final LanguagePackRegistry languagePackRegistry;
 
+    /** Maximum number of AST neighbours per chunk in the sidecar artifact. */
+    static final int MAX_AST_NEIGHBOURS = 10;
+    private static final String GRAPH_FILE_SUFFIX = ".graph.json";
+    private static final String AST_NEIGHBOURS_FILE_SUFFIX = ".ast-neighbours.json";
+
+    /** Graph-node-ID → logical chunk-ID, accumulated during the walk (per-run state). */
+    private final Map<String, String> nodeToChunkId = new ConcurrentHashMap<>();
+
     public void execute() throws Exception {
         final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException(
                 "No active project '" + cfg.getActiveProjectName() + "' defined. Available projects: "
@@ -56,6 +70,7 @@ public class ChunkProcess {
     /** Runs the chunking pipeline for an explicitly given project definition (hub in-process use). */
     public void executeForProject(ProjectDefinition pd) throws Exception {
         processedFiles.clear();   // per-run state: a reindex must re-chunk everything, not filter out files of a previous run
+        nodeToChunkId.clear();    // per-run state: chunk IDs of a previous run must not leak into this sidecar
         final TransferSession session = transferPasswordResolver.prepare(
                 cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
         final PrintStream out = createWriter(pd, session);
@@ -69,6 +84,7 @@ public class ChunkProcess {
         ;
         doPostWalk(out);
         writeGraphArtifact(pd, session);
+        writeAstNeighboursArtifact(pd, session);
         if (out != System.out) {
             out.close();
         }
@@ -143,6 +159,10 @@ public class ChunkProcess {
                     String relPath = toProjectRelativePath(rootPath, chunk.getFile());
                     chunk.setFile(relPath);
                     rebaseIdToProjectPath(chunk, relPath, p.getFileName().toString());
+                    String graphNode = chunk.getMetadata().get(GraphMetadata.GRAPH_NODE);
+                    if (graphNode != null && !graphNode.isBlank()) {
+                        nodeToChunkId.put(graphNode, chunk.getId());
+                    }
                     return chunk;
                 })
                 .map(chunk -> toJSONL(chunk))
@@ -257,6 +277,66 @@ public class ChunkProcess {
         } catch (IOException | RuntimeException e) {
             log.warning("Could not write graph artifact " + targetPath + ": " + e.getMessage());
         }
+    }
+
+    /**
+     * Writes the AST-neighbour sidecar: a JSON object mapping chunk-ID → list of neighbour chunk-IDs.
+     * Derived from the weighted code graph's internal edges. Encrypted like the graph artifact.
+     * Path: the graph file path with {@code .graph.json} replaced by {@code .ast-neighbours.json}.
+     */
+    private void writeAstNeighboursArtifact(ProjectDefinition pd, TransferSession session) {
+        CodeGraph graph = weightedGraph();
+        if (graph == null || graph.nodes().isEmpty() || nodeToChunkId.isEmpty()) return;
+        String graphPath = pd.resolvedGraphFile();
+        if (graphPath == null || graphPath.isBlank()) return;
+        String sidecarPath = astNeighboursPath(graphPath);
+        try {
+            // Build undirected adjacency from internal edges only (external targets have no chunk ID).
+            Map<String, Set<String>> adjacency = new HashMap<>();
+            for (GraphEdge edge : graph.edges()) {
+                if (edge.external()) continue;
+                adjacency.computeIfAbsent(edge.source(), k -> new LinkedHashSet<>()).add(edge.target());
+                adjacency.computeIfAbsent(edge.target(), k -> new LinkedHashSet<>()).add(edge.source());
+            }
+            Map<String, List<String>> result = new LinkedHashMap<>();
+            for (var entry : nodeToChunkId.entrySet()) {
+                Set<String> neighbourNodeIds = adjacency.getOrDefault(entry.getKey(), Set.of());
+                List<String> neighbourChunkIds = neighbourNodeIds.stream()
+                        .map(nodeToChunkId::get)
+                        .filter(Objects::nonNull)
+                        .limit(MAX_AST_NEIGHBOURS)
+                        .toList();
+                if (!neighbourChunkIds.isEmpty()) {
+                    result.put(entry.getValue(), neighbourChunkIds);
+                }
+            }
+            if (result.isEmpty()) return;
+            Path target = Path.of(sidecarPath);
+            Path parent = target.toAbsolutePath().getParent();
+            if (parent != null) Files.createDirectories(parent);
+            try (OutputStream raw = new FileOutputStream(sidecarPath)) {
+                OutputStream out = session.encrypt()
+                        ? TransferCrypto.openEncryptedOutputStream(raw, session.password())
+                        : raw;
+                jsonMapper.writeValue(out, result);
+                if (out != raw) out.close();   // emit cipher final block + GCM auth tag
+            }
+        } catch (IOException | RuntimeException e) {
+            log.warning("Could not write ast-neighbours artifact " + sidecarPath + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Derivative of the graph path for the sidecar. A graph artifact always ends with
+     * {@code .graph.json}; any other configured name is extended instead of replaced so the
+     * sidecar can never overwrite the graph artifact itself.
+     */
+    static String astNeighboursPath(String graphPath) {
+        if (graphPath.endsWith(GRAPH_FILE_SUFFIX)) {
+            return graphPath.substring(0, graphPath.length() - GRAPH_FILE_SUFFIX.length())
+                    + AST_NEIGHBOURS_FILE_SUFFIX;
+        }
+        return graphPath + AST_NEIGHBOURS_FILE_SUFFIX;
     }
 
     public String toJSONL(PxChunk chunk) {

@@ -92,6 +92,9 @@ public class CliArgsParser {
         if (cmd.hasOption("calibrate")) {
             cfg.getSemanticGraph().setCalibrate(true);
         }
+        if (cmd.hasOption("enrich-only")) {
+            cfg.setEnrichOnly(true);
+        }
         TransferConfigValidator.validate(cfg.getTransfer());
     }
 
@@ -137,6 +140,11 @@ public class CliArgsParser {
         options.addOption(Option.builder()
                 .longOpt("calibrate")
                 .desc("run the gamma calibration sweep without writing cluster metadata.")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("enrich-only")
+                .desc("skip the ingestion (JSONL read + embedding) and run only the enrichment "
+                        + "(semantic graph + signatures) against the existing index.")
                 .build());
         options.addOption(Option.builder("h")
                 .longOpt("help")

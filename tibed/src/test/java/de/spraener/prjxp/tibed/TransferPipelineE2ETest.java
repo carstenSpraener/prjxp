@@ -16,6 +16,7 @@ import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import de.spraener.prjxp.tibed.embedder.LangChain4JEmbedderImpl;
+import de.spraener.prjxp.tibed.signature.SignatureBatch;
 import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
 import dev.langchain4j.data.segment.TextSegment;
 import org.junit.jupiter.api.Test;
@@ -86,7 +87,8 @@ class TransferPipelineE2ETest {
                 new LangChain4JEmbedderImpl(new FakeEmbeddingModel(DIMENSION), Mockito.mock(EmbeddingStoreSupplier.class)),
                 new PrjXPJsonStreamProvider(cfg),
                 resolver,
-                cfg
+                cfg,
+                new AstNeighboursLoader(new ObjectMapper(), resolver, cfg)
         ).execute();
     }
 
@@ -121,7 +123,9 @@ class TransferPipelineE2ETest {
                 resolver,
                 new StoreIdChecker(cfg),
                 cfg,
-                Mockito.mock(SemanticGraphBatch.class)
+                Mockito.mock(SemanticGraphBatch.class),
+                Mockito.mock(AstNeighboursLoader.class),
+                Mockito.mock(SignatureBatch.class)
         ).execute();
         return logService;
     }

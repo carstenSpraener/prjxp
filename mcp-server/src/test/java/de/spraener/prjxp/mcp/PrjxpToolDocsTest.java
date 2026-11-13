@@ -31,10 +31,11 @@ class PrjxpToolDocsTest {
                 + PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW.length()
                 + PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER.length()
                 + PrjxpToolDocs.SEMANTIC_GRAPH_NODE.length()
-                + PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW.length();
+                + PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW.length()
+                + PrjxpToolDocs.READ_CHUNKS.length();
 
         assertThat(total)
-                .as("sum of the thirteen tool texts (was %d)", total)
+                .as("sum of the fourteen tool texts (was %d)", total)
                 .isLessThan(2600);
     }
 
@@ -76,8 +77,11 @@ class PrjxpToolDocsTest {
 
         // Raised 4000 -> 4250: the readBySignature/grep texts now steer the model to the
         // 'FQN#name' method-body form (cheaper than grep FULL), which costs ~200 chars per request.
+        // Raised 4250 -> 4500: the NAMES (filenames-only) mode and graphNode pagination
+        // (maxEdges 500 + offset + totals) are new capabilities the model must know about.
+        // The one-time per-request cost (~60 tokens) is dwarfed by the per-call savings of NAMES.
         assertThat(total)
                 .as("sum of all tool texts + parameter descriptions (was %d)", total)
-                .isLessThan(4250);
+                .isLessThan(4500);
     }
 }

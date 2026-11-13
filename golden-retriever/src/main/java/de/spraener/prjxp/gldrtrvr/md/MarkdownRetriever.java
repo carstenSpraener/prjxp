@@ -1,13 +1,13 @@
 package de.spraener.prjxp.gldrtrvr.md;
 
 import de.spraener.prjxp.common.model.DocWindower;
-import de.spraener.prjxp.common.graph.GraphMetadata;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.PointerRenderer;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import de.spraener.prjxp.common.retrieval.SearchParams;
@@ -25,6 +25,7 @@ import java.util.function.Function;
 public class MarkdownRetriever implements GoldenRetriever {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
+    private final PointerRenderer pointerRenderer = new PointerRenderer();
 
     /** Max chars a non-code (doc) chunk may have before it is windowed. Initialized with the
      *  property default so that non-Spring construction (tests) behaves like the configured default. */
@@ -47,7 +48,7 @@ public class MarkdownRetriever implements GoldenRetriever {
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
         ContentLevel level = params.effectiveContentLevel();
         if (level == ContentLevel.POINTERS) {
-            return buildPointersPrompt(chunkDao, chunks, params);
+            return buildPointersPrompt(projectName, chunkDao, chunks, params);
         }
         // Die Session verwaltet den Baum-Aufbau der Dokumente
         MarkdownPromptSession session = new MarkdownPromptSession(chunkDao, rankingService);
@@ -60,11 +61,12 @@ public class MarkdownRetriever implements GoldenRetriever {
     }
 
     /**
-     * POINTERS layer: no content, only a {@code readFile} pointer per doc file (de-duplicated).
+     * POINTERS layer: no content, only the dual-graph reference block per doc file (de-duplicated).
      * Documentation is <b>not</b> in the code graph (the {@code parent} is a file name), so no
      * {@code graphNode} pointer is ever emitted; a chunk without a file contributes nothing.
      */
-    private StringBuilder buildPointersPrompt(PxChunkDao chunkDao, List<ScoredChunk> chunks, SearchParams params) {
+    private StringBuilder buildPointersPrompt(String projectName, PxChunkDao chunkDao,
+                                              List<ScoredChunk> chunks, SearchParams params) {
         StringBuilder prompt = new StringBuilder();
         List<ScoredChunk> mdChunks = combineScoredChunksByID(chunkDao, chunks).stream()
                 .filter(sc -> "text/markdown".equals(sc.chunk().getMimeType()))
@@ -75,39 +77,24 @@ public class MarkdownRetriever implements GoldenRetriever {
         Set<String> emittedFiles = new HashSet<>();
         int skipped = 0;
         for (var sc : mdChunks) {
-            String part = pointerFor(sc.chunk());
-            if (part.isEmpty()) {
+            String file = sc.chunk().getFile();
+            if (file == null || file.isBlank()) {
                 continue;   // no file: nothing to emit, not counted as skipped
             }
-            if (!emittedFiles.add(sc.chunk().getFile())) {
+            if (!emittedFiles.add(file)) {
                 continue;   // this file was already pointed at
             }
-            if (prompt.length() + part.length() > budget) {
+            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score());
+            if (prompt.length() + block.length() > budget) {
                 skipped++;
                 continue;
             }
-            prompt.append(part);
+            prompt.append(block);
         }
         if (skipped > 0) {
-            prompt.append("\n[weitere ").append(skipped).append(" Klassen wegen Groessenlimit nicht enthalten]\n");
+            prompt.append("\n[weitere ").append(skipped).append(" Doku-Dateien wegen Groessenlimit nicht enthalten]\n");
         }
         return prompt;
-    }
-
-    /** POINTERS layer: a {@code readFile} pointer and, when indexed, its semantic graph pointer. */
-    private String pointerFor(PxChunk chunk) {
-        String file = chunk.getFile();
-        if (file == null || file.isBlank()) {
-            return "";
-        }
-        StringBuilder pointer = new StringBuilder("\n## " + file + "\n→ readFile(\"" + file + "\")\n");
-        String clusterId = chunk.getMetadata().get(GraphMetadata.SEMANTIC_CLUSTER_ID);
-        String nodeId = chunk.getMetadata().get(GraphMetadata.SEMANTIC_NODE_ID);
-        if (clusterId != null && !clusterId.isBlank() && nodeId != null && !nodeId.isBlank()) {
-            pointer.append("[semantic-cluster:").append(clusterId).append("]\n")
-                    .append("→ semanticGraphNode(\"").append(nodeId).append("\")\n");
-        }
-        return pointer.toString();
     }
 
     @Override

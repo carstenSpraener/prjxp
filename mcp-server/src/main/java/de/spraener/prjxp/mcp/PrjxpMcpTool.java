@@ -2,9 +2,11 @@ package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;
-import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
+import de.spraener.prjxp.common.store.PxChunkDao;
+import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
@@ -14,6 +16,7 @@ import org.springaicommunity.mcp.annotation.McpToolParam;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.util.Arrays;
 import java.util.List;
 
 @Component
@@ -35,6 +38,7 @@ public class PrjxpMcpTool {
 
     private final FileGraphService fileGraphService;
     private final SemanticGraphService semanticGraphService;
+    private final PxChunkDaoProvider chunkDaoProvider;
 
     @McpTool(name = "vectorSearch", description = PrjxpToolDocs.VECTOR_SEARCH)
     public String vectorSearch(
@@ -53,7 +57,7 @@ public class PrjxpMcpTool {
             @McpToolParam(description = "Deprecated; contentLevel wins. Legacy TRUE still means SKELETON.", required = false)
             Boolean skeletonsOnly,
 
-            @McpToolParam(description = "POINTERS (default) hints only, SKELETON signatures, FULL bodies.", required = false)
+            @McpToolParam(description = "POINTERS (default) hints, SKELETON signatures, FULL bodies, NAMES = filenames.", required = false)
             String contentLevel,
 
             @McpToolParam(description = "code (default) | docs | all. Retry with all for prose documentation.", required = false)
@@ -124,7 +128,7 @@ public class PrjxpMcpTool {
     }
 
     @McpTool(name = "grep", description = PrjxpToolDocs.GREP)
-    public List<SearchHit> grep(
+    public GrepResult grep(
             @McpToolParam(description = "Exact search string, e.g. 'public MClass createMClass'.", required = true)
             String query,
 
@@ -137,7 +141,7 @@ public class PrjxpMcpTool {
             @McpToolParam(description = "Max hits after grouping, default 10 (max 100).", required = false)
             Integer limit,
 
-            @McpToolParam(description = "POINTERS enumerates, SKELETON signatures, FULL (default) bodies.", required = false)
+            @McpToolParam(description = "NAMES (default) = grep -l: 'count  path' per file, sorted by count; SKELETON signatures; FULL bodies; POINTERS enumerates.", required = false)
             String contentLevel,
 
             @McpToolParam(description = "Include test sources (default true).", required = false)
@@ -151,8 +155,12 @@ public class PrjxpMcpTool {
         if (includeTests == null) {
             includeTests = Boolean.TRUE;   // exact search: tests are deliberate intent
         }
+        // grep -l default: the cheap file list with hit counts. Content levels (FULL/SKELETON/
+        // POINTERS) remain available for callers that want the matching content inline.
+        ContentLevel level = (contentLevel == null || contentLevel.isBlank())
+                ? ContentLevel.NAMES : ContentLevel.parse(contentLevel);
 
-        return grepSearchService.search(query.trim(), project, language, limit, includeTests, ContentLevel.parse(contentLevel));
+        return grepSearchService.searchDetailed(query.trim(), project, language, limit, includeTests, level);
     }
 
     @McpTool(name = "readFile", description = PrjxpToolDocs.READ_FILE)
@@ -212,16 +220,22 @@ public class PrjxpMcpTool {
             @McpToolParam(description = "Project name (listProjects).", required = true)
             String project,
 
-            @McpToolParam(description = "Max neighbours per direction (default 30, max 100).", required = false)
+            @McpToolParam(description = "Max neighbours per direction (default 30, max 500).", required = false)
             Integer maxEdges,
 
             @McpToolParam(description = "Include JDK/library edges (default false).", required = false)
-            Boolean includeExternal
+            Boolean includeExternal,
+
+            @McpToolParam(description = "Skip this many per direction (default 0).", required = false)
+            Integer offset,
+
+            @McpToolParam(description = "FULL (default) = all edges; AGGREGATED = per-module counts + top classes.", required = false)
+            String contentLevel
     ) {
         if (StringUtils.isBlank(file)) {
             return GraphView.unavailable("Parameter 'file' ist erforderlich.");
         }
-        return fileGraphService.graphFile(file.trim(), project, maxEdges, includeExternal);
+        return fileGraphService.graphFile(file.trim(), project, maxEdges, includeExternal, offset, ContentLevel.parse(contentLevel));
     }
 
     @McpTool(name = "graphNode", description = PrjxpToolDocs.GRAPH_NODE)
@@ -232,16 +246,22 @@ public class PrjxpMcpTool {
             @McpToolParam(description = "Project name (listProjects).", required = true)
             String project,
 
-            @McpToolParam(description = "Max neighbours per direction (default 30, max 100).", required = false)
+            @McpToolParam(description = "Max neighbours per direction (default 30, max 500).", required = false)
             Integer maxEdges,
 
             @McpToolParam(description = "Include JDK/library edges (default false).", required = false)
-            Boolean includeExternal
+            Boolean includeExternal,
+
+            @McpToolParam(description = "Skip this many per direction (default 0).", required = false)
+            Integer offset,
+
+            @McpToolParam(description = "FULL (default) = all edges; AGGREGATED = per-module counts + top classes.", required = false)
+            String contentLevel
     ) {
         if (StringUtils.isBlank(symbol)) {
             return GraphView.unavailable("Parameter 'symbol' ist erforderlich.");
         }
-        return fileGraphService.graphNode(symbol.trim(), project, maxEdges, includeExternal);
+        return fileGraphService.graphNode(symbol.trim(), project, maxEdges, includeExternal, offset, ContentLevel.parse(contentLevel));
     }
 
     @McpTool(name = "graphCluster", description = PrjxpToolDocs.GRAPH_CLUSTER)
@@ -299,6 +319,60 @@ public class PrjxpMcpTool {
             @McpToolParam(description = "Max clusters, default 10 (max 50).", required = false)
             Integer topN) {
         return semanticGraphService.semanticOverview(project, topN);
+    }
+
+    @McpTool(name = "readChunks", description = PrjxpToolDocs.READ_CHUNKS)
+    public String readChunks(
+            @McpToolParam(description = "Project name (listProjects).", required = true)
+            String project,
+
+            @McpToolParam(description = "Comma-separated chunk_ids (from vectorSearch output), max 10.", required = true)
+            String ids
+    ) {
+        if (StringUtils.isBlank(project) || StringUtils.isBlank(ids)) {
+            return "ERROR: 'project' and 'ids' are required.";
+        }
+        PxChunkDao dao = chunkDaoProvider.get(project.trim()).orElse(null);
+        if (dao == null) {
+            return "ERROR: Project '" + project + "' not found or not searchable.";
+        }
+        List<String> idList = Arrays.stream(ids.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .limit(10)
+                .toList();
+        if (idList.isEmpty()) {
+            return "ERROR: No valid chunk_ids provided.";
+        }
+
+        StringBuilder sb = new StringBuilder();
+        int cap = 8000;   // total content cap
+        for (String id : idList) {
+            List<PxChunk> parts = dao.findById(id);
+            if (parts == null || parts.isEmpty()) {
+                sb.append("## ").append(id).append("\n(not found)\n\n");
+                continue;
+            }
+            PxChunk combined = PxChunk.combine(parts);
+            if (combined == null) {
+                continue;
+            }
+            String content = combined.getContent() == null ? "" : combined.getContent();
+            // Per-chunk cap: 2000 chars to keep the total bounded
+            if (content.length() > 2000) {
+                content = content.substring(0, 2000) + "\n... [truncated]";
+            }
+            sb.append("## ").append(id);
+            if (combined.getFile() != null) {
+                sb.append(" (").append(combined.getFile()).append(")");
+            }
+            sb.append("\n").append(content).append("\n\n");
+            if (sb.length() > cap) {
+                sb.append("\n... [total cap reached, remaining chunks omitted]\n");
+                break;
+            }
+        }
+        return sb.toString();
     }
 
 }

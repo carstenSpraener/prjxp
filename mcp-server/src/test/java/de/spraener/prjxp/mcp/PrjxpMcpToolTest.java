@@ -44,13 +44,15 @@ class PrjxpMcpToolTest {
     private FileGraphService fileGraphService;
     @Mock
     private SemanticGraphService semanticGraphService;
+    @Mock
+    private de.spraener.prjxp.common.store.PxChunkDaoProvider chunkDaoProvider;
 
     private PrjxpMcpTool tool;
 
     @BeforeEach
     void setUp() {
         tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService,
-                projectRegistry, fileListService, fileGraphService, semanticGraphService);
+                projectRegistry, fileListService, fileGraphService, semanticGraphService, chunkDaoProvider);
     }
 
     @Test
@@ -224,31 +226,35 @@ class PrjxpMcpToolTest {
 
     @Test
     void grepDefaultsIncludeTestsToTrue() {
-        // Exact search is deliberate intent: null includeTests must default to true
-        when(grepSearchService.search("q", "myproj", null, 10, true, ContentLevel.FULL)).thenReturn(List.of());
+        // Exact search is deliberate intent: null includeTests must default to true;
+        // null contentLevel defaults to NAMES (grep -l)
+        when(grepSearchService.searchDetailed("q", "myproj", null, 10, true, ContentLevel.NAMES))
+                .thenReturn(GrepResult.of(List.of(), 0));
 
         tool.grep("q", "myproj", null, null, null, null);
 
-        verify(grepSearchService).search("q", "myproj", null, 10, true, ContentLevel.FULL);
+        verify(grepSearchService).searchDetailed("q", "myproj", null, 10, true, ContentLevel.NAMES);
     }
 
     @Test
     void grepPassesExplicitIncludeTestsThrough() {
-        when(grepSearchService.search("q", "myproj", null, 10, false, ContentLevel.FULL)).thenReturn(List.of());
+        when(grepSearchService.searchDetailed("q", "myproj", null, 10, false, ContentLevel.NAMES))
+                .thenReturn(GrepResult.of(List.of(), 0));
 
         tool.grep("q", "myproj", null, null, null, false);
 
-        verify(grepSearchService).search("q", "myproj", null, 10, false, ContentLevel.FULL);
+        verify(grepSearchService).searchDetailed("q", "myproj", null, 10, false, ContentLevel.NAMES);
     }
 
     @Test
     void grepPassesContentLevelThrough() {
-        // null contentLevel parses to FULL (today's behaviour); an explicit value is passed through
-        when(grepSearchService.search("q", "myproj", null, 10, true, ContentLevel.POINTERS)).thenReturn(List.of());
+        // an explicit contentLevel is passed through unchanged
+        when(grepSearchService.searchDetailed("q", "myproj", null, 10, true, ContentLevel.POINTERS))
+                .thenReturn(GrepResult.of(List.of(), 0));
 
         tool.grep("q", "myproj", null, null, "POINTERS", true);
 
-        verify(grepSearchService).search("q", "myproj", null, 10, true, ContentLevel.POINTERS);
+        verify(grepSearchService).searchDetailed("q", "myproj", null, 10, true, ContentLevel.POINTERS);
     }
 
     @Test
@@ -299,29 +305,80 @@ class PrjxpMcpToolTest {
 
     @Test
     void graphFilePassesProjectThrough() {
-        when(fileGraphService.graphFile("src/A.java", "myproj", 5, true))
+        when(fileGraphService.graphFile("src/A.java", "myproj", 5, true, null, ContentLevel.FULL))
                 .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
 
-        GraphView view = tool.graphFile("  src/A.java  ", "myproj", 5, true);
+        GraphView view = tool.graphFile("  src/A.java  ", "myproj", 5, true, null, null);
 
         assertThat(view.error()).isEqualTo("Graph nicht verfügbar, bitte reindexieren");
-        verify(fileGraphService).graphFile("src/A.java", "myproj", 5, true);
+        verify(fileGraphService).graphFile("src/A.java", "myproj", 5, true, null, ContentLevel.FULL);
+    }
+
+    @Test
+    void graphFilePassesOffsetThrough() {
+        when(fileGraphService.graphFile("src/A.java", "myproj", 500, false, 30, ContentLevel.FULL))
+                .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
+
+        tool.graphFile("src/A.java", "myproj", 500, false, 30, null);
+
+        verify(fileGraphService).graphFile("src/A.java", "myproj", 500, false, 30, ContentLevel.FULL);
+    }
+
+    @Test
+    void graphFilePassesContentLevelThrough() {
+        // Efficiency measure 5: the contentLevel string is parsed to the enum for the service
+        when(fileGraphService.graphFile("src/A.java", "myproj", null, null, null, ContentLevel.AGGREGATED))
+                .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
+
+        tool.graphFile("src/A.java", "myproj", null, null, null, "AGGREGATED");
+
+        verify(fileGraphService).graphFile("src/A.java", "myproj", null, null, null, ContentLevel.AGGREGATED);
     }
 
     @Test
     void graphNodePassesProjectThrough() {
-        when(fileGraphService.graphNode("demo.A", "myproj", null, null))
+        when(fileGraphService.graphNode("demo.A", "myproj", null, null, null, ContentLevel.FULL))
                 .thenReturn(GraphView.unavailable("Node nicht gefunden: demo.A"));
 
-        GraphView view = tool.graphNode("demo.A", "myproj", null, null);
+        GraphView view = tool.graphNode("demo.A", "myproj", null, null, null, null);
 
         assertThat(view.error()).contains("demo.A");
-        verify(fileGraphService).graphNode("demo.A", "myproj", null, null);
+        verify(fileGraphService).graphNode("demo.A", "myproj", null, null, null, ContentLevel.FULL);
+    }
+
+    @Test
+    void graphNodePassesOffsetThrough() {
+        when(fileGraphService.graphNode("demo.A", "myproj", 500, false, 100, ContentLevel.FULL))
+                .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
+
+        tool.graphNode("demo.A", "myproj", 500, false, 100, null);
+
+        verify(fileGraphService).graphNode("demo.A", "myproj", 500, false, 100, ContentLevel.FULL);
+    }
+
+    @Test
+    void graphNodePassesContentLevelThrough() {
+        when(fileGraphService.graphNode("demo.A", "myproj", null, null, null, ContentLevel.AGGREGATED))
+                .thenReturn(GraphView.unavailable("Node nicht gefunden: demo.A"));
+
+        tool.graphNode("demo.A", "myproj", null, null, null, "AGGREGATED");
+
+        verify(fileGraphService).graphNode("demo.A", "myproj", null, null, null, ContentLevel.AGGREGATED);
+    }
+
+    @Test
+    void graphNodeBlankContentLevelParsesToFull() {
+        when(fileGraphService.graphNode("demo.A", "myproj", null, null, null, ContentLevel.FULL))
+                .thenReturn(GraphView.unavailable("Node nicht gefunden: demo.A"));
+
+        tool.graphNode("demo.A", "myproj", null, null, null, "  ");
+
+        verify(fileGraphService).graphNode("demo.A", "myproj", null, null, null, ContentLevel.FULL);
     }
 
     @Test
     void graphFileRequiresFile() {
-        GraphView view = tool.graphFile("", "demo", null, null);
+        GraphView view = tool.graphFile("", "demo", null, null, null, null);
 
         assertThat(view.error()).isEqualTo("Parameter 'file' ist erforderlich.");
         verifyNoInteractions(fileGraphService);

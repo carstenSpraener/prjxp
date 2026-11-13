@@ -9,6 +9,7 @@ import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
+import de.spraener.prjxp.tibed.signature.SignatureBatch;
 import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
@@ -48,6 +49,7 @@ class EmbeddingServiceSemanticTest {
     private TransferPasswordResolver passwordResolver;
     private StoreIdChecker storeIdChecker;
     private SemanticGraphBatch semanticGraphBatch;
+    private SignatureBatch signatureBatch;
     private PrjXPConfig config;
     private LuceneEmbeddingStore luceneStore;
     private ProjectDefinition project;
@@ -63,6 +65,7 @@ class EmbeddingServiceSemanticTest {
         passwordResolver = mock(TransferPasswordResolver.class);
         storeIdChecker = mock(StoreIdChecker.class);
         semanticGraphBatch = mock(SemanticGraphBatch.class);
+        signatureBatch = mock(SignatureBatch.class);
         config = new PrjXPConfig();
         project = new ProjectDefinition();
         project.setName("p");
@@ -70,7 +73,8 @@ class EmbeddingServiceSemanticTest {
         project.setJsonlFile(tempDir.resolve("empty.jsonl").toString());
         luceneStore = new LuceneEmbeddingStore(tempDir.resolve("index"), 3);
         service = new EmbeddingService(logService, objectMapper, embedder, storeSupplier,
-                streamProvider, passwordResolver, storeIdChecker, config, semanticGraphBatch);
+                streamProvider, passwordResolver, storeIdChecker, config, semanticGraphBatch,
+                mock(AstNeighboursLoader.class), signatureBatch);
     }
 
     @AfterEach
@@ -136,6 +140,45 @@ class EmbeddingServiceSemanticTest {
         assertThatThrownBy(() -> service.executeForProject(project, luceneStore))
                 .isInstanceOf(UncheckedIOException.class)
                 .hasMessageContaining("Semantic-graph step failed");
+    }
+
+    @Test
+    void runsSignatureBatchEvenWhenSemanticGraphIsDisabled() throws Exception {
+        when(streamProvider.getTransferJsonlStream(eq(project.resolvedJsonlFile()), isNull()))
+                .thenReturn(Stream.empty());
+        config.getSemanticGraph().setEnabled(false);
+
+        service.executeForProject(project, luceneStore);
+
+        verify(signatureBatch).run("p", luceneStore);
+        verifyNoInteractions(semanticGraphBatch);
+    }
+
+    @Test
+    void skipsSignatureBatchWhenDisabledOrAfterFailure() throws Exception {
+        config.getSignature().setEnabled(false);
+        when(streamProvider.getTransferJsonlStream(eq(project.resolvedJsonlFile()), isNull()))
+                .thenReturn(Stream.empty());
+
+        service.executeForProject(project, luceneStore);
+        verifyNoInteractions(signatureBatch);
+
+        config.getSignature().setEnabled(true);
+        when(streamProvider.getTransferJsonlStream(eq(project.resolvedJsonlFile()), isNull()))
+                .thenThrow(new IOException("stream failed"));
+        service.executeForProject(project, luceneStore);
+        verifyNoInteractions(signatureBatch);
+    }
+
+    @Test
+    void surfacesSignatureBatchFailure() throws Exception {
+        when(streamProvider.getTransferJsonlStream(eq(project.resolvedJsonlFile()), isNull()))
+                .thenReturn(Stream.empty());
+        doThrow(new IOException("signature failed")).when(signatureBatch).run("p", luceneStore);
+
+        assertThatThrownBy(() -> service.executeForProject(project, luceneStore))
+                .isInstanceOf(UncheckedIOException.class)
+                .hasMessageContaining("Signature step failed");
     }
 
     @Test

@@ -25,6 +25,8 @@ import java.io.Writer;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.Arrays;
+import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.BiConsumer;
 import java.util.stream.Stream;
@@ -39,6 +41,7 @@ public class EmbeddingExportService {
     private final PrjXPJsonStreamProvider streamProvider;
     private final TransferPasswordResolver transferPasswordResolver;
     private final PrjXPConfig cfg;
+    private final AstNeighboursLoader astNeighboursLoader;
 
     public void execute() {
         ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException(
@@ -131,11 +134,14 @@ public class EmbeddingExportService {
     }
 
     private void export(Stream<String> lines, Writer writer, ProjectDefinition pd, int total, BiConsumer<Integer, Integer> progress) {
+        // AST neighbours are code-graph metadata written by chunk-norris: they are stamped before
+        // embedding so they travel with the record into the index (and into the live JSONL).
+        Map<String, List<String>> astNeighbours = astNeighboursLoader.load(pd);
         AtomicInteger embedded = new AtomicInteger();
         new PxChunkFromJsonLReader()
                 .readChunksFromJsonlStreamBatched(lines, Math.max(1, pd.getTibedBatchSize()), this::fromJSONL)
                 .forEach(batch -> {
-                    exportBatch(writer, batch);
+                    exportBatch(writer, batch, astNeighbours);
                     embedded.addAndGet(batch.length);
                     log.info("Embedded chunk batch of " + batch.length + " chunks for project '" + pd.getName() + "'");
                     if (total > 0) {
@@ -144,8 +150,10 @@ public class EmbeddingExportService {
                 });
     }
 
-    private void exportBatch(Writer writer, PxChunk[] chunks) {
-        for (EmbeddedChunkRecord record : embedder.embed(Arrays.asList(chunks))) {
+    private void exportBatch(Writer writer, PxChunk[] chunks, Map<String, List<String>> astNeighbours) {
+        List<PxChunk> batch = Arrays.asList(chunks);
+        AstNeighboursMerger.mergeAll(batch, astNeighbours);
+        for (EmbeddedChunkRecord record : embedder.embed(batch)) {
             try {
                 writer.write(toJSONL(record));
                 writer.write('\n');

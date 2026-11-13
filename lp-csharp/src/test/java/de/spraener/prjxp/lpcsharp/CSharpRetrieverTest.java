@@ -3,6 +3,7 @@ package de.spraener.prjxp.lpcsharp;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import org.junit.jupiter.api.Test;
@@ -220,6 +221,41 @@ class CSharpRetrieverTest {
 
         assertThat(prompt).contains("class A {}");
         assertThat(prompt).doesNotContain("class B secret");
+    }
+
+    // ------------------------------------------------------------------
+    // POINTERS level (Phase 06: PointerRenderer)
+    // ------------------------------------------------------------------
+
+    @Test
+    void pointersLevelRendersPointerRendererBlock() {
+        PxChunk chunk = PxChunk.create(
+                c -> c.setId("Acme.Foo.bar"),
+                c -> c.setMimeType(MIME),
+                c -> c.setFile("/proj/src/Foo.cs"),
+                c -> c.setParent("Acme.Foo"),
+                c -> c.setContent("void bar() {}"),
+                c -> c.getMetadata().put(CSharpCodeSection.METADATA_KEY, CSharpCodeSection.METHOD.getName()),
+                c -> c.getMetadata().put("graph_node", "Acme.Foo#bar()"),
+                c -> c.getMetadata().put("leiden_cluster_id", "c3"),
+                c -> c.getMetadata().put("keywords", "bar, baz"));
+        SearchParams params = new SearchParams(8, 0.85);
+        params.setContentLevel(ContentLevel.POINTERS);
+
+        String prompt = new CSharpRetriever().buildPromptForFindings(
+                "proj", List.of(new ScoredChunk(chunk, 0.9)), params).toString();
+
+        assertThat(prompt).contains("## /proj/src/Foo.cs")
+                .contains("project_id: \"proj\"")
+                .contains("chunk_id: \"Acme.Foo.bar\"")
+                .contains("score: 0.90")
+                .contains("chapter: \"Acme.Foo#bar()\"")
+                .contains("cluster_id: \"c3\"")
+                .contains("keywords: [\"bar\", \"baz\"]")
+                .contains("→ readFile(\"/proj/src/Foo.cs\")")
+                .contains("→ readBySignature(\"bar\", \"Acme.Foo\")");
+        assertThat(prompt).doesNotContain("void bar() {}")
+                .doesNotContain("[method]");
     }
 
     private static int countOccurrences(String haystack, String needle) {

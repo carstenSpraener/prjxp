@@ -3,6 +3,7 @@ package de.spraener.prjxp.lpgdscript;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import org.junit.jupiter.api.Test;
 
@@ -272,6 +273,41 @@ class GdscriptRetrieverTest {
 
         assertThat(r.buildPromptForFindings("proj", chunks, params(8, 50000)).toString())
                 .isEqualTo("=== Player._ready() [func] ===\nfunc _ready():\n\tprint(\"ready\")\n\n\n");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked") // PxChunk.create(Consumer<PxChunk>...) varargs; a single consumer is always passed
+    void pointersLevelRendersPointerRendererBlock() {
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("Player.move(dir)");
+            c.setFile("/proj/Player.gd");
+            c.setParent("Player");
+            c.setMimeType(GdscriptCodeChunker.GDSCRIPT_CODE_MIME_TYPE);
+            c.setPart(0);
+            c.setTotal(1);
+            c.setContent("func move(dir):\n\tposition += dir * speed\n");
+            c.getMetadata().put(GdscriptCodeSection.METADATA_KEY, "func");
+            c.getMetadata().put("graph_node", "Player#move(dir)");
+            c.getMetadata().put("leiden_cluster_id", "g1");
+            c.getMetadata().put("keywords", "move, speed");
+        });
+        SearchParams pointers = params(8, 50000);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+
+        String prompt = retriever(fullDao()).buildPromptForFindings(
+                "proj", List.of(new ScoredChunk(chunk, 0.9)), pointers).toString();
+
+        assertThat(prompt).contains("## /proj/Player.gd")
+                .contains("project_id: \"proj\"")
+                .contains("chunk_id: \"Player.move(dir)\"")
+                .contains("score: 0.90")
+                .contains("chapter: \"Player#move(dir)\"")
+                .contains("cluster_id: \"g1\"")
+                .contains("keywords: [\"move\", \"speed\"]")
+                .contains("→ readFile(\"/proj/Player.gd\")")
+                .contains("→ readBySignature(\"move\", \"Player\")");
+        assertThat(prompt).doesNotContain("func move(dir):")
+                .doesNotContain("# enclosing class: Player");
     }
 
     @Test

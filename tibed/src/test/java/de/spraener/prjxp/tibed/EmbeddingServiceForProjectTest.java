@@ -7,7 +7,9 @@ import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
+import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
+import de.spraener.prjxp.tibed.signature.SignatureBatch;
 import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.store.embedding.EmbeddingStore;
@@ -28,7 +30,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -70,10 +75,12 @@ class EmbeddingServiceForProjectTest {
 
     @BeforeEach
     void setUp() {
-        when(cfg.getTransfer()).thenReturn(new PrjXPConfig.TransferConfig());
+        // lenient: the enrich-only test never touches the transfer config (ingestion is skipped).
+        lenient().when(cfg.getTransfer()).thenReturn(new PrjXPConfig.TransferConfig());
         service = new EmbeddingService(logService, objMapper, embedder, storeSupplier,
                 streamProvider, transferPasswordResolver, storeIdChecker, cfg,
-                mock(SemanticGraphBatch.class));
+                mock(SemanticGraphBatch.class), mock(AstNeighboursLoader.class),
+                mock(SignatureBatch.class));
     }
 
     private ProjectDefinition projectWithJsonl(String name) throws Exception {
@@ -198,9 +205,49 @@ class EmbeddingServiceForProjectTest {
         assertThat(captor.getValue()).hasSize(100);
     }
 
+    /** Phase 04: the ast-neighbours sidecar is merged into the chunk metadata before embedding. */
     @Test
-    void nonPositiveBatchSizeFallsBackToOne() throws Exception {
-        Path jsonl = tempDir.resolve("two.jsonl");
+    void mergesAstNeighboursSidecarIntoChunkMetadata() throws Exception {
+        ProjectDefinition pd = projectWithJsonl("projF");
+        EmbeddingStore<TextSegment> store = stubStreamAndImport(pd);
+        AstNeighboursLoader loader = mock(AstNeighboursLoader.class);
+        when(loader.load(pd)).thenReturn(java.util.Map.of("chunk-1", List.of("de.ex.A", "de.ex.B")));
+
+        serviceWithLoader(loader).executeForProject(pd, store);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PxChunk>> captor = ArgumentCaptor.forClass(List.class);
+        verify(embedder).execute(eq(store), captor.capture());
+        assertThat(captor.getValue().get(0).getMetadata())
+                .containsEntry(de.spraener.prjxp.common.graph.SignatureMetadata.AST_NEIGHBOURS,
+                        "de.ex.A" + de.spraener.prjxp.common.graph.SignatureMetadata.LIST_SEPARATOR + "de.ex.B");
+    }
+
+    /** Phase 04: without a sidecar (or without an entry for the chunk) no metadata key is invented. */
+    @Test
+    void withoutSidecarNoAstNeighboursMetadata() throws Exception {
+        ProjectDefinition pd = projectWithJsonl("projG");
+        EmbeddingStore<TextSegment> store = stubStreamAndImport(pd);
+        AstNeighboursLoader loader = mock(AstNeighboursLoader.class);
+        when(loader.load(pd)).thenReturn(java.util.Map.of());
+
+        serviceWithLoader(loader).executeForProject(pd, store);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<PxChunk>> captor = ArgumentCaptor.forClass(List.class);
+        verify(embedder).execute(eq(store), captor.capture());
+        assertThat(captor.getValue().get(0).getMetadata())
+                .doesNotContainKey(de.spraener.prjxp.common.graph.SignatureMetadata.AST_NEIGHBOURS);
+    }
+
+    private EmbeddingService serviceWithLoader(AstNeighboursLoader loader) {
+        return new EmbeddingService(logService, objMapper, embedder, storeSupplier,
+                streamProvider, transferPasswordResolver, storeIdChecker, cfg,
+                mock(SemanticGraphBatch.class), loader, mock(SignatureBatch.class));
+    }
+
+    @Test
+    void nonPositiveBatchSizeFallsBackToOne() throws Exception {        Path jsonl = tempDir.resolve("two.jsonl");
         Files.writeString(jsonl, "{\"id\":\"chunk-1\",\"content\":\"int x = 1;\"}\n"
                 + "{\"id\":\"chunk-2\",\"content\":\"int x = 2;\"}\n");
 
@@ -221,5 +268,36 @@ class EmbeddingServiceForProjectTest {
         ArgumentCaptor<List<PxChunk>> captor = ArgumentCaptor.forClass(List.class);
         verify(embedder, times(2)).execute(eq(store), captor.capture());   // two batches of one
         assertThat(captor.getAllValues()).allSatisfy(batch -> assertThat(batch).hasSize(1));
+    }
+
+    /**
+     * Enrich-only mode: the ingestion (JSONL read + embedding) is skipped, but the enrichment
+     * batches (semantic graph + signatures) still run against the existing index. This is what
+     * makes the gamma calibration runnable against a copied index without re-embedding.
+     */
+    @Test
+    void enrichOnlySkipsIngestionButRunsEnrichment() throws Exception {
+        PrjXPConfig enrichCfg = mock(PrjXPConfig.class);
+        when(enrichCfg.isEnrichOnly()).thenReturn(true);
+        when(enrichCfg.getSemanticGraph()).thenReturn(new PrjXPConfig.SemanticGraphConfig());
+        when(enrichCfg.getSignature()).thenReturn(new PrjXPConfig.SignatureConfig());
+
+        SemanticGraphBatch semanticGraphBatch = mock(SemanticGraphBatch.class);
+        SignatureBatch signatureBatch = mock(SignatureBatch.class);
+        EmbeddingService enrichService = new EmbeddingService(
+                logService, objMapper, embedder, storeSupplier,
+                streamProvider, transferPasswordResolver, storeIdChecker, enrichCfg,
+                semanticGraphBatch, mock(AstNeighboursLoader.class), signatureBatch);
+
+        ProjectDefinition pd = projectWithJsonl("projH");
+        LuceneEmbeddingStore store = mock(LuceneEmbeddingStore.class);
+
+        enrichService.executeForProject(pd, store);
+
+        // Ingestion skipped: no embedding happens.
+        verify(embedder, never()).execute(any(), anyList());
+        // Enrichment ran against the existing index.
+        verify(semanticGraphBatch).run(eq("projH"), any(LuceneEmbeddingStore.class));
+        verify(signatureBatch).run(eq("projH"), any(LuceneEmbeddingStore.class));
     }
 }

@@ -59,6 +59,47 @@ class LuceneEmbeddingStoreSemanticTest {
     }
 
     @Test
+    void readAllVectorsHandlesSparseProjectFilterAcrossInterleavedDocuments() throws IOException {
+        // p, then a long run of q, then p: the filter iterator jumps far ahead of the
+        // vector iterator. Advancing a postings iterator with a target behind its current
+        // doc is undefined by contract (Lucene 10 threw an ArrayIndexOutOfBoundsException
+        // on the real prjxp index, where the project filter is sparse).
+        // One commit -> one segment, so the project filter really is sparse inside a leaf.
+        addAllBatched(
+                new String[]{"p", "q", "q", "q", "q", "p", "p"},
+                new String[]{"p1", "q1", "q2", "q3", "q4", "p2", "p3"});
+
+        List<VectorChunk> chunks = store.readAllVectors(
+                new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "p"));
+
+        assertThat(chunks).extracting(VectorChunk::id).containsExactly("p1", "p2", "p3");
+    }
+
+    @Test
+    void addAllBatchedDropsDuplicateStoreIdentities() throws IOException {
+        // same (project, id, part) twice — e.g. the same FQN chunked from two test fixtures
+        addAllBatched(new String[]{"p", "p", "q"}, new String[]{"dup", "dup", "other"});
+
+        assertThat(store.readAllVectors(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "p")))
+                .extracting(VectorChunk::id)
+                .containsExactly("dup");
+    }
+
+    @Test
+    void addAllDropsDuplicateStoreIdentities() throws IOException {
+        List<Embedding> embeddings = List.of(
+                Embedding.from(new float[]{1f, 0f, 0f}),
+                Embedding.from(new float[]{1f, 0f, 0f}));
+        List<TextSegment> segments = List.of(
+                segment("p", "dup"), segment("p", "dup"));
+
+        List<String> ids = store.addAll(embeddings, segments);
+
+        assertThat(ids).containsExactly("dup");
+        assertThat(store.readAllVectors(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "p"))).hasSize(1);
+    }
+
+    @Test
     void readAllVectorsSkipsDeletedDocuments() throws IOException {
         addChunk("p", "live", 0, new float[]{1f, 0f, 0f}, "live");
         addChunk("p", "deleted", 0, new float[]{0f, 1f, 0f}, "deleted");
@@ -109,6 +150,30 @@ class LuceneEmbeddingStoreSemanticTest {
     @Test
     void searchKnnReturnsEmptyForEmptyIndex() throws IOException {
         assertThat(store.searchKnn(Embedding.from(new float[]{1f, 0f, 0f}), 5, 0, null)).isEmpty();
+    }
+
+    private TextSegment segment(String project, String id) {
+        Metadata metadata = new Metadata();
+        metadata.put(PxChunk.PXCHUNK_ID, id);
+        metadata.put(PxChunk.PXCHUNK_PROJECT, project);
+        metadata.put(PxChunk.PXCHUNK_PART, "0");
+        metadata.put(PxChunk.PXCHUNK_MIME_TYPE, "text/plain");
+        return TextSegment.from("content-" + id, metadata);
+    }
+
+    private void addAllBatched(String[] projects, String[] ids) {
+        java.util.List<Embedding> embeddings = new java.util.ArrayList<>();
+        java.util.List<TextSegment> segments = new java.util.ArrayList<>();
+        for (int i = 0; i < ids.length; i++) {
+            Metadata metadata = new Metadata();
+            metadata.put(PxChunk.PXCHUNK_ID, ids[i]);
+            metadata.put(PxChunk.PXCHUNK_PROJECT, projects[i]);
+            metadata.put(PxChunk.PXCHUNK_PART, "0");
+            metadata.put(PxChunk.PXCHUNK_MIME_TYPE, "text/markdown");
+            embeddings.add(Embedding.from(new float[]{1f, 0f, 0f}));
+            segments.add(TextSegment.from("content-" + ids[i], metadata));
+        }
+        store.addAllBatched(embeddings, segments);
     }
 
     private void addChunk(String project, String id, int part, float[] vector, String file) {

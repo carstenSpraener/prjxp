@@ -50,11 +50,19 @@ public class GrepSearchService {
     }
 
     public List<SearchHit> search(String query, String project, String language, int limit, boolean includeTests, ContentLevel contentLevel) {
+        return searchDetailed(query, project, language, limit, includeTests, contentLevel).hits();
+    }
+
+    /**
+     * Like {@link #search}, but keeps the pre-limit file count so the caller can tell whether the
+     * result was truncated (see {@link GrepResult#note()}).
+     */
+    public GrepResult searchDetailed(String query, String project, String language, int limit, boolean includeTests, ContentLevel contentLevel) {
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         String resolved = projectRegistry.resolve(project);
         PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
         if (dao == null) {
-            return List.of();
+            return GrepResult.of(List.of(), 0);
         }
 
         Map<String, String> filters = buildFilters(language);
@@ -66,17 +74,17 @@ public class GrepSearchService {
             try {
                 chunks = dao.searchFullText(query, filters, window);
             } catch (UnsupportedOperationException e) {
-                return List.of();
+                return GrepResult.of(List.of(), 0);
             }
-            List<SearchHit> hits = toHits(project, query, chunks, limit, includeTests, contentLevel);
-            if (includeTests || hits.size() >= limit || chunks.size() < window || window >= MAX_WINDOW) {
-                return hits;
+            GrepResult result = toHits(project, query, chunks, limit, includeTests, contentLevel);
+            if (includeTests || result.hits().size() >= limit || chunks.size() < window || window >= MAX_WINDOW) {
+                return result;
             }
             window = Math.min(window * 2, MAX_WINDOW);
         }
     }
 
-    private List<SearchHit> toHits(String project, String query, List<ScoredChunk> chunks, int limit, boolean includeTests, ContentLevel contentLevel) {
+    private GrepResult toHits(String project, String query, List<ScoredChunk> chunks, int limit, boolean includeTests, ContentLevel contentLevel) {
         Map<String,List<ScoredChunk>> fileToHitsMap = new HashMap<>();
         for( ScoredChunk sChunk : chunks) {
             String fileName = sChunk.chunk().getFile();
@@ -92,23 +100,35 @@ public class GrepSearchService {
         }
 
         List<SearchHit> searchHits = new ArrayList<>();
+        ContentLevel level = contentLevel == null ? ContentLevel.FULL : contentLevel;
+        boolean namesMode = level == ContentLevel.NAMES || level == ContentLevel.AGGREGATED;
         SearchParams sp = new SearchParams(limit, 0.85);
-        sp.setContentLevel(contentLevel == null ? ContentLevel.FULL : contentLevel);
+        sp.setContentLevel(level);
         for( String fileName : fileToHitsMap.keySet() ) {
             List<ScoredChunk> scoredChunks = fileToHitsMap.get(fileName);
-            StringBuilder sb = new StringBuilder();
-            for( var gr : retrieverRegistry.all() ) {
-                sb.append(gr.buildPromptForFindings(project, scoredChunks, sp));
+            int hitCount = scoredChunks.size();
+            String snippet;
+            if (namesMode) {
+                // grep -l: one line per file with the hit-count prefix, no content, no windowing.
+                // Efficiency measure 5: AGGREGATED is an alias for NAMES in search tools.
+                snippet = hitCount + "  " + fileName;
+            } else {
+                StringBuilder sb = new StringBuilder();
+                for( var gr : retrieverRegistry.all() ) {
+                    sb.append(gr.buildPromptForFindings(project, scoredChunks, sp));
+                }
+                // Doc-chunk windowing (Phase 03): the retriever may rebuild content from the store,
+                // so the funnel is the finished snippet. Identity for code (text/x-*), untouched otherwise.
+                String mimeType = scoredChunks.isEmpty() ? null : scoredChunks.get(0).chunk().getMimeType();
+                snippet = DocWindower.windowDoc(sb.toString(), query, fileName, mimeType, docMaxChars, docWindowChars);
             }
-            // Doc-chunk windowing (Phase 03): the retriever may rebuild content from the store,
-            // so the funnel is the finished snippet. Identity for code (text/x-*), untouched otherwise.
-            String mimeType = scoredChunks.isEmpty() ? null : scoredChunks.get(0).chunk().getMimeType();
-            String snippet = DocWindower.windowDoc(sb.toString(), query, fileName, mimeType, docMaxChars, docWindowChars);
             double totalScore = scoredChunks.stream().mapToDouble(ScoredChunk::score).sum();
+            // grep -l (NAMES/AGGREGATED) ranks by hit count; other levels rank by total score.
+            double sortKey = namesMode ? hitCount : totalScore;
             searchHits.add(
                     new SearchHit(
                             fileName,
-                            totalScore,
+                            sortKey,
                             fileName,
                             null,
                             null,
@@ -122,7 +142,11 @@ public class GrepSearchService {
             searchHits.removeIf(h -> TestPathFilter.isTestPath(h.file()));
         }
         searchHits.sort((a, b) -> Double.compare(b.score(), a.score()));
-        return searchHits.size() > limit ? new ArrayList<>(searchHits.subList(0, limit)) : searchHits;
+        int totalFiles = searchHits.size();
+        List<SearchHit> limited = totalFiles > limit
+                ? new ArrayList<>(searchHits.subList(0, limit))
+                : searchHits;
+        return GrepResult.of(limited, totalFiles);
     }
 
     private Map<String, String> buildFilters(String language) {

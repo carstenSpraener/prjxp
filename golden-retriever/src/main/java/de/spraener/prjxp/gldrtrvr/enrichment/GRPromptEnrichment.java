@@ -6,6 +6,7 @@ import de.spraener.prjxp.common.model.TestPathFilter;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.PointerRenderer;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
@@ -33,6 +34,13 @@ public class GRPromptEnrichment {
     private int vectorWindow = 50;
     @Value("${prjxp.gldrtrvr.totalcontentlength:60000}")
     private int totalContentLength = 60000;
+    /**
+     * Efficiency measure 4 — maximum number of chunks kept per distinct file. A long document
+     * split into many chunks would otherwise flood the context with near-duplicate pointer
+     * blocks; only the highest-scoring chunks of each file are kept. {@code <= 0} disables it.
+     */
+    @Value("${prjxp.gldrtrvr.maxchunksperfile:3}")
+    private int maxChunksPerFile = 3;
 
     public String enrich(String projectName, String prompt) {
         return enrich(projectName, prompt, true);
@@ -41,6 +49,7 @@ public class GRPromptEnrichment {
     public String enrich(String projectName, String prompt, boolean includeTests) {
         SearchParams params = new SearchParams(20, 0.85);
         params.setMaxContentLength(maxContentLength);
+        params.setMaxChunksPerFile(maxChunksPerFile);
         return enrich(projectName, prompt, List.of(),
                 params,
                 this::reIterate,
@@ -62,6 +71,7 @@ public class GRPromptEnrichment {
     public String enrich(String projectName, String prompt, double distance, int maxResults, boolean skeletonsOnly, boolean includeTests) {
         SearchParams params = new SearchParams(maxResults, distance, skeletonsOnly);
         params.setMaxContentLength(maxContentLength);
+        params.setMaxChunksPerFile(maxChunksPerFile);
         String enrichedContext = enrich(projectName, prompt, List.of(),
                 params,
                 this::reIterate,
@@ -89,6 +99,7 @@ public class GRPromptEnrichment {
         SearchParams params = new SearchParams(maxResults, distance);
         params.setContentLevel(contentLevel);
         params.setMaxContentLength(maxContentLength);
+        params.setMaxChunksPerFile(maxChunksPerFile);
         params.setVectorFilters(vectorFilters == null ? Map.of() : Map.copyOf(vectorFilters));
         String enrichedContext = enrich(projectName, prompt, List.of(),
                 params,
@@ -112,6 +123,7 @@ public class GRPromptEnrichment {
                          Function<String, Boolean>... contextValidator) {
         SearchParams params = new SearchParams(8, 0.85);
         params.setMaxContentLength(maxContentLength);
+        params.setMaxChunksPerFile(maxChunksPerFile);
         return enrich(projectName, prompt, prefetchedChunks,
                 params,
                 this::reIterate,
@@ -149,22 +161,30 @@ public class GRPromptEnrichment {
             if (!includeTests) {
                 relevantChunks.removeIf(sc -> TestPathFilter.isTestPath(sc.chunk().getFile()));
             }
-            relevantChunks = capByFile(relevantChunks, searchParams.getMaxResult());
+            relevantChunks = capByFile(relevantChunks, searchParams.getMaxResult(), searchParams.getMaxChunksPerFile());
 
             StringBuilder sb = new StringBuilder();
-            int skippedRetrievers = 0;
-            for( var gr : retrieverRegistry.all() ) {
-                String part = gr.buildPromptForFindings(projectName, relevantChunks, searchParams, contextValidator).toString();
-                // Global budget across all retrievers: the first output always goes in,
-                // subsequent ones only if they still fit (prevents mega-dumps).
-                if (sb.length() > 0 && sb.length() + part.length() > totalContentLength) {
-                    skippedRetrievers++;
-                    continue;
+            ContentLevel level = searchParams.effectiveContentLevel();
+            if (level == ContentLevel.NAMES || level == ContentLevel.AGGREGATED) {
+                // Efficiency measure 1: filenames-only — one line per distinct file, no pointer
+                // block, no content. Bypasses the per-retriever loop (and its content budget).
+                // Efficiency measure 5: AGGREGATED is an alias for NAMES in the enrichment.
+                sb.append(PointerRenderer.renderNames(relevantChunks));
+            } else {
+                int skippedRetrievers = 0;
+                for( var gr : retrieverRegistry.all() ) {
+                    String part = gr.buildPromptForFindings(projectName, relevantChunks, searchParams, contextValidator).toString();
+                    // Global budget across all retrievers: the first output always goes in,
+                    // subsequent ones only if they still fit (prevents mega-dumps).
+                    if (sb.length() > 0 && sb.length() + part.length() > totalContentLength) {
+                        skippedRetrievers++;
+                        continue;
+                    }
+                    sb.append(part);
                 }
-                sb.append(part);
-            }
-            if (skippedRetrievers > 0) {
-                sb.append("\n[weitere ").append(skippedRetrievers).append(" Retriever-Outputs wegen Groessenlimit nicht enthalten]\n");
+                if (skippedRetrievers > 0) {
+                    sb.append("\n[weitere ").append(skippedRetrievers).append(" Retriever-Outputs wegen Groessenlimit nicht enthalten]\n");
+                }
             }
             overallContext = sb.toString();
             if (contextValidator != null && contextValidator.length > 0) {
@@ -202,8 +222,24 @@ public class GRPromptEnrichment {
         }
     }
 
+    /**
+     * Keeps at most {@code maxFiles} distinct files (ranked by best chunk score) and, within the
+     * kept files, at most {@code maxChunksPerFile} chunks per file (the highest-scoring ones).
+     * <p>
+     * Efficiency measure 4 — the vectorSearch dedup: a long document split into many chunks must
+     * not flood the context with near-duplicate pointer blocks. A {@code maxChunksPerFile <= 0}
+     * disables the per-file cap (legacy behaviour: keep every chunk of the kept files).
+     */
+    private static List<ScoredChunk> capByFile(List<ScoredChunk> chunks, int maxFiles, int maxChunksPerFile) {
+        if (chunks.isEmpty()) {
+            return chunks;
+        }
+        List<ScoredChunk> fileCapped = capFiles(chunks, maxFiles);
+        return maxChunksPerFile > 0 ? capChunksPerFile(fileCapped, maxChunksPerFile) : fileCapped;
+    }
+
     /** Keeps at most {@code maxFiles} distinct files (ranked by best chunk score) but never splits a file. */
-    private static List<ScoredChunk> capByFile(List<ScoredChunk> chunks, int maxFiles) {
+    private static List<ScoredChunk> capFiles(List<ScoredChunk> chunks, int maxFiles) {
         if (maxFiles <= 0 || chunks.isEmpty()) {
             return chunks;
         }
@@ -220,6 +256,25 @@ public class GRPromptEnrichment {
                 .map(Map.Entry::getKey)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
         return chunks.stream().filter(sc -> kept.contains(fileKey(sc))).toList();
+    }
+
+    /**
+     * Keeps at most {@code maxChunksPerFile} chunks per distinct file, preserving the input order.
+     * The input is expected to be in descending score order, so the first chunks of a file are its
+     * highest-scoring (most relevant) ones.
+     */
+    private static List<ScoredChunk> capChunksPerFile(List<ScoredChunk> chunks, int maxChunksPerFile) {
+        Map<String, Integer> countByFile = new LinkedHashMap<>();
+        List<ScoredChunk> result = new ArrayList<>();
+        for (ScoredChunk sc : chunks) {
+            String key = fileKey(sc);
+            int count = countByFile.getOrDefault(key, 0);
+            if (count < maxChunksPerFile) {
+                result.add(sc);
+                countByFile.put(key, count + 1);
+            }
+        }
+        return result;
     }
 
     private static String fileKey(ScoredChunk sc) {

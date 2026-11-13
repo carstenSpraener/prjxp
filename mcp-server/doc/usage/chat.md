@@ -1,93 +1,86 @@
 # Chat
 
-The Chat panel in the PRJXP Hub web UI lets you ask questions about indexed project source code. It combines a large-language-model (LLM) response with optional retrieval-augmented generation (RAG) over your project's code chunks, and optional tool execution. All interaction happens through the browser; no additional client-side setup is required.
+The Chat panel in the PRJXP Hub web UI lets you ask natural-language questions about indexed project source code. It combines a large-language-model (LLM) backend with optional retrieval-augmented generation (RAG) so that answers are grounded in the actual code of a selected project.
+
+The panel is a standalone Angular component (`app-chat`) that renders a scrollable message list, a text input, a settings button, and a clear-chat button. All interaction is handled client-side; the backend is contacted via a streaming (SSE) endpoint.
 
 ## Selecting a Model
 
-When the Chat panel opens, it queries the Hub backend for the list of available chat models via `GlobalsService.getChatModels()`. Each model entry exposes:
+The model used for generation is chosen from the list returned by the Hub's `getChatModels` endpoint. Each model entry carries three fields:
 
 | Field | Example | Purpose |
 |-------|---------|---------|
-| `stereoType` | `default`, `coder` | Identifier used for selection |
-| `serverType` | `ollama` | Backend serving the model |
-| `modelName` | `llama3` | Concrete model name |
+| `stereoType` | `default`, `coder` | Logical alias used in the UI and persisted in settings |
+| `serverType` | `ollama` | Backend server that hosts the model |
+| `modelName` | `llama3` | Concrete model identifier on that server |
 
-The panel applies the following selection logic on load:
+On page load the component:
 
-1. It reads the previously persisted model name from local storage.
-2. If the persisted name still exists in the backend list, it is restored.
-3. Otherwise, the **first** model in the returned list is selected.
+1. Fetches the available models from the backend.
+2. Reads the previously persisted choice from `localStorage`.
+3. If the persisted `stereoType` still exists in the fetched list, it is restored; otherwise the **first** model in the list is selected.
 
-You can change the model at any time through the **Settings** dialog (see [Chat Settings](#chat-settings)). The current model name is displayed in the status bar at the top of the panel.
+The currently selected model name is displayed in the status bar at the top of the panel (`.status-item`).
 
-## Project Context and RAG Retrieval
+## Project Context & Retrieval
 
-The `projectContext` setting (a project name string, or `null`) determines whether RAG retrieval is performed before the LLM generates a response.
+The `projectContext` signal (type `string | null`) identifies which indexed project the RAG pipeline should search.
 
-- **No project selected (`null`):** The thinking indicator shows *"Verabeite…"* (Processing). The request is sent to the LLM without a retrieval step.
-- **Project selected (e.g. `"my-project"`):** The thinking indicator shows *"RAG-Suche läuft…"* (RAG search running). The backend retrieves relevant code chunks for the specified project and includes them as context in the prompt.
+- **No project selected (`null`):** The thinking indicator shows *"Verabeite…"* and the request is sent without a project scope. The LLM answers from its own knowledge only.
+- **Project selected (e.g. `"my-project"`):** The thinking indicator shows *"RAG-Suche läuft…"*. The backend retrieves relevant code chunks for the project and includes them as `ragContext` in the final response.
 
-The project name is passed as the third argument to the streaming request. The final assistant message carries a `ragContext` array that lists the retrieved chunks, so you can inspect which source-code passages informed the answer.
+The `ragContext` array is attached to the assistant message object and can be inspected in the rendered message to see which chunks informed the answer.
 
-## Sending Messages and Streaming
+## Sending Messages & Streaming
 
-When you type a question and press **Send**, the following sequence occurs:
+When you type a question and press send, the following sequence occurs:
 
-1. **User message** is appended to the visible conversation.
-2. A **thinking bubble** (role `thinking`) appears with a status label.
-3. The request is sent to the backend via `ChatService.sendStreaming()`, which returns a Server-Sent Events (SSE) stream.
-4. The stream emits events that update the UI in real time:
+1. **History assembly** – The last **10** messages (excluding internal `thinking` bubbles) are collected as a `{ role, content }` array and passed to the backend.
+2. **User message** – Your text is appended to the visible message list.
+3. **Thinking bubble** – A temporary message with role `thinking` is inserted. Its content updates in real time as SSE *phase* events arrive (e.g. `"LLM generiert Antwort…"`, `"Tools werden ausgeführt…"`).
+4. **Streaming request** – `chatService.sendStreaming(text, modelName, projectContext, useTools, history)` opens an SSE stream to the Hub backend.
+5. **Completion** – On the `complete` event the thinking bubble is replaced by the final assistant message, which carries `content`, `ragContext`, and `toolCalls`.
+6. **Error handling** – If the stream emits an `error` event or the HTTP request fails, the thinking bubble is replaced by an assistant message whose content begins with `Error: …`.
 
-| SSE event | UI effect |
-|-----------|-----------|
-| `phase` (e.g. `llm_generating`, `tools`) | Updates the thinking-bubble text. For the `tools` phase, any `toolCalls` data is attached to the bubble. |
-| `complete` | Replaces the thinking bubble with the final **assistant** message, including `ragContext` and `toolCalls`. |
-| `error` | Replaces the thinking bubble with an error message (`Error: <message>`). |
+The `isSending` signal is `true` while the stream is open and `false` once the stream completes or errors. The input area is disabled during this period.
 
-While the stream is active, the `isSending` flag is `true`, which disables the input. The flag resets to `false` when the stream completes or an error occurs.
-
-If the network connection drops or the backend returns an HTTP error, the thinking bubble is replaced with a generic error message.
-
-## Conversation History
-
-Each request includes the **last 10 messages** from the current conversation as context for the LLM. The history is built as follows:
-
-- Messages with role `thinking` are **excluded** (they are transient UI indicators, not part of the dialogue).
-- The remaining messages are sliced to the most recent 10.
-- Each entry is reduced to `{ role: "user" | "assistant", content: string }`.
-
-This sliding window keeps prompts bounded while preserving enough context for multi-turn questions.
+The message area auto-scrolls to the bottom whenever the message list changes.
 
 ## Chat Settings
 
-Click the **Settings** icon button (gear) in the panel header to open the settings dialog. The dialog lets you configure three values:
+Click the **settings** (gear) icon (`.btn-icon`) to open the settings dialog. The dialog lets you change three values at once:
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| Model | `string` | First available model | Which LLM to use for responses |
-| Project context | `string \| null` | `null` | Which indexed project to retrieve code chunks from |
-| Use tools | `boolean` | `false` | Whether to allow the LLM to invoke tools during generation |
+| Setting | Type | Default | Effect |
+|---------|------|---------|--------|
+| Model | `string` (stereoType) | first available | Which LLM backend handles the request |
+| Project context | `string \| null` | `null` | Which project's code chunks are retrieved |
+| Use tools | `boolean` | `false` | Whether the LLM may invoke tool calls (e.g. code-graph lookups) |
 
-When you close the dialog, the selected values are:
+When you close the dialog, the component:
 
-- Applied immediately to the active chat session.
-- Persisted to local storage so they survive a page reload.
+- Updates the three signals.
+- Persists the values to `localStorage` via `ChatSettingsPersistenceService`.
 
-On the next load, the panel restores the persisted model (if still available), project context, and tools flag automatically.
+On the next page load the persisted values are restored automatically (subject to the model-availability check described above).
 
-## Persistence and Clearing
+## Persistence & History
 
-The Chat panel persists two kinds of data in the browser's local storage:
+Two independent persistence mechanisms keep your session across page reloads:
 
-- **Chat messages** – saved via `PanelStateService` every time the message list changes. On reload, previously saved messages are restored and the view scrolls to the bottom.
-- **Settings** (model, project context, use tools) – saved via `ChatSettingsPersistenceService` when the settings dialog is closed.
+- **Chat messages** – Stored in `localStorage` through `PanelStateService`. Every time the `messages` signal changes, the full array is written. On `ngOnInit` the saved array is restored (if non-empty).
+- **Chat settings** – Stored in `localStorage` through `ChatSettingsPersistenceService` as a single object `{ model, projectContext, useTools }`.
 
-To start fresh, click the **Clear** button (`.btn-clear`). This:
+Because both are `localStorage`-backed, they survive tab closes and browser restarts but are scoped to the browser profile and origin.
 
-1. Empties the visible message list.
-2. Removes the persisted messages from local storage.
+## Clearing the Chat
 
-The settings (model, project, tools) are **not** reset by clearing the chat; they remain as last configured.
+The **Clear** button (`.btn-clear`) resets the conversation:
+
+- The `messages` signal is set to an empty array.
+- The persisted copy in `PanelStateService` is cleared.
+- The panel returns to its empty-state view (a prompt inviting you to ask a question).
+
+Clearing the chat does **not** change the selected model, project context, or tool setting—those remain as configured.
 
 _This document was generated with Doc|Pipe._
 

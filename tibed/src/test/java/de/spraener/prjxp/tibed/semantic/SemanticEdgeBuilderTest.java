@@ -6,6 +6,8 @@ import de.spraener.prjxp.lucene.VectorChunk;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -17,8 +19,11 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class SemanticEdgeBuilderTest {
 
@@ -147,6 +152,97 @@ class SemanticEdgeBuilderTest {
         store = new LuceneEmbeddingStore(tempDir.resolve("empty-index"), 3);
         assertThat(builder.buildSemanticEdges(store, "p", List.of(),
                 EdgeConfig.defaults())).isEmpty();
+    }
+
+    @Test
+    void parallelSearchRunsOnMultipleThreads() throws IOException {
+        store.close();
+        RecordingStore recording = new RecordingStore(tempDir.resolve("rec-index"), 3);
+        store = recording;
+        for (int i = 0; i < 12; i++) {
+            addChunk("p", "n" + i, unitAtDegrees(i * 3), "text/markdown", null, null);
+        }
+        List<VectorChunk> input = inputFor("p");
+
+        List<SemanticEdge> edges = builder.buildSemanticEdges(
+                store, "p", input, new EdgeConfig(10, 0.5, false, 4));
+
+        assertThat(recording.searchThreads).hasSizeGreaterThan(1);
+        assertThat(recording.searchThreads).allSatisfy(name -> assertThat(name).startsWith("semantic-knn-"));
+        assertThat(edges).isNotEmpty();
+    }
+
+    /**
+     * The auto thread count (parallelism 0) is capped at {@code AUTO_PARALLELISM_CAP} because the
+     * flat kNN scan is memory-bandwidth-bound — using all cores is the worst choice. Even on a
+     * many-core machine the pool must never exceed the cap.
+     */
+    @Test
+    void autoParallelismIsCapped() throws IOException {
+        store.close();
+        RecordingStore recording = new RecordingStore(tempDir.resolve("cap-index"), 3);
+        store = recording;
+        for (int i = 0; i < 24; i++) {
+            addChunk("p", "n" + i, unitAtDegrees(i * 2), "text/markdown", null, null);
+        }
+        List<VectorChunk> input = inputFor("p");
+
+        builder.buildSemanticEdges(store, "p", input, new EdgeConfig(10, 0.5, false, 0));
+
+        int cap = Math.min(Runtime.getRuntime().availableProcessors(), 4);
+        assertThat(recording.searchThreads).hasSizeLessThanOrEqualTo(cap);
+    }
+
+    @Test
+    void parallelOutputMatchesSequential() throws IOException {
+        for (int i = 0; i < 10; i++) {
+            addChunk("p", "n" + i, unitAtDegrees(i * 7), "text/markdown", null, null);
+        }
+        List<VectorChunk> input = inputFor("p");
+
+        List<SemanticEdge> sequential = builder.buildSemanticEdges(
+                store, "p", input, new EdgeConfig(10, 0.5, false, 1));
+        List<SemanticEdge> parallel = builder.buildSemanticEdges(
+                store, "p", input, new EdgeConfig(10, 0.5, false, 4));
+
+        assertThat(parallel).containsExactlyElementsOf(sequential);
+    }
+
+    @Test
+    void propagatesSearchFailures() throws IOException {
+        store.close();
+        store = new LuceneEmbeddingStore(tempDir.resolve("fail-index"), 3) {
+            @Override
+            public List<EmbeddingMatch<TextSegment>> searchKnn(
+                    Embedding queryEmbedding, int k, double minScore, Filter filter)
+                    throws IOException {
+                throw new IOException("boom");
+            }
+        };
+        addChunk("p", "a", new float[]{1f, 0f, 0f}, "text/markdown", null, null);
+        addChunk("p", "b", new float[]{1f, 0f, 0f}, "text/markdown", null, null);
+        List<VectorChunk> input = inputFor("p");
+
+        assertThatThrownBy(() -> builder.buildSemanticEdges(
+                store, "p", input, new EdgeConfig(10, 0.85, true, 2)))
+                .isInstanceOf(IOException.class)
+                .hasMessage("boom");
+    }
+
+    /** Store that records the thread names its kNN searches run on. */
+    private static class RecordingStore extends LuceneEmbeddingStore {
+        final Set<String> searchThreads = ConcurrentHashMap.newKeySet();
+
+        RecordingStore(Path indexPath, int vectorDimension) {
+            super(indexPath, vectorDimension);
+        }
+
+        @Override
+        public List<EmbeddingMatch<TextSegment>> searchKnn(
+                Embedding queryEmbedding, int k, double minScore, Filter filter) throws IOException {
+            searchThreads.add(Thread.currentThread().getName());
+            return super.searchKnn(queryEmbedding, k, minScore, filter);
+        }
     }
 
     private void addChunk(String project, String id, float[] vector, String mime,

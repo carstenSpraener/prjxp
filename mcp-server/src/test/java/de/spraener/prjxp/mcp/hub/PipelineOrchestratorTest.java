@@ -1,6 +1,9 @@
 package de.spraener.prjxp.mcp.hub;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import de.spraener.prjxp.chuno.ChunkProcess;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.ProjectDefinition;
@@ -9,10 +12,13 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import de.spraener.prjxp.lucene.VectorChunk;
 import de.spraener.prjxp.mcp.hub.dep.EmbedDependencyService;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
 import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.EmbeddingExportService;
+import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
+import de.spraener.prjxp.tibed.signature.SignatureBatch;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -159,6 +165,34 @@ class PipelineOrchestratorTest {
             });
             EmbeddedChunkRecord rec = EmbeddedChunkRecord.from(c, v);
             Files.writeString(out, new ObjectMapper().writeValueAsString(rec) + "\n");
+            return null;
+        }).when(exportService).exportForProject(any(), any(), any());
+    }
+
+    private EmbeddedChunkRecord record(String id, String content) {
+        return record(id, content, null);
+    }
+
+    private EmbeddedChunkRecord record(String id, String content, String file) {
+        float[] v = new float[8];
+        Arrays.fill(v, 0.1f);
+        PxChunk c = PxChunk.create(cc -> {
+            cc.setId(id);
+            cc.setContent(content);
+            cc.setFile(file);
+        });
+        return EmbeddedChunkRecord.from(c, v);
+    }
+
+    /** Stub: the export writes the given embedded records as JSONL. */
+    private void stubExportWritesRecords(EmbeddedChunkRecord... records) throws Exception {
+        doAnswer(inv -> {
+            Path out = inv.getArgument(1);
+            StringBuilder sb = new StringBuilder();
+            for (EmbeddedChunkRecord r : records) {
+                sb.append(new ObjectMapper().writeValueAsString(r)).append('\n');
+            }
+            Files.writeString(out, sb.toString());
             return null;
         }).when(exportService).exportForProject(any(), any(), any());
     }
@@ -1215,5 +1249,132 @@ class PipelineOrchestratorTest {
 
         assertThatCode(() -> orchestrator.enqueue("alpha")).doesNotThrowAnyException();
         awaitStatus(registry, "alpha", ProjectStatus.READY);   // no NPE — the pipeline completes
+    }
+
+    // ==================== post-storage enrichment ====================
+
+    @Test
+    void enrichmentRunsOnTheSwappedIndexInSemanticThenSignatureOrder() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        stubExportWritesRecord("new-1", "fresh content");
+
+        SemanticGraphBatch semantic = mock(SemanticGraphBatch.class);
+        SignatureBatch signature = mock(SignatureBatch.class);
+        AtomicBoolean chunkStoredAtEnrichment = new AtomicBoolean();
+        doAnswer(inv -> {
+            // the enrichment must see the swapped index, not the chunk JSONL
+            chunkStoredAtEnrichment.set(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "new-1")));
+            return null;
+        }).when(semantic).run(eq("alpha"), eq(luceneStore));
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        orchestrator.setEnrichmentBatches(semantic, signature);
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+
+        var order = inOrder(semantic, signature);
+        order.verify(semantic).run("alpha", luceneStore);
+        order.verify(signature).run("alpha", luceneStore);
+        assertThat(chunkStoredAtEnrichment).as("enrichment sees the swapped index").isTrue();
+        assertThat(registry.entry("alpha").orElseThrow().getLastError()).isNull();
+    }
+
+    @Test
+    void enrichmentFailureKeepsTheProjectReadyWithAWarning() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        stubExportWritesRecord("new-1", "fresh content");
+
+        SemanticGraphBatch semantic = mock(SemanticGraphBatch.class);
+        SignatureBatch signature = mock(SignatureBatch.class);
+        doThrow(new java.io.IOException("graph exploded")).when(semantic).run(eq("alpha"), eq(luceneStore));
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+        orchestrator.setEnrichmentBatches(semantic, signature);
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+
+        // content is already searchable — a failed enrichment must not roll the index back
+        assertThat(registry.entry("alpha").orElseThrow().getLastError())
+                .contains("Enrichment failed").contains("graph exploded");
+        assertThat(luceneStore.hasMatch(new IsEqualTo(PxChunk.PXCHUNK_ID, "new-1"))).isTrue();
+        verifyNoInteractions(signature);   // signatures depend on the semantic clusters -> skipped
+    }
+
+    @Test
+    void withoutEnrichmentBatchesThePipelineStillCompletes() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        stubExportWritesRecord("new-1", "fresh content");
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);   // setter never called
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+
+        assertThat(registry.entry("alpha").orElseThrow().getLastError()).isNull();
+    }
+
+    @Test
+    void importDropsDuplicateChunkIdentitiesAcrossBatches() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.definitionOf("alpha").setTibedBatchSize(1);   // one record per batch -> duplicates straddle batches
+        stubExportWritesRecords(
+                record("dup", "first occurrence"),
+                record("dup", "second occurrence"),
+                record("unique", "other chunk"));
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+
+        // The store identity is (project, id, part): without the cross-batch guard the second
+        // "dup" document would make the index inconsistent and enrichment would fail later.
+        assertThat(luceneStore.readAllVectors(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "alpha")))
+                .extracting(VectorChunk::id)
+                .containsExactlyInAnyOrder("dup", "unique");
+    }
+
+    @Test
+    void importPrefersProductionFileOverTestFixture() throws Exception {
+        registry.registerProject("alpha", projectDir("alpha"));
+        registry.definitionOf("alpha").setTibedBatchSize(1);
+        stubExportWritesRecords(
+                record("dup", "fixture content", "src/test/resources/fixtures/LanguagePack.java"),
+                record("dup", "production content", "src/main/java/LanguagePack.java"));
+
+        orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+        orchestrator.enqueue("alpha");
+        awaitStatus(registry, "alpha", ProjectStatus.READY);
+
+        List<VectorChunk> chunks = luceneStore.readAllVectors(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, "alpha"));
+        assertThat(chunks).hasSize(1);
+        assertThat(chunks.get(0).content()).isEqualTo("production content");
+    }
+
+    @Test
+    void logsRunAndPhaseStarts() throws Exception {
+        Logger logger = (Logger) org.slf4j.LoggerFactory.getLogger(PipelineOrchestrator.class);
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        logger.addAppender(appender);
+        try {
+            registry.registerProject("alpha", projectDir("alpha"));
+            stubExportWritesRecord("new-1", "fresh content");
+            orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService, compatibilityChecker, embeddingModel, luceneStore, hub, objMapper, embedder, scanner);
+
+            orchestrator.enqueue("alpha");
+            awaitStatus(registry, "alpha", ProjectStatus.READY);
+
+            assertThat(appender.list).extracting(ILoggingEvent::getFormattedMessage)
+                    .anyMatch(m -> m.contains("Pipeline run started for 'alpha'"))
+                    .anyMatch(m -> m.contains("Chunking 'alpha' started"))
+                    .anyMatch(m -> m.contains("Embedding 'alpha' started"))
+                    .anyMatch(m -> m.contains("Importing 'alpha' into the Lucene index started"));
+        } finally {
+            logger.detachAppender(appender);
+        }
     }
 }

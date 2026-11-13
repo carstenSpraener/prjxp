@@ -1,12 +1,12 @@
 package de.spraener.prjxp.gldrtrvr.text;
 
 import de.spraener.prjxp.common.model.DocWindower;
-import de.spraener.prjxp.common.graph.GraphMetadata;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.PointerRenderer;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
@@ -36,6 +36,7 @@ import java.util.function.Function;
 public class TextRetriever implements GoldenRetriever {
     public static final String MIME = "text/plain";
     private final PxChunkDaoProvider chunkDaoProvider;
+    private final PointerRenderer pointerRenderer = new PointerRenderer();
 
     /** Max chars a non-code (doc) chunk may have before it is windowed. Initialized with the
      *  property default so that non-Spring construction (tests) behaves like the configured default. */
@@ -68,12 +69,17 @@ public class TextRetriever implements GoldenRetriever {
         int skipped = 0;
         for (var sc : textChunks) {
             PxChunk chunk = sc.chunk();
-            String part = level == ContentLevel.POINTERS ? pointerFor(chunk) : formatChunk(chunk);
-            if (part.isEmpty()) {
-                continue;   // no valid pointer target: nothing to emit, not counted as skipped
-            }
-            if (level == ContentLevel.POINTERS && !emittedTargets.add(pointerTarget(chunk))) {
-                continue;   // this target was already emitted
+            String part;
+            if (level == ContentLevel.POINTERS) {
+                String target = pointerTarget(chunk);
+                if (target == null || !emittedTargets.add(target)) {
+                    continue;   // no valid pointer target / this target was already emitted
+                }
+                // Dependency chunks have no file: their parent is the code-graph node they belong to.
+                part = pointerRenderer.render(projectName, chunk, sc.score(),
+                        isDependencyChunk(chunk) ? chunk.getParent() : null);
+            } else {
+                part = formatChunk(chunk);
             }
             if (prompt.length() + part.length() > budget) {
                 skipped++;
@@ -97,34 +103,8 @@ public class TextRetriever implements GoldenRetriever {
     }
 
     /**
-     * POINTERS layer: a tool-hint pointer instead of content. A chunk with a file gets a
-     * {@code readFile} pointer; a real dependency chunk (no file, Java-derived) gets a
-     * {@code graphNode} pointer for its parent (the type FQN). Returns {@code ""} when the
-     * chunk has no valid target.
+     * The de-duplication key for a pointer: the file path, or the parent for a dependency chunk.
      */
-    private String pointerFor(PxChunk chunk) {
-        String file = chunk.getFile();
-        String base;
-        if (file != null && !file.isBlank()) {
-            base = "\n## " + file + "\n→ readFile(\"" + file + "\")\n";
-        } else {
-            String parent = chunk.getParent();
-            base = isDependencyChunk(chunk) && parent != null && !parent.isBlank()
-                    ? "\n## " + parent + "\n→ graphNode(\"" + parent + "\")\n"
-                    : "";
-        }
-        if (base.isEmpty()) {
-            return "";
-        }
-        String clusterId = chunk.getMetadata().get(GraphMetadata.SEMANTIC_CLUSTER_ID);
-        String nodeId = chunk.getMetadata().get(GraphMetadata.SEMANTIC_NODE_ID);
-        if (clusterId == null || clusterId.isBlank() || nodeId == null || nodeId.isBlank()) {
-            return base;
-        }
-        return base + "[semantic-cluster:" + clusterId + "]\n→ semanticGraphNode(\"" + nodeId + "\")\n";
-    }
-
-    /** The de-duplication key for a pointer: the file path, or the parent for a dependency chunk. */
     private String pointerTarget(PxChunk chunk) {
         String file = chunk.getFile();
         if (file != null && !file.isBlank()) {

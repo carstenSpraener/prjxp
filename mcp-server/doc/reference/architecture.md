@@ -1,5 +1,5 @@
 <tool_call>
-<function=listProjects>
+<function=listProjects()
 </function>
 </tool_call>
 

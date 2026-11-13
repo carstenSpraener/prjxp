@@ -31,6 +31,8 @@ class PrjxpMcpToolSemanticTest {
     private FileGraphService fileGraphService;
     @Mock
     private SemanticGraphService semanticGraphService;
+    @Mock
+    private de.spraener.prjxp.common.store.PxChunkDaoProvider chunkDaoProvider;
 
     private PrjxpMcpTool tool;
 
@@ -38,7 +40,7 @@ class PrjxpMcpToolSemanticTest {
     void setUp() {
         tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService,
                 symbolReaderService, projectRegistry, fileListService, fileGraphService,
-                semanticGraphService);
+                semanticGraphService, chunkDaoProvider);
     }
 
     @Test

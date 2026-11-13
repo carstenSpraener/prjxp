@@ -321,6 +321,50 @@ class GRPromptEnrichmentTest {
         assertThat(retriever.capturedParams().effectiveContentLevel()).isEqualTo(ContentLevel.SKELETON);
     }
 
+    // ---- Efficiency measure 1: NAMES renders filenames only, bypassing the retrievers ----
+
+    @Test
+    void namesLevelRendersFilenamesOnlyNotContent() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(List.of(
+                new ScoredChunk(chunk("a", "a/A.java", "A-CONTENT"), 0.99),
+                new ScoredChunk(chunk("b", "b/B.java", "B-CONTENT"), 0.95)));
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        String result = withDao.enrich("test", "query", 0.85, 10, ContentLevel.NAMES, false);
+
+        assertThat(result).contains("a/A.java").contains("b/B.java");
+        assertThat(result).doesNotContain("A-CONTENT").doesNotContain("B-CONTENT");
+        // the per-retriever loop is bypassed in NAMES mode
+        assertThat(retriever.captured()).isEmpty();
+    }
+
+    // ---- Efficiency measure 5: AGGREGATED behaves like NAMES in the enrichment ----
+
+    @Test
+    void aggregatedLevelRendersFilenamesOnlyLikeNames() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(List.of(
+                new ScoredChunk(chunk("a", "a/A.java", "A-CONTENT"), 0.99),
+                new ScoredChunk(chunk("b", "b/B.java", "B-CONTENT"), 0.95)));
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        String result = withDao.enrich("test", "query", 0.85, 10, ContentLevel.AGGREGATED, false);
+
+        assertThat(result).contains("a/A.java").contains("b/B.java");
+        assertThat(result).doesNotContain("A-CONTENT").doesNotContain("B-CONTENT");
+        // the per-retriever loop is bypassed in AGGREGATED mode, too
+        assertThat(retriever.captured()).isEmpty();
+    }
+
     // ---- Phase 05: maxResults caps the number of distinct files ----
 
     private static List<ScoredChunk> threeFileHits() {
@@ -360,6 +404,78 @@ class GRPromptEnrichmentTest {
 
         assertThat(retriever.captured()).extracting(sc -> sc.chunk().getFile())
                 .containsExactly("a/A.java", "b/B.java", "c/C.java");
+    }
+
+    // ---- Efficiency measure 4: per-file chunk cap (vectorSearch dedup) ----
+
+    /** Five chunks of one long document (descending score) plus one chunk of a second file. */
+    private static List<ScoredChunk> fivePlusOneHits() {
+        return List.of(
+                new ScoredChunk(chunk("doc-1", "docs/long.md", "DOC-1"), 0.99),
+                new ScoredChunk(chunk("doc-2", "docs/long.md", "DOC-2"), 0.98),
+                new ScoredChunk(chunk("doc-3", "docs/long.md", "DOC-3"), 0.97),
+                new ScoredChunk(chunk("doc-4", "docs/long.md", "DOC-4"), 0.96),
+                new ScoredChunk(chunk("doc-5", "docs/long.md", "DOC-5"), 0.95),
+                new ScoredChunk(chunk("other-1", "src/A.java", "OTHER-1"), 0.94));
+    }
+
+    @Test
+    void perFileCapKeepsOnlyTopNChunksOfADominantFile() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(fivePlusOneHits());
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        SearchParams params = new SearchParams(10, 0.85);
+        params.setMaxChunksPerFile(3);
+        withDao.enrich("test", "query", List.of(), params, sp -> sp, c -> c, false, s -> s.length() > 0);
+
+        // The long document contributes at most 3 (its top-scoring) chunks, not all 5.
+        assertThat(retriever.captured()).extracting(sc -> sc.chunk().getId())
+                .containsExactly("doc-1", "doc-2", "doc-3", "other-1");
+        assertThat(retriever.captured()).extracting(sc -> sc.chunk().getContent())
+                .contains("DOC-1", "DOC-2", "DOC-3", "OTHER-1")
+                .doesNotContain("DOC-4", "DOC-5");
+    }
+
+    @Test
+    void perFileCapAppliesEvenWhenFileCountIsBelowMaxFiles() {
+        // Only one distinct file here (well below maxResults=10), yet the per-file cap must
+        // still trim the redundant chunks of that single long document.
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(fivePlusOneHits());
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        SearchParams params = new SearchParams(10, 0.85);
+        params.setMaxChunksPerFile(2);
+        withDao.enrich("test", "query", List.of(), params, sp -> sp, c -> c, false, s -> s.length() > 0);
+
+        assertThat(retriever.captured()).extracting(sc -> sc.chunk().getId())
+                .containsExactly("doc-1", "doc-2", "other-1");
+    }
+
+    @Test
+    void perFileCapDisabledWithNonPositiveValue() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(fivePlusOneHits());
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        SearchParams params = new SearchParams(10, 0.85);
+        params.setMaxChunksPerFile(0);   // disabled
+        withDao.enrich("test", "query", List.of(), params, sp -> sp, c -> c, false, s -> s.length() > 0);
+
+        assertThat(retriever.captured()).hasSize(6);
     }
 
     // ---- Phase 03b: size budget via doc-chunk windowing (vectorSearch path) ----
