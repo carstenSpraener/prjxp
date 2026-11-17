@@ -18,7 +18,7 @@ import de.spraener.prjxp.mcp.GraphAggregate;
 import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.GrepResult;
-import de.spraener.prjxp.mcp.PrjxpMcpTool;
+import de.spraener.prjxp.mcp.PrjxpToolService;
 import de.spraener.prjxp.mcp.PrjxpToolDocs;
 import de.spraener.prjxp.mcp.ProjectSummary;
 import de.spraener.prjxp.mcp.SemanticClusterSummary;
@@ -49,7 +49,7 @@ import static org.mockito.Mockito.when;
 class PrjxpToolRegistrationTest {
 
     @Mock
-    private PrjxpMcpTool mcpTool;
+    private PrjxpToolService mcpTool;
 
     private ToolRegistry registry;
     private PrjxpToolRegistration registration;

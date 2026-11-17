@@ -13,7 +13,7 @@ import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class PrjxpMcpToolSemanticTest {
+class PrjxpToolServiceSemanticTest {
 
     @Mock
     private GRPromptEnrichment enrichment;
@@ -38,11 +38,11 @@ class PrjxpMcpToolSemanticTest {
     @Mock
     private ConfigCatalogService configCatalogService;
 
-    private PrjxpMcpTool tool;
+    private PrjxpToolService tool;
 
     @BeforeEach
     void setUp() {
-        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService,
+        tool = new PrjxpToolService(enrichment, grepSearchService, readerService,
                 symbolReaderService, projectRegistry, fileListService, fileGraphService,
                 semanticGraphService, chunkDaoProvider, graphSearchService, configCatalogService);
     }

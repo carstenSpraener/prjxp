@@ -248,4 +248,34 @@ class PointerRendererTest {
             }
         });
     }
+
+    // ---- P2: snippet + readChunks hint ----
+
+    @Test
+    void p2BlockAddsACollapsedSnippetAndAReadChunksHint() {
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("chunk-1");
+            c.setFile("src/A.java");
+            c.setContent("public  class A {\n  void run() {}\n}");
+        });
+
+        String block = renderer.render("p", chunk, 0.9, null, 1, 40, true);
+
+        assertThat(block).contains("snippet: \"public class A { void run() {} }\"");
+        assertThat(block).contains("→ readChunks(ids=\"chunk-1\")");
+    }
+
+    @Test
+    void p1BlockStaysFreeOfSnippetsAndReadChunksHints() {
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("chunk-1");
+            c.setFile("src/A.java");
+            c.setContent("public class A {}");
+        });
+
+        String block = renderer.render("p", chunk, 0.9);
+
+        assertThat(block).doesNotContain("snippet:");
+        assertThat(block).doesNotContain("readChunks");
+    }
 }

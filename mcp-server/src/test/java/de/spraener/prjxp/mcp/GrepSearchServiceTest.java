@@ -724,4 +724,86 @@ class GrepSearchServiceTest {
             return List.of();
         }
     }
+
+    // ---------------------------------------------------------------- P2 line search
+
+    private static PxChunk lineChunk(String id, String file, String fromLine, String content) {
+        return PxChunk.create(
+                c -> c.setId(id),
+                c -> c.setFile(file),
+                c -> c.setFromLine(fromLine),
+                c -> c.setPart(0),
+                c -> c.setTotal(1),
+                c -> c.setContent(content)
+        );
+    }
+
+    private void stubAllChunks(PxChunk... chunks) {
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(provider.get("p")).thenReturn(Optional.of(dao));
+        when(dao.findAll()).thenReturn(java.util.stream.Stream.of(chunks));
+    }
+
+    @Test
+    void substringSearchReturnsFileLineAndMatchingLine() {
+        stubAllChunks(lineChunk("c1", "src/A.java", "10", "class A {\n  void run() {}\n}"));
+
+        GrepResult result = service.searchMatches("run", "p", null, 20, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).hasSize(1);
+        assertThat(result.hits().get(0).file()).isEqualTo("src/A.java");
+        assertThat(result.hits().get(0).lineFrom()).isEqualTo(11);
+        assertThat(result.hits().get(0).snippet()).isEqualTo("void run() {}");
+    }
+
+    @Test
+    void exactModeMatchesWholeWordsOnly() {
+        stubAllChunks(lineChunk("c1", "A.java", "1", "void run() {}\nvoid running() {}"));
+
+        GrepResult result = service.searchMatches("run", "p", null, 20, true, GrepMode.EXACT);
+
+        assertThat(result.hits()).hasSize(1);
+        assertThat(result.hits().get(0).lineFrom()).isEqualTo(1);
+    }
+
+    @Test
+    void regexModeUsesAJavaPattern() {
+        stubAllChunks(lineChunk("c1", "A.java", "1", "int a = 41;\nint b = 42;"));
+
+        GrepResult result = service.searchMatches("4[12]", "p", null, 20, true, GrepMode.REGEX);
+
+        assertThat(result.hits()).hasSize(2);
+    }
+
+    @Test
+    void invalidRegexIsReportedInsteadOfThrowing() {
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(provider.get("p")).thenReturn(Optional.of(dao));
+
+        GrepResult result = service.searchMatches("[", "p", null, 20, true, GrepMode.REGEX);
+
+        assertThat(result.hits()).isEmpty();
+        assertThat(result.note()).contains("invalid regular expression");
+    }
+
+    @Test
+    void fulltextCopiesAndTestsAreNotScanned() {
+        PxChunk fulltext = lineChunk("ft", "A.java", "1", "run");
+        fulltext.getMetadata().put(PxChunk.PXCHUNK_TYPE, PxChunk.FULLTEXT_MARKER);
+        stubAllChunks(fulltext, lineChunk("t", "src/test/java/A.java", "1", "run"));
+
+        GrepResult result = service.searchMatches("run", "p", null, 20, false, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).isEmpty();
+    }
+
+    @Test
+    void limitTruncatesHitsAndExplainsHowToSeeMore() {
+        stubAllChunks(lineChunk("c1", "A.java", "1", "run\nrun\nrun"));
+
+        GrepResult result = service.searchMatches("run", "p", null, 2, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).hasSize(2);
+        assertThat(result.note()).contains("2 of 3");
+    }
 }

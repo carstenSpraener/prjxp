@@ -96,11 +96,26 @@ public class GRPromptEnrichment {
 
     public String enrich(String projectName, String prompt, double distance, int maxResults,
                          ContentLevel contentLevel, boolean includeTests, Map<String, String> vectorFilters) {
+        return enrich(projectName, prompt, distance, maxResults, contentLevel, includeTests, vectorFilters,
+                0, false, false);
+    }
+
+    /**
+     * P2 variant: additionally renders a content snippet per pointer, de-duplicates chunk ids and
+     * adds the {@code readChunks(ids=…)} hint. The defaults of the 7-arg overload keep the
+     * historical P1 output byte-identical.
+     */
+    public String enrich(String projectName, String prompt, double distance, int maxResults,
+                         ContentLevel contentLevel, boolean includeTests, Map<String, String> vectorFilters,
+                         int snippetChars, boolean deduplicate, boolean readChunksHint) {
         SearchParams params = new SearchParams(maxResults, distance);
         params.setContentLevel(contentLevel);
         params.setMaxContentLength(maxContentLength);
         params.setMaxChunksPerFile(maxChunksPerFile);
         params.setVectorFilters(vectorFilters == null ? Map.of() : Map.copyOf(vectorFilters));
+        params.setSnippetChars(snippetChars);
+        params.setDeduplicate(deduplicate);
+        params.setReadChunksHint(readChunksHint);
         String enrichedContext = enrich(projectName, prompt, List.of(),
                 params,
                 this::reIterate,
@@ -161,6 +176,9 @@ public class GRPromptEnrichment {
             if (!includeTests) {
                 relevantChunks.removeIf(sc -> TestPathFilter.isTestPath(sc.chunk().getFile()));
             }
+            if (searchParams.isDeduplicate()) {
+                relevantChunks = dedupById(relevantChunks);
+            }
             relevantChunks = capByFile(relevantChunks, searchParams.getMaxResult(), searchParams.getMaxChunksPerFile());
 
             StringBuilder sb = new StringBuilder();
@@ -220,6 +238,22 @@ public class GRPromptEnrichment {
                     .map(c -> new ScoredChunk(c, 1.0))
                     .toList();
         }
+    }
+
+    /**
+     * P2: one entry per chunk id, keeping the highest score. Multiple retrievers can surface the
+     * same chunk; the duplicate pointer blocks cost context without adding information.
+     */
+    private static List<ScoredChunk> dedupById(List<ScoredChunk> chunks) {
+        Map<String, ScoredChunk> byId = new LinkedHashMap<>();
+        for (ScoredChunk sc : chunks) {
+            String id = sc.chunk() == null ? null : sc.chunk().getId();
+            if (id == null || id.isBlank()) {
+                continue;
+            }
+            byId.merge(id, sc, (a, b) -> b.score() > a.score() ? b : a);
+        }
+        return new ArrayList<>(byId.values());
     }
 
     /**

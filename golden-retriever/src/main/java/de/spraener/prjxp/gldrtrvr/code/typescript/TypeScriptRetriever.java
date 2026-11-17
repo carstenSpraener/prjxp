@@ -84,7 +84,8 @@ public class TypeScriptRetriever implements GoldenRetriever {
                 }
                 hits = hitsByFile.getOrDefault(file, 1);
             }
-            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score(), dependencyTarget, hits);
+            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score(), dependencyTarget, hits,
+                    params.getSnippetChars(), params.isReadChunksHint());
             if (prompt.length() + block.length() > budget) {
                 skipped++;
                 continue;

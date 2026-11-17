@@ -44,6 +44,17 @@ public class SymbolReaderService {
     private final ProjectRegistry projectRegistry;
 
     public SymbolReadResult readBySignature(String method, String container, String project) {
+        return readBySignature(method, container, project, false, 0);
+    }
+
+    /**
+     * @param includeBodies when true, a class-FQN read also returns the bodies of its first
+     *                      {@code maxBodies} methods (P2 contract). A method read always returns
+     *                      its body; this flag only affects class frames.
+     * @param maxBodies     upper bound for appended method bodies; {@code <= 0} keeps the frame only.
+     */
+    public SymbolReadResult readBySignature(String method, String container, String project,
+                                            boolean includeBodies, int maxBodies) {
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         if (method == null || method.isBlank())
             return SymbolReadResult.error("Parameter 'method' is required.");
@@ -100,6 +111,12 @@ public class SymbolReaderService {
             views.add(new MethodView(meta(c, SymbolMetadata.SYMBOL_FQN), c.getFile(),
                     ReaderSupport.parseLineOrNull(c.getFromLine()), ReaderSupport.parseLineOrNull(c.getToLine()), null, c.getContent()));
 
+        if (includeBodies && maxBodies > 0 && isClassReference(method)) {
+            // P2: a class frame alone only proves signatures. Append the first method bodies so
+            // the model can answer "how does X work" from one read instead of a follow-up call.
+            views.addAll(methodBodies(dao, method.trim(), Math.min(maxBodies, MAX_FULL_MATCHES)));
+        }
+
         if (views.isEmpty())
             return SymbolReadResult.error("Symbol found but no renderable method/class units (metadata without section info).");
 
@@ -111,6 +128,49 @@ public class SymbolReaderService {
                 .map(MethodView::fqn).distinct().toList();
         return new SymbolReadResult(List.copyOf(full), remaining, null);
     }
+
+    /**
+     * Method bodies of a class, in index order, de-duplicated by FQN. Only units that the
+     * language pack marked as {@code method}/{@code func} are returned; doc units feed the javadoc.
+     */
+    private List<MethodView> methodBodies(PxChunkDao dao, String classFqn, int maxBodies) {
+        Map<String, String> filters = Map.of(SymbolMetadata.SYMBOL_CONTAINER_FQN, classFqn);
+        List<PxChunk> hits;
+        try {
+            hits = dao.searchByIndex(filters, LOOKUP_LIMIT).stream().map(ScoredChunk::chunk).toList();
+        } catch (UnsupportedOperationException e) {
+            return List.of();
+        }
+        Map<String, PxChunk> docByMethodId = new HashMap<>();
+        List<PxChunk> methodUnits = new ArrayList<>();
+        for (PxChunk unit : ReaderSupport.combineUnits(hits)) {
+            String section = sectionOf(unit);
+            if ("method".equals(section) || "func".equals(section)) {
+                methodUnits.add(unit);
+            } else if ("methodDoc".equals(section) || "funcDoc".equals(section)) {
+                docByMethodId.put(unit.getId(), unit);
+            }
+        }
+        List<MethodView> result = new ArrayList<>();
+        java.util.Set<String> seen = new java.util.LinkedHashSet<>();
+        for (PxChunk m : methodUnits) {
+            String fqn = meta(m, SymbolMetadata.SYMBOL_FQN);
+            if (fqn == null || !seen.add(fqn)) {
+                continue;
+            }
+            result.add(toMethodView(m, findDoc(docByMethodId, m)));
+            if (result.size() >= maxBodies) {
+                break;
+            }
+        }
+        return result;
+    }
+
+    /** A class reference is an FQN (contains '.') without a method separator. */
+    private static boolean isClassReference(String method) {
+        return method.contains(".") && !method.contains("#");
+    }
+
 
     /**
      * Fallback filters for a {@code method} that the primary lookup missed: the reference is split at its

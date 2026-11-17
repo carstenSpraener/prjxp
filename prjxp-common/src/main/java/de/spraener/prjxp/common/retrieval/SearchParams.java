@@ -24,6 +24,16 @@ public class SearchParams {
      * A value {@code <= 0} disables the per-file cap.
      */
     private int maxChunksPerFile = 3;
+    /**
+     * P2 vector-search density: when {@code > 0}, a pointer block also carries a short content
+     * snippet of the hit (whitespace-collapsed, truncated to this many characters). {@code 0}
+     * keeps the historical pointer-only block.
+     */
+    private int snippetChars = 0;
+    /** P2: drop duplicate chunk ids across retrievers before rendering. */
+    private boolean deduplicate = false;
+    /** P2: render an explicit {@code readChunks(ids="…")} hint in every pointer block. */
+    private boolean readChunksHint = false;
 
     public SearchParams(int maxResults, double minScore) {
         this(maxResults, minScore, false);

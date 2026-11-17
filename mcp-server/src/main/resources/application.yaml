@@ -18,6 +18,10 @@ spring:
 prjxp:
   hub:
     enabled: true
+    # p1 = historical contract (project parameter, 16 tools); p2 = bound project, 9 tools.
+    # One hub per profile and corpus in an A/B run (see Benchmark-Befund 02).
+    tool-profile: ${PRJXP_HUB_TOOL_PROFILE:p1}
+    bound-project: ${PRJXP_HUB_BOUND_PROJECT:}
     import-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/import
     projects-root: ${PRJXP_ROOT_DIR:.}/.prjxp-data/projects
     live-jsonl-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/chunks

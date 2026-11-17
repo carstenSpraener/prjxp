@@ -84,7 +84,8 @@ public class MarkdownRetriever implements GoldenRetriever {
             if (!emittedFiles.add(file)) {
                 continue;   // this file was already pointed at
             }
-            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score());
+            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score(), null, 1,
+                    params.getSnippetChars(), params.isReadChunksHint());
             if (prompt.length() + block.length() > budget) {
                 skipped++;
                 continue;

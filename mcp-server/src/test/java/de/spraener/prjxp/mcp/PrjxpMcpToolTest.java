@@ -27,7 +27,7 @@ import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
-class PrjxpMcpToolTest {
+class PrjxpToolServiceTest {
 
     /** The vector-filter map a code-scoped search (the default) must receive. */
     private static final Map<String, String> CODE_FILTER =
@@ -56,11 +56,11 @@ class PrjxpMcpToolTest {
     @Mock
     private ConfigCatalogService configCatalogService;
 
-    private PrjxpMcpTool tool;
+    private PrjxpToolService tool;
 
     @BeforeEach
     void setUp() {
-        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService,
+        tool = new PrjxpToolService(enrichment, grepSearchService, readerService, symbolReaderService,
                 projectRegistry, fileListService, fileGraphService, semanticGraphService, chunkDaoProvider,
                 graphSearchService, configCatalogService);
     }

@@ -457,4 +457,37 @@ class SymbolReaderServiceTest {
 
         verify(chunkDaoProvider, never()).get(anyString());
     }
+
+    // ------------------------------------------------------- P2 class bodies
+
+    @Test
+    void classFqnWithBodiesAppendsTheFirstMethodBodies() {
+        PxChunk frame = classFrameUnit("a.B", "B", "B.java", "1", "30", "class B {}");
+        PxChunk one = methodUnit("a.B#one", "a.B#one()", "one", "a.B", "B.java", "5", "7", "void one() {}");
+        PxChunk two = methodUnit("a.B#two", "a.B#two()", "two", "a.B", "B.java", "9", "11", "void two() {}");
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(chunkDaoProvider.get("p")).thenReturn(Optional.of(dao));
+        when(dao.searchByIndex(anyMap(), anyInt()))
+                .thenReturn(List.of(scored(frame)))
+                .thenReturn(List.of(scored(one), scored(two)));
+
+        SymbolReadResult result = service.readBySignature("a.B", null, "p", true, 1);
+
+        assertThat(result.matches()).extracting(MethodView::fqn)
+                .containsExactly("a.B", "a.B#one()");
+        assertThat(result.matches().get(1).body()).contains("void one()");
+    }
+
+    @Test
+    void classFqnWithoutBodiesStaysAFrameOnly() {
+        PxChunk frame = classFrameUnit("a.B", "B", "B.java", "1", "30", "class B {}");
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(chunkDaoProvider.get("p")).thenReturn(Optional.of(dao));
+        when(dao.searchByIndex(anyMap(), anyInt())).thenReturn(List.of(scored(frame)));
+
+        SymbolReadResult result = service.readBySignature("a.B", null, "p", false, 3);
+
+        assertThat(result.matches()).extracting(MethodView::fqn).containsExactly("a.B");
+        verify(dao, times(1)).searchByIndex(anyMap(), anyInt());
+    }
 }

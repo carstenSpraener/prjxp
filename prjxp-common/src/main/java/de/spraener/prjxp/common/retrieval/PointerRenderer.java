@@ -57,6 +57,16 @@ public final class PointerRenderer {
      * that were collapsed into this single block; it is only shown when greater than one.
      */
     public String render(String projectId, PxChunk chunk, double score, String fallbackGraphNode, int hitCount) {
+        return render(projectId, chunk, score, fallbackGraphNode, hitCount, 0, false);
+    }
+
+    /**
+     * P2 pointer block: optionally adds a short content snippet and an explicit
+     * {@code readChunks(ids=…)} hint. {@code snippetChars <= 0} and {@code readChunksHint=false}
+     * reproduce the historical block byte for byte.
+     */
+    public String render(String projectId, PxChunk chunk, double score, String fallbackGraphNode,
+                         int hitCount, int snippetChars, boolean readChunksHint) {
         Map<String, String> metadata = chunk == null || chunk.getMetadata() == null
                 ? Map.of()
                 : chunk.getMetadata();
@@ -71,6 +81,9 @@ public final class PointerRenderer {
         if (hitCount > 1) {
             line(block, "hits: " + hitCount);
         }
+        if (snippetChars > 0 && chunk != null && isPresent(chunk.getContent())) {
+            line(block, "snippet: \"" + snippet(chunk.getContent(), snippetChars) + "\"");
+        }
         // Document chunks have no graph node; there the hierarchy is the only structure hint.
         // Code chunks carry their structure in graph_node and the pointer lines below.
         if (graphNode == null) {
@@ -78,6 +91,9 @@ public final class PointerRenderer {
             if (chapter != null) {
                 line(block, "chapter: \"" + chapter + "\"");
             }
+        }
+        if (readChunksHint && isPresent(id)) {
+            line(block, "→ readChunks(ids=\"" + id + "\")");
         }
         if (isPresent(file)) {
             line(block, "→ readFile(\"" + file + "\")");
@@ -87,6 +103,15 @@ public final class PointerRenderer {
             line(block, "→ graphNode(\"" + fqnOf(graphNode) + "\")");
         }
         return block.toString();
+    }
+
+    /** Single-line, whitespace-collapsed preview for a pointer block. */
+    private static String snippet(String content, int maxChars) {
+        String flat = content.replaceAll("\\s+", " ").trim();
+        if (flat.length() <= maxChars) {
+            return flat.replace("\"", "'");
+        }
+        return flat.substring(0, maxChars).replace("\"", "'") + "…";
     }
 
     /**

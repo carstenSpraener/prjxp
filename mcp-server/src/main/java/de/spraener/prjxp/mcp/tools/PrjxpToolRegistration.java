@@ -12,7 +12,7 @@ import de.spraener.prjxp.mcp.ClusterSummary;
 import de.spraener.prjxp.mcp.ClusterView;
 import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.GrepResult;
-import de.spraener.prjxp.mcp.PrjxpMcpTool;
+import de.spraener.prjxp.mcp.PrjxpToolService;
 import de.spraener.prjxp.mcp.PrjxpToolDocs;
 import de.spraener.prjxp.mcp.ResultRenderers;
 import de.spraener.prjxp.mcp.ToolResultCaps;
@@ -38,7 +38,7 @@ import java.util.stream.Collectors;
 /**
  * Registers the fourteen prjxp tools in the central {@link ToolRegistry} so that they are
  * available for native function calling — executed in-process as plain Java calls on
- * {@link PrjxpMcpTool}, without a JSON-RPC round trip.
+ * {@link PrjxpToolService}, without a JSON-RPC round trip.
  * <p>
  * Registered early (highest precedence) so that external MCP or Groovy tools cannot shadow them:
  * the first registration of a name wins.
@@ -55,7 +55,7 @@ public class PrjxpToolRegistration {
     private static final int READER_RESULT_CAP = ToolResultCaps.READER;
 
     private final ToolRegistry toolRegistry;
-    private final PrjxpMcpTool mcpTool;
+    private final PrjxpToolService mcpTool;
 
     @PostConstruct
     public void registerTools() {

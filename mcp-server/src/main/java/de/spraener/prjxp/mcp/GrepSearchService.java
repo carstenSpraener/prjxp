@@ -17,6 +17,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
+import java.util.regex.Pattern;
+import java.util.regex.PatternSyntaxException;
+import java.util.stream.Stream;
 
 @Service
 @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
@@ -82,6 +85,117 @@ public class GrepSearchService {
             }
             window = Math.min(window * 2, MAX_WINDOW);
         }
+    }
+
+    /**
+     * Line-oriented search for the P2 contract: scans the project's indexed chunks and returns one
+     * hit per matching line, anchored at {@code file:line}. This is the information the model
+     * needs to cite a finding directly instead of spending a second call to read the file.
+     * <p>
+     * The scan is linear in the project's chunk count. That is acceptable for an interactive tool
+     * call and keeps the contract language-agnostic (no per-language index required).
+     */
+    public GrepResult searchMatches(String query, String project, String language, int limit,
+                                    boolean includeTests, GrepMode mode) {
+        projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
+        if (query == null || query.isBlank()) {
+            return new GrepResult(List.of(), 0, "ERROR: 'query' is required.");
+        }
+        String resolved = projectRegistry.resolve(project);
+        PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
+        if (dao == null) {
+            return GrepResult.of(List.of(), 0);
+        }
+
+        Pattern pattern;
+        try {
+            pattern = compilePattern(query, mode);
+        } catch (PatternSyntaxException e) {
+            return new GrepResult(List.of(), 0,
+                    "ERROR: invalid regular expression: " + e.getDescription());
+        }
+        String mime = languageMime(language);
+
+        List<SearchHit> hits = new ArrayList<>();
+        int total = 0;
+        try (Stream<PxChunk> chunks = dao.findAll()) {
+            Iterator<PxChunk> it = chunks.iterator();
+            while (it.hasNext()) {
+                PxChunk chunk = it.next();
+                if (!isScannable(chunk, mime, includeTests)) {
+                    continue;
+                }
+                int baseLine = parseLine(chunk.getFromLine());
+                String[] lines = (chunk.getContent() == null ? "" : chunk.getContent()).split("\n", -1);
+                for (int i = 0; i < lines.length; i++) {
+                    if (!pattern.matcher(lines[i]).find()) {
+                        continue;
+                    }
+                    total++;
+                    if (hits.size() >= limit) {
+                        continue;
+                    }
+                    int line = baseLine + i;
+                    hits.add(new SearchHit(chunk.getId(), 0.0, chunk.getFile(), line, line,
+                            snippet(lines[i]), SOURCE, Map.of()));
+                }
+            }
+        }
+        String note = total > hits.size()
+                ? "Note: showing " + hits.size() + " of " + total
+                + " hits; raise 'limit' or narrow the query."
+                : null;
+        return new GrepResult(hits, total, note);
+    }
+
+    private static Pattern compilePattern(String query, GrepMode mode) {
+        return switch (mode == null ? GrepMode.SUBSTRING : mode) {
+            case EXACT -> Pattern.compile("(?<![\\w$])" + Pattern.quote(query) + "(?![\\w$])");
+            case SUBSTRING -> Pattern.compile(Pattern.quote(query));
+            case REGEX -> Pattern.compile(query);
+        };
+    }
+
+    private static boolean isScannable(PxChunk chunk, String mime, boolean includeTests) {
+        if (chunk == null || chunk.getFile() == null || chunk.getFile().isBlank()) {
+            return false;
+        }
+        if (PxChunk.FULLTEXT_MARKER.equals(chunk.getMetadata().get(PxChunk.PXCHUNK_TYPE))) {
+            return false;
+        }
+        if (!includeTests && TestPathFilter.isTestPath(chunk.getFile())) {
+            return false;
+        }
+        return mime == null || mime.equalsIgnoreCase(chunk.getMimeType());
+    }
+
+    private String languageMime(String language) {
+        if (language == null || language.isBlank()) {
+            return null;
+        }
+        String normalized = language.trim().toLowerCase(Locale.ROOT);
+        if ("ts".equals(normalized)) {
+            normalized = "typescript";
+        }
+        return mimeByLanguage().getOrDefault(normalized, language.trim());
+    }
+
+    private static int parseLine(String value) {
+        if (value == null || value.isBlank()) {
+            return 1;
+        }
+        try {
+            return Integer.parseInt(value.trim());
+        } catch (NumberFormatException e) {
+            return 1;
+        }
+    }
+
+    private static String snippet(String line) {
+        String trimmed = line == null ? "" : line.trim();
+        return trimmed.length() <= SearchHit.SNIPPET_MAX
+                ? trimmed
+                : trimmed.substring(0, SearchHit.SNIPPET_MAX);
     }
 
     private GrepResult toHits(String project, String query, List<ScoredChunk> chunks, int limit, boolean includeTests, ContentLevel contentLevel) {

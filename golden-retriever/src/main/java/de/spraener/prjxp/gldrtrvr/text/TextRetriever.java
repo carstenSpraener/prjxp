@@ -77,7 +77,8 @@ public class TextRetriever implements GoldenRetriever {
                 }
                 // Dependency chunks have no file: their parent is the code-graph node they belong to.
                 part = pointerRenderer.render(projectName, chunk, sc.score(),
-                        isDependencyChunk(chunk) ? chunk.getParent() : null);
+                        isDependencyChunk(chunk) ? chunk.getParent() : null, 1,
+                        params.getSnippetChars(), params.isReadChunksHint());
             } else {
                 part = formatChunk(chunk);
             }
