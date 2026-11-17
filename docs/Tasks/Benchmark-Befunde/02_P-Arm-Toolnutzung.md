@@ -1,6 +1,6 @@
 # Benchmark-Befund 02 — P-Arm: Toolnutzung und Antwortqualität
 
-> **Status:** offen, 17.11.2026
+> **Status:** P2 umgesetzt, Messung offen, 17.11.2026
 > **Auslöser:** Lauf 3 über beide Korpora (`prjxp-bench`, 16.11.2026), P-Arm,
 > Modell `qwen3.8-27b-splash`
 > **Betroffene Module:** `mcp-server` (Tool-Vertrag, Suche, Read-Rendering),
@@ -306,3 +306,32 @@ Erwarteter Aufwand: P + P2 × 18 Fragen × 3 Reps = 108 Sessions, ca. 2 h.
 | P2-Messung | A/B-Lauf beide Korpora, Report | 0,5 Tag + 2 h Laufzeit |
 | Protokoll v2 | Maßnahmen 6–7 (Budget/Steer, `tree`) | 0,5–1 Tag |
 | Holdout | neue Fragen je Korpus, Answer-Key | 1 Tag |
+
+---
+
+## 11. Umsetzung (17.11.2026)
+
+P2 ist als zweiter Tool-Vertrag im Hub implementiert; P1 bleibt unverändert der
+Kontrollarm. Der Umschlag ist eine Start-Property, kein Prompt-Eingriff:
+
+| Property | Werte | Wirkung |
+|---|---|---|
+| `prjxp.hub.tool-profile` | `p1` (Default) \| `p2` | wählt die MCP-Toolfläche |
+| `prjxp.hub.bound-project` | Projektname | P2: serverseitige Projektbindung, Pflicht |
+
+**P1** bleibt byte-identisch (16 Tools, `project`-Parameter, `listProjects`).
+**P2** bietet 9 Tools ohne `project`-Parameter; `grep` liefert `datei:zeile` +
+Trefferzeile (`substring`/`exact`/`regex`), `vectorSearch` ergänzt Snippet,
+Chunk-Dedup und `readChunks`-Hinweis, `readBySignature` hängt an einen
+Klassen-FQN die ersten Methodenbodies an (`includeBodies`, `maxBodies`).
+
+**A/B-Anordnung:** ein P1-Hub wie bisher (beide Projekte, Projekt im
+`SYSTEM.md`) und je Korpus ein P2-Hub mit `prjxp.hub.bound-project=prjxp` bzw.
+`legacy`, alle aus demselben Image. Damit ist der Unterschied der Tool-Vertrag
+und nicht ein anderer Build. Judge: `qwen3.6-27b` (≠ Arm-Modell).
+
+**Tests:** `PrjxpToolService` trägt die Datenlogik, `PrjxpMcpTool`/`PrjxpP2McpTool`
+nur die Annotationen. Abgedeckt sind Profil-/Bindungslogik, Grep-Modi mit
+Zeilennummern, Klassen-Bodies, Snippet/`readChunks`-Rendering und die
+9-Tool-Fläche. Modultests: `prjxp-common`, `golden-retriever`, `lucene-store`,
+`mcp-server` grün.
