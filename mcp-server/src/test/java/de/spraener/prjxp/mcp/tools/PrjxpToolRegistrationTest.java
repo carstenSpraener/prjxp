@@ -6,6 +6,7 @@ import de.spraener.prjxp.common.model.FileView;
 import de.spraener.prjxp.common.model.MethodView;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.model.SymbolReadResult;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.toolregistry.GroovyToolExecutor;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
@@ -68,7 +69,7 @@ class PrjxpToolRegistrationTest {
     void registersAllTools() {
         assertThat(registry.getTools()).extracting(ToolDefinition::getName)
                 .containsExactly("vectorSearch", "grep", "readFile", "readBySignature", "listProjects", "listFiles",
-                        "graphFile", "graphNode", "graphCluster", "graphClusterOverview",
+                        "graphFile", "graphNode", "graphSearch", "listConfig", "graphCluster", "graphClusterOverview",
                         "semanticGraphCluster", "semanticGraphNode", "semanticGraphOverview", "readChunks");
     }
 
@@ -77,7 +78,7 @@ class PrjxpToolRegistrationTest {
         // The second run hits name collisions — they must be logged, not thrown
         registration.registerTools();
 
-        assertThat(registry.getTools()).hasSize(14);
+        assertThat(registry.getTools()).hasSize(16);
     }
 
     @Test
@@ -86,12 +87,19 @@ class PrjxpToolRegistrationTest {
 
         ToolSpecification grep = specs.stream().filter(s -> s.name().equals("grep")).findFirst().orElseThrow();
         assertThat(grep.parameters().required()).containsExactly("query", "project");
-        assertThat(grep.parameters().properties()).containsKeys("query", "project", "language", "limit", "contentLevel", "includeTests");
+        // no contentLevel knob: the search tools return the file list only
+        assertThat(grep.parameters().properties()).containsKeys("query", "project", "language", "limit", "includeTests");
+        assertThat(grep.parameters().properties()).doesNotContainKey("contentLevel");
 
         ToolSpecification vectorSearch = specs.stream()
                 .filter(s -> s.name().equals("vectorSearch")).findFirst().orElseThrow();
         assertThat(vectorSearch.parameters().required()).containsExactly("userQuestion", "projectName");
-        assertThat(vectorSearch.parameters().properties()).containsKeys("userQuestion", "projectName", "similarity", "maxResults", "skeletonsOnly", "includeTests");
+        assertThat(vectorSearch.parameters().properties()).containsKeys("userQuestion", "projectName", "similarity", "maxResults", "includeTests");
+        assertThat(vectorSearch.parameters().properties()).doesNotContainKey("contentLevel").doesNotContainKey("skeletonsOnly");
+
+        ToolSpecification readFile = specs.stream()
+                .filter(s -> s.name().equals("readFile")).findFirst().orElseThrow();
+        assertThat(readFile.parameters().properties()).containsKeys("file", "project", "offset", "limit", "full");
 
         ToolSpecification graphCluster = specs.stream()
                 .filter(s -> s.name().equals("graphCluster")).findFirst().orElseThrow();
@@ -126,6 +134,8 @@ class PrjxpToolRegistrationTest {
                 Map.entry("listFiles", PrjxpToolDocs.LIST_FILES),
                 Map.entry("graphFile", PrjxpToolDocs.GRAPH_FILE),
                 Map.entry("graphNode", PrjxpToolDocs.GRAPH_NODE),
+                Map.entry("graphSearch", PrjxpToolDocs.GRAPH_SEARCH),
+                Map.entry("listConfig", PrjxpToolDocs.LIST_CONFIG),
                 Map.entry("graphCluster", PrjxpToolDocs.GRAPH_CLUSTER),
                 Map.entry("graphClusterOverview", PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW),
                 Map.entry("semanticGraphCluster", PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER),
@@ -144,32 +154,32 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void vectorSearchPassesTypedArguments() {
-        when(mcpTool.vectorSearch(eq("find foo"), eq("p1"), eq(0.7), eq(5), eq(true), any(), any(), any())).thenReturn("ctx");
+        when(mcpTool.vectorSearch(eq("find foo"), eq("p1"), eq(0.7), eq(5), any(), any(), any())).thenReturn("ctx");
 
         String result = execute("vectorSearch", Map.of(
                 "userQuestion", "find foo", "projectName", "p1",
-                "similarity", 0.7, "maxResults", 5, "skeletonsOnly", true));
+                "similarity", 0.7, "maxResults", 5));
 
         assertThat(result).contains("ctx");
     }
 
     @Test
     void vectorSearchCoercesStringNumbers() {
-        when(mcpTool.vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false), any(), any(), any())).thenReturn("ctx");
+        when(mcpTool.vectorSearch(eq("q"), any(), eq(0.9), eq(3), any(), any(), any())).thenReturn("ctx");
 
         execute("vectorSearch", Map.of(
-                "userQuestion", "q", "similarity", "0.9", "maxResults", "3", "skeletonsOnly", "false"));
+                "userQuestion", "q", "similarity", "0.9", "maxResults", "3"));
 
-        verify(mcpTool).vectorSearch(eq("q"), any(), eq(0.9), eq(3), eq(false), any(), any(), any());
+        verify(mcpTool).vectorSearch(eq("q"), any(), eq(0.9), eq(3), any(), any(), any());
     }
 
     @Test
     void vectorSearchPassesIncludeTestsThrough() {
-        when(mcpTool.vectorSearch(eq("q"), any(), any(), any(), any(), any(), any(), eq(true))).thenReturn("ctx");
+        when(mcpTool.vectorSearch(eq("q"), any(), any(), any(), any(), eq(true), any())).thenReturn("ctx");
 
         execute("vectorSearch", Map.of("userQuestion", "q", "includeTests", true));
 
-        verify(mcpTool).vectorSearch(eq("q"), any(), any(), any(), any(), any(), any(), eq(true));
+        verify(mcpTool).vectorSearch(eq("q"), any(), any(), any(), any(), eq(true), any());
     }
 
     @Test
@@ -181,23 +191,34 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void grepFormatsHits() {
-        SearchHit hit = new SearchHit("chunk-1", 0.9, "Foo.java", 10, 20, "public void foo()", "java", Map.of());
-        when(mcpTool.grep(eq("foo"), eq("p1"), any(), any(), any(), any()))
+        // the level is pinned to NAMES: one "count  path" line per file, no content
+        SearchHit hit = new SearchHit("9  Foo.java", 9.0, "Foo.java", null, null,
+                "9  Foo.java", "grep", Map.of());
+        when(mcpTool.grepResult(eq("foo"), eq("p1"), any(), any(), any(), eq(ContentLevel.NAMES)))
                 .thenReturn(GrepResult.of(List.of(hit), 1));
 
         String result = execute("grep", Map.of("query", "foo", "project", "p1"));
 
-        assertThat(result).contains("Found 1 result(s)");
-        assertThat(result).contains("File: Foo.java");
-        assertThat(result).contains("Lines: 10-20");
-        assertThat(result).contains("public void foo()");
-        assertThat(result).contains("Chunk: chunk-1");
+        assertThat(result).isEqualTo("9  Foo.java\n");
+    }
+
+    @Test
+    void grepNamesRendersOneLinePerFile() {
+        SearchHit hit = new SearchHit("9  Foo.java", 9.0, "Foo.java", null, null,
+                "9  Foo.java", "grep", Map.of());
+        when(mcpTool.grepResult(eq("foo"), eq("p1"), any(), any(), any(), eq(ContentLevel.NAMES)))
+                .thenReturn(GrepResult.of(List.of(hit), 1));
+
+        String result = execute("grep", Map.of("query", "foo", "project", "p1"));
+
+        assertThat(result).isEqualTo("9  Foo.java\n");
+        assertThat(result).doesNotContain("Result 1:").doesNotContain("{");
     }
 
     @Test
     void grepAppendsTruncationNote() {
         SearchHit hit = new SearchHit("chunk-1", 0.9, "Foo.java", 10, 20, "public void foo()", "java", Map.of());
-        when(mcpTool.grep(eq("foo"), eq("p1"), any(), any(), any(), any()))
+        when(mcpTool.grepResult(eq("foo"), eq("p1"), any(), any(), any(), eq(ContentLevel.NAMES)))
                 .thenReturn(GrepResult.of(List.of(hit), 3));
 
         String result = execute("grep", Map.of("query", "foo", "project", "p1"));
@@ -208,7 +229,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void grepWithoutHitsMentionsProject() {
-        when(mcpTool.grep(any(), eq("p1"), any(), any(), any(), any()))
+        when(mcpTool.grepResult(any(), eq("p1"), any(), any(), any(), any()))
                 .thenReturn(GrepResult.of(List.of(), 0));
 
         String result = execute("grep", Map.of("query", "nothing", "project", "p1"));
@@ -219,22 +240,12 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void grepPassesIncludeTestsThrough() {
-        when(mcpTool.grep(eq("q"), any(), any(), any(), any(), eq(false)))
+        when(mcpTool.grepResult(eq("q"), any(), any(), any(), eq(false), eq(ContentLevel.NAMES)))
                 .thenReturn(GrepResult.of(List.of(), 0));
 
         execute("grep", Map.of("query", "q", "includeTests", false));
 
-        verify(mcpTool).grep(eq("q"), any(), any(), any(), any(), eq(false));
-    }
-
-    @Test
-    void grepPassesContentLevelThrough() {
-        when(mcpTool.grep(eq("q"), any(), any(), any(), eq("POINTERS"), any()))
-                .thenReturn(GrepResult.of(List.of(), 0));
-
-        execute("grep", Map.of("query", "q", "contentLevel", "POINTERS"));
-
-        verify(mcpTool).grep(eq("q"), any(), any(), any(), eq("POINTERS"), any());
+        verify(mcpTool).grepResult(eq("q"), any(), any(), any(), eq(false), eq(ContentLevel.NAMES));
     }
 
     @Test
@@ -247,7 +258,7 @@ class PrjxpToolRegistrationTest {
     @Test
     void readFileRendersContent() {
         FileView view = new FileView("Foo.java", "java", 2, "class Foo {}", false, 1, 1, List.of(), null);
-        when(mcpTool.readFile(eq("Foo.java"), any(), any(), any())).thenReturn(view);
+        when(mcpTool.readFile(eq("Foo.java"), any(), any(), any(), any())).thenReturn(view);
 
         String result = execute("readFile", Map.of("file", "Foo.java"));
 
@@ -259,7 +270,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void readFileReportsError() {
-        when(mcpTool.readFile(any(), any(), any(), any()))
+        when(mcpTool.readFile(any(), any(), any(), any(), any()))
                 .thenReturn(FileView.error("X.java", "not found"));
 
         assertThat(execute("readFile", Map.of("file", "X.java"))).contains("ERROR reading file: not found");
@@ -267,7 +278,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void readFileListsCandidatesWhenAmbiguous() {
-        when(mcpTool.readFile(any(), any(), any(), any()))
+        when(mcpTool.readFile(any(), any(), any(), any(), any()))
                 .thenReturn(FileView.ambiguous("Foo.java", List.of("a/Foo.java", "b/Foo.java")));
 
         String result = execute("readFile", Map.of("file", "Foo.java"));
@@ -275,6 +286,16 @@ class PrjxpToolRegistrationTest {
         assertThat(result).contains("Ambiguous file path");
         assertThat(result).contains("a/Foo.java");
         assertThat(result).contains("b/Foo.java");
+    }
+
+    @Test
+    void readFilePassesFullThrough() {
+        when(mcpTool.readFile(any(), any(), any(), any(), any()))
+                .thenReturn(FileView.error("X.java", "not found"));
+
+        execute("readFile", Map.of("file", "X.java", "full", true));
+
+        verify(mcpTool).readFile("X.java", null, null, null, true);
     }
 
     @Test
@@ -352,7 +373,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void listFilesFormatsPaths() {
-        when(mcpTool.listFiles(any(), any(), any()))
+        when(mcpTool.listFilesResult(any(), any(), any()))
                 .thenReturn(new FileListResult(List.of("src/a.java", "src/b.java"), false));
 
         String result = execute("listFiles", Map.of("path", "src"));
@@ -364,7 +385,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void listFilesMentionsTruncation() {
-        when(mcpTool.listFiles(any(), any(), any()))
+        when(mcpTool.listFilesResult(any(), any(), any()))
                 .thenReturn(new FileListResult(List.of("src/a.java"), true));
 
         String result = execute("listFiles", Map.of());
@@ -374,7 +395,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void listFilesWithoutMatches() {
-        when(mcpTool.listFiles(any(), any(), any())).thenReturn(new FileListResult(List.of(), false));
+        when(mcpTool.listFilesResult(any(), any(), any())).thenReturn(new FileListResult(List.of(), false));
 
         assertThat(execute("listFiles", Map.of())).contains("No files found");
     }
@@ -387,7 +408,7 @@ class PrjxpToolRegistrationTest {
                 List.of(new GraphNeighbor(EdgeType.IMPORT, "demo.B", "src/B.java", false)),
                 List.of(new GraphNeighbor(EdgeType.EXTENDS, "demo.C", "src/C.java", false)),
                 List.of(), null, 1, 1, null, null);
-        when(mcpTool.graphFile(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
+        when(mcpTool.graphFileView(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
 
         String result = execute("graphFile", Map.of("file", "src/A.java"));
 
@@ -407,7 +428,7 @@ class PrjxpToolRegistrationTest {
                 List.of(new GraphNeighbor(EdgeType.IMPORT, "demo.B", "src/B.java", false)),
                 List.of(),
                 List.of(), null, 120, 0, null, null);
-        when(mcpTool.graphFile(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
+        when(mcpTool.graphFileView(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
 
         String result = execute("graphFile", Map.of("file", "src/A.java"));
 
@@ -421,7 +442,7 @@ class PrjxpToolRegistrationTest {
                 List.of(new GraphNeighbor(EdgeType.IMPORT, "demo.B", "src/B.java", false)),
                 List.of(),
                 List.of(), null, 1, 0, null, null);
-        when(mcpTool.graphFile(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
+        when(mcpTool.graphFileView(eq("src/A.java"), any(), any(), any(), any(), any())).thenReturn(view);
 
         String result = execute("graphFile", Map.of("file", "src/A.java"));
 
@@ -431,7 +452,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void graphFileToolRendersError() {
-        when(mcpTool.graphFile(any(), any(), any(), any(), any(), any()))
+        when(mcpTool.graphFileView(any(), any(), any(), any(), any(), any()))
                 .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
 
         assertThat(execute("graphFile", Map.of("file", "src/A.java")))
@@ -440,7 +461,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void graphFileToolRendersCandidates() {
-        when(mcpTool.graphFile(any(), any(), any(), any(), any(), any()))
+        when(mcpTool.graphFileView(any(), any(), any(), any(), any(), any()))
                 .thenReturn(GraphView.ambiguous("demo", "A.java", List.of("src/x/A.java", "src/y/A.java")));
 
         String result = execute("graphFile", Map.of("file", "A.java"));
@@ -452,7 +473,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void graphFileToolRendersNullView() {
-        when(mcpTool.graphFile(any(), any(), any(), any(), any(), any())).thenReturn(null);
+        when(mcpTool.graphFileView(any(), any(), any(), any(), any(), any())).thenReturn(null);
 
         assertThat(execute("graphFile", Map.of("file", "src/A.java"))).isEqualTo("No graph view returned.");
     }
@@ -461,7 +482,7 @@ class PrjxpToolRegistrationTest {
     void graphNodeToolRendersNodeHeaderWhenNoFile() {
         GraphView view = new GraphView("demo", null, "demo.A", null, null,
                 List.of(), List.of(), List.of(), null, null, null, null, null);
-        when(mcpTool.graphNode(any(), any(), any(), any(), any(), any())).thenReturn(view);
+        when(mcpTool.graphNodeView(any(), any(), any(), any(), any(), any())).thenReturn(view);
 
         String result = execute("graphNode", Map.of("symbol", "demo.A"));
 
@@ -494,7 +515,7 @@ class PrjxpToolRegistrationTest {
                                 List.of(new GraphAggregate.ClassCount("web.C", 1),
                                         new GraphAggregate.ClassCount("web.D", 1),
                                         new GraphAggregate.ClassCount("web.E", 1)))));
-        when(mcpTool.graphNode(any(), any(), any(), any(), any(), any())).thenReturn(view);
+        when(mcpTool.graphNodeView(any(), any(), any(), any(), any(), any())).thenReturn(view);
 
         String result = execute("graphNode", Map.of("symbol", "core.Model", "contentLevel", "AGGREGATED"));
 
@@ -510,22 +531,22 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void graphNodeToolPassesContentLevelThrough() {
-        when(mcpTool.graphNode(any(), any(), any(), any(), any(), any()))
+        when(mcpTool.graphNodeView(any(), any(), any(), any(), any(), any()))
                 .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
 
         execute("graphNode", Map.of("symbol", "demo.A", "contentLevel", "AGGREGATED"));
 
-        verify(mcpTool).graphNode("demo.A", null, null, null, null, "AGGREGATED");
+        verify(mcpTool).graphNodeView("demo.A", null, null, null, null, "AGGREGATED");
     }
 
     @Test
     void graphFileToolPassesContentLevelThrough() {
-        when(mcpTool.graphFile(any(), any(), any(), any(), any(), any()))
+        when(mcpTool.graphFileView(any(), any(), any(), any(), any(), any()))
                 .thenReturn(GraphView.unavailable("Graph nicht verfügbar, bitte reindexieren"));
 
         execute("graphFile", Map.of("file", "src/A.java", "contentLevel", "AGGREGATED"));
 
-        verify(mcpTool).graphFile("src/A.java", null, null, null, null, "AGGREGATED");
+        verify(mcpTool).graphFileView("src/A.java", null, null, null, null, "AGGREGATED");
     }
 
     @Test
@@ -658,6 +679,65 @@ class PrjxpToolRegistrationTest {
         assertThat(execute("readChunks", Map.of("project", "demo")))
                 .isEqualTo("ERROR: 'project' and 'ids' are required for readChunks.");
         verifyNoInteractions(mcpTool);
+    }
+
+    // ==================== graphSearch / listConfig ====================
+
+    @Test
+    void graphSearchSchemaRequiresQuestionAndProject() {
+        ToolSpecification spec = registry.specifications().stream()
+                .filter(s -> s.name().equals("graphSearch")).findFirst().orElseThrow();
+
+        assertThat(spec.parameters().required()).containsExactly("question", "project");
+        assertThat(spec.parameters().properties())
+                .containsKeys("question", "project", "mode", "depth", "tokenBudget", "contextFilter", "maxSeeds");
+    }
+
+    @Test
+    void graphSearchDelegatesToMcpTool() {
+        when(mcpTool.graphSearch("PxChunk", "demo", "dfs", 2, 500, List.of("CONTAINS"), 2))
+                .thenReturn("graph text");
+
+        String result = execute("graphSearch", Map.of(
+                "question", "PxChunk", "project", "demo", "mode", "dfs", "depth", 2,
+                "tokenBudget", 500, "contextFilter", List.of("CONTAINS"), "maxSeeds", 2));
+
+        assertThat(result).isEqualTo("graph text");
+        verify(mcpTool).graphSearch("PxChunk", "demo", "dfs", 2, 500, List.of("CONTAINS"), 2);
+    }
+
+    @Test
+    void graphSearchWithoutQuestionReturnsError() {
+        assertThat(execute("graphSearch", Map.of())).startsWith("ERROR:");
+    }
+
+    @Test
+    void listConfigSchemaRequiresProject() {
+        ToolSpecification spec = registry.specifications().stream()
+                .filter(s -> s.name().equals("listConfig")).findFirst().orElseThrow();
+
+        assertThat(spec.parameters().required()).containsExactly("project");
+        assertThat(spec.parameters().properties()).containsKeys("project", "tokenBudget");
+    }
+
+    @Test
+    void listConfigDelegatesToMcpTool() {
+        when(mcpTool.listConfig("demo", 500)).thenReturn("config text");
+
+        assertThat(execute("listConfig", Map.of("project", "demo", "tokenBudget", 500)))
+                .isEqualTo("config text");
+        verify(mcpTool).listConfig("demo", 500);
+    }
+
+    @Test
+    void graphToolsExposeTheTokenBudget() {
+        for (String name : List.of("vectorSearch", "graphFile", "graphNode")) {
+            ToolSpecification spec = registry.specifications().stream()
+                    .filter(s -> s.name().equals(name)).findFirst().orElseThrow();
+            assertThat(spec.parameters().properties())
+                    .as("tokenBudget on %s", name)
+                    .containsKey("tokenBudget");
+        }
     }
 
     // ==================== argument coercion & truncation ====================

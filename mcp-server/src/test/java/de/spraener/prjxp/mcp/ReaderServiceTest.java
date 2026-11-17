@@ -16,6 +16,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -265,6 +266,74 @@ class ReaderServiceTest {
         assertThat(view.returnedLines()).isEqualTo(4);
         assertThat(view.content()).isEqualTo("L3\nL4\nL5\nL6");
         assertThat(view.truncated()).isFalse();
+    }
+
+    // ------------------------------------------------------------------ default line window (V5)
+
+    @Test
+    void defaultLimitCapsLinesToReaderMaxLines() {
+        routeToDao();
+        // 500 lines, no limit -> the 100-line default kicks in and must be visible
+        String manyLines = IntStream.rangeClosed(1, 500).mapToObj(i -> "L" + i).collect(Collectors.joining("\n"));
+        PxChunk unit = part("u1", 0, 1, "/src/Foo.java", JAVA_MIME, "1", "500", manyLines);
+        stubIndex(Map.of(PxChunk.PXCHUNK_FILE, "/src/Foo.java"),
+                List.of(scored(unit)), List.of());
+
+        FileView view = service().read("src/Foo.java", null, null, null);
+
+        assertThat(view.totalLines()).isEqualTo(500);
+        assertThat(view.returnedLines()).isEqualTo(100);
+        assertThat(view.truncated()).isTrue();
+        assertThat(view.content()).startsWith("L1\n").endsWith("L100");
+    }
+
+    @Test
+    void fullFlagReturnsTheWholeFileWhenItFitsTheCap() {
+        routeToDao();
+        String manyLines = IntStream.rangeClosed(1, 150).mapToObj(i -> "L" + i).collect(Collectors.joining("\n"));
+        PxChunk unit = part("u1", 0, 1, "/src/Foo.java", JAVA_MIME, "1", "150", manyLines);
+        stubIndex(Map.of(PxChunk.PXCHUNK_FILE, "/src/Foo.java"),
+                List.of(scored(unit)), List.of());
+
+        FileView view = service().read("src/Foo.java", null, null, null, true);
+
+        assertThat(view.totalLines()).isEqualTo(150);
+        assertThat(view.returnedLines()).isEqualTo(150);
+        assertThat(view.truncated()).isFalse();
+        assertThat(view.content()).endsWith("L150");
+    }
+
+    @Test
+    void fullFlagIsCappedAtTheFullFileLimit() {
+        routeToDao();
+        String manyLines = IntStream.rangeClosed(1, 500).mapToObj(i -> "L" + i).collect(Collectors.joining("\n"));
+        PxChunk unit = part("u1", 0, 1, "/src/Foo.java", JAVA_MIME, "1", "500", manyLines);
+        stubIndex(Map.of(PxChunk.PXCHUNK_FILE, "/src/Foo.java"),
+                List.of(scored(unit)), List.of());
+
+        FileView view = service().read("src/Foo.java", null, null, null, true);
+
+        // the full-file escape hatch is bounded: 200 lines, not the whole 500-line file
+        assertThat(view.totalLines()).isEqualTo(500);
+        assertThat(view.returnedLines()).isEqualTo(200);
+        assertThat(view.truncated()).isTrue();
+        assertThat(view.content()).endsWith("L200");
+    }
+
+    @Test
+    void explicitLimitWinsOverTheLineDefault() {
+        routeToDao();
+        String manyLines = IntStream.rangeClosed(1, 500).mapToObj(i -> "L" + i).collect(Collectors.joining("\n"));
+        PxChunk unit = part("u1", 0, 1, "/src/Foo.java", JAVA_MIME, "1", "500", manyLines);
+        stubIndex(Map.of(PxChunk.PXCHUNK_FILE, "/src/Foo.java"),
+                List.of(scored(unit)), List.of());
+
+        // an explicit limit is deliberate paging, not truncation
+        FileView view = service().read("src/Foo.java", null, null, 10);
+
+        assertThat(view.returnedLines()).isEqualTo(10);
+        assertThat(view.truncated()).isFalse();
+        assertThat(view.content()).isEqualTo("L1\nL2\nL3\nL4\nL5\nL6\nL7\nL8\nL9\nL10");
     }
 
     @Test

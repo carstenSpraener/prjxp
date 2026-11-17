@@ -67,17 +67,16 @@ class PointerRendererTest {
 
         assertThat(block).isEqualTo("""
                 ## docs/a.md
-                project_id: "prjxp"
                 chunk_id: "docs/a.md:3:07"
                 score: 0.84
-                file: "docs/a.md"
                 chapter: "Architektur > Persistence"
-                cluster_id: "s14"
-                cluster_keywords: ["jta", "pool"]
-                keywords: ["jta", "hikari"]
                 → readFile("docs/a.md")
-                → semanticGraphNode("NODE1")
                 """);
+        assertThat(block).doesNotContain("project_id:")
+                .doesNotContain("file:")
+                .doesNotContain("cluster_")
+                .doesNotContain("keywords")
+                .doesNotContain("semanticGraphNode");
     }
 
     @Test
@@ -92,17 +91,15 @@ class PointerRendererTest {
 
         assertThat(block).isEqualTo("""
                 ## src/de/ex/Foo.java
-                project_id: "prjxp"
                 chunk_id: "de.ex.Foo.bar(int, String)"
                 score: 0.91
-                file: "src/de/ex/Foo.java"
-                chapter: "de.ex.Foo#bar(java.lang.String)"
-                cluster_id: "c7"
-                neighbours: ["de.ex.Foo", "de.ex.Bar#baz()"]
                 → readFile("src/de/ex/Foo.java")
                 → readBySignature("bar", "de.ex.Foo")
                 → graphNode("de.ex.Foo")
                 """);
+        assertThat(block).doesNotContain("chapter:")
+                .doesNotContain("cluster_id:")
+                .doesNotContain("neighbours:");
     }
 
     @Test
@@ -134,27 +131,16 @@ class PointerRendererTest {
 
         assertThat(block).isEqualTo("""
                 ## plain-id
-                project_id: "prjxp"
                 chunk_id: "plain-id"
                 score: 0.42
                 """);
+        assertThat(block).doesNotContain("project_id:");
         assertThat(block).doesNotContain("file:");
         assertThat(block).doesNotContain("chapter:");
         assertThat(block).doesNotContain("cluster_id:");
         assertThat(block).doesNotContain("keywords:");
         assertThat(block).doesNotContain("neighbours:");
         assertThat(block).doesNotContain("→");
-    }
-
-    @Test
-    void neighbourIdsWithCommasAreKeptAsOneEntry() {
-        String methodId = "de.ex.Foo.bar(int, String)";
-        PxChunk chunk = chunk("de.ex.Foo.bar", "src/de/ex/Foo.java", Map.of(
-                "ast_neighbours", methodId + SignatureMetadata.LIST_SEPARATOR + "de.ex.Baz"));
-
-        String block = renderer.render("prjxp", chunk, 0.5);
-
-        assertThat(block).contains("neighbours: [\"" + methodId + "\", \"de.ex.Baz\"]");
     }
 
     @Test
@@ -169,47 +155,9 @@ class PointerRendererTest {
 
         assertThat(block).isEqualTo("""
                 ## blanky
-                project_id: ""
                 chunk_id: "blanky"
                 score: 0.10
                 """);
-    }
-
-    @Test
-    void neighboursMergeDedupCap() {
-        Map<String, String> metadata = new LinkedHashMap<>();
-        metadata.put("ast_neighbours", String.join(SignatureMetadata.LIST_SEPARATOR, "a", "b", "a"));
-        metadata.put("semantic_neighbours", String.join(SignatureMetadata.LIST_SEPARATOR,
-                "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", "l"));
-        PxChunk chunk = chunk("n1", "n.md", metadata);
-
-        String block = renderer.render("prjxp", chunk, 0.5);
-
-        assertThat(block).contains(
-                "neighbours: [\"a\", \"b\", \"c\", \"d\", \"e\", \"f\", \"g\", \"h\", \"i\", \"j\"]\n");
-    }
-
-    @Test
-    void keywordsCapAndDedup() {
-        PxChunk chunk = chunk("k1", "k.md",
-                Map.of("keywords", "x, x, y, z, w, v, u, t, s, r"));
-
-        String block = renderer.render("prjxp", chunk, 0.5);
-
-        assertThat(block).contains("keywords: [\"x\", \"y\", \"z\", \"w\", \"v\", \"u\", \"t\", \"s\"]\n");
-    }
-
-    @Test
-    void clusterIdPrecedence() {
-        Map<String, String> metadata = new LinkedHashMap<>();
-        metadata.put("leiden_cluster_id", "c7");
-        metadata.put("semantic_cluster_id", "s3");
-        PxChunk chunk = chunk("c1", "c.java", metadata);
-
-        String block = renderer.render("prjxp", chunk, 0.5);
-
-        assertThat(block).contains("cluster_id: \"c7\"\n");
-        assertThat(block).doesNotContain("s3");
     }
 
     @Test
@@ -218,9 +166,9 @@ class PointerRendererTest {
 
         String block = renderer.render("prjxp", dependency, 0.5, "de.ex.Foo");
 
-        assertThat(block).contains("chapter: \"de.ex.Foo\"\n")
-                .contains("→ readBySignature(\"de.ex.Foo\")")
+        assertThat(block).contains("→ readBySignature(\"de.ex.Foo\")")
                 .contains("→ graphNode(\"de.ex.Foo\")")
+                .doesNotContain("chapter:")
                 .doesNotContain("readFile");
 
         PxChunk ownNode = chunk("de.ex.Foo#bar()", "Foo.java", Map.of("graph_node", "de.ex.Foo#bar()"));
@@ -237,6 +185,58 @@ class PointerRendererTest {
 
         assertThat(block).doesNotContain("chapter:")
                 .doesNotContain("→");
+    }
+
+    @Test
+    void hitCountIsOnlyRenderedWhenGreaterThanOne() {
+        PxChunk chunk = chunk("de.ex.Foo", "src/Foo.java", Map.of("graph_node", "de.ex.Foo"));
+
+        assertThat(renderer.render("prjxp", chunk, 0.9, null, 1)).doesNotContain("hits:");
+        assertThat(renderer.render("prjxp", chunk, 0.9, null, 3)).contains("score: 0.90\nhits: 3\n");
+    }
+
+    @Test
+    void compactBlockStaysWithinBudget() {
+        Map<String, String> metadata = new LinkedHashMap<>();
+        metadata.put("graph_node", "de.ex.SomeClass#someMethod(java.lang.String, java.lang.Integer)");
+        metadata.put("hierarchy", "Architektur > Persistence > Transaktionen");
+        metadata.put("keywords", "a, b, c, d, e, f, g, h");
+        metadata.put("cluster_keywords", "x, y, z");
+        metadata.put("leiden_cluster_id", "c7");
+        metadata.put("semantic_cluster_id", "s14");
+        metadata.put("semantic_node_id", "NODE-1");
+        metadata.put("ast_neighbours", String.join(SignatureMetadata.LIST_SEPARATOR,
+                "de.ex.Alpha", "de.ex.Beta", "de.ex.Gamma"));
+        PxChunk chunk = chunk("de.ex.SomeClass.someMethod(int, String)",
+                "src/de/ex/SomeClass.java", metadata);
+
+        String block = renderer.render("prjxp", chunk, 0.84);
+
+        assertThat(block).doesNotContain("semanticGraphNode")
+                .doesNotContain("semantic_node_id")
+                .doesNotContain("cluster_")
+                .doesNotContain("neighbours");
+        assertThat(block.length())
+                .as("one POINTERS block must stay <= 500 chars, was %d", block.length())
+                .isLessThanOrEqualTo(500);
+    }
+
+    @Test
+    void twelveHitsStayWithinGrepBudget() {
+        PxChunk chunk = chunk("de.ex.SomeClass#someMethod(java.lang.String, java.lang.Integer)",
+                "src/de/ex/SomeClass.java", Map.of(
+                        "graph_node", "de.ex.SomeClass#someMethod(java.lang.String, java.lang.Integer)",
+                        "keywords", "a, b, c, d",
+                        "semantic_node_id", "NODE-1"));
+
+        StringBuilder all = new StringBuilder();
+        for (int i = 0; i < 12; i++) {
+            all.append(renderer.render("prjxp", chunk, 0.84));
+        }
+
+        assertThat(all.length())
+                .as("12 POINTERS hits must stay <= 6000 chars, were %d", all.length())
+                .isLessThanOrEqualTo(6_000);
     }
 
     private static PxChunk chunk(String id, String file, Map<String, String> metadata) {

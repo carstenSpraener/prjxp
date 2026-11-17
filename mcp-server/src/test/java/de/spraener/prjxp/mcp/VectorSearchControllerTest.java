@@ -77,13 +77,13 @@ class VectorSearchControllerTest {
     }
 
     @Test
-    void defaultLimitIs10() throws Exception {
+    void defaultLimitIs30() throws Exception {
         when(service.search(anyString(), anyString(), any(), anyInt())).thenReturn(List.of());
 
         mvc.perform(get("/api/tools/vectorSearch").param("query", "x").param("project", "myproj"))
                 .andExpect(status().isOk());
 
-        verify(service).search(eq("x"), eq("myproj"), isNull(), eq(10));
+        verify(service).search(eq("x"), eq("myproj"), isNull(), eq(30));
     }
 
     @Test

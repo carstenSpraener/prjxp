@@ -45,6 +45,9 @@ public class CentralityWeighter implements GraphWeighter {
             adjacency.put(n.id(), new HashSet<>());
         }
         for (GraphEdge e : graph.edges()) {
+            if (e.type().isStructural()) {
+                continue; // navigation edges must not merge components
+            }
             adjacency.computeIfAbsent(e.source(), k -> new HashSet<>()).add(e.target());
             adjacency.computeIfAbsent(e.target(), k -> new HashSet<>()).add(e.source());
         }

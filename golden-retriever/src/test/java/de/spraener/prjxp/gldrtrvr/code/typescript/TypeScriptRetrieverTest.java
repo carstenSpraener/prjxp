@@ -10,6 +10,7 @@ import de.spraener.prjxp.gldrtrvr.DependencyCompactorTest;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import org.junit.jupiter.api.Test;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -145,12 +146,38 @@ class TypeScriptRetrieverTest {
 
         String prompt = retriever.buildPromptForFindings("proj", List.of(new ScoredChunk(chunk, 0.9)), pointers).toString();
 
-        assertThat(prompt).contains("file: \"src/com/example/Foo.ts\"")
+        assertThat(prompt).contains("## src/com/example/Foo.ts")
                 .contains("→ readFile(\"src/com/example/Foo.ts\")")
                 .contains("→ readBySignature(\"method\", \"com/example/Foo\")")
-                .contains("keywords: [\"method\", \"export\"]");
+                .doesNotContain("keywords:");
         assertThat(prompt).doesNotContain("export function method()")
                 .doesNotContain("Hier ein Rumpf");
+    }
+
+    @Test
+    void onePointerBlockPerFileWithHitCount() {
+        List<PxChunk> chunks = new ArrayList<>();
+        List<ScoredChunk> scored = new ArrayList<>();
+        for (int i = 0; i < 3; i++) {
+            final int idx = i;
+            PxChunk c = PxChunk.create(
+                    chunk -> chunk.setId("com/example/Method" + idx + ".ts"),
+                    chunk -> chunk.setFile("src/com/example/Foo.ts"),
+                    chunk -> chunk.setContent("export function m" + idx + "() {}"),
+                    chunk -> chunk.setTotal(1),
+                    chunk -> chunk.getMetadata().put("typescript_code_section", "method"),
+                    chunk -> chunk.getMetadata().put("graph_node", "com/example/Foo#m" + idx + "()"));
+            chunks.add(c);
+            scored.add(new ScoredChunk(c, 0.5 + idx * 0.1));
+        }
+        TypeScriptRetriever retriever = retrieverWith(mock(PxChunkDao.class));
+        SearchParams pointers = new SearchParams(20, 0.85);
+        pointers.setContentLevel(ContentLevel.POINTERS);
+
+        String prompt = retriever.buildPromptForFindings("proj", scored, pointers).toString();
+
+        assertThat(countOccurrences(prompt, "## src/com/example/Foo.ts")).isEqualTo(1);
+        assertThat(prompt).contains("hits: 3");
     }
 
     private static int countOccurrences(String haystack, String needle) {

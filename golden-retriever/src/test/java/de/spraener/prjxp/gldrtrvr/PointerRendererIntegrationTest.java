@@ -51,19 +51,14 @@ class PointerRendererIntegrationTest {
 
         assertThat(prompt).isEqualTo("""
                 ## docs/a.md
-                project_id: "prjxp"
                 chunk_id: "docs/a.md:1"
                 score: 0.90
-                file: "docs/a.md"
                 chapter: "Architektur > Persistence"
-                cluster_id: "s14"
-                cluster_keywords: ["jta", "pool"]
-                keywords: ["jta", "hikari"]
-                neighbours: ["n1", "n2"]
                 → readFile("docs/a.md")
-                → semanticGraphNode("NODE-1")
                 """);
-        assertThat(prompt).doesNotContain("BODY-MARKER");
+        assertThat(prompt).doesNotContain("BODY-MARKER")
+                .doesNotContain("semanticGraphNode")
+                .doesNotContain("project_id:");
     }
 
     @Test
@@ -123,14 +118,8 @@ class PointerRendererIntegrationTest {
 
         assertThat(prompt).isEqualTo("""
                 ## src/Foo.java
-                project_id: "prjxp"
                 chunk_id: "de.ex.Foo"
                 score: 0.91
-                file: "src/Foo.java"
-                chapter: "de.ex.Foo"
-                cluster_id: "c7"
-                keywords: ["foo", "bar"]
-                neighbours: ["de.ex.Bar", "de.ex.Baz"]
                 → readFile("src/Foo.java")
                 → readBySignature("de.ex.Foo")
                 → graphNode("de.ex.Foo")
@@ -138,6 +127,26 @@ class PointerRendererIntegrationTest {
         // no session tree, no JavaPromptModifier rendering
         assertThat(prompt).doesNotContain("Hier ein Rumpf der Klasse")
                 .doesNotContain("```java");
+    }
+
+    @Test
+    void javaPointersRenderOneBlockPerFileWithHitCount() {
+        List<PxChunk> chunks = new ArrayList<>();
+        List<ScoredChunk> scored = new ArrayList<>();
+        for (int i = 0; i < 9; i++) {
+            PxChunk c = chunk("de.ex.Foo.m" + i, "text/x-java-code", "src/Foo.java", "void m" + i + "() {}",
+                    Map.of("java_code_section", "method", "graph_node", "de.ex.Foo#m" + i + "()"));
+            chunks.add(c);
+            scored.add(new ScoredChunk(c, 0.5 + i * 0.01));
+        }
+
+        String prompt = javaRetriever(chunks.toArray(PxChunk[]::new)).buildPromptForFindings(
+                PROJECT, scored, pointers()).toString();
+
+        assertThat(countOccurrences(prompt, "## src/Foo.java")).isEqualTo(1);
+        assertThat(prompt).contains("hits: 9");
+        // the best-scored chunk of the file wins the block
+        assertThat(prompt).contains("chunk_id: \"de.ex.Foo.m8\"");
     }
 
     @Test
@@ -149,8 +158,8 @@ class PointerRendererIntegrationTest {
         String prompt = javaRetriever(dependencies).buildPromptForFindings(
                 PROJECT, List.of(new ScoredChunk(dependencies, 0.7)), pointers()).toString();
 
-        assertThat(prompt).contains("chapter: \"de.ex.Foo\"")
-                .contains("→ graphNode(\"de.ex.Foo\")")
+        assertThat(prompt).contains("→ graphNode(\"de.ex.Foo\")")
+                .doesNotContain("chapter:")
                 .doesNotContain("de.ex.Bar");
     }
 
@@ -216,16 +225,13 @@ class PointerRendererIntegrationTest {
 
         assertThat(prompt).isEqualTo("""
                 ## docs/a.txt
-                project_id: "prjxp"
                 chunk_id: "docs/a.txt:1"
                 score: 0.90
-                file: "docs/a.txt"
                 chapter: "Notes"
-                cluster_id: "s2"
                 → readFile("docs/a.txt")
-                → semanticGraphNode("NODE-2")
                 """);
-        assertThat(prompt).doesNotContain("BODY-MARKER");
+        assertThat(prompt).doesNotContain("BODY-MARKER")
+                .doesNotContain("semanticGraphNode");
     }
 
     // ------------------------------------------------------------------

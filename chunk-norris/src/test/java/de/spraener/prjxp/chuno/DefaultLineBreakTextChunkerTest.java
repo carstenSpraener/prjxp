@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -104,6 +105,20 @@ class DefaultLineBreakTextChunkerTest {
         Files.writeString(f.toPath(), "");
 
         assertThat(uut.chunk(f)).isEmpty();
+    }
+
+    @Test
+    void latin1FileIsDecodedInsteadOfBeingDropped() throws Exception {
+        // Legacy Java/JSP/SQL sources are frequently ISO-8859-1. Reading them strictly as
+        // UTF-8 throws MalformedInputException, which used to make the file vanish from
+        // the index without any log entry.
+        File f = tempDir.resolve("latin1.sql").toFile();
+        Files.write(f.toPath(), "insert into t values ('Prüfung');\n".getBytes(StandardCharsets.ISO_8859_1));
+
+        List<PxChunk> parts = uut.chunk(f).toList();
+
+        assertThat(parts).hasSize(1);
+        assertThat(parts.get(0).getContent()).contains("Prüfung");
     }
 
     @Test

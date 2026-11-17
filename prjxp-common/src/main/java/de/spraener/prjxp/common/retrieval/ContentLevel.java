@@ -20,11 +20,20 @@ public enum ContentLevel {
 
     /** Null-safe parse; unknown/blank → {@link #FULL}. */
     public static ContentLevel parse(String raw) {
-        if (raw == null || raw.isBlank()) return FULL;
+        return parse(raw, FULL);
+    }
+
+    /**
+     * Null-safe parse with an explicit fallback for null/blank/unknown values.
+     * Search tools pass their cheap default (POINTERS/NAMES) so that a typo or an
+     * unexpected value can never silently escalate to the most expensive mode.
+     */
+    public static ContentLevel parse(String raw, ContentLevel fallback) {
+        if (raw == null || raw.isBlank()) return fallback;
         try {
             return valueOf(raw.trim().toUpperCase());
         } catch (IllegalArgumentException e) {
-            return FULL;
+            return fallback;
         }
     }
 }

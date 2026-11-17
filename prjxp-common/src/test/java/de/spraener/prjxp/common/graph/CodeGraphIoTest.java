@@ -51,6 +51,24 @@ class CodeGraphIoTest {
     }
 
     @Test
+    void newStructuralEdgeTypesSurviveRoundtrip(@TempDir Path tmp) {
+        CodeGraph graph = new CodeGraph(
+                List.of(GraphNode.type("de.spraener.Foo", "src/Foo.java", "java"),
+                        GraphNode.method("de.spraener.Foo#bar", "src/Foo.java", "java")),
+                List.of(
+                        new GraphEdge("de.spraener.Foo", "de.spraener.Foo#bar", EdgeType.CONTAINS, false),
+                        new GraphEdge("de.spraener.Foo#bar", "de.spraener.Helper", EdgeType.GENERIC_ARG, true),
+                        new GraphEdge("de.spraener.Foo", "org.junit.Test", EdgeType.ANNOTATION, true)));
+
+        Path file = tmp.resolve("graph.json");
+        io.write(file, graph);
+        CodeGraph read = io.read(file);
+
+        assertThat(read.edges()).extracting(GraphEdge::type)
+                .containsExactly(EdgeType.CONTAINS, EdgeType.GENERIC_ARG, EdgeType.ANNOTATION);
+    }
+
+    @Test
     void emptyGraphRoundtrip(@TempDir Path tmp) {
         Path file = tmp.resolve("empty.json");
         io.write(file, CodeGraph.empty());

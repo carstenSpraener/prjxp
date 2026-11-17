@@ -102,7 +102,7 @@ class ByIndexControllerTest {
     }
 
     @Test
-    void defaultLimitIs10() throws Exception {
+    void defaultLimitIs30() throws Exception {
         when(registry.forLanguage("java")).thenReturn(Optional.of(javaCapability()));
         when(service.search(any(ByIndexQuery.class))).thenReturn(List.of());
 
@@ -112,7 +112,7 @@ class ByIndexControllerTest {
                 .param("project", "myproj"))
                 .andExpect(status().isOk());
 
-        verify(service).search(new ByIndexQuery("java", "x", null, null, null, null, "myproj", 10));
+        verify(service).search(new ByIndexQuery("java", "x", null, null, null, null, "myproj", 30));
     }
 
     @Test

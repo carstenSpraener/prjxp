@@ -112,7 +112,8 @@ public class HubProjectRegistry implements ProjectRegistry {
         }
         PrjXPEmbeddingStoreReference storeRef = new PrjXPEmbeddingStoreReference();
         storeRef.setProjectName(name);
-        daoProvider.register(new LucenePxChunkDao(luceneStore, embeddingModel, storeRef));
+        daoProvider.register(new LucenePxChunkDao(luceneStore, embeddingModel, storeRef,
+                cfg.getEmbedding().getQueryPrompt()));
         projects.put(name, new ProjectEntry(name, dir, kind, source, definition, storeRef));
         refreshStats(name);   // warm the in-memory stats cache (cheap for a fresh/empty index)
         log.info("Registered {} project '{}' (source '{}') at {}", kind, name, source, dir);

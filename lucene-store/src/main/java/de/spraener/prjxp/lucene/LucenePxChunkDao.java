@@ -42,17 +42,28 @@ import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 public class LucenePxChunkDao implements PxChunkDao {
+    /** mxbai-embed-large-v1 retrieval prefix (see the model card). */
+    public static final String DEFAULT_QUERY_PROMPT =
+            "Represent this sentence for searching relevant passages: ";
+
     private final EmbeddingStore<TextSegment> store;
     private final EmbeddingModel embeddingModel;
     private final PrjXPEmbeddingStoreReference storeReference;
     private final LuceneEmbeddingStore luceneStore;
+    private final String queryPrompt;
 
     public LucenePxChunkDao(EmbeddingStore<TextSegment> store, EmbeddingModel embeddingModel,
                              PrjXPEmbeddingStoreReference storeReference) {
+        this(store, embeddingModel, storeReference, DEFAULT_QUERY_PROMPT);
+    }
+
+    public LucenePxChunkDao(EmbeddingStore<TextSegment> store, EmbeddingModel embeddingModel,
+                             PrjXPEmbeddingStoreReference storeReference, String queryPrompt) {
         this.store = store;
         this.embeddingModel = embeddingModel;
         this.storeReference = storeReference;
         this.luceneStore = store instanceof LuceneEmbeddingStore ? (LuceneEmbeddingStore) store : null;
+        this.queryPrompt = queryPrompt == null ? "" : queryPrompt;
     }
 
     private Map<String, String> scopedFilters(Map<String, String> filters) {
@@ -184,7 +195,8 @@ public class LucenePxChunkDao implements PxChunkDao {
             return new ArrayList<>();
         }
 
-        Embedding questionEmbedding = embeddingModel.embed(query).content();
+        // Retrieval-only prompt: document embeddings stay untouched (model-card contract).
+        Embedding questionEmbedding = embeddingModel.embed(queryPrompt + query).content();
         Filter filter = buildFilter(scopedFilters(filters));
 
         EmbeddingSearchRequest searchRequest = EmbeddingSearchRequest.builder()

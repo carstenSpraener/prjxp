@@ -298,14 +298,13 @@ class GdscriptRetrieverTest {
                 "proj", List.of(new ScoredChunk(chunk, 0.9)), pointers).toString();
 
         assertThat(prompt).contains("## /proj/Player.gd")
-                .contains("project_id: \"proj\"")
                 .contains("chunk_id: \"Player.move(dir)\"")
                 .contains("score: 0.90")
-                .contains("chapter: \"Player#move(dir)\"")
-                .contains("cluster_id: \"g1\"")
-                .contains("keywords: [\"move\", \"speed\"]")
                 .contains("→ readFile(\"/proj/Player.gd\")")
-                .contains("→ readBySignature(\"move\", \"Player\")");
+                .contains("→ readBySignature(\"move\", \"Player\")")
+                .doesNotContain("chapter:")
+                .doesNotContain("cluster_id:")
+                .doesNotContain("keywords:");
         assertThat(prompt).doesNotContain("func move(dir):")
                 .doesNotContain("# enclosing class: Player");
     }

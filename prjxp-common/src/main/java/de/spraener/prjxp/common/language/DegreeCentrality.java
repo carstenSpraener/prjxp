@@ -34,6 +34,9 @@ public final class DegreeCentrality {
             degree.put(n.id(), 0);
         }
         for (GraphEdge e : graph.edges()) {
+            if (e.type().isStructural()) {
+                continue; // navigation edges must not move degree centrality
+            }
             degree.merge(e.source(), 1, Integer::sum);
             degree.merge(e.target(), 1, Integer::sum);
         }

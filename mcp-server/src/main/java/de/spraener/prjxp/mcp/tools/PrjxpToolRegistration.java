@@ -3,18 +3,19 @@ package de.spraener.prjxp.mcp.tools;
 import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.model.SymbolReadResult;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.toolregistry.ToolDefinition;
 import de.spraener.prjxp.common.toolregistry.ToolRegistry;
 import de.spraener.prjxp.mcp.ClusterMember;
 import de.spraener.prjxp.mcp.ClusterOverviewView;
 import de.spraener.prjxp.mcp.ClusterSummary;
 import de.spraener.prjxp.mcp.ClusterView;
-import de.spraener.prjxp.mcp.GraphAggregate;
-import de.spraener.prjxp.mcp.GraphNeighbor;
 import de.spraener.prjxp.mcp.GraphView;
 import de.spraener.prjxp.mcp.GrepResult;
 import de.spraener.prjxp.mcp.PrjxpMcpTool;
 import de.spraener.prjxp.mcp.PrjxpToolDocs;
+import de.spraener.prjxp.mcp.ResultRenderers;
+import de.spraener.prjxp.mcp.ToolResultCaps;
 import de.spraener.prjxp.mcp.ProjectSummary;
 import de.spraener.prjxp.mcp.SemanticClusterView;
 import de.spraener.prjxp.mcp.SemanticNeighbor;
@@ -50,8 +51,8 @@ public class PrjxpToolRegistration {
     private static final Logger log = LoggerFactory.getLogger(PrjxpToolRegistration.class);
 
     /** Result size caps (characters) to avoid blowing the model's context window. */
-    private static final int SEARCH_RESULT_CAP = 8000;
-    private static final int READER_RESULT_CAP = 10000;
+    private static final int SEARCH_RESULT_CAP = ToolResultCaps.SEARCH;
+    private static final int READER_RESULT_CAP = ToolResultCaps.READER;
 
     private final ToolRegistry toolRegistry;
     private final PrjxpMcpTool mcpTool;
@@ -66,6 +67,8 @@ public class PrjxpToolRegistration {
         register(listFilesTool());
         register(graphFileTool());
         register(graphNodeTool());
+        register(graphSearchTool());
+        register(listConfigTool());
         register(graphClusterTool());
         register(graphClusterOverviewTool());
         register(semanticGraphClusterTool());
@@ -90,21 +93,19 @@ public class PrjxpToolRegistration {
                 .description(PrjxpToolDocs.VECTOR_SEARCH)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("userQuestion",
-                                "Search prompt for vector retrieval.")
+                                "Concise English keyword query; keep identifiers verbatim.")
                         .addStringProperty("projectName",
                                 "Project name (listProjects).")
                         .addNumberProperty("similarity",
                                 "Leave at 0.85; lower only if a search returns nothing.")
                         .addIntegerProperty("maxResults",
                                 "Maximum number of FILES, default 10 (max 20).")
-                        .addBooleanProperty("skeletonsOnly",
-                                "Deprecated; contentLevel wins. Legacy TRUE still means SKELETON.")
-                        .addStringProperty("contentLevel",
-                                "POINTERS (default) hints, SKELETON signatures, FULL bodies, NAMES = filenames.")
                         .addStringProperty("sourceType",
                                 "code (default) | docs | all. Retry with all for prose documentation.")
                         .addBooleanProperty("includeTests",
                                 "Include test sources (default false).")
+                        .addIntegerProperty("tokenBudget",
+                                "Max output tokens, default 2000 (max 4000).")
                         .required("userQuestion", "projectName")
                         .build())
                 .build();
@@ -116,11 +117,11 @@ public class PrjxpToolRegistration {
                     if (question == null) {
                         return "ERROR: 'userQuestion' parameter is required for vectorSearch.";
                     }
-                    String result = mcpTool.vectorSearch(question, string(params, "projectName"),
+                    // The MCP method already applies the token budget, so do not re-truncate.
+                    return mcpTool.vectorSearch(question, string(params, "projectName"),
                             number(params, "similarity"), integer(params, "maxResults"),
-                            bool(params, "skeletonsOnly"), string(params, "contentLevel"),
-                            string(params, "sourceType"), bool(params, "includeTests"));
-                    return truncate(result, SEARCH_RESULT_CAP);
+                            string(params, "sourceType"), bool(params, "includeTests"),
+                            integer(params, "tokenBudget"));
                 }, spec);
     }
 
@@ -132,9 +133,7 @@ public class PrjxpToolRegistration {
                         .addStringProperty("query", "Exact search string, e.g. 'public MClass createMClass'.")
                         .addStringProperty("project", "Project name (listProjects).")
                         .addStringProperty("language", "Optional language filter (e.g. 'java').")
-                        .addIntegerProperty("limit", "Max hits after grouping, default 10 (max 100).")
-                        .addStringProperty("contentLevel",
-                                "NAMES (default) = grep -l: 'count  path' per file, sorted by count; SKELETON signatures; FULL bodies; POINTERS enumerates.")
+                        .addIntegerProperty("limit", "Max hits after grouping, default 30 (max 100).")
                         .addBooleanProperty("includeTests",
                                 "Include test sources (default true).")
                         .required("query", "project")
@@ -149,9 +148,12 @@ public class PrjxpToolRegistration {
                         return "ERROR: 'query' parameter is required for grep.";
                     }
                     String project = string(params, "project");
-                    GrepResult result = mcpTool.grep(query, project, string(params, "language"),
-                            integer(params, "limit"), string(params, "contentLevel"), bool(params, "includeTests"));
-                    return formatHits(query, project, result);
+                    // Strategy: grep returns the file list only (grep -l); content comes via
+                    // readBySignature/readFile. No contentLevel knob on the search tools.
+                    ContentLevel level = ContentLevel.NAMES;
+                    GrepResult result = mcpTool.grepResult(query, project, string(params, "language"),
+                            integer(params, "limit"), bool(params, "includeTests"), level);
+                    return formatHits(query, project, result, level);
                 }, spec);
     }
 
@@ -164,7 +166,8 @@ public class PrjxpToolRegistration {
                                 "File path (absolute, relative, or name; lenient).")
                         .addStringProperty("project", "Project name (listProjects).")
                         .addIntegerProperty("offset", "Optional 1-based start line.")
-                        .addIntegerProperty("limit", "Optional max lines from offset.")
+                        .addIntegerProperty("limit", "Optional max lines from offset (default 100).")
+                        .addBooleanProperty("full", "true = whole file only for files ≤200 lines; capped at 200 lines / 20k chars.")
                         .required("file", "project")
                         .build())
                 .build();
@@ -177,7 +180,7 @@ public class PrjxpToolRegistration {
                         return "ERROR: 'file' parameter is required for readFile.";
                     }
                     FileView view = mcpTool.readFile(file, string(params, "project"),
-                            integer(params, "offset"), integer(params, "limit"));
+                            integer(params, "offset"), integer(params, "limit"), bool(params, "full"));
                     return formatFileView(file, view);
                 }, spec);
     }
@@ -246,7 +249,7 @@ public class PrjxpToolRegistration {
         return new ToolDefinition("listFiles", spec.description(),
                 Map.of("path", "Path prefix or glob", "project", "Required project name"),
                 params -> {
-                    FileListResult result = mcpTool.listFiles(string(params, "path"),
+                    FileListResult result = mcpTool.listFilesResult(string(params, "path"),
                             string(params, "project"), integer(params, "limit"));
                     return formatFileList(result);
                 }, spec);
@@ -265,6 +268,7 @@ public class PrjxpToolRegistration {
                         .addIntegerProperty("offset", "Skip this many per direction (default 0).")
                         .addStringProperty("contentLevel",
                                 "FULL (default) = all edges; AGGREGATED = per-module counts + top classes.")
+                        .addIntegerProperty("tokenBudget", "Max output tokens, default 2000 (max 4000).")
                         .required("file", "project")
                         .build())
                 .build();
@@ -272,16 +276,17 @@ public class PrjxpToolRegistration {
         return new ToolDefinition("graphFile", spec.description(),
                 Map.of("file", "File path", "project", "Required project name",
                         "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges",
-                        "offset", "Pagination offset per direction", "contentLevel", "FULL or AGGREGATED"),
+                        "offset", "Pagination offset per direction", "contentLevel", "FULL or AGGREGATED",
+                        "tokenBudget", "Max output tokens"),
                 params -> {
                     String file = string(params, "file");
                     if (file == null) {
                         return "ERROR: 'file' parameter is required for graphFile.";
                     }
-                    GraphView view = mcpTool.graphFile(file, string(params, "project"),
+                    GraphView view = mcpTool.graphFileView(file, string(params, "project"),
                             integer(params, "maxEdges"), bool(params, "includeExternal"), integer(params, "offset"),
                             string(params, "contentLevel"));
-                    return formatGraph(view);
+                    return formatGraph(view, integer(params, "tokenBudget"));
                 }, spec);
     }
 
@@ -298,6 +303,7 @@ public class PrjxpToolRegistration {
                         .addIntegerProperty("offset", "Skip this many per direction (default 0).")
                         .addStringProperty("contentLevel",
                                 "FULL (default) = all edges; AGGREGATED = per-module counts + top classes.")
+                        .addIntegerProperty("tokenBudget", "Max output tokens, default 2000 (max 4000).")
                         .required("symbol", "project")
                         .build())
                 .build();
@@ -305,17 +311,70 @@ public class PrjxpToolRegistration {
         return new ToolDefinition("graphNode", spec.description(),
                 Map.of("symbol", "Node id (FQN or method id)", "project", "Required project name",
                         "maxEdges", "Maximum neighbours per direction", "includeExternal", "Include external edges",
-                        "offset", "Pagination offset per direction", "contentLevel", "FULL or AGGREGATED"),
+                        "offset", "Pagination offset per direction", "contentLevel", "FULL or AGGREGATED",
+                        "tokenBudget", "Max output tokens"),
                 params -> {
                     String symbol = string(params, "symbol");
                     if (symbol == null) {
                         return "ERROR: 'symbol' parameter is required for graphNode.";
                     }
-                    GraphView view = mcpTool.graphNode(symbol, string(params, "project"),
+                    GraphView view = mcpTool.graphNodeView(symbol, string(params, "project"),
                             integer(params, "maxEdges"), bool(params, "includeExternal"), integer(params, "offset"),
                             string(params, "contentLevel"));
-                    return formatGraph(view);
+                    return formatGraph(view, integer(params, "tokenBudget"));
                 }, spec);
+    }
+
+    private ToolDefinition graphSearchTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("graphSearch")
+                .description(PrjxpToolDocs.GRAPH_SEARCH)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("question",
+                                "Short English keyword query; keep identifiers verbatim.")
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addStringProperty("mode", "bfs (default) = broad context, dfs = path.")
+                        .addIntegerProperty("depth", "Traversal depth, 1-6 (default 3).")
+                        .addIntegerProperty("tokenBudget", "Max output tokens, default 2000 (max 4000).")
+                        .addProperty("contextFilter", dev.langchain4j.model.chat.request.json.JsonArraySchema.builder()
+                                .description("Optional edge types: CALL, CONTAINS, FIELD, ...")
+                                .items(dev.langchain4j.model.chat.request.json.JsonStringSchema.builder().build())
+                                .build())
+                        .addIntegerProperty("maxSeeds", "Max seeds, 1-5 (default 3).")
+                        .required("question", "project")
+                        .build())
+                .build();
+
+        return new ToolDefinition("graphSearch", spec.description(),
+                Map.of("question", "Keyword query", "project", "Required project name",
+                        "mode", "bfs or dfs", "depth", "Traversal depth", "tokenBudget", "Max output tokens",
+                        "contextFilter", "Edge-type filter", "maxSeeds", "Number of seeds"),
+                params -> {
+                    String question = string(params, "question");
+                    if (question == null) {
+                        return "ERROR: 'question' parameter is required for graphSearch.";
+                    }
+                    return mcpTool.graphSearch(question, string(params, "project"),
+                            string(params, "mode"), integer(params, "depth"), integer(params, "tokenBudget"),
+                            stringList(params, "contextFilter"), integer(params, "maxSeeds"));
+                }, spec);
+    }
+
+    private ToolDefinition listConfigTool() {
+        ToolSpecification spec = ToolSpecification.builder()
+                .name("listConfig")
+                .description(PrjxpToolDocs.LIST_CONFIG)
+                .parameters(JsonObjectSchema.builder()
+                        .addStringProperty("project", "Project name (listProjects).")
+                        .addIntegerProperty("tokenBudget", "Max output tokens, default 2000 (max 4000).")
+                        .required("project")
+                        .build())
+                .build();
+
+        return new ToolDefinition("listConfig", spec.description(),
+                Map.of("project", "Required project name", "tokenBudget", "Max output tokens"),
+                params -> mcpTool.listConfig(string(params, "project"), integer(params, "tokenBudget")),
+                spec);
     }
 
     private ToolDefinition graphClusterTool() {
@@ -431,7 +490,7 @@ public class PrjxpToolRegistration {
                 .description(PrjxpToolDocs.READ_CHUNKS)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("project", "Project name (listProjects).")
-                        .addStringProperty("ids", "Comma-separated chunk_ids (from vectorSearch output), max 10.")
+                        .addStringProperty("ids", "Comma-separated chunk_ids (from vectorSearch output), max 10; prefer 1-3.")
                         .required("project", "ids")
                         .build())
                 .build();
@@ -521,26 +580,17 @@ public class PrjxpToolRegistration {
     }
 
     private String formatFileList(FileListResult result) {
-        if (result == null || result.files().isEmpty()) {
-            return "No files found.";
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("Found ").append(result.files().size()).append(" file(s)");
-        if (result.truncated()) {
-            sb.append(" (truncated — narrow the pattern or raise the limit)");
-        }
-        sb.append(":\n");
-        for (String file : result.files()) {
-            sb.append("  - ").append(file).append("\n");
-        }
-        return truncate(sb.toString(), SEARCH_RESULT_CAP);
+        return truncate(ResultRenderers.renderFileList(result), SEARCH_RESULT_CAP);
     }
 
-    private String formatHits(String query, String project, GrepResult result) {
+    private String formatHits(String query, String project, GrepResult result, ContentLevel level) {
         List<SearchHit> hits = result == null ? List.of() : result.hits();
         if (hits.isEmpty()) {
             return "No results found for grep query: \"" + query + "\""
                     + (project != null ? " in project \"" + project + "\"" : "");
+        }
+        if (level == ContentLevel.NAMES || level == ContentLevel.AGGREGATED) {
+            return formatNamesHits(hits, result);
         }
         StringBuilder sb = new StringBuilder();
         sb.append("Found ").append(hits.size()).append(" result(s) for grep query: \"").append(query).append("\"\n\n");
@@ -558,6 +608,24 @@ public class PrjxpToolRegistration {
         }
         // Tell the model when the list was cut off so it can raise the limit instead of
         // assuming it has seen every matching file.
+        if (result.note() != null) {
+            sb.append(result.note()).append("\n");
+        }
+        return truncate(sb.toString(), SEARCH_RESULT_CAP);
+    }
+
+    /** {@code NAMES}/{@code AGGREGATED}: one "count  path" line per file, no per-hit wrapper. */
+    private String formatNamesHits(List<SearchHit> hits, GrepResult result) {
+        StringBuilder sb = new StringBuilder();
+        for (SearchHit hit : hits) {
+            String line = hit.snippet();
+            if (line == null || line.isBlank()) {
+                line = hit.file();
+            }
+            if (line != null && !line.isBlank()) {
+                sb.append(line).append("\n");
+            }
+        }
         if (result.note() != null) {
             sb.append(result.note()).append("\n");
         }
@@ -584,7 +652,7 @@ public class PrjxpToolRegistration {
         sb.append("File: ").append(view.file() != null ? view.file() : file).append("\n");
         if (view.totalLines() != null) sb.append("Total lines: ").append(view.totalLines()).append("\n");
         if (view.returnedLines() != null) sb.append("Returned lines: ").append(view.returnedLines()).append("\n");
-        if (view.truncated()) sb.append("(Content truncated at 100k char cap)\n");
+        if (view.truncated()) sb.append("(Content truncated — page with offset/limit, or read a symbol with readBySignature(FQN#name); full=true is capped at 200 lines)\n");
         sb.append("\n--- FILE CONTENT ---\n");
         sb.append(view.content() != null ? view.content() : "(No content available)");
         return truncate(sb.toString(), READER_RESULT_CAP);
@@ -626,97 +694,9 @@ public class PrjxpToolRegistration {
         return truncate(sb.toString(), READER_RESULT_CAP);
     }
 
-    private String formatGraph(GraphView view) {
-        if (view == null) {
-            return "No graph view returned.";
-        }
-        if (view.error() != null) {
-            return "ERROR: " + view.error();
-        }
-        if (view.candidates() != null && !view.candidates().isEmpty()) {
-            StringBuilder sb = new StringBuilder("Ambiguous. Candidates:\n");
-            for (String cand : view.candidates()) {
-                sb.append("  - ").append(cand).append("\n");
-            }
-            return sb.toString();
-        }
-        StringBuilder sb = new StringBuilder();
-        sb.append("Project: ").append(view.project()).append("\n");
-        if (view.file() != null) {
-            sb.append("File: ").append(view.file()).append("\n");
-        } else {
-            sb.append("Node: ").append(view.nodeId()).append("\n");
-        }
-        sb.append("  ").append(view.nodeId());
-        if (view.clusterId() != null || view.weight() != null) {
-            sb.append("   [cluster:").append(view.clusterId() == null ? "?" : view.clusterId())
-                    .append(", weight:").append(view.weight() == null ? "?" : String.format(java.util.Locale.ROOT, "%.2f", view.weight()))
-                    .append("]");
-        }
-        // Efficiency measure 5: the AGGREGATED view carries module groups instead of raw edges.
-        boolean aggregated = view.outgoingByModule() != null || view.incomingByModule() != null;
-        // Full per-direction counts in the header (always visible, before the edge list that may be
-        // truncated): lets the model tell the page is partial and page the rest via offset/maxEdges.
-        if (view.totalOutgoing() != null || view.totalIncoming() != null) {
-            sb.append("   [out:").append(view.totalOutgoing() == null ? "?" : view.totalOutgoing())
-                    .append(", in:").append(view.totalIncoming() == null ? "?" : view.totalIncoming()).append("]");
-            // The aggregation covers all edges by construction — no truncation hint in that mode.
-            if (!aggregated
-                    && ((view.totalOutgoing() != null && view.outgoing().size() < view.totalOutgoing())
-                    || (view.totalIncoming() != null && view.incoming().size() < view.totalIncoming()))) {
-                sb.append("  (page truncated — raise maxEdges or use offset)");
-            }
-        }
-        sb.append("\n");
-        if (aggregated) {
-            sb.append("Aggregated by module:\n");
-            if (view.outgoingByModule() != null) {
-                sb.append("  outgoing (").append(view.totalOutgoing() == null ? "?" : view.totalOutgoing())
-                        .append(" edges, ").append(view.outgoingByModule().size()).append(" modules):\n");
-                for (GraphAggregate a : view.outgoingByModule()) {
-                    renderAggregate(sb, a);
-                }
-            }
-            if (view.incomingByModule() != null) {
-                sb.append("  incoming (").append(view.totalIncoming() == null ? "?" : view.totalIncoming())
-                        .append(" edges, ").append(view.incomingByModule().size()).append(" modules):\n");
-                for (GraphAggregate a : view.incomingByModule()) {
-                    renderAggregate(sb, a);
-                }
-            }
-        } else {
-            for (GraphNeighbor n : view.outgoing()) {
-                sb.append("    ").append(n.type()).append(" -> ").append(n.neighborId())
-                        .append(n.neighborFile() != null ? "  [" + n.neighborFile() + "]" : "")
-                        .append("\n");
-            }
-            for (GraphNeighbor n : view.incoming()) {
-                sb.append("    <- ").append(n.type()).append("  ").append(n.neighborId())
-                        .append(n.neighborFile() != null ? "  [" + n.neighborFile() + "]" : "")
-                        .append("\n");
-            }
-            if (view.outgoing().isEmpty() && view.incoming().isEmpty()) {
-                sb.append("    (no edges)\n");
-            }
-        }
-        return truncate(sb.toString(), SEARCH_RESULT_CAP);
-    }
-
-    /** One module group of the AGGREGATED view: counts, edge-type breakdown, and top classes. */
-    private void renderAggregate(StringBuilder sb, GraphAggregate a) {
-        sb.append("    ").append(a.module()).append(": ").append(a.edgeCount()).append(" edges, ")
-                .append(a.classCount()).append(" classes");
-        if (!a.typeCounts().isEmpty()) {
-            sb.append(" [").append(a.typeCounts().entrySet().stream()
-                    .map(en -> en.getKey() + " " + en.getValue())
-                    .collect(Collectors.joining(", "))).append("]");
-        }
-        if (!a.topClasses().isEmpty()) {
-            sb.append(" — ").append(a.topClasses().stream()
-                    .map(c -> c.className() + "(" + c.count() + ")")
-                    .collect(Collectors.joining(", ")));
-        }
-        sb.append("\n");
+    private String formatGraph(GraphView view, Integer tokenBudget) {
+        return ToolResultCaps.capTokens(ResultRenderers.renderGraph(view),
+                ToolResultCaps.clampTokenBudget(tokenBudget));
     }
 
     private String formatCluster(ClusterView view) {
@@ -798,6 +778,18 @@ public class PrjxpToolRegistration {
         if (value instanceof Boolean b) return b;
         String text = string(params, key);
         return text == null ? null : Boolean.valueOf(text);
+    }
+
+    /** Accepts a real list or a comma-separated string (both are sent by MCP clients). */
+    static List<String> stringList(Map<String, Object> params, String key) {
+        Object value = params == null ? null : params.get(key);
+        if (value == null) return null;
+        if (value instanceof List<?> list) {
+            return list.stream().map(String::valueOf).toList();
+        }
+        String text = string(params, key);
+        if (text == null) return null;
+        return java.util.Arrays.stream(text.split(",")).map(String::trim).filter(s -> !s.isEmpty()).toList();
     }
 
     /** Truncate a string to maxChars, appending a marker if truncated. */

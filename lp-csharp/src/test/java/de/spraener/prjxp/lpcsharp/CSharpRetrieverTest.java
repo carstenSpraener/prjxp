@@ -246,14 +246,13 @@ class CSharpRetrieverTest {
                 "proj", List.of(new ScoredChunk(chunk, 0.9)), params).toString();
 
         assertThat(prompt).contains("## /proj/src/Foo.cs")
-                .contains("project_id: \"proj\"")
                 .contains("chunk_id: \"Acme.Foo.bar\"")
                 .contains("score: 0.90")
-                .contains("chapter: \"Acme.Foo#bar()\"")
-                .contains("cluster_id: \"c3\"")
-                .contains("keywords: [\"bar\", \"baz\"]")
                 .contains("→ readFile(\"/proj/src/Foo.cs\")")
-                .contains("→ readBySignature(\"bar\", \"Acme.Foo\")");
+                .contains("→ readBySignature(\"bar\", \"Acme.Foo\")")
+                .doesNotContain("chapter:")
+                .doesNotContain("cluster_id:")
+                .doesNotContain("keywords:");
         assertThat(prompt).doesNotContain("void bar() {}")
                 .doesNotContain("[method]");
     }

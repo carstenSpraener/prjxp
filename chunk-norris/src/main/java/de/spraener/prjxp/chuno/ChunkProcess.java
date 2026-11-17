@@ -95,9 +95,17 @@ public class ChunkProcess {
 
     /**
      * Chunks an explicit list of files (no tree walk, no JSONL output) and returns the chunks in memory.
-     * Used by the hub's document-embedding runs (DocPipe-generated documents). Vetos are evaluated
-     * against the given definition — callers that need markdown must ensure "md" is in its whitelist.
-     * Files that are not regular files or are vetoed are skipped silently.
+     * Used by the hub's live updates and document-embedding runs (DocPipe-generated documents).
+     * Vetos are evaluated against the given definition — callers that need markdown must ensure
+     * "md" is in its whitelist. Files that are not regular files or are vetoed are skipped silently.
+     * <p>
+     * The chunk post-processing mirrors {@link #handlePath} exactly: the file is mapped to the
+     * project-relative path, basename-based IDs are rebased onto it, and FullTextChunker is
+     * gated on the project's {@code fulltext} flag. The hub's live update deletes the
+     * re-embedded file's documents and re-adds these chunks, so the IDs must match the
+     * full-reindex IDs — otherwise same-named files in different directories (e.g. two
+     * README.md) collide on the store identity (project, id, part) and the index ends up with
+     * duplicates, which the enrichment then rejects with "Duplicate semantic node id".
      */
     public List<PxChunk> executeForFiles(ProjectDefinition pd, List<Path> files) {
         final Path rootPath = Path.of(pd.getRootDir()).toAbsolutePath().normalize();
@@ -105,14 +113,15 @@ public class ChunkProcess {
                 .filter(Files::isRegularFile)
                 .filter(path -> checkVetos(path, pd))
                 .flatMap(path -> factory.createChunker(path.toFile())
+                        .filter(c -> !(c instanceof FullTextChunker) || pd.isFulltext())
                         .parallel()
-                        .flatMap(chunker -> chunker.chunk(path.toFile())))
-                .map(chunk -> {
-                    if (chunk.getFile() != null) {
-                        chunk.setFile(toProjectRelativePath(rootPath, chunk.getFile()));
-                    }
-                    return chunk;
-                })
+                        .flatMap(chunker -> chunker.chunk(path.toFile()))
+                        .map(chunk -> {
+                            String relPath = toProjectRelativePath(rootPath, chunk.getFile());
+                            chunk.setFile(relPath);
+                            rebaseIdToProjectPath(chunk, relPath, path.getFileName().toString());
+                            return chunk;
+                        }))
                 .toList();
     }
 

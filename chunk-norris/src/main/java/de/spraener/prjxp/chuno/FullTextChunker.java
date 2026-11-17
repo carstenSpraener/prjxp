@@ -9,8 +9,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.File;
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
-import java.nio.file.Files;
 import java.util.stream.Stream;
 
 /**
@@ -38,7 +36,7 @@ public class FullTextChunker implements PxChunker {
     @Override
     public Stream<PxChunk> chunk(File f) {
         try {
-            String content = Files.readString(f.toPath(), StandardCharsets.UTF_8);
+            String content = SourceTextReader.read(f);
             if (content.isEmpty()) {
                 return Stream.of();
             }

@@ -159,6 +159,9 @@ public class LeidenWeighter implements GraphWeighter {
         // pair, duplicates sum, a self-loop counts once.
         Map<Long, double[]> aggregated = new HashMap<>(); // key -> {lo, hi, weight}
         for (GraphEdge e : graph.edges()) {
+            if (e.type().isStructural()) {
+                continue; // navigation edges must not shape the communities
+            }
             Integer a = index.get(e.source());
             Integer b = index.get(e.target());
             if (a == null || b == null) {

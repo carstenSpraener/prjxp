@@ -50,7 +50,9 @@ import static org.mockito.Mockito.when;
  */
 @SpringBootTest(properties = {
         "prjxp.hub.enabled=true",
-        "prjxp.embeddingStoreLucene.vectorDimension=8"
+        "prjxp.embeddingStoreLucene.vectorDimension=8",
+        // The deterministic mock embeds raw strings; the real-model prompt would change the vector.
+        "prjxp.embedding.queryPrompt="
 })
 class CSharpPluginEndToEndTest {
 

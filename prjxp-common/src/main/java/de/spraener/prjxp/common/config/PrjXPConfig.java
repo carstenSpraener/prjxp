@@ -45,6 +45,18 @@ public class PrjXPConfig {
     private LuceneEmbeddingStoreConfig embeddingStoreLucene = new LuceneEmbeddingStoreConfig();
     /** Maximum characters returned by the readFile MCP tool (0 = uncapped). Property: prjxp.reader-max-output-chars */
     private int readerMaxOutputChars = 100_000;
+    /**
+     * Default line window of readFile when no {@code limit} is given (full=true bypasses it).
+     * Property: prjxp.reader-max-lines
+     */
+    private int readerMaxLines = 100;
+    /**
+     * Hard line cap for readFile {@code full=true}. The escape hatch bypasses the 100-line
+     * default but never returns more than this many lines; larger files must be paged with
+     * {@code offset}/{@code limit} or read symbol-by-symbol with {@code readBySignature}.
+     * Property: prjxp.reader-full-max-lines
+     */
+    private int readerFullMaxLines = 200;
     private EmbeddingConfig embedding = new EmbeddingConfig();
     private SemanticGraphConfig semanticGraph = new SemanticGraphConfig();
     private SignatureConfig signature = new SignatureConfig();
@@ -87,6 +99,12 @@ public class PrjXPConfig {
          * enough to complete within {@link #timeout}. Only applies to the OpenAI-compatible model.
          */
         private int maxSegmentsPerBatch = 32;
+        /**
+         * Retrieval query prefix required by the embedding model. mxbai-embed-large-v1
+         * documents {@code "Represent this sentence for searching relevant passages: "};
+         * set an empty value for models that need no prompt (bge-m3, e5, …).
+         */
+        private String queryPrompt = "Represent this sentence for searching relevant passages: ";
     }
 
     @lombok.Data

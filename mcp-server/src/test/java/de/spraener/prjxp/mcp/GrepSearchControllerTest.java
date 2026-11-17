@@ -88,13 +88,13 @@ class GrepSearchControllerTest {
     }
 
     @Test
-    void defaultLimitIs10() throws Exception {
+    void defaultLimitIs30() throws Exception {
         when(service.search(anyString(), anyString(), any(), anyInt(), eq(true), eq(ContentLevel.FULL))).thenReturn(List.of());
 
         mvc.perform(get("/api/tools/grep").param("query", "x").param("project", "myproj"))
                 .andExpect(status().isOk());
 
-        verify(service).search(eq("x"), eq("myproj"), isNull(), eq(10), eq(true), eq(ContentLevel.FULL));
+        verify(service).search(eq("x"), eq("myproj"), isNull(), eq(30), eq(true), eq(ContentLevel.FULL));
     }
 
     @Test

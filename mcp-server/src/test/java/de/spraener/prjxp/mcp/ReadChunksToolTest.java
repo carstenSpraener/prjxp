@@ -51,13 +51,18 @@ class ReadChunksToolTest {
     private PxChunkDaoProvider chunkDaoProvider;
     @Mock
     private PxChunkDao chunkDao;
+    @Mock
+    private GraphSearchService graphSearchService;
+    @Mock
+    private ConfigCatalogService configCatalogService;
 
     private PrjxpMcpTool tool;
 
     @BeforeEach
     void setUp() {
         tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService,
-                projectRegistry, fileListService, fileGraphService, semanticGraphService, chunkDaoProvider);
+                projectRegistry, fileListService, fileGraphService, semanticGraphService, chunkDaoProvider,
+                graphSearchService, configCatalogService);
     }
 
     @Test

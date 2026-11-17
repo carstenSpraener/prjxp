@@ -27,16 +27,20 @@ class PrjxpToolDocsTest {
                 + PrjxpToolDocs.LIST_FILES.length()
                 + PrjxpToolDocs.GRAPH_FILE.length()
                 + PrjxpToolDocs.GRAPH_NODE.length()
+                + PrjxpToolDocs.GRAPH_SEARCH.length()
                 + PrjxpToolDocs.GRAPH_CLUSTER.length()
                 + PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW.length()
                 + PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER.length()
                 + PrjxpToolDocs.SEMANTIC_GRAPH_NODE.length()
                 + PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW.length()
-                + PrjxpToolDocs.READ_CHUNKS.length();
+                + PrjxpToolDocs.READ_CHUNKS.length()
+                + PrjxpToolDocs.LIST_CONFIG.length();
 
+        // Raised 2600 -> 3600: graphSearch (one call replaces the 3-4 call F3/F5 detour)
+        // and listConfig (one call replaces eight config-file reads) are new entry points.
         assertThat(total)
-                .as("sum of the fourteen tool texts (was %d)", total)
-                .isLessThan(2600);
+                .as("sum of the sixteen tool texts (was %d)", total)
+                .isLessThan(3600);
     }
 
     @Test
@@ -50,6 +54,24 @@ class PrjxpToolDocsTest {
                 .contains("readBySignature(FQN#name)");
         assertThat(PrjxpToolDocs.GREP)
                 .contains("readBySignature(FQN#name)");
+    }
+
+    @Test
+    void searchToolsDocumentPointersOnlyWithoutContent() {
+        // the search tools no longer offer a contentLevel knob: the docs must promise
+        // pointers/file list only and steer content reads to readBySignature/readFile
+        assertThat(PrjxpToolDocs.VECTOR_SEARCH)
+                .contains("pointers only")
+                .contains("no content");
+        assertThat(PrjxpToolDocs.GREP)
+                .contains("grep -l")
+                .contains("no content");
+        assertThat(PrjxpToolDocs.READ_FILE)
+                .contains("readBySignature(FQN#name)")
+                .contains("offset/limit")
+                .contains("full=true");
+        assertThat(PrjxpToolDocs.READ_CHUNKS)
+                .contains("1–3");
     }
 
     @Test
@@ -80,8 +102,12 @@ class PrjxpToolDocsTest {
         // Raised 4250 -> 4500: the NAMES (filenames-only) mode and graphNode pagination
         // (maxEdges 500 + offset + totals) are new capabilities the model must know about.
         // The one-time per-request cost (~60 tokens) is dwarfed by the per-call savings of NAMES.
+        // Raised 4500 -> 4600: POINTERS now renders one compact pointer block per file (no content);
+        // the descriptions say so and steer readChunks to few ids, saving far more per call.
+        // Raised 4600 -> 6000: graphSearch + listConfig + the tokenBudget parameter on the
+        // search/graph tools are new capability surface that saves multiple calls per question.
         assertThat(total)
                 .as("sum of all tool texts + parameter descriptions (was %d)", total)
-                .isLessThan(4500);
+                .isLessThan(6000);
     }
 }

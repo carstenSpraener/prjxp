@@ -8,6 +8,8 @@ import com.github.javaparser.ast.body.MethodDeclaration;
 import com.github.javaparser.ast.body.Parameter;
 import com.github.javaparser.ast.body.TypeDeclaration;
 import com.github.javaparser.ast.body.VariableDeclarator;
+import com.github.javaparser.ast.NodeList;
+import com.github.javaparser.ast.expr.AnnotationExpr;
 import com.github.javaparser.ast.expr.Expression;
 import com.github.javaparser.ast.expr.FieldAccessExpr;
 import com.github.javaparser.ast.expr.MethodCallExpr;
@@ -66,6 +68,7 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
     private final List<GraphNode> nodes = new ArrayList<>();
     private final List<PendingEdge> edges = new ArrayList<>();
     private final List<PendingCall> calls = new ArrayList<>();
+    private final List<PendingCall> constructorCalls = new ArrayList<>();
     private final Map<String, Map<String, List<MethodInfo>>> methodIndex = new HashMap<>();
     private final Map<String, String> simpleNameToFqn = new HashMap<>();
     private Path rootDir;
@@ -88,6 +91,7 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
         nodes.clear();
         edges.clear();
         calls.clear();
+        constructorCalls.clear();
         methodIndex.clear();
         simpleNameToFqn.clear();
         weighted = null;
@@ -137,6 +141,7 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
                 String fqn = fqnOf(t);
                 nodes.add(GraphNode.type(fqn, relFile, JavaGraphIds.LANGUAGE));
                 simpleNameToFqn.putIfAbsent(t.getNameAsString(), fqn);
+                addAnnotationEdges(fqn, t.getAnnotations(), ctx);
                 for (ImportDeclaration imp : cu.getImports()) {
                     String target = importTarget(imp);
                     if (target != null) edges.add(new PendingEdge(fqn, target, EdgeType.IMPORT));
@@ -157,11 +162,19 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
                 }
                 for (FieldDeclaration fd : t.getFields()) {
                     addResolvedEdge(fqn, fd.getElementType(), EdgeType.FIELD, ctx);
+                    addGenericArgEdges(fqn, fd.getElementType(), ctx);
+                    addAnnotationEdges(fqn, fd.getAnnotations(), ctx);
                 }
                 // Register ALL methods/constructors first (so intra-class chain calls resolve),
                 // then collect calls.
-                for (MethodDeclaration m : t.getMethods()) registerMethod(fqn, m, ctx);
-                for (ConstructorDeclaration c : t.getConstructors()) registerConstructor(fqn, c, ctx);
+                for (MethodDeclaration m : t.getMethods()) {
+                    String id = registerMethod(fqn, m, ctx);
+                    edges.add(new PendingEdge(fqn, id, EdgeType.CONTAINS));
+                }
+                for (ConstructorDeclaration c : t.getConstructors()) {
+                    String id = registerConstructor(fqn, c, ctx);
+                    edges.add(new PendingEdge(fqn, id, EdgeType.CONTAINS));
+                }
                 for (MethodDeclaration m : t.getMethods()) collectCalls(methodIdOf(fqn, m, ctx), t, m, ctx);
                 for (ConstructorDeclaration c : t.getConstructors()) collectCalls(ctorIdOf(fqn, c, ctx), t, c, ctx);
             }
@@ -191,6 +204,17 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
             String key = c.source() + "\u0000" + target.id() + "\u0000CALL";
             if (seen.add(key)) {
                 result.add(new GraphEdge(c.source(), target.id(), EdgeType.CALL, false));
+            }
+        }
+        // Constructor calls: use the explicit constructor node when one exists, otherwise
+        // fall back to the type node (Graphify models `new Foo()` against the class too).
+        for (PendingCall c : constructorCalls) {
+            MethodInfo ctor = lookup(c.receiverType(), c.methodName(), c.arity());
+            String targetId = ctor != null ? ctor.id() : c.receiverType();
+            if (targetId == null || !byId.containsKey(targetId)) continue;
+            String key = c.source() + "\u0000" + targetId + "\u0000CALL";
+            if (seen.add(key)) {
+                result.add(new GraphEdge(c.source(), targetId, EdgeType.CALL, false));
             }
         }
         return new CodeGraph(List.copyOf(nodes), result);
@@ -248,7 +272,7 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
                 .toList();
     }
 
-    private void registerMethod(String fqn, MethodDeclaration m, Context ctx) {
+    private String registerMethod(String fqn, MethodDeclaration m, Context ctx) {
         List<String> paramFqns = resolveParams(m.getParameters(), ctx);
         String id = JavaGraphIds.methodId(fqn, m.getNameAsString(), paramFqns);
         nodes.add(GraphNode.method(id, ctx.relFile(), JavaGraphIds.LANGUAGE));
@@ -261,12 +285,21 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
                 edges.add(new PendingEdge(id, paramFqn, EdgeType.PARAM));
             }
         }
+        addGenericArgEdges(id, m.getType(), ctx);
+        for (Parameter p : m.getParameters()) {
+            addGenericArgEdges(id, p.getType(), ctx);
+        }
+        addAnnotationEdges(id, m.getAnnotations(), ctx);
+        for (Parameter p : m.getParameters()) {
+            addAnnotationEdges(id, p.getAnnotations(), ctx);
+        }
         methodIndex.computeIfAbsent(fqn, k -> new HashMap<>())
                 .computeIfAbsent(m.getNameAsString(), k -> new ArrayList<>())
                 .add(new MethodInfo(id, paramFqns, returnType));
+        return id;
     }
 
-    private void registerConstructor(String fqn, ConstructorDeclaration c, Context ctx) {
+    private String registerConstructor(String fqn, ConstructorDeclaration c, Context ctx) {
         List<String> paramFqns = resolveParams(c.getParameters(), ctx);
         String id = JavaGraphIds.methodId(fqn, c.getNameAsString(), paramFqns);
         nodes.add(GraphNode.method(id, ctx.relFile(), JavaGraphIds.LANGUAGE));
@@ -275,9 +308,41 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
                 edges.add(new PendingEdge(id, paramFqn, EdgeType.PARAM));
             }
         }
+        for (Parameter p : c.getParameters()) {
+            addGenericArgEdges(id, p.getType(), ctx);
+        }
+        addAnnotationEdges(id, c.getAnnotations(), ctx);
+        for (Parameter p : c.getParameters()) {
+            addAnnotationEdges(id, p.getAnnotations(), ctx);
+        }
         methodIndex.computeIfAbsent(fqn, k -> new HashMap<>())
                 .computeIfAbsent(c.getNameAsString(), k -> new ArrayList<>())
                 .add(new MethodInfo(id, paramFqns, null));
+        return id;
+    }
+
+    /** Adds a GENERIC_ARG edge per first-level type argument of {@code type}. */
+    private void addGenericArgEdges(String source, Type type, Context ctx) {
+        for (Type arg : JavaGraphIds.typeArguments(type)) {
+            String target = JavaGraphIds.resolveTypeName(arg, fqNamesMapper, ctx.pkg(), ctx.imports());
+            if (target != null && !target.isBlank()) {
+                edges.add(new PendingEdge(source, target, EdgeType.GENERIC_ARG));
+            }
+        }
+    }
+
+    /** Adds an ANNOTATION edge per annotation on a declaration. */
+    private void addAnnotationEdges(String source, NodeList<AnnotationExpr> annotations, Context ctx) {
+        if (annotations == null) {
+            return;
+        }
+        for (AnnotationExpr annotation : annotations) {
+            String target = JavaGraphIds.resolveTypeName(
+                    annotation.getNameAsString(), fqNamesMapper, ctx.pkg(), ctx.imports());
+            if (target != null && !target.isBlank()) {
+                edges.add(new PendingEdge(source, target, EdgeType.ANNOTATION));
+            }
+        }
     }
 
     private String methodIdOf(String fqn, MethodDeclaration m, Context ctx) {
@@ -297,6 +362,17 @@ public class JavaCodeGraphBuilder implements CodeGraphBuilder {
                 continue; // unresolved receiver → NO edge (precision-first)
             }
             calls.add(new PendingCall(sourceId, receiver, call.getNameAsString(), call.getArguments().size()));
+        }
+        // Constructor calls (`new Foo(...)`): resolved against the explicit constructor node,
+        // or the type node in build() when the class relies on the default constructor.
+        for (ObjectCreationExpr creation : body.findAll(ObjectCreationExpr.class)) {
+            String type = JavaGraphIds.resolveTypeName(
+                    creation.getType(), fqNamesMapper, ctx.pkg(), ctx.imports());
+            if (type == null || type.isBlank()) {
+                continue;
+            }
+            constructorCalls.add(new PendingCall(sourceId, type,
+                    creation.getType().getNameAsString(), creation.getArguments().size()));
         }
     }
 

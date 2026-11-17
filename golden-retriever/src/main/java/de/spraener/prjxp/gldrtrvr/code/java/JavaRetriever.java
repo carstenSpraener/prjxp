@@ -68,14 +68,34 @@ public class JavaRetriever implements GoldenRetriever {
     private StringBuilder buildPointersPrompt(String projectName, List<ScoredChunk> chunks, SearchParams params) {
         StringBuilder prompt = new StringBuilder();
         int budget = params.getMaxContentLength();
+        // combineScoredChunksByID returns a HashMap order: sort by score so the block per file
+        // is the best-ranked chunk of that file.
+        List<ScoredChunk> sorted = new ArrayList<>(chunks);
+        sorted.sort(Comparator.comparingDouble(ScoredChunk::score).reversed());
+        Map<String, Integer> hitsByFile = new HashMap<>();
+        for (var sc : sorted) {
+            String file = sc.chunk().getFile();
+            if (file != null && !file.isBlank()) {
+                hitsByFile.merge(file, 1, Integer::sum);
+            }
+        }
+        Set<String> emittedFiles = new HashSet<>();
         Set<String> emittedDependencyTargets = new HashSet<>();
         int skipped = 0;
-        for (var sc : chunks) {
+        for (var sc : sorted) {
+            String file = sc.chunk().getFile();
             String dependencyTarget = dependencyTarget(sc.chunk());
             if (dependencyTarget != null && !emittedDependencyTargets.add(dependencyTarget)) {
                 continue;   // this type's dependency pointer was already emitted
             }
-            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score(), dependencyTarget);
+            int hits = 1;
+            if (file != null && !file.isBlank()) {
+                if (!emittedFiles.add(file)) {
+                    continue;   // one pointer block per file
+                }
+                hits = hitsByFile.getOrDefault(file, 1);
+            }
+            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score(), dependencyTarget, hits);
             if (prompt.length() + block.length() > budget) {
                 skipped++;
                 continue;

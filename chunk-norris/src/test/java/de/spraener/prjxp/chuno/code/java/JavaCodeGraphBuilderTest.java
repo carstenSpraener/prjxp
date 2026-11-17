@@ -70,6 +70,10 @@ class JavaCodeGraphBuilderTest {
                     public String localVar() { Helper local = helper; return local.value(); }
                     public String staticCall() { return Helper.make().value(); }
                     public void newExpr() { new Helper().value(); }
+                    public void newService() { new Service(helper); }
+                    public void generic(List<Helper> helpers) {}
+                    @Deprecated
+                    public void annotated() {}
                     public void superCall() { super.toString(); }
                     class Inner { String outerField() { return helper.value(); } }
                 }
@@ -197,6 +201,46 @@ class JavaCodeGraphBuilderTest {
                 .filter(e -> e.type() == EdgeType.CALL && e.source().equals("demo.Service#superCall()"))
                 .anyMatch(e -> e.target().contains("toString")))
                 .isFalse();
+    }
+
+    @Test
+    void build_addsContainsEdgesFromClassToMethodsAndConstructors() {
+        CodeGraph graph = buildAll();
+
+        assertThat(hasEdge(graph, "demo.Service", "demo.Service#run(demo.Helper)", EdgeType.CONTAINS)).isTrue();
+        assertThat(hasEdge(graph, "demo.Service", "demo.Service#f(int)", EdgeType.CONTAINS)).isTrue();
+        assertThat(hasEdge(graph, "demo.Service", "demo.Service#Service(demo.Helper)", EdgeType.CONTAINS)).isTrue();
+        assertThat(hasEdge(graph, "demo.Helper", "demo.Helper#value()", EdgeType.CONTAINS)).isTrue();
+    }
+
+    @Test
+    void build_addsConstructorCallEdges() {
+        CodeGraph graph = buildAll();
+
+        // no explicit constructor on Helper -> CALL points at the type node
+        assertThat(hasEdge(graph, "demo.Service#newExpr()", "demo.Helper", EdgeType.CALL, false)).isTrue();
+        assertThat(hasEdge(graph, "demo.Helper#make()", "demo.Helper", EdgeType.CALL, false)).isTrue();
+        // explicit constructor -> CALL points at the constructor node
+        assertThat(hasEdge(graph, "demo.Service#newService()", "demo.Service#Service(demo.Helper)", EdgeType.CALL)).isTrue();
+    }
+
+    @Test
+    void build_addsGenericArgumentEdges() {
+        CodeGraph graph = buildAll();
+
+        String methodId = "demo.Service#generic(List)";
+        assertThat(hasEdge(graph, methodId, "demo.Helper", EdgeType.GENERIC_ARG)).isTrue();
+        assertThat(hasEdge(graph, "demo.Service#external(List)", "String", EdgeType.GENERIC_ARG)).isTrue();
+    }
+
+    @Test
+    void build_addsAnnotationEdges() {
+        CodeGraph graph = buildAll();
+
+        assertThat(graph.edges().stream()
+                .anyMatch(e -> e.type() == EdgeType.ANNOTATION
+                        && e.source().equals("demo.Service#annotated()")
+                        && e.target().contains("Deprecated"))).isTrue();
     }
 
     @Test

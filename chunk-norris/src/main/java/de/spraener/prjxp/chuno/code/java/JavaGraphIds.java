@@ -23,6 +23,21 @@ public final class JavaGraphIds {
         return type.asString();
     }
 
+    /**
+     * First-level type arguments of a type ({@code List<Foo>} -> {@code [Foo]}). Arrays are
+     * unwrapped once per dimension; nested generics are deliberately not expanded
+     * (a single level is enough for the benchmark questions and avoids an edge explosion).
+     */
+    public static List<Type> typeArguments(Type type) {
+        if (type == null) return List.of();
+        if (type.isClassOrInterfaceType()) {
+            var arguments = type.asClassOrInterfaceType().getTypeArguments();
+            return arguments.isPresent() ? arguments.get() : List.of();
+        }
+        if (type.isArrayType()) return typeArguments(type.asArrayType().getComponentType());
+        return List.of();
+    }
+
     /** Mapper FQN resolution; blank/unknown -> the raw source name (never null when raw is non-blank). */
     public static String resolveTypeName(String raw, JavaFQNamesMapper mapper, String fromPkg, List<String> imports) {
         if (raw == null || raw.isBlank()) return null;

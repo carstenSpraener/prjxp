@@ -56,7 +56,7 @@ public class ByIndexController {
             @RequestParam(name = "project", required = true)
             String project,
 
-            @Parameter(description = "Maximum number of results (default 10, max 100).")
+            @Parameter(description = "Maximum number of results (default 30, max 100).")
             @RequestParam(name = "limit", required = false, defaultValue = "" + SearchLimits.DEFAULT_LIMIT)
             int limit
     ) {

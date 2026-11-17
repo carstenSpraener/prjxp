@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 class PointerLayerSemanticTest {
 
     @Test
-    void markdownRetrieverEmitsSemanticAndExistingFilePointers() {
+    void markdownPointerIsCompactAndOmitsSemanticPointers() {
         PxChunk chunk = chunk("c1", "text/markdown", "a.md", null,
                 Map.of(GraphMetadata.SEMANTIC_CLUSTER_ID, "s3",
                         GraphMetadata.SEMANTIC_NODE_ID, "n1"));
@@ -34,25 +34,24 @@ class PointerLayerSemanticTest {
                 "p", List.of(new ScoredChunk(chunk, 0.9)), pointerParams()).toString();
 
         assertThat(prompt).contains("→ readFile(\"a.md\")")
-                .contains("cluster_id: \"s3\"")
-                .contains("→ semanticGraphNode(\"n1\")");
+                .doesNotContain("cluster_id:")
+                .doesNotContain("semanticGraphNode");
     }
 
     @Test
-    void markdownPointerOmitsClusterLineWithoutClusterMetadata() {
+    void markdownPointerOmitsClusterAndSemanticNodeLines() {
         PxChunk chunk = chunk("c1", "text/markdown", "a.md", null,
                 Map.of(GraphMetadata.SEMANTIC_NODE_ID, "n1"));
         String prompt = markdownRetriever(chunk).buildPromptForFindings(
                 "p", List.of(new ScoredChunk(chunk, 0.9)), pointerParams()).toString();
 
-        // The renderer emits each field independently: no cluster id, but the node pointer stays.
         assertThat(prompt).contains("→ readFile(\"a.md\")")
                 .doesNotContain("cluster_id:")
-                .contains("→ semanticGraphNode(\"n1\")");
+                .doesNotContain("semanticGraphNode");
     }
 
     @Test
-    void textFilePointerIncludesSemanticNode() {
+    void textFilePointerOmitsSemanticNode() {
         PxChunk chunk = chunk("c2", "text/plain", "notes.txt", null,
                 Map.of(GraphMetadata.SEMANTIC_CLUSTER_ID, "s2",
                         GraphMetadata.SEMANTIC_NODE_ID, "node-2"));
@@ -60,12 +59,12 @@ class PointerLayerSemanticTest {
                 "p", List.of(new ScoredChunk(chunk, 0.9)), pointerParams()).toString();
 
         assertThat(prompt).contains("→ readFile(\"notes.txt\")")
-                .contains("cluster_id: \"s2\"")
-                .contains("→ semanticGraphNode(\"node-2\")");
+                .doesNotContain("cluster_id:")
+                .doesNotContain("semanticGraphNode");
     }
 
     @Test
-    void textDependencyPointerIncludesSemanticNodeAndCodeGraphPointer() {
+    void textDependencyPointerKeepsCodeGraphPointerOnly() {
         PxChunk chunk = chunk("de.ex.Foo.dependencies", "text/plain", null, "de.ex.Foo",
                 Map.of("java_code_section", "dependenciesInfo",
                         GraphMetadata.SEMANTIC_CLUSTER_ID, "s1",
@@ -74,8 +73,8 @@ class PointerLayerSemanticTest {
                 "p", List.of(new ScoredChunk(chunk, 0.9)), pointerParams()).toString();
 
         assertThat(prompt).contains("→ graphNode(\"de.ex.Foo\")")
-                .contains("cluster_id: \"s1\"")
-                .contains("→ semanticGraphNode(\"node-3\")");
+                .doesNotContain("cluster_id:")
+                .doesNotContain("semanticGraphNode");
     }
 
     @Test

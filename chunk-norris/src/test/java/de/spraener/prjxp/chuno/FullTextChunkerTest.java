@@ -6,6 +6,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.File;
 import java.nio.file.Files;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
@@ -41,6 +42,19 @@ class FullTextChunkerTest {
         assertThat(part.getPart()).isZero();
         assertThat(part.getTotal()).isEqualTo(1);
         assertThat(PxChunk.combine(new ArrayList<>(parts)).getContent()).isEqualTo(content);
+    }
+
+    @Test
+    void latin1FileIsDecodedInsteadOfBeingDropped() throws Exception {
+        // Same legacy-encoding guard as DefaultLineBreakTextChunker: a file that is not
+        // valid UTF-8 must still reach the index instead of being skipped silently.
+        File f = tempDir.resolve("latin1.txt").toFile();
+        Files.write(f.toPath(), "Spaltenüberschrift\n".getBytes(StandardCharsets.ISO_8859_1));
+
+        List<PxChunk> parts = uut.chunk(f).toList();
+
+        assertThat(parts).hasSize(1);
+        assertThat(parts.get(0).getContent()).contains("Spaltenüberschrift");
     }
 
     @Test

@@ -402,10 +402,20 @@ class LucenePxChunkDaoTest {
     }
 
     @Test
-    void searchVectorEmbedsQuery() {
+    void searchVectorEmbedsQueryWithTheModelPrompt() {
         addChunk("chunk-1", "content");
 
         dao.searchVector("my question", Map.of(), 5);
+
+        verify(embeddingModel).embed(LucenePxChunkDao.DEFAULT_QUERY_PROMPT + "my question");
+    }
+
+    @Test
+    void searchVectorWithoutPromptEmbedsTheRawQuery() {
+        LucenePxChunkDao noPromptDao = new LucenePxChunkDao(store, embeddingModel, storeReference, "");
+        addChunk("chunk-1", "content");
+
+        noPromptDao.searchVector("my question", Map.of(), 5);
 
         verify(embeddingModel).embed("my question");
     }

@@ -42,7 +42,7 @@ public class GrepSearchController {
             @RequestParam(name = "language", required = false)
             String language,
 
-            @Parameter(description = "Maximum number of results (default 10, max 100).")
+            @Parameter(description = "Maximum number of results (default 30, max 100).")
             @RequestParam(name = "limit", required = false, defaultValue = "" + SearchLimits.DEFAULT_LIMIT)
             int limit,
 
