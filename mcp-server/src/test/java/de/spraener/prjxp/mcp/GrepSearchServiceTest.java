@@ -806,4 +806,32 @@ class GrepSearchServiceTest {
         assertThat(result.hits()).hasSize(2);
         assertThat(result.note()).contains("2 of 3");
     }
+
+    @Test
+    void limitPrefersFilesWithMoreHitsInsteadOfIndexOrder() {
+        stubAllChunks(
+                lineChunk("c1", "ZMinor.java", "1", "run"),
+                lineChunk("c2", "AMajor.java", "1", "run\nrun\nrun"));
+
+        GrepResult result = service.searchMatches("run", "p", null, 3, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).hasSize(3);
+        assertThat(result.hits()).allMatch(h -> h.file().equals("AMajor.java"));
+        assertThat(result.note()).contains("3 of 4");
+    }
+
+    @Test
+    void totalCountsAllMatchesEvenWhenOnlyAPrefixIsRendered() {
+        StringBuilder many = new StringBuilder();
+        for (int i = 0; i < 500; i++) {
+            many.append("run\n");
+        }
+        stubAllChunks(lineChunk("c1", "A.java", "1", many.toString()),
+                lineChunk("c2", "B.java", "1", "run"));
+
+        GrepResult result = service.searchMatches("run", "p", null, 5, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).hasSize(5);
+        assertThat(result.totalFiles()).isEqualTo(501);
+    }
 }

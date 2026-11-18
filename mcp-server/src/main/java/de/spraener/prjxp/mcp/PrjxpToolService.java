@@ -76,10 +76,11 @@ public class PrjxpToolService {
             Integer maxResults,
             String sourceType,
             Boolean includeTests,
-            Integer tokenBudget
+            Integer tokenBudget,
+            boolean snippets
     ) {
         return vectorSearch(userQuestion, projectName, similarity, maxResults, sourceType, includeTests,
-                tokenBudget, true);
+                tokenBudget, snippets);
     }
 
     private String vectorSearch(String userQuestion, String projectName, Double similarity, Integer maxResults,
@@ -193,7 +194,11 @@ public class PrjxpToolService {
      * an invalid regex is reported as an error note instead of an empty result.
      */
     public String grepP2(String query, String project, String mode, String language, Integer limit,
-                         Boolean includeTests) {
+                         Boolean includeTests, boolean lines) {
+        if (!lines) {
+            // Isolation arm: P2 surface, but the historical per-file grep contract.
+            return grep(query, project, language, limit, includeTests);
+        }
         GrepMode grepMode = GrepMode.parse(mode, GrepMode.SUBSTRING);
         int maxHits = limit == null ? 20 : Math.max(1, Math.min(limit, SearchLimits.MAX_LIMIT));
         boolean tests = includeTests == null || includeTests;
@@ -231,7 +236,11 @@ public class PrjxpToolService {
 
     /** P2 symbol read: a class FQN additionally returns its first method bodies. */
     public SymbolReadResult readBySignatureP2(String method, String container, String project,
-                                              Boolean includeBodies, Integer maxBodies) {
+                                              Boolean includeBodies, Integer maxBodies, boolean bodiesEnabled) {
+        if (!bodiesEnabled) {
+            // Isolation arm: P2 surface, but the historical frame-only read.
+            return readBySignature(method, container, project);
+        }
         int bodies = maxBodies == null ? 3 : Math.max(0, Math.min(maxBodies, 10));
         boolean withBodies = includeBodies == null || includeBodies;
         return capSymbolResult(symbolReaderService.readBySignature(method, container, project,

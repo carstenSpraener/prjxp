@@ -22,6 +22,8 @@ import java.util.List;
  *   <li>{@code readBySignature} appends method bodies to a class frame,</li>
  *   <li>only the nine tools that were actually used in both corpora are exposed.</li>
  * </ul>
+ * The three rendering measures (grep lines, snippets, bodies) can be disabled one at a time via
+ * {@link P2Measures}, so an A/B run can attribute an effect to a single measure.
  */
 @Component
 @ConditionalOnExpression("${prjxp.hub.enabled:false} && '${prjxp.hub.tool-profile:p1}'.toLowerCase() == 'p2'")
@@ -30,6 +32,7 @@ public class PrjxpP2McpTool {
 
     private final PrjxpToolService toolService;
     private final HubToolProfile profile;
+    private final P2Measures measures;
 
     @McpTool(name = "vectorSearch", description = PrjxpP2ToolDocs.VECTOR_SEARCH)
     public String vectorSearch(
@@ -46,7 +49,7 @@ public class PrjxpP2McpTool {
             @McpToolParam(description = "Max output tokens, default 2000.", required = false)
             Integer tokenBudget) {
         return toolService.vectorSearchP2(userQuestion, profile.boundProject(), similarity, maxResults,
-                sourceType, includeTests, tokenBudget);
+                sourceType, includeTests, tokenBudget, measures.snippets());
     }
 
     @McpTool(name = "grep", description = PrjxpP2ToolDocs.GREP)
@@ -61,7 +64,8 @@ public class PrjxpP2McpTool {
             Integer limit,
             @McpToolParam(description = "Include test sources (default true).", required = false)
             Boolean includeTests) {
-        return toolService.grepP2(query, profile.boundProject(), mode, language, limit, includeTests);
+        return toolService.grepP2(query, profile.boundProject(), mode, language, limit, includeTests,
+                measures.grepLines());
     }
 
     @McpTool(name = "readFile", description = PrjxpP2ToolDocs.READ_FILE)
@@ -88,7 +92,7 @@ public class PrjxpP2McpTool {
             @McpToolParam(description = "Max appended bodies, default 3 (max 10).", required = false)
             Integer maxBodies) {
         return toolService.readBySignatureP2(method, container, profile.boundProject(),
-                includeBodies, maxBodies);
+                includeBodies, maxBodies, measures.bodies());
     }
 
     @McpTool(name = "listFiles", description = PrjxpP2ToolDocs.LIST_FILES)

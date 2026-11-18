@@ -23,7 +23,7 @@ class PrjxpP2McpToolTest {
     void setUp() {
         service = mock(PrjxpToolService.class);
         profile = mock(HubToolProfile.class);
-        tool = new PrjxpP2McpTool(service, profile);
+        tool = new PrjxpP2McpTool(service, profile, new P2Measures(true, true, true));
     }
 
     @Test
@@ -48,7 +48,7 @@ class PrjxpP2McpToolTest {
 
         tool.grep("run", "regex", "java", 5, false);
 
-        verify(service).grepP2("run", "legacy", "regex", "java", 5, false);
+        verify(service).grepP2("run", "legacy", "regex", "java", 5, false, true);
     }
 
     @Test
@@ -57,7 +57,7 @@ class PrjxpP2McpToolTest {
 
         tool.vectorSearch("chunking", 0.8, 3, "all", true, 1000);
 
-        verify(service).vectorSearchP2("chunking", "prjxp", 0.8, 3, "all", true, 1000);
+        verify(service).vectorSearchP2("chunking", "prjxp", 0.8, 3, "all", true, 1000, true);
     }
 
     @Test
@@ -66,7 +66,21 @@ class PrjxpP2McpToolTest {
 
         tool.readBySignature("a.B", null, true, 2);
 
-        verify(service).readBySignatureP2("a.B", null, "prjxp", true, 2);
+        verify(service).readBySignatureP2("a.B", null, "prjxp", true, 2, true);
+    }
+
+    @Test
+    void measureSwitchesReachTheService() {
+        when(profile.boundProject()).thenReturn("prjxp");
+        PrjxpP2McpTool ablated = new PrjxpP2McpTool(service, profile, new P2Measures(false, false, false));
+
+        ablated.grep("run", null, null, null, null);
+        ablated.vectorSearch("chunking", null, null, null, null, null);
+        ablated.readBySignature("a.B", null, null, null);
+
+        verify(service).grepP2("run", "prjxp", null, null, null, null, false);
+        verify(service).vectorSearchP2("chunking", "prjxp", null, null, null, null, null, false);
+        verify(service).readBySignatureP2("a.B", null, "prjxp", null, null, false);
     }
 
     @Test

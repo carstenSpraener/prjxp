@@ -116,8 +116,13 @@ public class GrepSearchService {
         }
         String mime = languageMime(language);
 
-        List<SearchHit> hits = new ArrayList<>();
+        // Collect per file, then rank before applying the limit. Emitting in index order made the
+        // limit an arbitrary prefix (test code and unrelated files crowded out the real hits).
+        Map<String, List<SearchHit>> hitsByFile = new LinkedHashMap<>();
+        Map<String, Integer> countByFile = new LinkedHashMap<>();
         int total = 0;
+        int stored = 0;
+        int storeBudget = Math.max(limit, limit * 3);
         try (Stream<PxChunk> chunks = dao.findAll()) {
             Iterator<PxChunk> it = chunks.iterator();
             while (it.hasNext()) {
@@ -132,13 +137,30 @@ public class GrepSearchService {
                         continue;
                     }
                     total++;
-                    if (hits.size() >= limit) {
-                        continue;
+                    countByFile.merge(chunk.getFile(), 1, Integer::sum);
+                    if (stored >= storeBudget) {
+                        continue;   // keep memory bounded; the count above still reflects the file
                     }
+                    stored++;
+                    List<SearchHit> perFile = hitsByFile.computeIfAbsent(chunk.getFile(), k -> new ArrayList<>());
                     int line = baseLine + i;
-                    hits.add(new SearchHit(chunk.getId(), 0.0, chunk.getFile(), line, line,
+                    perFile.add(new SearchHit(chunk.getId(), 0.0, chunk.getFile(), line, line,
                             snippet(lines[i]), SOURCE, Map.of()));
                 }
+            }
+        }
+        List<String> rankedFiles = new ArrayList<>(countByFile.keySet());
+        rankedFiles.sort(Comparator.comparingInt((String f) -> countByFile.getOrDefault(f, 0)).reversed());
+        List<SearchHit> hits = new ArrayList<>();
+        for (String file : rankedFiles) {
+            for (SearchHit hit : hitsByFile.getOrDefault(file, List.of())) {
+                if (hits.size() >= limit) {
+                    break;
+                }
+                hits.add(hit);
+            }
+            if (hits.size() >= limit) {
+                break;
             }
         }
         String note = total > hits.size()

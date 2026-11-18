@@ -1,6 +1,6 @@
 # Benchmark-Befund 02 — P-Arm: Toolnutzung und Antwortqualität
 
-> **Status:** P2 gemessen — Guardrail verletzt, P1 bleibt Standard, 18.11.2026
+> **Status:** P2 gemessen, Befunde geprüft — Guardrail verletzt, P1 bleibt Standard, 18.11.2026
 > **Auslöser:** Lauf 3 über beide Korpora (`prjxp-bench`, 16.11.2026), P-Arm,
 > Modell `qwen3.8-27b-splash`
 > **Betroffene Module:** `mcp-server` (Tool-Vertrag, Suche, Read-Rendering),
@@ -375,7 +375,82 @@ Die zusätzlichen Zeilen-Treffer erhöhen den Kontext, ohne die Abdeckung zu
 verbessern; `readBySignature` mit Rümpfen wird etwas häufiger genutzt
 (prjxp 99 → 117), ohne Precision zu halten.
 
-**Nächste Varianten (je eigener A/B-Lauf, nicht in P2 gemischt):**
+> **Einschränkung (siehe §13):** Das Delta ist nicht kausal dem P2-Vertrag\n> zuzuordnen. `grep` war durch einen 10.000-Treffer-Deckel und fehlende\n> Rangfolge defekt, und Snippet/Rümpfe teilen sich Token-Budget und\n> Aufruf-Steering. §13 enthält die Einzelprüfung, die Fixes und den\n> Ablationslauf.\n\n**Nächste Varianten (je eigener A/B-Lauf, nicht in P2 gemischt):**
 `grep` standardmäßig ohne Tests und mit kleinerem `limit`, kein
 `readChunks`-Hinweis in `vectorSearch`, `readBySignature` ohne Rumpf-Default.
 Erst wenn eine Variante die Guardrail hält, wird sie zum neuen Profil.
+
+## 13. Befundprüfung: Welche Maßnahme überschreibt welche? (18.11.2026)
+
+Der A/B-Lauf bündelt fünf Änderungen. Vor der Interpretation wurde deshalb
+jede Maßnahme einzeln gegen die 108 Sessions und gegen beide Hubs geprüft.
+Ergebnis: **das Qualitätsdelta aus §12 ist nicht dem P2-Vertrag zuzuschreiben.**
+Zwei Maßnahmen waren defekt, zwei überlagern sich über gemeinsame Ressourcen.
+
+### 13.1 M2 (`grep` mit `file:line`) war nicht korrekt messbar
+
+* **Harter 10.000-Treffer-Deckel.** `LucenePxChunkDao.findAll()` lief über
+  `searcher.search(projectFilter(), 10000)`. Der Index hat 14.418 (`prjxp`)
+  bzw. 40.364 (`legacy`) Chunks, der Zeilen-Scan sah also nur ca. 69 % bzw.
+  25 % des Projekts — ohne Hinweis. Nachweis: `grep "^package "` meldete auf
+  `prjxp` „1 of 697“ Treffer bei 991 Dateien; nach dem Fix „1 of 984“.
+* **Keine Rangfolge.** Treffer wurden in Index-Reihenfolge ausgegeben, `limit`
+  wirkte als willkürliches Präfix. Dadurch dominierte Testcode, und
+  `FileGraphService` lieferte nur Treffer aus `FileGraphServiceTest`.
+* **Geänderte Semantik.** P1 nutzt `searchFullText` (StandardAnalyzer, alle
+  Tokens als MUST, kleingeschrieben, pro Datei gruppiert); P2 scannt Zeilen
+  literal. `grep "Terminfreigabe"` findet in P1 nichts (Token wird zu
+  `terminfreigabe`), in P2 dagegen Zeilen — die beiden Arme vergleichen also
+  nicht dieselbe Operation.
+* **Tests standardmäßig an.** P2 setzt `includeTests=true`; damit sind die
+  meistgenutzten Treffer Testdateien. Das ist eine eigene Design-Entscheidung,
+  die mit der Zeilen-Semantik vermischt wurde.
+
+**Fix:** `searchAllLucene` nutzt jetzt `reader.numDocs()` statt 10.000;
+`searchMatches` sammelt pro Datei, sortiert Dateien nach Trefferzahl und
+wendet `limit` erst danach an (Speicher über ein Budget begrenzt, `total`
+zählt weiterhin alle Treffer). Neue Tests: Rangfolge, Präfix-Rendering,
+Vollzähligkeit.
+
+### 13.2 M3 und M4 teilen sich das Token-Budget
+
+`vectorSearch` ist auf 2.000 Tokens gedeckelt (`ToolResultCaps.SEARCH_TOKENS`).
+Das Snippet aus M3 verbraucht diesen Deckel: 24 von 51 P2-Aufrufen lagen am
+Limit (P1: 6 von 57), und die Zahl der Pointer-Blöcke fiel von 8 auf 6
+(maximal 16 → 12). M3 reduziert damit faktisch `maxResults`, statt nur
+Zusatzinformation zu liefern. Gleichzeitig ist der `readChunks`-Hinweis
+wirkungslos: nur 3 Aufrufe in 108 Sessions.
+
+M4 (`readBySignature` mit Rümpfen) ist die größte Kontext-Inflation:
+168 → 204 Aufrufe, 2.172 → 3.518 Zeichen pro Aufruf, in Summe 365k → 718k
+Zeichen, Maximum 13.940 Zeichen (P1: 8.083). Es gibt keine Gesamtobergrenze.
+Beide Maßnahmen laufen zusätzlich in dasselbe 8-Aufrufe-Steering (P: 42/54,
+P2: 45/54), das den Kontext nachträglich kürzt. Ein Delta lässt sich daher
+weder M3 noch M4 zuordnen.
+
+### 13.3 M5 verdeckt M2/M4 im Kopfmaß
+
+Die Token-Ersparnis von 7,7 % stammt aus dem Tool-Schema: 2.966 → 1.528
+Tokens pro Turn (−1.438). Die Tool-Ausgabe stieg im selben Lauf von 6.066 auf
+8.399 Tokens. Das Kopfmaß „weniger Tokens“ ist damit eine Folge von M1/M5
+und maskiert die Inflation aus M2/M4.
+
+### 13.4 M1 verstärkt M2
+
+`listProjects` war das einzige entfernte Tool, das P1 tatsächlich genutzt hat
+(36 Aufrufe, je 100 Zeichen). Sein Wegfall lenkt die Projekterkennung auf
+`grep` um (42 → 156 Aufrufe), dessen Defekt aus 13.1 damit stärker wiegt.
+
+### 13.5 Konsequenz
+
+Die Guardrail-Aussage aus §12 bleibt gültig (P1 bleibt Standard), die
+Begründung aber nicht: der gemessene Unterschied ist durch den Grep-Deckel,
+die fehlende Rangfolge und die Budget-Kollision verzerrt. Künftige Aussagen
+über P2 brauchen eine Ablation, in der genau eine Maßnahme variiert.
+
+**Umsetzung:** `prjxp.hub.p2.grep-lines`, `prjxp.hub.p2.snippets`,
+`prjxp.hub.p2.bodies` (Default `true`, in `P2Measures`) schalten die drei
+Rendering-Maßnahmen einzeln. `harness/ablation.sh` fährt je Variante einen
+eigenen A/B-Lauf (`all`, `nogrep`, `nosnip`, `nobody`) mit eigenem Run-ID;
+`hub_meta` hält die Variante als `p2_measures` fest. Oberfläche,
+Projektbindung und Budgets bleiben dabei konstant.

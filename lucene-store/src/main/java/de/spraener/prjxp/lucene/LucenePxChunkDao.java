@@ -352,7 +352,11 @@ public class LucenePxChunkDao implements PxChunkDao {
             Query luceneQuery = LuceneFilterConverter.convert(projectFilter());
             IndexSearcher searcher = luceneStore.getSearcher();
             try {
-                TopDocs topDocs = searcher.search(luceneQuery, 10000);
+                // The scan must never be silently truncated: the old fixed 10_000 cap made
+                // findAll() return a prefix of the index for corpora above that size, so
+                // callers (e.g. the P2 grep line scan) searched only part of the project.
+                TopDocs topDocs = searcher.search(luceneQuery,
+                        Math.max(1, searcher.getIndexReader().numDocs()));
                 List<PxChunk> result = new ArrayList<>();
                 for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
                     org.apache.lucene.document.Document doc = searcher.storedFields().document(scoreDoc.doc);
