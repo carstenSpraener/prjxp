@@ -1,6 +1,6 @@
 # Benchmark-Befund 02 — P-Arm: Toolnutzung und Antwortqualität
 
-> **Status:** P2 umgesetzt, Messung offen, 17.11.2026
+> **Status:** P2 gemessen — Guardrail verletzt, P1 bleibt Standard, 18.11.2026
 > **Auslöser:** Lauf 3 über beide Korpora (`prjxp-bench`, 16.11.2026), P-Arm,
 > Modell `qwen3.8-27b-splash`
 > **Betroffene Module:** `mcp-server` (Tool-Vertrag, Suche, Read-Rendering),
@@ -335,3 +335,47 @@ nur die Annotationen. Abgedeckt sind Profil-/Bindungslogik, Grep-Modi mit
 Zeilennummern, Klassen-Bodies, Snippet/`readChunks`-Rendering und die
 9-Tool-Fläche. Modultests: `prjxp-common`, `golden-retriever`, `lucene-store`,
 `mcp-server` grün.
+
+## 12. A/B-Ergebnis P1 vs. P2 (18.11.2026)
+
+**Anordnung:** ein Lauf über beide Korpora (`prjxp` F1–F9, `legacy` L1–L9),
+je 3 Wiederholungen, Arm-Modell `qwen3.8-27b-splash`, Judge `qwen3.6-27b`
+(≠ Arm-Modell, 108/108 Sessions per LLM bewertet). P1 lief unverändert gegen
+`prjxp-hub`, P2 gegen `prjxp-hub-p2` (Profil `p2`, gebundenes Projekt je Korpus,
+eigenes Datenvolume). Beide Hubs aus demselben Image, gleicher Index, gleicher
+Quellbaum; `p2_hub_drift=false`, `p2_tool_count=9`.
+
+Läufe: `ab-p2-prjxp-20261117T132231Z`, `ab-p2-legacy-20261117T132231Z`.
+
+| Arm/Korpus | n | Coverage | Precision |
+|---|---|---|---|
+| P gepoolt | 54 | **0,414** | **0,921** |
+| P2 gepoolt | 54 | 0,352 (−0,062) | 0,860 (−0,061) |
+| P prjxp | 27 | 0,501 | 0,952 |
+| P2 prjxp | 27 | 0,459 (−0,042) | 0,899 |
+| P legacy | 27 | 0,327 | 0,891 |
+| P2 legacy | 27 | 0,245 (−0,082) | 0,821 |
+
+**Guardrail verletzt:** gepoolte Precision 0,860 < 0,921 − 0,01 und in beiden
+Korpora mehr als 0,03 schlechter. P2 wird deshalb **nicht** Standard; `p1`
+bleibt Default. Der Schalter bleibt für weitere Varianten erhalten.
+
+**Nebenbefunde (gepoolt, nur `ok`-Sessions):** P2 braucht 7,7 % weniger Tokens
+(47.913 vs. 51.935), aber 12 % mehr Tool-Aufrufe (10,1 vs. 9,0) und 38 % mehr
+Tool-Ausgabe (33.598 vs. 24.263 Zeichen) bei gleicher Wanduhrzeit (61,5 vs.
+60,7 s). Die Token-Ersparnis kommt also aus dem kleineren Tool-Schema, nicht aus
+besseren Antworten.
+
+**Wirkung der Einzelmaßnahmen:** `grep` wird deutlich häufiger genutzt
+(prjxp 15 → 87 Aufrufe, legacy 27 → 69) und liefert `datei:zeile` statt Dateien.
+Das führte messbar in Testcode und auf falsche Einstiegspunkte: bei L9
+antwortet P2 konsistent über `ZvfImportFromBauplanFacadeImpl`, während P1 (und
+der Antwortschlüssel) über `ImportZvfXmlAction` geht — Coverage 0,00 vs. 0,42.
+Die zusätzlichen Zeilen-Treffer erhöhen den Kontext, ohne die Abdeckung zu
+verbessern; `readBySignature` mit Rümpfen wird etwas häufiger genutzt
+(prjxp 99 → 117), ohne Precision zu halten.
+
+**Nächste Varianten (je eigener A/B-Lauf, nicht in P2 gemischt):**
+`grep` standardmäßig ohne Tests und mit kleinerem `limit`, kein
+`readChunks`-Hinweis in `vectorSearch`, `readBySignature` ohne Rumpf-Default.
+Erst wenn eine Variante die Guardrail hält, wird sie zum neuen Profil.
