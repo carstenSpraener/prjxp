@@ -14,10 +14,13 @@ import dev.langchain4j.store.embedding.filter.logical.And;
 import dev.langchain4j.store.embedding.filter.logical.Not;
 import dev.langchain4j.store.embedding.filter.logical.Or;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
 import org.junit.jupiter.api.Test;
 
 import java.util.Arrays;
+import java.util.List;
+import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -121,13 +124,39 @@ class LuceneFilterConverterTest {
     void isIn() {
         Filter filter = new IsIn("key", Arrays.asList("a", "b", "c"));
         var query = LuceneFilterConverter.convert(filter);
-        assertThat(query).isInstanceOf(BooleanQuery.class);
+        assertThat(query).isInstanceOf(TermInSetQuery.class);
     }
 
     @Test
     void isNotIn() {
         Filter filter = new IsNotIn("key", Arrays.asList("a", "b"));
         var query = LuceneFilterConverter.convert(filter);
+        assertThat(query).isInstanceOf(BooleanQuery.class);
+        assertThat(((BooleanQuery) query).clauses())
+                .anyMatch(c -> c.query() instanceof TermInSetQuery);
+    }
+
+    @Test
+    void isInWithMoreThan1024ValuesDoesNotHitTheClauseLimit() {
+        // Ein Live-Update schickt jede geänderte Datei als IsIn-Filter. Die alte
+        // Clause-pro-Wert-Form brach ab hier mit TooManyClauses ab.
+        List<Object> values = IntStream.range(0, 2000)
+                .mapToObj(i -> (Object) ("file-" + i))
+                .toList();
+
+        var query = LuceneFilterConverter.convert(new IsIn("key", values));
+
+        assertThat(query).isInstanceOf(TermInSetQuery.class);
+    }
+
+    @Test
+    void isNotInWithMoreThan1024ValuesDoesNotHitTheClauseLimit() {
+        List<Object> values = IntStream.range(0, 2000)
+                .mapToObj(i -> (Object) ("file-" + i))
+                .toList();
+
+        var query = LuceneFilterConverter.convert(new IsNotIn("key", values));
+
         assertThat(query).isInstanceOf(BooleanQuery.class);
     }
 }
