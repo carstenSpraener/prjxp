@@ -605,3 +605,42 @@ unter P1 (Grenze 0.03), getrieben von L5 (−0.333), L6 (−0.429) und L9
 Wichtig: §16 („Guardrail OK“) galt unter dem 3.6-Judge. Der Judge-Wechsel
 verschiebt die absoluten Werte deutlich und dreht das Legacy-Vorzeichen —
 Ergebnisse sind nur innerhalb desselben Judge-Modells vergleichbar.
+
+## 19. Beguckung des Legacy-Einbruchs (L5, L6, L9)
+
+Die drei Fragen sind deterministisch: alle Wiederholungen liefern identische
+Antworten und Token-Zahlen, der Effekt ist also systematisch. Vergleich der
+Werkzeugfolgen (P1 vs. P2, je r1):
+
+| Frage | P1 | P2 |
+|---|---|---|
+| L5 | `readBySignature` 2×, `graphNode` 2×, `listFiles` 3× | nur `listFiles` 5×, `grep` 2× — **kein einziges `readFile`/`readBySignature`** |
+| L6 | `listFiles` 7×, `graphNode` 1× | ähnlich, liest aber die falschen Dateien |
+| L9 | `readBySignature` 3×, `readFile` 2× | `readFile` 5×, folgt aber dem **alternativen** Bauplan-Pfad |
+
+Befunde:
+
+1. **L5 ist ein echter Nutzungsunterschied.** P2 beantwortet „neue Methode im
+   VorgangService“ aus Grep-Zeilen (`file:line`) heraus, ohne Interface,
+   `*CBImpl`, `BasicServiceCBImpl`, `EasyServiceFactory` oder
+   `@Transactional` je gelesen zu haben. Nur 2 von 12 Fakten. P1 liest die
+   Symbolrümpfe und trifft 6. Input: 29k vs. 55k Tokens — P2 spart genau das
+   Lesen, das die Antwort gebraucht hätte.
+2. **L9 ist ein Pfadproblem.** P2 beschreibt `BauplanZvfDataAction`
+   (`callBauplanForZvfData.do`) als Einstieg. Das ist laut Antwortschlüssel
+   der *alternative* Importweg; der manuelle XML-Wizard (`zvfXmlSelectFile.do`
+   → `zvfXmlImportPrepare.do` → `zvfXmlImport.do`) fehlt. Der Judge zählt
+   dessen 12 Fakten als fehlend, obwohl die genannte Alternative existiert.
+3. **L6 ist eine Abdeckungs-, keine Korrektheitsfrage.** P2 behauptet „kein
+   anderes Repository referenziert Teilvorgang“, der Schlüssel verlangt die
+   konkreten Klassen in `osb-archivierung`/`osb-webtest`.
+4. **Der Judge-Wechsel verstärkt den Abstand, verursacht ihn aber nicht.**
+   Dieselbe P1-Antwort zu L6 springt von 0.143 (3.6) auf 0.643 (3.8), P2
+   bleibt bei 0.143→0.214. 3.8 bewertet konkrete Klassennennungen, 3.6 war
+   großzügiger gegenüber Zusammenfassungen. Beide Judges zeigen P2 bei L5
+   deutlich schlechter (0.083–0.167 vs. 0.333–0.417).
+
+Konsequenz für die nächste Runde: Guardrail auf `legacy` bleibt verletzt,
+unabhängig vom Judge. Generische Hebel sind (a) P2-Grep soll zum Lesen des
+Treffers führen statt ihn zu ersetzen, (b) der alternative Bauplan-Pfad muss
+als eigener Pfad erkennbar sein. Beides ist noch nicht umgesetzt.
