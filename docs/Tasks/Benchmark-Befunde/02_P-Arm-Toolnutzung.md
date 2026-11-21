@@ -495,7 +495,39 @@ verliert dadurch Fakten; in F9 und F5 bleibt P2 bei 6–10 Aufrufen und
 liest weniger Dateien als P1. Das ist eine Folge der Aufruf-/Budgetwahl,
 nicht von Grep oder Snippets.
 
-Offen: `legacy` fehlt noch (Hub muss mit `PRJXP_HUB_BOUND_PROJECT=legacy`
-neu gestartet werden); die gepoolte Guardrail ist daher noch nicht
-abschließend. Für die Zuordnung der Einzelmaßnahmen fehlt die Ablation
-(§13.5).
+Offen: für die Zuordnung der Einzelmaßnahmen fehlt die Ablation (§13.5).
+
+## 15. Legacy: Guardrail verletzt — Rumpf-Budget fehlt (21.11.2026)
+
+Derselbe Hub, gebunden auf `legacy` (`legacy-20261121T052008Z`, 27 Sessions
+`ok`), gegen die eingefrorene P1-Kontrolle `ab-p2-legacy-20261117T132231Z`:
+
+| Arm | Coverage | Precision |
+|---|---|---|
+| P1 gepoolt (beide Korpora) | 0.414 | 0.921 |
+| P2 gepoolt (beide Korpora) | 0.361 (−0.053) | 0.896 |
+| P1 `legacy` | 0.327 | 0.891 |
+| P2 `legacy` | 0.209 (−0.118) | 0.821 |
+
+Die Precision-Guardrail ist damit **verletzt** (gepoolt und in `legacy`).
+P2 bleibt also nicht Standard; die Ursache ist aber nicht die
+Grep-Rangfolge, sondern eine bis dahin ungedeckelte Maßnahme.
+
+**Befund:** `readBySignature` mit Rümpfen hat keinen Gesamtdeckel pro
+Aufruf, nur 10.000 Zeichen je Rumpf bei bis zu zehn Treffern. In `legacy`
+liefert ein Aufruf im Schnitt 4.272 Zeichen (P1: 2.280), maximal 17.833
+(P1: 8.083); über den Lauf 436k statt 157k Zeichen. Die Folge sind
+abgeschnittene oder überlaufende Rümpfe und weniger Platz für gezielte
+Reads: in L5 sucht P2 zehnmal nach `VorgangService` (existiert nicht),
+während P1 über `MastervorgangService`/`TeilvorgangService` liest.
+`prjxp` ist davon kaum betroffen (228k vs. 208k), weil die dortigen
+Rümpfe klein sind — die Wirkung ist korpusabhängig, die Ursache generisch.
+
+**Maßnahme (generisch):** Im P2-Profil teilen sich alle Rümpfe eines
+Aufrufs ein Budget von `ToolResultCaps.READER`. Reicht es nicht, wird der
+letzte Rumpf gekürzt und die folgenden Treffer behalten nur ihre Signatur;
+der P1-Pfad bleibt unverändert (Deckel je Rumpf). Tests:
+`PrjxpToolServiceBodyBudgetTest` (Budget, Signatur-only, P1 unverändert).
+
+**Nächster Schritt:** neu bauen, `legacy` erneut messen, danach `prjxp`
+mit demselben Image (die Änderung wirkt in beiden Korpora).

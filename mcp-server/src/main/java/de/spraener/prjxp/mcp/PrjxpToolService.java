@@ -17,6 +17,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -244,7 +245,7 @@ public class PrjxpToolService {
         int bodies = maxBodies == null ? 3 : Math.max(0, Math.min(maxBodies, 10));
         boolean withBodies = includeBodies == null || includeBodies;
         return capSymbolResult(symbolReaderService.readBySignature(method, container, project,
-                withBodies, bodies));
+                withBodies, bodies), ToolResultCaps.READER);
     }
 
     public FileView readFile(
@@ -288,17 +289,58 @@ public class PrjxpToolService {
         return capSymbolResult(symbolReaderService.readBySignature(method, container, project));
     }
 
+    /**
+     * Reserve for the truncation hint that {@link ToolResultCaps#cap} appends, so the rendered
+     * body still fits the budget it was accounted against.
+     */
+    private static final int BODY_HINT_RESERVE = 200;
+
     /** Caps each body so up to 10 matches cannot blow the context window. */
     private SymbolReadResult capSymbolResult(SymbolReadResult result) {
+        return capSymbolResult(result, 0);
+    }
+
+    /**
+     * Caps each body and, when {@code totalBodyBudget > 0}, the sum of all bodies of one call.
+     * <p>
+     * A per-body cap alone is not enough: ten matches with 10k characters each still reach 100k
+     * characters (legacy run: 17.8k per call, 436k in total). Once the budget is spent, further
+     * matches keep their signature but lose the body, so the model still sees that they exist
+     * and can read them selectively.
+     */
+    private SymbolReadResult capSymbolResult(SymbolReadResult result, int totalBodyBudget) {
         if (result == null || result.error() != null || result.matches() == null) {
             return result;
         }
-        List<MethodView> matches = result.matches().stream()
-                .map(m -> m.body() != null && m.body().length() > ToolResultCaps.READER
-                        ? new MethodView(m.fqn(), m.file(), m.lineFrom(), m.lineTo(), m.javadoc(),
-                                ToolResultCaps.cap(m.body(), ToolResultCaps.READER))
-                        : m)
-                .toList();
+        int used = 0;
+        List<MethodView> matches = new ArrayList<>(result.matches().size());
+        for (MethodView match : result.matches()) {
+            String body = match.body();
+            if (body == null) {
+                matches.add(match);
+                continue;
+            }
+            int allowed = Math.min(ToolResultCaps.READER, body.length());
+            if (totalBodyBudget > 0) {
+                allowed = Math.min(allowed, Math.max(0, totalBodyBudget - used));
+                if (allowed < body.length()) {
+                    allowed = Math.max(0, allowed - BODY_HINT_RESERVE);
+                }
+            }
+            if (allowed <= 0) {
+                matches.add(new MethodView(match.fqn(), match.file(), match.lineFrom(),
+                        match.lineTo(), match.javadoc(), null));
+                continue;
+            }
+            if (allowed < body.length()) {
+                matches.add(new MethodView(match.fqn(), match.file(), match.lineFrom(),
+                        match.lineTo(), match.javadoc(), ToolResultCaps.cap(body, allowed)));
+                used += allowed;
+            } else {
+                matches.add(match);
+                used += body.length();
+            }
+        }
         return new SymbolReadResult(matches, result.remainingFqns(), result.error());
     }
 
