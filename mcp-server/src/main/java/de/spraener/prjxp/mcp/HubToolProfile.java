@@ -25,16 +25,9 @@ public class HubToolProfile {
     }
 
     private final Profile profile;
-    private final String boundProject;
 
-    public HubToolProfile(@Value("${prjxp.hub.tool-profile:p1}") String profile,
-                          @Value("${prjxp.hub.bound-project:}") String boundProject) {
+    public HubToolProfile(@Value("${prjxp.hub.tool-profile:p1}") String profile) {
         this.profile = parse(profile);
-        this.boundProject = boundProject == null ? "" : boundProject.trim();
-        if (this.profile == Profile.P2 && this.boundProject.isEmpty()) {
-            throw new IllegalStateException(
-                    "prjxp.hub.tool-profile=p2 requires prjxp.hub.bound-project (one hub per corpus).");
-        }
     }
 
     private static Profile parse(String raw) {
@@ -56,13 +49,11 @@ public class HubToolProfile {
         return profile == Profile.P2;
     }
 
-    /** The project every P2 tool call is bound to; blank in P1. */
-    public String boundProject() {
-        return boundProject;
-    }
-
-    /** Project for a tool call: the bound project in P2, the explicit argument in P1. */
+    /**
+     * Project for a tool call. Both profiles use the explicit argument: the hub serves all indexed
+     * projects, so a process-wide binding would be wrong.
+     */
     public String projectOrDefault(String explicit) {
-        return isP2() ? boundProject : explicit;
+        return explicit;
     }
 }

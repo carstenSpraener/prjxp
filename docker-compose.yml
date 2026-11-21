@@ -81,6 +81,7 @@ services:
       # MCP_CORS_ALLOWED_PATTERNS="http://localhost:*,https://my-host.example.com"
       MCP_CORS_ALLOWED_PATTERNS: ${MCP_CORS_ALLOWED_PATTERNS:-http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*}
       PRJXP_DOCS_DIR: /app/doc
+      PRJXP_HUB_TOOL_PROFILE: p2
     extra_hosts:
       - "host.docker.internal:host-gateway"
     networks:

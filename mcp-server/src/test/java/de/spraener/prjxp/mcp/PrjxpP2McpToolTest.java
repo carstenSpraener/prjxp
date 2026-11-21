@@ -16,14 +16,12 @@ import static org.mockito.Mockito.when;
 class PrjxpP2McpToolTest {
 
     private PrjxpToolService service;
-    private HubToolProfile profile;
     private PrjxpP2McpTool tool;
 
     @BeforeEach
     void setUp() {
         service = mock(PrjxpToolService.class);
-        profile = mock(HubToolProfile.class);
-        tool = new PrjxpP2McpTool(service, profile, new P2Measures(true, true, true));
+        tool = new PrjxpP2McpTool(service, new P2Measures(true, true, true));
     }
 
     @Test
@@ -43,40 +41,33 @@ class PrjxpP2McpToolTest {
     }
 
     @Test
-    void bindsTheProjectServerSideForGrep() {
-        when(profile.boundProject()).thenReturn("legacy");
-
-        tool.grep("run", "regex", "java", 5, false);
+    void passesTheProjectThroughForGrep() {
+        tool.grep("run", "legacy", "regex", "java", 5, false);
 
         verify(service).grepP2("run", "legacy", "regex", "java", 5, false, true);
     }
 
     @Test
-    void bindsTheProjectServerSideForVectorSearch() {
-        when(profile.boundProject()).thenReturn("prjxp");
-
-        tool.vectorSearch("chunking", 0.8, 3, "all", true, 1000);
+    void passesTheProjectThroughForVectorSearch() {
+        tool.vectorSearch("chunking", "prjxp", 0.8, 3, "all", true, 1000);
 
         verify(service).vectorSearchP2("chunking", "prjxp", 0.8, 3, "all", true, 1000, true);
     }
 
     @Test
-    void bindsTheProjectServerSideForReadBySignature() {
-        when(profile.boundProject()).thenReturn("prjxp");
-
-        tool.readBySignature("a.B", null, true, 2);
+    void passesTheProjectThroughForReadBySignature() {
+        tool.readBySignature("a.B", "prjxp", null, true, 2);
 
         verify(service).readBySignatureP2("a.B", null, "prjxp", true, 2, true);
     }
 
     @Test
     void measureSwitchesReachTheService() {
-        when(profile.boundProject()).thenReturn("prjxp");
-        PrjxpP2McpTool ablated = new PrjxpP2McpTool(service, profile, new P2Measures(false, false, false));
+        PrjxpP2McpTool ablated = new PrjxpP2McpTool(service, new P2Measures(false, false, false));
 
-        ablated.grep("run", null, null, null, null);
-        ablated.vectorSearch("chunking", null, null, null, null, null);
-        ablated.readBySignature("a.B", null, null, null);
+        ablated.grep("run", "prjxp", null, null, null, null);
+        ablated.vectorSearch("chunking", "prjxp", null, null, null, null, null);
+        ablated.readBySignature("a.B", "prjxp", null, null, null);
 
         verify(service).grepP2("run", "prjxp", null, null, null, null, false);
         verify(service).vectorSearchP2("chunking", "prjxp", null, null, null, null, null, false);
@@ -84,13 +75,14 @@ class PrjxpP2McpToolTest {
     }
 
     @Test
-    void toolMethodsDoNotExposeAProjectParameter() {
+    void everyToolTakesTheProjectSoOneHubServesManyProjects() {
         for (Method method : PrjxpP2McpTool.class.getDeclaredMethods()) {
             if (method.getAnnotation(McpTool.class) == null) {
                 continue;
             }
             assertThat(method.getParameters())
-                    .noneMatch(p -> p.getName().equals("project") || p.getName().equals("projectName"));
+                    .as(method.getName())
+                    .anyMatch(p -> p.getName().equals("project"));
         }
     }
 }

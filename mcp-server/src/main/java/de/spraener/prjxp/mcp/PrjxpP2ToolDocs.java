@@ -4,7 +4,7 @@ package de.spraener.prjxp.mcp;
  * Tool descriptions of the P2 contract (Benchmark-Befund 02, measures 2–5).
  * <p>
  * P2 is a decision guide, not a catalogue: each text names the one situation the tool is for and
- * the cheaper alternative. The project is bound server-side and therefore not mentioned.
+ * the cheaper alternative.
  * The total length is budgeted by {@code PrjxpP2ToolDocsTest}; the schema is sent on every turn.
  */
 public final class PrjxpP2ToolDocs {

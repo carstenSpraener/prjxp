@@ -8,8 +8,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class HubToolProfileTest {
 
     @Test
-    void defaultsToP1WithoutBinding() {
-        HubToolProfile profile = new HubToolProfile(null, null);
+    void defaultsToP1() {
+        HubToolProfile profile = new HubToolProfile(null);
 
         assertThat(profile.profile()).isEqualTo(HubToolProfile.Profile.P1);
         assertThat(profile.isP2()).isFalse();
@@ -17,23 +17,21 @@ class HubToolProfileTest {
     }
 
     @Test
-    void p2RequiresABoundProject() {
-        assertThatThrownBy(() -> new HubToolProfile("p2", " "))
-                .isInstanceOf(IllegalStateException.class)
-                .hasMessageContaining("bound-project");
+    void p2NeedsNoProjectAtStartup() {
+        HubToolProfile profile = new HubToolProfile("P2");
+
+        assertThat(profile.isP2()).isTrue();
     }
 
     @Test
-    void p2BindsEveryToolCallToItsProject() {
-        HubToolProfile profile = new HubToolProfile("P2", "legacy");
-
-        assertThat(profile.isP2()).isTrue();
-        assertThat(profile.projectOrDefault("ignored")).isEqualTo("legacy");
+    void bothProfilesUseTheProjectOfTheCall() {
+        assertThat(new HubToolProfile("P2").projectOrDefault("legacy")).isEqualTo("legacy");
+        assertThat(new HubToolProfile("p1").projectOrDefault("prjxp")).isEqualTo("prjxp");
     }
 
     @Test
     void unknownProfileFailsFast() {
-        assertThatThrownBy(() -> new HubToolProfile("p3", "prjxp"))
+        assertThatThrownBy(() -> new HubToolProfile("p3"))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("Unknown");
     }

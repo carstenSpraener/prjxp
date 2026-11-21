@@ -15,8 +15,8 @@ import java.util.List;
  * <p>
  * Differences to P1, all of them tool-contract properties rather than question-specific tuning:
  * <ul>
- *   <li>the project is bound server-side ({@code prjxp.hub.bound-project}); no tool takes a
- *       {@code project} parameter and {@code listProjects} is gone,</li>
+ *   <li>every tool takes an explicit {@code project}, so one hub serves all indexed projects,
+ *       but {@code listProjects} is gone (the caller knows the project it asks about),</li>
  *   <li>{@code grep} returns {@code file:line} hits instead of a bare file list,</li>
  *   <li>{@code vectorSearch} adds a snippet and a {@code readChunks} hint and de-duplicates ids,</li>
  *   <li>{@code readBySignature} appends method bodies to a class frame,</li>
@@ -31,13 +31,14 @@ import java.util.List;
 public class PrjxpP2McpTool {
 
     private final PrjxpToolService toolService;
-    private final HubToolProfile profile;
     private final P2Measures measures;
 
     @McpTool(name = "vectorSearch", description = PrjxpP2ToolDocs.VECTOR_SEARCH)
     public String vectorSearch(
             @McpToolParam(description = "Short English keyword query; identifiers verbatim.", required = true)
             String userQuestion,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "Similarity floor, default 0.85.", required = false)
             Double similarity,
             @McpToolParam(description = "Max files, default 10 (max 20).", required = false)
@@ -48,7 +49,7 @@ public class PrjxpP2McpTool {
             Boolean includeTests,
             @McpToolParam(description = "Max output tokens, default 2000.", required = false)
             Integer tokenBudget) {
-        return toolService.vectorSearchP2(userQuestion, profile.boundProject(), similarity, maxResults,
+        return toolService.vectorSearchP2(userQuestion, project, similarity, maxResults,
                 sourceType, includeTests, tokenBudget, measures.snippets());
     }
 
@@ -56,6 +57,8 @@ public class PrjxpP2McpTool {
     public String grep(
             @McpToolParam(description = "Text or pattern to find.", required = true)
             String query,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "substring (default) | exact | regex.", required = false)
             String mode,
             @McpToolParam(description = "Optional language filter (e.g. 'java').", required = false)
@@ -64,7 +67,7 @@ public class PrjxpP2McpTool {
             Integer limit,
             @McpToolParam(description = "Include test sources (default true).", required = false)
             Boolean includeTests) {
-        return toolService.grepP2(query, profile.boundProject(), mode, language, limit, includeTests,
+        return toolService.grepP2(query, project, mode, language, limit, includeTests,
                 measures.grepLines());
     }
 
@@ -72,26 +75,30 @@ public class PrjxpP2McpTool {
     public FileView readFile(
             @McpToolParam(description = "File path (absolute, relative, or name; lenient).", required = true)
             String file,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "1-based start line.", required = false)
             Integer offset,
             @McpToolParam(description = "Max lines from offset (default 100).", required = false)
             Integer limit,
             @McpToolParam(description = "Whole file only for files ≤200 lines; capped.", required = false)
             Boolean full) {
-        return toolService.readFile(file, profile.boundProject(), offset, limit, full);
+        return toolService.readFile(file, project, offset, limit, full);
     }
 
     @McpTool(name = "readBySignature", description = PrjxpP2ToolDocs.READ_BY_SIGNATURE)
     public SymbolReadResult readBySignature(
             @McpToolParam(description = "'FQN#name', class FQN, or bare method name.", required = true)
             String method,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "Containing class FQN to disambiguate.", required = false)
             String container,
             @McpToolParam(description = "Class FQNs: append method bodies (default true).", required = false)
             Boolean includeBodies,
             @McpToolParam(description = "Max appended bodies, default 3 (max 10).", required = false)
             Integer maxBodies) {
-        return toolService.readBySignatureP2(method, container, profile.boundProject(),
+        return toolService.readBySignatureP2(method, container, project,
                 includeBodies, maxBodies, measures.bodies());
     }
 
@@ -99,15 +106,19 @@ public class PrjxpP2McpTool {
     public String listFiles(
             @McpToolParam(description = "Path prefix or glob ('*' spans '/'); empty = all.", required = false)
             String path,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "Max files, default 50 (max 500).", required = false)
             Integer limit) {
-        return toolService.listFiles(path, profile.boundProject(), limit);
+        return toolService.listFiles(path, project, limit);
     }
 
     @McpTool(name = "graphNode", description = PrjxpP2ToolDocs.GRAPH_NODE)
     public String graphNode(
             @McpToolParam(description = "Class FQN or method id; bare names match as suffix.", required = true)
             String symbol,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "Max neighbours per direction, default 30.", required = false)
             Integer maxEdges,
             @McpToolParam(description = "Include JDK/library edges (default false).", required = false)
@@ -118,7 +129,7 @@ public class PrjxpP2McpTool {
             String contentLevel,
             @McpToolParam(description = "Max output tokens, default 2000.", required = false)
             Integer tokenBudget) {
-        return toolService.graphNode(symbol, profile.boundProject(), maxEdges, includeExternal, offset,
+        return toolService.graphNode(symbol, project, maxEdges, includeExternal, offset,
                 contentLevel, tokenBudget);
     }
 
@@ -126,6 +137,8 @@ public class PrjxpP2McpTool {
     public String graphSearch(
             @McpToolParam(description = "Short English keyword query; identifiers verbatim.", required = true)
             String question,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "bfs (default) | dfs.", required = false)
             String mode,
             @McpToolParam(description = "Traversal depth, 1-6 (default 3).", required = false)
@@ -136,21 +149,25 @@ public class PrjxpP2McpTool {
             List<String> contextFilter,
             @McpToolParam(description = "Max seeds, 1-5 (default 3).", required = false)
             Integer maxSeeds) {
-        return toolService.graphSearch(question, profile.boundProject(), mode, depth, tokenBudget,
+        return toolService.graphSearch(question, project, mode, depth, tokenBudget,
                 contextFilter, maxSeeds);
     }
 
     @McpTool(name = "listConfig", description = PrjxpP2ToolDocs.LIST_CONFIG)
     public String listConfig(
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "Max output tokens, default 2000.", required = false)
             Integer tokenBudget) {
-        return toolService.listConfig(profile.boundProject(), tokenBudget);
+        return toolService.listConfig(project, tokenBudget);
     }
 
     @McpTool(name = "readChunks", description = PrjxpP2ToolDocs.READ_CHUNKS)
     public String readChunks(
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
             @McpToolParam(description = "Comma-separated chunk_ids, max 10; prefer 1–3.", required = true)
             String ids) {
-        return toolService.readChunks(profile.boundProject(), ids);
+        return toolService.readChunks(project, ids);
     }
 }

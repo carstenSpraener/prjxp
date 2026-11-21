@@ -317,18 +317,18 @@ Kontrollarm. Der Umschlag ist eine Start-Property, kein Prompt-Eingriff:
 | Property | Werte | Wirkung |
 |---|---|---|
 | `prjxp.hub.tool-profile` | `p1` (Default) \| `p2` | wählt die MCP-Toolfläche |
-| `prjxp.hub.bound-project` | Projektname | P2: serverseitige Projektbindung, Pflicht |
 
 **P1** bleibt byte-identisch (16 Tools, `project`-Parameter, `listProjects`).
-**P2** bietet 9 Tools ohne `project`-Parameter; `grep` liefert `datei:zeile` +
-Trefferzeile (`substring`/`exact`/`regex`), `vectorSearch` ergänzt Snippet,
-Chunk-Dedup und `readChunks`-Hinweis, `readBySignature` hängt an einen
-Klassen-FQN die ersten Methodenbodies an (`includeBodies`, `maxBodies`).
+**P2** bietet 9 Tools; jedes nimmt `project` wie P1 (`listProjects` entfällt),
+`grep` liefert `datei:zeile` + Trefferzeile (`substring`/`exact`/`regex`),
+`vectorSearch` ergänzt Snippet, Chunk-Dedup und `readChunks`-Hinweis,
+`readBySignature` hängt an einen Klassen-FQN die ersten Methodenbodies an
+(`includeBodies`, `maxBodies`).
 
-**A/B-Anordnung:** ein P1-Hub wie bisher (beide Projekte, Projekt im
-`SYSTEM.md`) und je Korpus ein P2-Hub mit `prjxp.hub.bound-project=prjxp` bzw.
-`legacy`, alle aus demselben Image. Damit ist der Unterschied der Tool-Vertrag
-und nicht ein anderer Build. Judge: `qwen3.6-27b` (≠ Arm-Modell).
+**A/B-Anordnung:** ein Hub, ein Image, beide Projekte; das Profil wird beim
+Start gesetzt, der Korpus kommt aus dem `project`-Argument (im `SYSTEM.md`
+genannt). Damit ist der Unterschied der Tool-Vertrag und nicht ein anderer
+Build. Judge: `qwen3.6-27b` (≠ Arm-Modell).
 
 **Tests:** `PrjxpToolService` trägt die Datenlogik, `PrjxpMcpTool`/`PrjxpP2McpTool`
 nur die Annotationen. Abgedeckt sind Profil-/Bindungslogik, Grep-Modi mit
@@ -462,8 +462,13 @@ Oberfläche, Projektbindung und Budgets bleiben dabei konstant.
 Geprüft wurden die drei Defekte aus §13: `searchAllLucene` deckelte auf
 10.000 Treffer statt auf `reader.numDocs()`, `searchMatches` rankte erst
 nach dem `limit` pro Datei, und `IsIn`/`IsNotIn` erzeugten mehr als
-1.024 Klauseln (`TooManyClauses`). Zusätzlich ist der Hub jetzt
-projektgebunden (`PRJXP_HUB_BOUND_PROJECT`), `listProjects` entfällt.
+1.024 Klauseln (`TooManyClauses`). Zusätzlich entfällt in P2 `listProjects`.
+
+> **Korrektur (21.11.2026):** Eine zwischenzeitliche serverseitige
+> Projektbindung (`prjxp.hub.bound-project`, ein Neustart je Korpus) ist
+> wieder entfernt. Der Hub ist multi-project; jedes Tool nimmt `project`.
+> Die Läufe `ab-p2-fix2-*` und `ab-p2-fix3-*` wurden mit der gebundenen
+> Variante gemessen und sind deshalb nur eingeschränkt vergleichbar.
 
 Lauf `ab-p2-fix2-prjxp-20261120T164933Z` gegen die eingefrorene
 P1-Kontrolle `ab-p2-prjxp-20261117T132231Z` (gleiches Index-Manifest
