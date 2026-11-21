@@ -43,6 +43,11 @@ public final class PrjxpP2ToolDocs {
             List existing files by prefix or glob ('*' spans '/'). Use to locate a path, not to read content.
             """;
 
+    public static final String GRAPH_FILE = """
+            Typed neighbours of one file (imports, inheritance, calls). Use it to see what a file
+            pulls in or what depends on it; offset pages, totals = full count.
+            """;
+
     public static final String GRAPH_NODE = """
             Typed neighbours of one class/method id (CALL, CONTAINS, FIELD, …). Use for wiring and
             inheritance; use grep for call sites and readBySignature for behaviour.
@@ -51,6 +56,31 @@ public final class PrjxpP2ToolDocs {
     public static final String GRAPH_SEARCH = """
             Bounded subgraph for "what is X wired to". Keyword query, mode=bfs|dfs, depth 1–6.
             Use graphNode for one exact symbol, vectorSearch for concept discovery.
+            """;
+
+    public static final String GRAPH_CLUSTER = """
+            Important typed-code cluster members ranked by degree. The id comes from vectorSearch or
+            graphNode; use graphClusterOverview when you have no starting class.
+            """;
+
+    public static final String GRAPH_CLUSTER_OVERVIEW = """
+            Largest typed-code clusters with sizes and top members. Use to explore architecture while
+            you have no starting class. Not the semantic clusters (semanticGraphOverview).
+            """;
+
+    public static final String SEMANTIC_GRAPH_CLUSTER = """
+            Semantic cluster members across docs and class frames. Not typed code relationships
+            (graphCluster).
+            """;
+
+    public static final String SEMANTIC_GRAPH_NODE = """
+            Project-scoped semantic neighbours with files and scores. Not typed code relationships
+            (graphNode).
+            """;
+
+    public static final String SEMANTIC_GRAPH_OVERVIEW = """
+            Largest semantic clusters with member counts, top files and calibration warning. Not
+            graphClusterOverview.
             """;
 
     public static final String LIST_CONFIG = """

@@ -25,7 +25,7 @@ class PrjxpP2McpToolTest {
     }
 
     @Test
-    void exposesTenToolsIncludingProjectDiscovery() {
+    void exposesTheWholeSurfaceIncludingProjectDiscovery() {
         List<String> names = Arrays.stream(PrjxpP2McpTool.class.getDeclaredMethods())
                 .map(m -> m.getAnnotation(McpTool.class))
                 .filter(a -> a != null)
@@ -34,10 +34,26 @@ class PrjxpP2McpToolTest {
 
         assertThat(names).containsExactlyInAnyOrder(
                 "listProjects", "vectorSearch", "grep", "readFile", "readBySignature",
-                "listFiles", "graphNode", "graphSearch", "listConfig", "readChunks");
-        assertThat(names).doesNotContain("graphFile", "graphCluster",
+                "listFiles", "graphFile", "graphNode", "graphSearch", "graphCluster",
                 "graphClusterOverview", "semanticGraphNode", "semanticGraphCluster",
-                "semanticGraphOverview");
+                "semanticGraphOverview", "listConfig", "readChunks");
+    }
+
+    @Test
+    void passesTheProjectThroughForTheGraphTools() {
+        tool.graphFile("a/B.java", "legacy", 5, true, 2, "FULL", 800);
+        tool.graphCluster("c6", "prjxp", 7);
+        tool.graphClusterOverview("prjxp", 4);
+        tool.semanticGraphCluster("s2", "legacy", 3);
+        tool.semanticGraphNode("n1", "prjxp", 9);
+        tool.semanticGraphOverview("legacy", 6);
+
+        verify(service).graphFile("a/B.java", "legacy", 5, true, 2, "FULL", 800);
+        verify(service).graphCluster("c6", "prjxp", 7);
+        verify(service).graphClusterOverview("prjxp", 4);
+        verify(service).semanticGraphCluster("s2", "legacy", 3);
+        verify(service).semanticGraphNode("n1", "prjxp", 9);
+        verify(service).semanticGraphOverview("legacy", 6);
     }
 
     @Test

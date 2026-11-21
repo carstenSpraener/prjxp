@@ -21,7 +21,7 @@ import java.util.List;
  *   <li>{@code grep} returns {@code file:line} hits instead of a bare file list,</li>
  *   <li>{@code vectorSearch} adds a snippet and a {@code readChunks} hint and de-duplicates ids,</li>
  *   <li>{@code readBySignature} appends method bodies to a class frame,</li>
- *   <li>only the nine tools that were actually used in both corpora are exposed.</li>
+ *   <li>the full tool surface is exposed; descriptions are decision guides, not a catalogue.</li>
  * </ul>
  * The three rendering measures (grep lines, snippets, bodies) can be disabled one at a time via
  * {@link P2Measures}, so an A/B run can attribute an effect to a single measure.
@@ -119,6 +119,26 @@ public class PrjxpP2McpTool {
         return toolService.listFiles(path, project, limit);
     }
 
+    @McpTool(name = "graphFile", description = PrjxpP2ToolDocs.GRAPH_FILE)
+    public String graphFile(
+            @McpToolParam(description = "File path (absolute, relative, or name; lenient).", required = true)
+            String file,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max neighbours per direction, default 30.", required = false)
+            Integer maxEdges,
+            @McpToolParam(description = "Include JDK/library edges (default false).", required = false)
+            Boolean includeExternal,
+            @McpToolParam(description = "Skip this many per direction.", required = false)
+            Integer offset,
+            @McpToolParam(description = "FULL (default) | AGGREGATED.", required = false)
+            String contentLevel,
+            @McpToolParam(description = "Max output tokens, default 2000.", required = false)
+            Integer tokenBudget) {
+        return toolService.graphFile(file, project, maxEdges, includeExternal, offset,
+                contentLevel, tokenBudget);
+    }
+
     @McpTool(name = "graphNode", description = PrjxpP2ToolDocs.GRAPH_NODE)
     public String graphNode(
             @McpToolParam(description = "Class FQN or method id; bare names match as suffix.", required = true)
@@ -157,6 +177,57 @@ public class PrjxpP2McpTool {
             Integer maxSeeds) {
         return toolService.graphSearch(question, project, mode, depth, tokenBudget,
                 contextFilter, maxSeeds);
+    }
+
+    @McpTool(name = "graphCluster", description = PrjxpP2ToolDocs.GRAPH_CLUSTER)
+    public ClusterView graphCluster(
+            @McpToolParam(description = "Cluster id, e.g. 'c6' (from vectorSearch output).", required = true)
+            String clusterId,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Top members to return, default 10.", required = false)
+            Integer topN) {
+        return toolService.graphCluster(clusterId, project, topN);
+    }
+
+    @McpTool(name = "graphClusterOverview", description = PrjxpP2ToolDocs.GRAPH_CLUSTER_OVERVIEW)
+    public ClusterOverviewView graphClusterOverview(
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Clusters to return, default 10.", required = false)
+            Integer topN) {
+        return toolService.graphClusterOverview(project, topN);
+    }
+
+    @McpTool(name = "semanticGraphCluster", description = PrjxpP2ToolDocs.SEMANTIC_GRAPH_CLUSTER)
+    public SemanticClusterView semanticGraphCluster(
+            @McpToolParam(description = "Semantic cluster id (sN).", required = true)
+            String clusterId,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max members, default 10.", required = false)
+            Integer topN) {
+        return toolService.semanticGraphCluster(clusterId, project, topN);
+    }
+
+    @McpTool(name = "semanticGraphNode", description = PrjxpP2ToolDocs.SEMANTIC_GRAPH_NODE)
+    public SemanticNodeView semanticGraphNode(
+            @McpToolParam(description = "Semantic node id.", required = true)
+            String nodeId,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max neighbours, default 20.", required = false)
+            Integer maxEdges) {
+        return toolService.semanticGraphNode(nodeId, project, maxEdges);
+    }
+
+    @McpTool(name = "semanticGraphOverview", description = PrjxpP2ToolDocs.SEMANTIC_GRAPH_OVERVIEW)
+    public SemanticOverviewView semanticGraphOverview(
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max clusters, default 10.", required = false)
+            Integer topN) {
+        return toolService.semanticGraphOverview(project, topN);
     }
 
     @McpTool(name = "listConfig", description = PrjxpP2ToolDocs.LIST_CONFIG)

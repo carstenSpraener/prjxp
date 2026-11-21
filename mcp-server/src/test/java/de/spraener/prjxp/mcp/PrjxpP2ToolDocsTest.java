@@ -9,7 +9,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The P2 descriptions are sent on every turn. This guard keeps them from growing back into a
- * catalogue: the whole set must stay well below the P1 schema cost.
+ * catalogue: the whole set must stay well below the P1 schema cost (about 4_150 characters).
  */
 class PrjxpP2ToolDocsTest {
 
@@ -22,7 +22,7 @@ class PrjxpP2ToolDocsTest {
             }
         }
 
-        assertThat(total).isLessThanOrEqualTo(2_100);
+        assertThat(total).isLessThanOrEqualTo(3_200);
     }
 
     @Test

@@ -181,6 +181,7 @@ Behalten: `listProjects`, `vectorSearch`, `readChunks`, `readBySignature`,
 Projekt ohne dieses Tool geraten werden müsste.
 Entfernen: `graphFile`, `graphCluster`, `graphClusterOverview`,
 `semanticGraphNode`, `semanticGraphCluster`, `semanticGraphOverview`.
+(Revidiert in §17: die sechs Graph-Tools bleiben.)
 
 ### Akzeptanz
 
@@ -320,7 +321,7 @@ Kontrollarm. Der Umschlag ist eine Start-Property, kein Prompt-Eingriff:
 | `prjxp.hub.tool-profile` | `p1` (Default) \| `p2` | wählt die MCP-Toolfläche |
 
 **P1** bleibt byte-identisch (16 Tools, `project`-Parameter, `listProjects`).
-**P2** bietet 10 Tools; jedes nimmt `project` wie P1 (`listProjects` bleibt),
+**P2** bietet 16 Tools; jedes nimmt `project` wie P1 (`listProjects` bleibt),
 `grep` liefert `datei:zeile` + Trefferzeile (`substring`/`exact`/`regex`),
 `vectorSearch` ergänzt Snippet, Chunk-Dedup und `readChunks`-Hinweis,
 `readBySignature` hängt an einen Klassen-FQN die ersten Methodenbodies an
@@ -564,3 +565,16 @@ L2: Denken endet ohne Text). Ein Wiederholungslauf erzeugt exakt dieselben
 Token-Zahlen — es ist eine Modellpathologie, kein Tool-Effekt. Die betroffenen
 Sessions zählen nicht in `n`, L2 und L7 liegen auch bei P1 niedrig (0.067 /
 0.231).
+
+## 17. Graph-Tools bleiben (21.11.2026)
+
+Die sechs Graph-Tools aus §11 werden **nicht** entfernt. Sie sind Teil des
+Produkts, auch wenn der Korpus sie in beiden Läufen nicht aufgerufen hat: die
+Fragen decken diese Fähigkeit nicht ab, das Tool-Set ist kein Fragen-Optimum.
+P2 führt damit dieselben 16 Tools wie P1; der A/B-Unterschied ist ab jetzt
+**nur noch das Rendering** (Grep-Zeilen, Snippets, Rümpfe).
+
+Umgesetzt in `PrjxpP2McpTool`/`PrjxpP2ToolDocs` mit denselben Parametern wie
+P1, aber kurzen Entscheidungsbeschreibungen. Beschreibungsbudget: 3.012
+Zeichen (P1: 4.154), Testgrenze 3.200. Der Harness-Preflight erwartet wieder
+16 Tools.
