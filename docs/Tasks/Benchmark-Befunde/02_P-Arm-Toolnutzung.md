@@ -450,7 +450,52 @@ die fehlende Rangfolge und die Budget-Kollision verzerrt. Künftige Aussagen
 
 **Umsetzung:** `prjxp.hub.p2.grep-lines`, `prjxp.hub.p2.snippets`,
 `prjxp.hub.p2.bodies` (Default `true`, in `P2Measures`) schalten die drei
-Rendering-Maßnahmen einzeln. `harness/ablation.sh` fährt je Variante einen
-eigenen A/B-Lauf (`all`, `nogrep`, `nosnip`, `nobody`) mit eigenem Run-ID;
-`hub_meta` hält die Variante als `p2_measures` fest. Oberfläche,
-Projektbindung und Budgets bleiben dabei konstant.
+Rendering-Maßnahmen einzeln. Es gibt genau einen Hub; eine Ablation ist
+deshalb ein Neustart desselben Containers mit
+`PRJXP_HUB_P2_GREP_LINES=false` / `PRJXP_HUB_P2_SNIPPETS=false` /
+`PRJXP_HUB_P2_BODIES=false`. `hub_meta` hält die aktive Variante als
+`p2_measures` fest, der Preflight erzwingt Profil und Projektbindung.
+Oberfläche, Projektbindung und Budgets bleiben dabei konstant.
+
+## 14. Messung nach den Fixes (21.11.2026, Korpus `prjxp`)
+
+Geprüft wurden die drei Defekte aus §13: `searchAllLucene` deckelte auf
+10.000 Treffer statt auf `reader.numDocs()`, `searchMatches` rankte erst
+nach dem `limit` pro Datei, und `IsIn`/`IsNotIn` erzeugten mehr als
+1.024 Klauseln (`TooManyClauses`). Zusätzlich ist der Hub jetzt
+projektgebunden (`PRJXP_HUB_BOUND_PROJECT`), `listProjects` entfällt.
+
+Lauf `ab-p2-fix2-prjxp-20261120T164933Z` gegen die eingefrorene
+P1-Kontrolle `ab-p2-prjxp-20261117T132231Z` (gleiches Index-Manifest
+`82aa4159…`, 27 Sessions je Arm):
+
+| Arm | Coverage | Precision | Tokens | Retrieval | Calls | Dauer |
+|---|---|---|---|---|---|---|
+| P1 | 0.501 | 0.952 | 46.144 | 26.268 | 8,7 | 54,6 s |
+| P2 | 0.512 (+0.011) | 0.972 | 41.883 (−9,2 %) | 29.906 (+13,8 %) | 8,3 | 45,8 s |
+
+Alle 27 Sessions `ok`; der Precision-Guardrail ist für dieses Korpus
+eingehalten. Je Frage:
+
+| Frage | Δ Coverage | Δ Precision |
+|---|---|---|
+| F1, F2, F3 | ±0.000 | ±0.000 |
+| F4 | −0.022 | +0.072 |
+| F5 | −0.152 | −0.037 |
+| F6 | +0.077 | +0.361 |
+| F7 | +0.167 | −0.214 |
+| F8 | +0.179 | ±0.000 |
+| F9 | −0.143 | ±0.000 |
+
+Deutig profitiert die Grep-Klasse (F6, F7, F8): mehr Treffer, bessere
+Rangfolge, präzisere Fundstellen. Die Gegenbewegungen sind nicht
+maßnahmenkausal belegt: in F5 ersetzt P2 mehrere gezielte
+`readBySignature`-Aufrufe durch `readFile` auf `ChunkProcess` und
+verliert dadurch Fakten; in F9 und F5 bleibt P2 bei 6–10 Aufrufen und
+liest weniger Dateien als P1. Das ist eine Folge der Aufruf-/Budgetwahl,
+nicht von Grep oder Snippets.
+
+Offen: `legacy` fehlt noch (Hub muss mit `PRJXP_HUB_BOUND_PROJECT=legacy`
+neu gestartet werden); die gepoolte Guardrail ist daher noch nicht
+abschließend. Für die Zuordnung der Einzelmaßnahmen fehlt die Ablation
+(§13.5).
