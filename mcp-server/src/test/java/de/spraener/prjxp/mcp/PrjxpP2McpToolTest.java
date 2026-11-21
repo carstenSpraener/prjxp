@@ -25,7 +25,7 @@ class PrjxpP2McpToolTest {
     }
 
     @Test
-    void exposesExactlyTheNineUsedTools() {
+    void exposesTenToolsIncludingProjectDiscovery() {
         List<String> names = Arrays.stream(PrjxpP2McpTool.class.getDeclaredMethods())
                 .map(m -> m.getAnnotation(McpTool.class))
                 .filter(a -> a != null)
@@ -33,9 +33,9 @@ class PrjxpP2McpToolTest {
                 .toList();
 
         assertThat(names).containsExactlyInAnyOrder(
-                "vectorSearch", "grep", "readFile", "readBySignature", "listFiles",
-                "graphNode", "graphSearch", "listConfig", "readChunks");
-        assertThat(names).doesNotContain("listProjects", "graphFile", "graphCluster",
+                "listProjects", "vectorSearch", "grep", "readFile", "readBySignature",
+                "listFiles", "graphNode", "graphSearch", "listConfig", "readChunks");
+        assertThat(names).doesNotContain("graphFile", "graphCluster",
                 "graphClusterOverview", "semanticGraphNode", "semanticGraphCluster",
                 "semanticGraphOverview");
     }
@@ -80,9 +80,19 @@ class PrjxpP2McpToolTest {
             if (method.getAnnotation(McpTool.class) == null) {
                 continue;
             }
+            if (method.getName().equals("listProjects")) {
+                continue; // discovery tool: it answers the question which projects exist
+            }
             assertThat(method.getParameters())
                     .as(method.getName())
                     .anyMatch(p -> p.getName().equals("project"));
         }
+    }
+
+    @Test
+    void listProjectsDelegatesToTheService() {
+        assertThat(tool.listProjects()).isEmpty();
+
+        verify(service).listProjects();
     }
 }

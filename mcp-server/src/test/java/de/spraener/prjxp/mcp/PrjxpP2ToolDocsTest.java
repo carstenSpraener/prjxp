@@ -22,15 +22,20 @@ class PrjxpP2ToolDocsTest {
             }
         }
 
-        assertThat(total).isLessThanOrEqualTo(1_800);
+        assertThat(total).isLessThanOrEqualTo(2_100);
     }
 
     @Test
-    void noDescriptionMentionsAProjectParameter() throws IllegalAccessException {
+    void theProjectIsDiscoveredOnceInsteadOfRepeatedInEveryDescription() throws IllegalAccessException {
+        assertThat(PrjxpP2ToolDocs.LIST_PROJECTS).contains("project");
         for (Field field : PrjxpP2ToolDocs.class.getDeclaredFields()) {
-            if (Modifier.isStatic(field.getModifiers()) && field.getType() == String.class) {
-                assertThat((String) field.get(null)).doesNotContain("project");
+            if (!Modifier.isStatic(field.getModifiers()) || field.getType() != String.class) {
+                continue;
             }
+            if (field.getName().equals("LIST_PROJECTS")) {
+                continue;
+            }
+            assertThat((String) field.get(null)).as(field.getName()).doesNotContain("project");
         }
     }
 }

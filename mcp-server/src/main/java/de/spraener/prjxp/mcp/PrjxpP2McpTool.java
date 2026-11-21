@@ -1,6 +1,7 @@
 package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.model.FileView;
+
 import de.spraener.prjxp.common.model.SymbolReadResult;
 import lombok.RequiredArgsConstructor;
 import org.springaicommunity.mcp.annotation.McpTool;
@@ -15,8 +16,8 @@ import java.util.List;
  * <p>
  * Differences to P1, all of them tool-contract properties rather than question-specific tuning:
  * <ul>
- *   <li>every tool takes an explicit {@code project}, so one hub serves all indexed projects,
- *       but {@code listProjects} is gone (the caller knows the project it asks about),</li>
+ *   <li>every tool takes an explicit {@code project}; {@code listProjects} answers which projects
+ *       exist, so one hub serves all indexed projects,</li>
  *   <li>{@code grep} returns {@code file:line} hits instead of a bare file list,</li>
  *   <li>{@code vectorSearch} adds a snippet and a {@code readChunks} hint and de-duplicates ids,</li>
  *   <li>{@code readBySignature} appends method bodies to a class frame,</li>
@@ -32,6 +33,11 @@ public class PrjxpP2McpTool {
 
     private final PrjxpToolService toolService;
     private final P2Measures measures;
+
+    @McpTool(name = "listProjects", description = PrjxpP2ToolDocs.LIST_PROJECTS)
+    public List<ProjectSummary> listProjects() {
+        return toolService.listProjects();
+    }
 
     @McpTool(name = "vectorSearch", description = PrjxpP2ToolDocs.VECTOR_SEARCH)
     public String vectorSearch(

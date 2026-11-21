@@ -175,11 +175,12 @@ Beschreibungen auf Entscheidungsregeln verkürzen („für X → Tool Y“).
 
 ### Umsetzung (empfohlen)
 
-Behalten: `vectorSearch`, `readChunks`, `readBySignature`, `readFile`, `grep`,
-`listFiles`, `graphNode`, `graphSearch`, `listConfig` (9 Tools).
+Behalten: `listProjects`, `vectorSearch`, `readChunks`, `readBySignature`,
+`readFile`, `grep`, `listFiles`, `graphNode`, `graphSearch`, `listConfig`
+(10 Tools). `listProjects` bleibt, weil der Hub multi-project ist und das
+Projekt ohne dieses Tool geraten werden müsste.
 Entfernen: `graphFile`, `graphCluster`, `graphClusterOverview`,
-`semanticGraphNode`, `semanticGraphCluster`, `semanticGraphOverview`,
-`listProjects`.
+`semanticGraphNode`, `semanticGraphCluster`, `semanticGraphOverview`.
 
 ### Akzeptanz
 
@@ -319,7 +320,7 @@ Kontrollarm. Der Umschlag ist eine Start-Property, kein Prompt-Eingriff:
 | `prjxp.hub.tool-profile` | `p1` (Default) \| `p2` | wählt die MCP-Toolfläche |
 
 **P1** bleibt byte-identisch (16 Tools, `project`-Parameter, `listProjects`).
-**P2** bietet 9 Tools; jedes nimmt `project` wie P1 (`listProjects` entfällt),
+**P2** bietet 10 Tools; jedes nimmt `project` wie P1 (`listProjects` bleibt),
 `grep` liefert `datei:zeile` + Trefferzeile (`substring`/`exact`/`regex`),
 `vectorSearch` ergänzt Snippet, Chunk-Dedup und `readChunks`-Hinweis,
 `readBySignature` hängt an einen Klassen-FQN die ersten Methodenbodies an

@@ -12,6 +12,11 @@ public final class PrjxpP2ToolDocs {
     private PrjxpP2ToolDocs() {
     }
 
+    public static final String LIST_PROJECTS = """
+            Lists the searchable projects with their last index update. Call it once to learn the
+            project name every other tool expects.
+            """;
+
     public static final String VECTOR_SEARCH = """
             Where/how discovery. Short English keywords, identifiers verbatim. Returns up to 10 files with
             chunk_id, score and a short snippet. Read a hit with readChunks(ids=…) — prefer 1–3 ids.
