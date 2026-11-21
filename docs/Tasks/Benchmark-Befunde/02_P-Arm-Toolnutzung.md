@@ -537,3 +537,30 @@ der P1-Pfad bleibt unverändert (Deckel je Rumpf). Tests:
 
 **Nächster Schritt:** neu bauen, `legacy` erneut messen, danach `prjxp`
 mit demselben Image (die Änderung wirkt in beiden Korpora).
+
+## 16. Messung nach dem Bindungs-Revert (21.11.2026)
+
+P2 ist wieder multi-project: alle Tools nehmen `project`, `listProjects` ist
+zurück (10 Tools). Kein Rebind je Korpus. Lauf `prjxp-20261121T150004Z` und
+`legacy-20261121T150004Z` gegen die eingefrorenen P1-Kontrollen:
+
+| Arm | Korpus | n | Coverage | Precision |
+|---|---|---|---|---|
+| P1 | prjxp | 27 | 0.501 | 0.952 |
+| P2 | prjxp | 27 | **0.621** (+0.121) | 0.991 |
+| P1 | legacy | 27 | 0.327 | 0.891 |
+| P2 | legacy | 21 | 0.332 (+0.006) | 0.891 |
+| P1 | gepoolt | 54 | 0.414 | 0.921 |
+| P2 | gepoolt | 48 | **0.495** (+0.081) | 0.947 |
+
+Precision-Guardrail: **OK**. Effizienz `prjxp`: 43.947 Tokens (P1 46.144),
+8,1 Calls (P1 8,7), 45,4 s (P1 54,6). Größter Gewinn F6 (+0.487 Coverage),
+F2 +0.182, F8 +0.179, F7 +0.167; einzig F9 −0.048.
+
+**Einschränkung:** in `legacy` enden 6 Sessions (L2, L7 je 3×) ohne Antwort.
+Beide Fragen degenerieren deterministisch im Denkteil des Modells (L7: 46k
+Zeichen Wiederholungsschleife zu „ZvF“, Abbruch bei `stopReason=length`;
+L2: Denken endet ohne Text). Ein Wiederholungslauf erzeugt exakt dieselben
+Token-Zahlen — es ist eine Modellpathologie, kein Tool-Effekt. Die betroffenen
+Sessions zählen nicht in `n`, L2 und L7 liegen auch bei P1 niedrig (0.067 /
+0.231).
