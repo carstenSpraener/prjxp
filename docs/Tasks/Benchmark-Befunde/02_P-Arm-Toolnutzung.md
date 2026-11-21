@@ -262,8 +262,10 @@ Prompt-Eingriff gemessen werden. 6–7 folgen erst nach belegter Wirkung.
 4. **Einmal messen, nicht iterieren.** Die 18 Fragen dienen der Verifikation,
    nicht der Optimierung. Für weitere Runden neue, unveröffentlichte Fragen je
    Korpus (Answer-Key außerhalb der Worktrees).
-5. **Judge ≠ Arm-Modell.** Aktuell bewertet `qwen3.8-27b-splash` seine eigenen
-   Antworten; für P2 `qwen3.6-27b` als Judge setzen.
+5. **Judge = Arm-Modell, aber getrennte Rolle.** Der Judge läuft nach allen
+   Sessions, nie inline, und sieht nur Frage, Referenz und Antwort. Ein
+   schwächeres Judge-Modell (früher `qwen3.6-27b`) verzerrt die Coverage
+   stärker als eine mögliche Selbstpräferenz.
 
 Erwarteter Aufwand: P + P2 × 18 Fragen × 3 Reps = 108 Sessions, ca. 2 h.
 
@@ -330,12 +332,13 @@ Kontrollarm. Der Umschlag ist eine Start-Property, kein Prompt-Eingriff:
 **A/B-Anordnung:** ein Hub, ein Image, beide Projekte; das Profil wird beim
 Start gesetzt, der Korpus kommt aus dem `project`-Argument (im `SYSTEM.md`
 genannt). Damit ist der Unterschied der Tool-Vertrag und nicht ein anderer
-Build. Judge: `qwen3.6-27b` (≠ Arm-Modell).
+Build. Judge: `qwen3.8-27b-splash` (gleiches Modell wie der Arm, getrennte
+Rolle; früher `qwen3.6-27b`).
 
 **Tests:** `PrjxpToolService` trägt die Datenlogik, `PrjxpMcpTool`/`PrjxpP2McpTool`
 nur die Annotationen. Abgedeckt sind Profil-/Bindungslogik, Grep-Modi mit
 Zeilennummern, Klassen-Bodies, Snippet/`readChunks`-Rendering und die
-9-Tool-Fläche. Modultests: `prjxp-common`, `golden-retriever`, `lucene-store`,
+16-Tool-Fläche. Modultests: `prjxp-common`, `golden-retriever`, `lucene-store`,
 `mcp-server` grün.
 
 ## 12. A/B-Ergebnis P1 vs. P2 (18.11.2026)
@@ -578,3 +581,27 @@ Umgesetzt in `PrjxpP2McpTool`/`PrjxpP2ToolDocs` mit denselben Parametern wie
 P1, aber kurzen Entscheidungsbeschreibungen. Beschreibungsbudget: 3.012
 Zeichen (P1: 4.154), Testgrenze 3.200. Der Harness-Preflight erwartet wieder
 16 Tools.
+
+## 18. Judge-Wechsel auf `qwen3.8-27b-splash` (21.11.2026)
+
+`qwen3.6-27b` bewertete zu unzuverlässig; der Judge läuft jetzt mit demselben
+Modell wie die Arme (getrennte Rolle, nach allen Sessions, sieht nur Frage,
+Referenz, Antwort). Alle vier betroffenen Läufe wurden mit 3.8 neu bewertet
+(Altdaten als `judge-qwen3.6.json` gesichert):
+
+| Arm | Korpus | n | Coverage | Precision |
+|---|---|---|---|---|
+| P1 | prjxp | 27 | 0.563 | 0.991 |
+| P2 | prjxp | 27 | **0.630** (+0.068) | 1.000 |
+| P1 | legacy | 27 | 0.427 | 0.961 |
+| P2 | legacy | 21 | **0.365** (−0.063) | 1.000 |
+| P1 | gepoolt | 54 | 0.495 | 0.976 |
+| P2 | gepoolt | 48 | **0.514** (+0.019) | 1.000 |
+
+Precision-Guardrail: OK. **Korpus-Guardrail verletzt:** `legacy` liegt 0.063
+unter P1 (Grenze 0.03), getrieben von L5 (−0.333), L6 (−0.429) und L9
+(−0.166); `prjxp` gewinnt +0.068 (F2, F3, F6, F7, F8).
+
+Wichtig: §16 („Guardrail OK“) galt unter dem 3.6-Judge. Der Judge-Wechsel
+verschiebt die absoluten Werte deutlich und dreht das Legacy-Vorzeichen —
+Ergebnisse sind nur innerhalb desselben Judge-Modells vergleichbar.
