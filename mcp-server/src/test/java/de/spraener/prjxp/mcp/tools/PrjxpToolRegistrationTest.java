@@ -308,7 +308,7 @@ class PrjxpToolRegistrationTest {
     @Test
     void readBySignatureRendersMatches() {
         MethodView match = new MethodView("com.example.Foo#bar", "Foo.java", 5, 9, "/** doc */", "void bar() {}");
-        when(mcpTool.readBySignature(eq("bar"), any(), any()))
+        when(mcpTool.readBySignature(eq("bar"), any(), any(), any(), any()))
                 .thenReturn(new SymbolReadResult(List.of(match), List.of("com.other.Foo#bar"), null));
 
         String result = execute("readBySignature", Map.of("method", "bar"));
@@ -322,7 +322,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void readBySignatureWithoutMatches() {
-        when(mcpTool.readBySignature(any(), any(), any()))
+        when(mcpTool.readBySignature(any(), any(), any(), any(), any()))
                 .thenReturn(new SymbolReadResult(List.of(), List.of(), null));
 
         assertThat(execute("readBySignature", Map.of("method", "nope"))).contains("No matches found");
@@ -330,7 +330,7 @@ class PrjxpToolRegistrationTest {
 
     @Test
     void readBySignatureReportsError() {
-        when(mcpTool.readBySignature(any(), any(), any()))
+        when(mcpTool.readBySignature(any(), any(), any(), any(), any()))
                 .thenReturn(SymbolReadResult.error("index missing"));
 
         assertThat(execute("readBySignature", Map.of("method", "bar"))).contains("ERROR reading symbol: index missing");

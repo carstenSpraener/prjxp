@@ -62,31 +62,6 @@ public class PrjxpToolService {
 
             Integer tokenBudget
     ) {
-        return vectorSearch(userQuestion, projectName, similarity, maxResults, sourceType, includeTests,
-                tokenBudget, false);
-    }
-
-    /**
-     * P2 vector search: pointers plus a short snippet, de-duplicated chunk ids and an explicit
-     * {@code readChunks} hint. Same query path as P1, only the rendering density differs.
-     */
-    public String vectorSearchP2(
-            String userQuestion,
-            String projectName,
-            Double similarity,
-            Integer maxResults,
-            String sourceType,
-            Boolean includeTests,
-            Integer tokenBudget,
-            boolean snippets
-    ) {
-        return vectorSearch(userQuestion, projectName, similarity, maxResults, sourceType, includeTests,
-                tokenBudget, snippets);
-    }
-
-    private String vectorSearch(String userQuestion, String projectName, Double similarity, Integer maxResults,
-                                String sourceType, Boolean includeTests, Integer tokenBudget, boolean p2) {
-
         String prefix = """
                 """;
         try {
@@ -111,11 +86,8 @@ public class PrjxpToolService {
         String effectiveSourceType = (sourceType == null || sourceType.isBlank()) ? SourceTypeFilter.CODE : sourceType;
         log.info(String.format("searching context for '%s' for project '%s' (contentLevel=%s, sourceType=%s).",
                 userQuestion, projectName, level, effectiveSourceType));
-        String context = p2
-                ? enrichment.enrich(projectName, userQuestion, similarity, maxResults, level, includeTests,
-                        SourceTypeFilter.mimeFilters(effectiveSourceType), 240, true, true)
-                : enrichment.enrich(projectName, userQuestion, similarity, maxResults, level, includeTests,
-                        SourceTypeFilter.mimeFilters(effectiveSourceType));
+        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, level, includeTests,
+                SourceTypeFilter.mimeFilters(effectiveSourceType), 240, true, true);
         context = appendDeadEndHint(context, effectiveSourceType);
 
         String result = String.format("%s\n%s", prefix, context);
@@ -150,18 +122,20 @@ public class PrjxpToolService {
 
             String project,
 
+            String mode,
+
             String language,
 
             Integer limit,
 
             Boolean includeTests
     ) {
-        // Strategy: grep returns the file list only (grep -l) — no contentLevel knob, so the
-        // agent cannot escalate to SKELETON/FULL. Content comes via readBySignature/readFile.
-        ContentLevel level = ContentLevel.NAMES;
-        String text = GrepTextRenderer.render(
-                grepResult(query, project, language, limit, includeTests, level), level, query);
-        return ToolResultCaps.cap(text, ToolResultCaps.SEARCH);
+        GrepMode grepMode = GrepMode.parse(mode, GrepMode.SUBSTRING);
+        int maxHits = limit == null ? 20 : Math.max(1, Math.min(limit, SearchLimits.MAX_LIMIT));
+        boolean tests = includeTests == null || includeTests;
+        GrepResult result = grepSearchService.searchMatches(query == null ? "" : query.trim(),
+                project, language, maxHits, tests, grepMode);
+        return ToolResultCaps.cap(renderMatches(query, grepMode, result), ToolResultCaps.SEARCH);
     }
 
     /**
@@ -190,24 +164,6 @@ public class PrjxpToolService {
         return ContentLevel.parse(contentLevel, ContentLevel.NAMES);
     }
 
-    /**
-     * P2 grep: line hits with a {@code file:line} anchor. {@code mode} defaults to substring;
-     * an invalid regex is reported as an error note instead of an empty result.
-     */
-    public String grepP2(String query, String project, String mode, String language, Integer limit,
-                         Boolean includeTests, boolean lines) {
-        if (!lines) {
-            // Isolation arm: P2 surface, but the historical per-file grep contract.
-            return grep(query, project, language, limit, includeTests);
-        }
-        GrepMode grepMode = GrepMode.parse(mode, GrepMode.SUBSTRING);
-        int maxHits = limit == null ? 20 : Math.max(1, Math.min(limit, SearchLimits.MAX_LIMIT));
-        boolean tests = includeTests == null || includeTests;
-        GrepResult result = grepSearchService.searchMatches(query == null ? "" : query.trim(),
-                project, language, maxHits, tests, grepMode);
-        return ToolResultCaps.cap(renderMatches(query, grepMode, result), ToolResultCaps.SEARCH);
-    }
-
     private String renderMatches(String query, GrepMode mode, GrepResult result) {
         if (result == null) {
             return "No results found.";
@@ -233,19 +189,6 @@ public class PrjxpToolService {
             sb.append(result.note()).append('\n');
         }
         return sb.toString();
-    }
-
-    /** P2 symbol read: a class FQN additionally returns its first method bodies. */
-    public SymbolReadResult readBySignatureP2(String method, String container, String project,
-                                              Boolean includeBodies, Integer maxBodies, boolean bodiesEnabled) {
-        if (!bodiesEnabled) {
-            // Isolation arm: P2 surface, but the historical frame-only read.
-            return readBySignature(method, container, project);
-        }
-        int bodies = maxBodies == null ? 3 : Math.max(0, Math.min(maxBodies, 10));
-        boolean withBodies = includeBodies == null || includeBodies;
-        return capSymbolResult(symbolReaderService.readBySignature(method, container, project,
-                withBodies, bodies), ToolResultCaps.READER);
     }
 
     public FileView readFile(
@@ -279,14 +222,25 @@ public class PrjxpToolService {
                 view.totalLines(), view.returnedLines(), view.candidates(), view.error());
     }
 
+    /**
+     * Reads one symbol. A class FQN additionally returns its first method bodies; the total body
+     * budget of one call is {@link ToolResultCaps#READER}.
+     */
     public SymbolReadResult readBySignature(
             String method,
 
             String container,
 
-            String project
+            String project,
+
+            Boolean includeBodies,
+
+            Integer maxBodies
     ) {
-        return capSymbolResult(symbolReaderService.readBySignature(method, container, project));
+        int bodies = maxBodies == null ? 3 : Math.max(0, Math.min(maxBodies, 10));
+        boolean withBodies = includeBodies == null || includeBodies;
+        return capSymbolResult(symbolReaderService.readBySignature(method, container, project,
+                withBodies, bodies), ToolResultCaps.READER);
     }
 
     /**

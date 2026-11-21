@@ -207,7 +207,7 @@ public class PrjxpToolRegistration {
                         return "ERROR: 'method' parameter is required for readBySignature.";
                     }
                     SymbolReadResult result = mcpTool.readBySignature(method,
-                            string(params, "container"), string(params, "project"));
+                            string(params, "container"), string(params, "project"), null, null);
                     return formatSymbolResult(method, result);
                 }, spec);
     }

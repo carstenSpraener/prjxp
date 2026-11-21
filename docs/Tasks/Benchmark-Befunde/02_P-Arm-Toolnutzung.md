@@ -672,3 +672,16 @@ Folgerung: prjxp kann dem Modell das richtige Vorgehen **billig machen**
 trennen), aber nicht erzwingen. Aussagen über Tool-Wirkung brauchen deshalb
 (a) Determinismus je Frage, (b) Nutzungs-Telemetrie statt nur Coverage und
 (c) ein Rauschband aus Wiederholungsläufen.
+
+## 21. Ein Werkzeug, eine Fläche (21.11.2026)
+
+Die Profilwahl ist entfernt. Es gibt genau eine MCP-Fläche mit den 16 Tools
+aus §17; `prjxp.hub.tool-profile`, `HubToolProfile` und `P2Measures` sind
+weg, `docker-compose.yml` setzt keine `PRJXP_HUB_TOOL_PROFILE` mehr. Die drei
+Rendering-Maßnahmen (Grep-Zeilen, Snippets, Rümpfe) sind fest eingebaut.
+Damit entfallen auch die Ablationsschalter `prjxp.hub.p2.grep-lines`,
+`-snippets`, `-bodies`.
+
+Die Aussagen in §11 und §17 zur Profil-/Ablationsmechanik sind historisch;
+maßgeblich für den Code ist dieser Abschnitt. Alte Läufe bleiben nur mit dem
+Stand ihrer Images reproduzierbar.

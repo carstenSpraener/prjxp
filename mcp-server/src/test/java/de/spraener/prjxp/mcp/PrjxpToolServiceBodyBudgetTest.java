@@ -52,7 +52,7 @@ class PrjxpToolServiceBodyBudgetTest {
         when(symbolReaderService.readBySignature("a.B", null, "legacy", true, 3))
                 .thenReturn(new SymbolReadResult(matches, List.of(), null));
 
-        SymbolReadResult result = tool.readBySignatureP2("a.B", null, "legacy", true, 3, true);
+        SymbolReadResult result = tool.readBySignature("a.B", null, "legacy", true, 3);
 
         int total = result.matches().stream()
                 .map(MethodView::body)
@@ -70,21 +70,21 @@ class PrjxpToolServiceBodyBudgetTest {
         when(symbolReaderService.readBySignature("a.B", null, "prjxp", true, 3))
                 .thenReturn(new SymbolReadResult(matches, List.of(), null));
 
-        SymbolReadResult result = tool.readBySignatureP2("a.B", null, "prjxp", true, 3, true);
+        SymbolReadResult result = tool.readBySignature("a.B", null, "prjxp", true, 3);
 
         assertThat(result.matches().getFirst().body()).isEqualTo(body('x', 200));
     }
 
     @Test
-    void p1PathKeepsItsPerBodyCapOnly() {
+    void oneLongBodyIsCappedAtTheCallBudget() {
         List<MethodView> matches = List.of(view("a.B#m", body('x', 12_000)));
-        when(symbolReaderService.readBySignature("a.B", null, "prjxp"))
+        when(symbolReaderService.readBySignature("a.B", null, "prjxp", true, 3))
                 .thenReturn(new SymbolReadResult(matches, List.of(), null));
 
-        SymbolReadResult result = tool.readBySignature("a.B", null, "prjxp");
+        SymbolReadResult result = tool.readBySignature("a.B", null, "prjxp", true, 3);
 
-        assertThat(result.matches().getFirst().body())
-                .startsWith(body('x', ToolResultCaps.READER))
-                .contains("gekürzt");
+        String capped = result.matches().getFirst().body();
+        assertThat(capped.length()).isLessThan(12_000);
+        assertThat(capped).startsWith(body('x', 9_000)).contains("gekürzt");
     }
 }

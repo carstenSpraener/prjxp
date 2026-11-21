@@ -18,9 +18,6 @@ spring:
 prjxp:
   hub:
     enabled: true
-    # p1 = historical contract (16 tools); p2 = 9 tools with denser rendering.
-    # Both take the project per call: one hub serves every indexed project.
-    tool-profile: ${PRJXP_HUB_TOOL_PROFILE:p1}
     import-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/import
     projects-root: ${PRJXP_ROOT_DIR:.}/.prjxp-data/projects
     live-jsonl-dir: ${PRJXP_ROOT_DIR:.}/.prjxp-data/chunks

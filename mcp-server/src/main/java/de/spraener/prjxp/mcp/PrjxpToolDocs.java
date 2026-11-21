@@ -1,104 +1,94 @@
 package de.spraener.prjxp.mcp;
 
 /**
- * Single source of truth for the prjxp tool descriptions.
+ * Tool descriptions of the P2 contract (Benchmark-Befund 02, measures 2–5).
  * <p>
- * Both the MCP path ({@link PrjxpMcpTool} via {@code @McpTool}) and the hub chat path
- * ({@link de.spraener.prjxp.mcp.tools.PrjxpToolRegistration}) read their tool-level text from here,
- * so the two surfaces can never drift apart.
- * <p>
- * The texts are deliberately tight: they are sent to the model on every request, so the whole set
- * is budgeted (see {@code PrjxpToolDocsTest}).
+ * P2 is a decision guide, not a catalogue: each text names the one situation the tool is for and
+ * the cheaper alternative.
+ * The total length is budgeted by {@code PrjxpToolDocsTest}; the schema is sent on every turn.
  */
 public final class PrjxpToolDocs {
 
     private PrjxpToolDocs() {
     }
 
+    public static final String LIST_PROJECTS = """
+            Lists the searchable projects with their last index update. Call it once to learn the
+            project name every other tool expects.
+            """;
+
     public static final String VECTOR_SEARCH = """
-            Start here for where/how questions. Pass a short English keyword query
-            (e.g. "PxChunk definition usage"), identifiers/class names/file names verbatim
-            — not the raw German question. Returns pointers only (file, chunk_id, score) — no content.
-            Read content with readBySignature(FQN#name) or readFile(offset/limit).
-            Defaults: sourceType=code, maxResults=10; sourceType=all for prose.
-            tokenBudget default 2000; raise only for a deliberate full view.
+            Where/how discovery. Short English keywords, identifiers verbatim. Returns up to 10 files with
+            chunk_id, score and a short snippet. Read a hit with readChunks(ids=…) — prefer 1–3 ids.
+            sourceType=code (default) | docs | all; tests only with includeTests=true.
             """;
 
     public static final String GREP = """
-            Exact text search. Returns only the file list "count  path" (like grep -l) — no content.
-            Read content explicitly with readBySignature(FQN#name) or readFile(offset/limit).
-            Exact token, not substring: "ChunkRanking" does NOT match "ChunkRankingService".
-            Use listFiles("*ChunkRanking*") for file names, or the full symbol name. Tests default true; max 100 files.
+            Find a known text and get file:line plus the matching line. mode=substring (default) |
+            exact (whole word) | regex. Use it for identifiers, error strings and call sites;
+            use vectorSearch when you only know the concept. Tests default on; limit default 20 hits.
             """;
 
     public static final String READ_FILE = """
-            Reads a file. Prefer readBySignature(FQN#name) for one symbol.
-            Default: 100 lines from offset. full=true only for files ≤200 lines (hard cap 200 lines / 20k chars);
-            for larger files use offset/limit or readBySignature.
-            For configuration questions use listConfig(project).
+            Read a file range when you need several symbols or surrounding context. Default 100 lines
+            from offset. Prefer readBySignature for one symbol. full=true only for files ≤200 lines.
             """;
 
     public static final String READ_BY_SIGNATURE = """
-            Reads a symbol in any indexed language. Use 'FQN#name' (or name + container) for javadoc and method body.
-            A class FQN returns its class frame with signatures only.
-            For config classes prefer the class FQN — it returns the class frame with fields.
-            """;
-
-    public static final String LIST_PROJECTS = """
-            Lists searchable projects and last index update. Call before search tools to learn valid project values.
+            Read one symbol. 'FQN#name' or name+container returns javadoc and body. A class FQN returns
+            the frame plus the first method bodies (includeBodies=false to suppress, maxBodies default 3).
             """;
 
     public static final String LIST_FILES = """
-            Lists which files exist in the index (structure, not content). 'path' is a prefix or glob ('*' spans '/'); empty = all.
+            List existing files by prefix or glob ('*' spans '/'). Use to locate a path, not to read content.
             """;
 
     public static final String GRAPH_FILE = """
-            Typed code-graph neighbours of a file (imports, inheritance, calls, and related edges). includeExternal adds library edges.
-            maxEdges max 500; offset pages; totals = full count. tokenBudget default 2000; raise only for a deliberate full view.
+            Typed neighbours of one file (imports, inheritance, calls). Use it to see what a file
+            pulls in or what depends on it; offset pages, totals = full count.
             """;
 
     public static final String GRAPH_NODE = """
-            Typed neighbours of a class or method id — includes CONTAINS (class -> its methods). For call sites, grep(symbol) is cheaper.
-            includeExternal adds library edges. maxEdges max 500; offset pages; totals = full count.
-            tokenBudget default 2000; raise only for a deliberate full view.
+            Typed neighbours of one class/method id (CALL, CONTAINS, FIELD, …). Use for wiring and
+            inheritance; use grep for call sites and readBySignature for behaviour.
             """;
 
     public static final String GRAPH_SEARCH = """
-            Search the code graph by keyword and return a bounded subgraph (seeds + BFS/DFS
-            neighbourhood). Use for "what is X" / "where is X used" / "how is X wired" —
-            not for reading content. Pass a short English keyword query; keep identifiers,
-            class names and file names verbatim. Defaults: mode=bfs, depth=3,
-            tokenBudget=2000, maxSeeds=3. Use graphNode for one exact symbol, graphFile for
-            one file, vectorSearch for prose/semantic discovery.
+            Bounded subgraph for "what is X wired to". Keyword query, mode=bfs|dfs, depth 1–6.
+            Use graphNode for one exact symbol, vectorSearch for concept discovery.
             """;
 
     public static final String GRAPH_CLUSTER = """
-            Important typed-code cluster members ranked by degree. Use with a cluster id from vectorSearch or graphNode.
+            Important typed-code cluster members ranked by degree. The id comes from vectorSearch or
+            graphNode; use graphClusterOverview when you have no starting class.
             """;
 
     public static final String GRAPH_CLUSTER_OVERVIEW = """
-            Largest typed-code clusters with sizes and top members. Use to explore architecture without a starting class.
+            Largest typed-code clusters with sizes and top members. Use to explore architecture while
+            you have no starting class. Not the semantic clusters (semanticGraphOverview).
             """;
 
     public static final String SEMANTIC_GRAPH_CLUSTER = """
-            Semantic cluster members across docs and class frames. Not the typed code graph (graphCluster).
+            Semantic cluster members across docs and class frames. Not typed code relationships
+            (graphCluster).
             """;
 
     public static final String SEMANTIC_GRAPH_NODE = """
-            Project-scoped semantic neighbours with files and scores. Not typed code relationships (graphNode).
+            Project-scoped semantic neighbours with files and scores. Not typed code relationships
+            (graphNode).
             """;
 
     public static final String SEMANTIC_GRAPH_OVERVIEW = """
-            Largest semantic clusters with member counts, top files, model, and calibration warning. Not graphClusterOverview.
+            Largest semantic clusters with member counts, top files and calibration warning. Not
+            graphClusterOverview.
+            """;
+
+    public static final String LIST_CONFIG = """
+            Configured properties (name, type, default, source). Use for "which setting controls X"
+            instead of reading config classes.
             """;
 
     public static final String READ_CHUNKS = """
-            Read the full content of one or more chunks by their chunk_id (from vectorSearch neighbours or chunk_id fields). \
-            Returns the recombined content of each chunk; prefer 1–3 ids, each chunk is re-sent on every later turn. \
-            Parameters: project (required), ids (comma-separated chunk_ids, max 10).""";
-
-    public static final String LIST_CONFIG = """
-            List configuration properties (name, type, default, description, source).
-            Use for "which config parameters exist?" — do not read every config class.
+            Full content of chunks by id from vectorSearch. Comma-separated ids, max 10; prefer 1–3.
             """;
 }
