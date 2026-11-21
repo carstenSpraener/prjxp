@@ -644,3 +644,31 @@ Konsequenz für die nächste Runde: Guardrail auf `legacy` bleibt verletzt,
 unabhängig vom Judge. Generische Hebel sind (a) P2-Grep soll zum Lesen des
 Treffers führen statt ihn zu ersetzen, (b) der alternative Bauplan-Pfad muss
 als eigener Pfad erkennbar sein. Beides ist noch nicht umgesetzt.
+
+## 20. Wie viel davon ist Modell? (21.11.2026)
+
+Gegenprobe auf `prjxp`, alle Arme im selben Lauf (`main-20261114T111225Z`),
+Judge 3.8, n=27 je Arm:
+
+| Arm | Werkzeuge | Coverage | Precision | Tokens | Calls |
+|---|---|---|---|---|---|
+| N | `read`/`bash`/`grep`/`find`/`ls` | **0.603** | 1.000 | 44.004 | 9.7 |
+| P | prjxp MCP (16 Tools) | 0.546 | 0.972 | 52.333 | 9.8 |
+| G | graphify | 0.413 | 0.991 | 44.439 | 10.3 |
+| V | Vektor | 0.380 | 0.939 | 51.753 | 10.1 |
+
+Der Arm **ohne jede MCP-Fläche** gewinnt: dasselbe Modell findet mit `grep`,
+`find` und `read` mehr Fakten als über prjxp, bei weniger Tokens. Die
+Werkzeugfläche hebelt das Ergebnis also weniger als das Modell selbst.
+
+Streuung derselben Konfiguration (drei `legacy`-Läufe, gleicher Judge):
+P 0.354 / 0.427 / 0.427, N 0.546 / 0.549 / 0.593, G 0.324 / 0.324 / 0.429.
+Das sind ±0.02–0.07 — in derselben Größenordnung wie die meisten
+Tool-Unterschiede. Der Judge-Wechsel verschiebt einzelne Antworten um bis zu
+0.5 (§19), also mehr als jede Rendering-Maßnahme.
+
+Folgerung: prjxp kann dem Modell das richtige Vorgehen **billig machen**
+(Beschreibung, ein Aufruf liefert genug Kontext, falsche Pfade sichtbar
+trennen), aber nicht erzwingen. Aussagen über Tool-Wirkung brauchen deshalb
+(a) Determinismus je Frage, (b) Nutzungs-Telemetrie statt nur Coverage und
+(c) ein Rauschband aus Wiederholungsläufen.
