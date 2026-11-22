@@ -685,3 +685,34 @@ Damit entfallen auch die Ablationsschalter `prjxp.hub.p2.grep-lines`,
 Die Aussagen in §11 und §17 zur Profil-/Ablationsmechanik sind historisch;
 maßgeblich für den Code ist dieser Abschnitt. Alte Läufe bleiben nur mit dem
 Stand ihrer Images reproduzierbar.
+
+## 22. Messung der einen Fläche (21./22.11.2026)
+
+Image `sha256:4183e011…`, 16 Tools, keine Profil-/Ablationsvariablen. Läufe
+`prjxp-20261121T220211Z` und `legacy-20261121T220211Z`, Judge
+`qwen3.8-27b-splash`, 54/54 Sessions ok (keine `empty_answer` diesmal).
+Vergleich gegen die eingefrorenen P1-Kontrollen, ebenfalls mit 3.8 bewertet:
+
+| Arm | Korpus | n | Coverage | Precision |
+|---|---|---|---|---|
+| P1 | prjxp | 27 | 0.563 | 0.991 |
+| P2 | prjxp | 27 | **0.602** (+0.039) | 1.000 |
+| P1 | legacy | 27 | 0.427 | 0.961 |
+| P2 | legacy | 27 | **0.454** (+0.027) | 1.000 |
+| P1 | gepoolt | 54 | 0.495 | 0.976 |
+| P2 | gepoolt | 54 | **0.528** (+0.033) | 1.000 |
+
+Precision- und Korpus-Guardrail: **OK** (beide Korpora positiv).
+
+Werkzeugnutzung P2: `readBySignature` 78, `readFile` 33, `grep` 30,
+`listFiles` 27, `vectorSearch` 27, `listProjects` 18, `graphNode` 15,
+`listConfig` 3. Von den sechs Graph-Tools wird weiterhin nur `graphNode`
+gewählt; `graphFile`, `graphSearch`, `graphCluster`, `graphClusterOverview`
+und die drei `semanticGraph*` bleiben bei 0.
+
+Einordnung: der gepoolte Zugewinn ist klein, aber konsistent über beide
+Korpora. Die Einzelfragen streuen stärker als der Pool (F3 +0.273, F6 −0.230,
+L5 −0.417, L6 +0.357); L5 bleibt der bekannte Nutzungsunterschied aus §19.
+Dass L2/L7 diesmal antworten, zeigt, dass die frühere Degeneration nicht
+rein deterministisch am Modell hing — sie ist mit anderem Kontext nicht
+reproduzierbar und bleibt ein Störfall, kein Tool-Effekt.
