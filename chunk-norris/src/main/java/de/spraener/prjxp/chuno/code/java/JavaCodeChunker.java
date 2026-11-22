@@ -37,6 +37,8 @@ import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -47,6 +49,15 @@ public class JavaCodeChunker implements PxChunker {
     private static final String CHUNKER_NAME = "JavaCodeChunker";
     public static final String JAVA_CODE_MIME_TYPE = "text/x-java-code";
     public static final String MDKEY_CODESECTION = "java_code_section";
+    /**
+     * Upper bound for how far the verbatim frame prefix may extend to cover field declarations.
+     * Keeps the frame small when fields are spread across the file; beyond the bound those field
+     * lines stay synthetic (and therefore unanchorable) instead of bloating the embedding.
+     */
+    private static final int MAX_FRAME_FIELD_SPAN_LINES = 60;
+    /** Locates a type declaration by keyword and name (skips annotations that contain '{'). */
+    private static final Pattern TYPE_DECLARATION =
+            Pattern.compile("\\b(class|interface|enum|record|@interface)\\s+([A-Za-z_$][\\w$]*)");
 
     private final JavaDependencyHandler javaDependencyHandler;
     private final JavaCodeGraphBuilder javaCodeGraphBuilder;
@@ -410,16 +421,24 @@ public class JavaCodeChunker implements PxChunker {
     private Collection<? extends PxChunk> createClassFrameChunk(File f, CompilationUnit cu, List<String> codeLines, Map<String, GraphNode> graphNodes) {
         List<PxChunk> chunks = new ArrayList<>();
         for (var clazz : collectTypes(cu)) {
+            int declIdx = clazz.getRange().get().begin.line - 1;
+            int headerEndIdx = classHeaderEndIndex(clazz, codeLines);
+            int prefixEndIdx = Math.min(
+                    Math.max(headerEndIdx, lastFieldEndIndex(clazz, headerEndIdx)),
+                    headerEndIdx + MAX_FRAME_FIELD_SPAN_LINES);
+            // The frame starts with a verbatim source prefix: for a top-level type from the first
+            // file line (so package/imports survive), for a nested type from its own declaration
+            // (to avoid duplicating the outer type). The prefix extends through the field block so
+            // fields stay line-addressable; only the signature block below is synthetic.
+            boolean topLevel = clazz.getParentNode().map(p -> p instanceof CompilationUnit).orElse(false);
+            int prefixStartIdx = topLevel ? 0 : declIdx;
             StringBuilder content = new StringBuilder();
-            cu.getPackageDeclaration().ifPresent(pd -> content.append(pd.toString()).append('\n'));
-            content.append(getImportsRange(cu, codeLines).toCode());
-            clazz.getJavadocComment().ifPresent(jc -> content.append(jc.toString()).append('\n'));
-            for (int idx = clazz.getRange().get().begin.line - 1; idx == 0 || !codeLines.get(idx - 1).contains("{"); idx++) {
+            for (int idx = prefixStartIdx; idx <= prefixEndIdx && idx < codeLines.size(); idx++) {
                 content.append(codeLines.get(idx)).append('\n');
             }
-            for (var attr : clazz.getFields()) {
-                content.append("    ").append(attr.toString()).append('\n');
-            }
+            int verbatimFirstLine = prefixStartIdx + 1;
+            int verbatimLastLine = Math.min(prefixEndIdx, codeLines.size() - 1) + 1;
+
             content.append("\n");
             for (var ctor : clazz.getConstructors()) {
                 addAnnotationsIfExist(content, ctor, "    ");
@@ -430,7 +449,7 @@ public class JavaCodeChunker implements PxChunker {
                 content.append("    ").append(m.getDeclarationAsString(false, false, false)).append('\n');
             }
             content.append("}\n");
-            int fromLine = clazz.getRange().get().begin.line - 1;
+            int fromLine = prefixStartIdx;   // 0-based index of the first content line
             int toLine = clazz.getRange().get().end.line;
             chunks.addAll(
                     new ContentSplitter(this.chunkSize, this.overlap).splitContent(content.toString(), fromLine, toLine,
@@ -440,6 +459,8 @@ public class JavaCodeChunker implements PxChunker {
                                         c -> c.setId(clazz.getFullyQualifiedName().orElse(clazz.getNameAsString())),
                                         c -> c.setFile(f.getAbsolutePath()),
                                 c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.CLAZZ_FRAME.getName()),
+                                c -> c.getMetadata().put(PxChunk.PXCHUNK_VERBATIM_LINES,
+                                        verbatimFirstLine + "-" + verbatimLastLine),
                                 c -> SymbolMetadata.applyClass(c.getMetadata(), JavaCodeSection.CLAZZ_FRAME.getName(),
                                         clazz.getFullyQualifiedName().orElse(clazz.getNameAsString()),
                                         clazz.getNameAsString()),
@@ -451,6 +472,49 @@ public class JavaCodeChunker implements PxChunker {
             );
         }
         return chunks;
+    }
+
+    /**
+     * Index (0-based) of the last source line belonging to the type declaration header: the line
+     * that opens the type body. The declaration is located by its keyword and name, because the
+     * parser range may start at the annotations — and an annotation argument such as
+     * {@code @Profile({A, B})} contains a '{' that must not be mistaken for the type body.
+     */
+    private static int classHeaderEndIndex(TypeDeclaration<?> clazz, List<String> codeLines) {
+        int start = Math.max(0, clazz.getRange().map(r -> r.begin.line - 1).orElse(0));
+        if (start >= codeLines.size()) {
+            return Math.max(0, codeLines.size() - 1);
+        }
+        String name = clazz.getNameAsString();
+        int declarationIdx = -1;
+        for (int idx = start; idx < codeLines.size(); idx++) {
+            Matcher matcher = TYPE_DECLARATION.matcher(codeLines.get(idx));
+            if (matcher.find() && name.equals(matcher.group(2))) {
+                declarationIdx = idx;
+                break;
+            }
+        }
+        if (declarationIdx < 0) {
+            return Math.min(start, codeLines.size() - 1);
+        }
+        if (codeLines.get(declarationIdx).contains("{")) {
+            return declarationIdx;
+        }
+        for (int idx = declarationIdx + 1; idx < codeLines.size(); idx++) {
+            if (codeLines.get(idx).contains("{")) {
+                return idx;
+            }
+        }
+        return declarationIdx;
+    }
+
+    /** Index (0-based) of the end of the last field declaration, or {@code fallback} without fields. */
+    private static int lastFieldEndIndex(TypeDeclaration<?> clazz, int fallback) {
+        int last = fallback;
+        for (var field : clazz.getFields()) {
+            last = Math.max(last, field.getRange().map(r -> r.end.line - 1).orElse(last));
+        }
+        return last;
     }
 
     private void addAnnotationsIfExist(StringBuilder content, MethodDeclaration m, String identation) {

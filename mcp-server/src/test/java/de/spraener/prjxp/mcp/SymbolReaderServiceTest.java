@@ -170,6 +170,37 @@ class SymbolReaderServiceTest {
     }
 
     @Test
+    void multiPartMethodRangeSpansAllParts() {
+        String file = "/src/de/ex/Bbp.java";
+        Map<String, String> meta = new HashMap<>();
+        meta.put(SymbolMetadata.SYMBOL_FQN, "de.ex.Bbp#create");
+        meta.put(SymbolMetadata.SYMBOL_NAME, "create");
+        meta.put(SymbolMetadata.SYMBOL_CONTAINER_FQN, "de.ex.Bbp");
+        PxChunk part0 = PxChunk.create(
+                c -> c.setId("de.ex.Bbp.create"), c -> c.setParent("de.ex.Bbp"),
+                c -> c.setFile(file), c -> c.setFromLine("368"), c -> c.setToLine("391"),
+                c -> c.setPart(0), c -> c.setTotal(2), c -> c.setSize(10), c -> c.setOverlap(0),
+                c -> c.getMetadata().put("java_code_section", "method"),
+                c -> c.getMetadata().putAll(meta), c -> c.setContent("HEAD01234"));
+        PxChunk part1 = PxChunk.create(
+                c -> c.setId("de.ex.Bbp.create"), c -> c.setParent("de.ex.Bbp"),
+                c -> c.setFile(file), c -> c.setFromLine("392"), c -> c.setToLine("496"),
+                c -> c.setPart(1), c -> c.setTotal(2), c -> c.setSize(9), c -> c.setOverlap(5),
+                c -> c.getMetadata().put("java_code_section", "method"),
+                c -> c.getMetadata().putAll(meta), c -> c.setContent("01234TAIL"));
+        stubDaoReturns(part0, part1);
+
+        SymbolReadResult result = service.readBySignature("de.ex.Bbp#create", null, "p");
+
+        assertThat(result.error()).isNull();
+        MethodView view = result.matches().get(0);
+        assertThat(view.lineFrom()).isEqualTo(368);
+        // must be the end of the last part, not the end of the first chunk
+        assertThat(view.lineTo()).isEqualTo(496);
+        assertThat(view.body()).isEqualTo("HEAD01234TAIL");
+    }
+
+    @Test
     void bareNameWithContainerReturnsAllOverloads() {
         String file = "/src/de/ex/Foo.java";
         PxChunk m1 = methodUnit("de.ex.Foo.public void bar()", "de.ex.Foo#bar", "bar", "de.ex.Foo",

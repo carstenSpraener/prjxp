@@ -38,9 +38,12 @@ public class ContentSplitterTest {
 
         List<PxChunk> chunks = uut.splitContent(content, 100, 108, () -> PxChunk.create(c -> c.setId("lines")));
 
-        assertEquals("100", chunks.get(0).getFromLine());
-        assertEquals("102", chunks.get(0).getToLine());
-        assertEquals("102", chunks.get(1).getFromLine());
-        assertEquals("105", chunks.get(1).getToLine());
+        // Stored line ranges are 1-based and inclusive: line index 100 is source line 101.
+        assertEquals("101", chunks.get(0).getFromLine());
+        assertEquals("103", chunks.get(0).getToLine());
+        assertEquals("103", chunks.get(1).getFromLine());
+        assertEquals("106", chunks.get(1).getToLine());
+        assertEquals("106", chunks.get(2).getFromLine());
+        assertEquals("108", chunks.get(2).getToLine());
     }
 }

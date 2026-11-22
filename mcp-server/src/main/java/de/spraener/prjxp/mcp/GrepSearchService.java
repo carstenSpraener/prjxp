@@ -118,7 +118,7 @@ public class GrepSearchService {
 
         // Collect per file, then rank before applying the limit. Emitting in index order made the
         // limit an arbitrary prefix (test code and unrelated files crowded out the real hits).
-        Map<String, List<SearchHit>> hitsByFile = new LinkedHashMap<>();
+        Map<String, Map<Integer, SearchHit>> hitsByFile = new LinkedHashMap<>();
         Map<String, Integer> countByFile = new LinkedHashMap<>();
         int total = 0;
         int stored = 0;
@@ -136,16 +136,23 @@ public class GrepSearchService {
                     if (!pattern.matcher(lines[i]).find()) {
                         continue;
                     }
+                    int line = baseLine + i;
+                    if (!isAnchorableLine(chunk, line)) {
+                        continue;   // synthetic content (e.g. class-frame signature block)
+                    }
                     total++;
                     countByFile.merge(chunk.getFile(), 1, Integer::sum);
                     if (stored >= storeBudget) {
                         continue;   // keep memory bounded; the count above still reflects the file
                     }
                     stored++;
-                    List<SearchHit> perFile = hitsByFile.computeIfAbsent(chunk.getFile(), k -> new ArrayList<>());
-                    int line = baseLine + i;
-                    perFile.add(new SearchHit(chunk.getId(), 0.0, chunk.getFile(), line, line,
-                            snippet(lines[i]), SOURCE, Map.of()));
+                    // Chunk overlap repeats lines: keep one hit per (file, line) and prefer the
+                    // longer snippet, because an overlap chunk may start in the middle of the line.
+                    SearchHit hit = new SearchHit(chunk.getId(), 0.0, chunk.getFile(), line, line,
+                            snippet(lines[i]), SOURCE, Map.of());
+                    hitsByFile
+                            .computeIfAbsent(chunk.getFile(), k -> new LinkedHashMap<>())
+                            .merge(line, hit, GrepSearchService::longerSnippet);
                 }
             }
         }
@@ -153,7 +160,7 @@ public class GrepSearchService {
         rankedFiles.sort(Comparator.comparingInt((String f) -> countByFile.getOrDefault(f, 0)).reversed());
         List<SearchHit> hits = new ArrayList<>();
         for (String file : rankedFiles) {
-            for (SearchHit hit : hitsByFile.getOrDefault(file, List.of())) {
+            for (SearchHit hit : hitsByFile.getOrDefault(file, Map.of()).values()) {
                 if (hits.size() >= limit) {
                     break;
                 }
@@ -202,6 +209,28 @@ public class GrepSearchService {
         return mimeByLanguage().getOrDefault(normalized, language.trim());
     }
 
+    /**
+     * A chunk may be only partly verbatim source (class frames append a synthetic signature
+     * block). Lines outside the declared verbatim range have no valid {@code file:line} anchor.
+     */
+    private static boolean isAnchorableLine(PxChunk chunk, int line) {
+        String range = chunk.getMetadata().get(PxChunk.PXCHUNK_VERBATIM_LINES);
+        if (range == null || range.isBlank()) {
+            return true;
+        }
+        int dash = range.indexOf('-');
+        if (dash <= 0) {
+            return true;
+        }
+        try {
+            int from = Integer.parseInt(range.substring(0, dash).trim());
+            int to = Integer.parseInt(range.substring(dash + 1).trim());
+            return line >= from && line <= to;
+        } catch (NumberFormatException e) {
+            return true;
+        }
+    }
+
     private static int parseLine(String value) {
         if (value == null || value.isBlank()) {
             return 1;
@@ -218,6 +247,11 @@ public class GrepSearchService {
         return trimmed.length() <= SearchHit.SNIPPET_MAX
                 ? trimmed
                 : trimmed.substring(0, SearchHit.SNIPPET_MAX);
+    }
+
+    /** Keeps the more complete snippet when overlapping chunks report the same source line. */
+    private static SearchHit longerSnippet(SearchHit existing, SearchHit candidate) {
+        return candidate.snippet().length() > existing.snippet().length() ? candidate : existing;
     }
 
     private GrepResult toHits(String project, String query, List<ScoredChunk> chunks, int limit, boolean includeTests, ContentLevel contentLevel) {

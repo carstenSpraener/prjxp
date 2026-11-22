@@ -15,13 +15,16 @@ class ReaderSupportTest {
         // last 5 chars of part1), so PxChunk.combine unsplit yields 17 chars.
         PxChunk unit2 = part("u2", 0, 1, "solo", "20", "25");
         PxChunk part1 = part("u1", 0, 2, "ABCDEFGHIJ", "1", "10");
-        PxChunk part2 = part("u1", 1, 2, "FGHIJKLMNOPQ", null, null);
+        PxChunk part2 = part("u1", 1, 2, "FGHIJKLMNOPQ", null, "20");
 
         List<PxChunk> units = ReaderSupport.combineUnits(List.of(unit2, part1, part2));
 
         assertThat(units).hasSize(2);
         assertThat(units).extracting(PxChunk::getId).containsExactly("u1", "u2");
         assertThat(units.get(0).getContent()).isEqualTo("ABCDEFGHIJKLMNOPQ");
+        // the combined unit spans all parts: fromLine of the first, toLine of the last
+        assertThat(units.get(0).getFromLine()).isEqualTo("1");
+        assertThat(units.get(0).getToLine()).isEqualTo("20");
         assertThat(units.get(1).getContent()).isEqualTo("solo");
     }
 

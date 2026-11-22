@@ -45,7 +45,10 @@ public class FullTextChunker implements PxChunker {
                 return Stream.of();   // binary file — skip
             }
             int lineCount = content.split("\n", -1).length;   // fromLine/toLine bookkeeping
-            return new ContentSplitter(PART_SIZE, 0).splitContent(content, 1, lineCount + 1,
+            // ContentSplitter expects the 0-based index of the first line and stores 1-based
+            // inclusive ranges; a trailing '\n' must not count as an extra line.
+            int lastLine = content.endsWith("\n") ? lineCount - 1 : lineCount;
+            return new ContentSplitter(PART_SIZE, 0).splitContent(content, 0, lastLine,
                     () -> PxChunk.create(
                             c -> c.setMimeType(MIME),
                             c -> c.setId(f.getAbsolutePath()),

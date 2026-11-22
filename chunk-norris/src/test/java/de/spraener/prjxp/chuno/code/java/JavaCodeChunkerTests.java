@@ -487,6 +487,131 @@ public class JavaCodeChunkerTests {
     }
 
     @Test
+    public void testClassFramePrefixIsLineFaithful() throws Exception {
+        String source = String.join("\n",
+                "package de.spraener.test;",
+                "",
+                "",
+                "import java.util.List;",
+                "",
+                "public class Framed {",
+                "",
+                "    private int value;",
+                "",
+                "    public int getValue() { return value; }",
+                "}");
+        File code = toTmpFile("Framed", source);
+
+        List<PxChunk> chunkList = uut.chunk(code).toList();
+        PxChunk frame = chunkList.stream()
+                .filter(c -> "classFrame".equals(c.getMetadata().get("java_code_section")))
+                .findFirst().orElseThrow();
+
+        String[] lines = frame.getContent().split("\n", -1);
+        int base = Integer.parseInt(frame.getFromLine());
+        int classIdx = indexOfLine(lines, "public class Framed");
+        int fieldIdx = indexOfLine(lines, "private int value;");
+        int methodIdx = indexOfLine(lines, "int getValue()");
+
+        // the verbatim prefix maps 1:1 to source lines (no package/import drift)
+        assertThat(classIdx).isEqualTo(5);
+        assertThat(base + classIdx).isEqualTo(6);
+        assertThat(base + fieldIdx).isEqualTo(8);
+        assertThat(frame.getMetadata().get(PxChunk.PXCHUNK_VERBATIM_LINES)).isEqualTo("1-8");
+        // the synthetic signature block lies beyond the verbatim range
+        assertThat(methodIdx).isGreaterThan(fieldIdx);
+        assertThat(base + methodIdx).isGreaterThan(8);
+    }
+
+    @Test
+    public void testNestedClassFramePrefixStartsAtItsOwnDeclaration() throws Exception {
+        String source = String.join("\n",
+                "package de.spraener.test;",
+                "",
+                "public class Outer {",
+                "",
+                "    class Inner {",
+                "        private int value;",
+                "    }",
+                "}");
+        File code = toTmpFile("Outer", source);
+
+        List<PxChunk> chunkList = uut.chunk(code).toList();
+        PxChunk inner = chunkList.stream()
+                .filter(c -> "de.spraener.test.Outer.Inner".equals(c.getId()))
+                .findFirst().orElseThrow();
+
+        String[] lines = inner.getContent().split("\n", -1);
+        assertThat(lines[0]).contains("class Inner {");
+        assertThat(inner.getMetadata().get(PxChunk.PXCHUNK_VERBATIM_LINES)).isEqualTo("5-6");
+    }
+
+    private static int indexOfLine(String[] lines, String needle) {
+        for (int i = 0; i < lines.length; i++) {
+            if (lines[i].contains(needle)) {
+                return i;
+            }
+        }
+        return -1;
+    }
+
+    @Test
+    public void testClassFrameHeaderSurvivesAnnotationWithArrayLiteral() throws Exception {
+        String source = String.join("\n",
+                "package de.spraener.test;",
+                "",
+                "import java.util.List;",
+                "",
+                "@Component(\"annotated\")",
+                "@Profile({SpringProfiles.BUILDER_API})",
+                "public class Annotated {",
+                "",
+                "    public int getValue() { return value; }",
+                "}");
+        File code = toTmpFile("Annotated", source);
+
+        List<PxChunk> chunkList = uut.chunk(code).toList();
+        PxChunk frame = chunkList.stream()
+                .filter(c -> "classFrame".equals(c.getMetadata().get("java_code_section")))
+                .findFirst().orElseThrow();
+
+        String[] lines = frame.getContent().split("\n", -1);
+        int classIdx = indexOfLine(lines, "public class Annotated {");
+        assertThat(classIdx).isNotNegative();
+        assertThat(Integer.parseInt(frame.getFromLine()) + classIdx).isEqualTo(7);
+        assertThat(frame.getMetadata().get(PxChunk.PXCHUNK_VERBATIM_LINES)).isEqualTo("1-7");
+    }
+
+    @Test
+    public void testClassFrameHeaderSpansMultiLineDeclaration() throws Exception {
+        String source = String.join("\n",
+                "package de.spraener.test;",
+                "",
+                "public class LongName",
+                "        extends Base",
+                "        implements Runnable {",
+                "",
+                "    private int value;",
+                "",
+                "    public void run() { }",
+                "}");
+        File code = toTmpFile("LongName", source);
+
+        List<PxChunk> chunkList = uut.chunk(code).toList();
+        PxChunk frame = chunkList.stream()
+                .filter(c -> "classFrame".equals(c.getMetadata().get("java_code_section")))
+                .findFirst().orElseThrow();
+
+        String[] lines = frame.getContent().split("\n", -1);
+        assertThat(lines[2]).isEqualTo("public class LongName");
+        assertThat(lines[4]).contains("implements Runnable {");
+        // the whole multi-line declaration is verbatim, the class line anchors exactly
+        assertThat(frame.getMetadata().get(PxChunk.PXCHUNK_VERBATIM_LINES)).isEqualTo("1-7");
+        assertThat(Integer.parseInt(frame.getFromLine()) + indexOfLine(lines, "public class LongName"))
+                .isEqualTo(3);
+    }
+
+    @Test
     public void testNonFileInputReturnsEmpty() throws Exception {
         // A directory named like a Java file: readAllLines fails, the raw-fallback re-read
         // fails as well → old behavior (empty stream), no exception escapes chunk()

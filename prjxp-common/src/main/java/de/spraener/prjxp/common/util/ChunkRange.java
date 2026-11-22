@@ -18,7 +18,8 @@ public class ChunkRange {
             return "";
         }
         StringBuilder sb = new StringBuilder();
-        for (int i = fromLine; i <= toLine; i++) {
+        // toLine is the 0-based exclusive end (== numeric value of the last 1-based line).
+        for (int i = fromLine; i < toLine && i < codeLines.size(); i++) {
             sb.append(codeLines.get(i)).append('\n');
         }
         return sb.toString();

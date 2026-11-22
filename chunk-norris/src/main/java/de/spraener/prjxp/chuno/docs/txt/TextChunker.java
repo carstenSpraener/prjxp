@@ -79,7 +79,7 @@ public class TextChunker {
                         final var fChunkPage = chunkPage;
                         final var fChunkLine = chunkLine;
                         final ValueContainer<Integer> totalChunks = new ValueContainer<>(0);
-                        List<PxChunk> sectionChunks = new ContentSplitter(600, 50).splitContent(content, chunkStartLine, lineNr,
+                        List<PxChunk> sectionChunks = new ContentSplitter(600, 50).splitContent(content, Math.max(0, chunkStartLine - 1), lineNr,
                                 () -> PxChunk.create(
                                         c -> c.setId(chunkId),
                                         c -> c.setMimeType("text/plain"),

@@ -1,6 +1,6 @@
 # Bug: Zeilenangaben aus `grep` und `readBySignature` stimmen nicht mit der Quelle überein
 
-**Status:** offen
+**Status:** behoben im Code (Reindex nötig)
 **Schwere:** hoch — blockiert jede evidenzbasierte Antwort („jede Aussage mit `Datei:Zeile` belegen")
 **Betroffen:** Hub-Index (16-Tool-Fläche), Stand `926d4e8`; sichtbar in `prjxp-hub` mit Index-Manifest `82aa4159…`
 **Betroffene Tools:** `grep` (falsche Zeile), `readBySignature` (Rumpfende abgeschnitten), indirekt `vectorSearch`/`readChunks`
@@ -93,3 +93,65 @@ Die Zeilen werden beim Chunking gesetzt und beim Grep nur addiert.
 - Stichprobe von 20 Grep-Treffern über beide Korpora: **100 %** zeilengültig (heute 40–80 %).
 - `readBySignature`-Bereiche umfassen den vollständigen Rumpf.
 - Benchmark-Neuauswertung mit Evidenz-Gate: Anker-Validierungsrate ≥ 95 % für alle Arme.
+
+## Umsetzung (Code)
+
+- `ContentSplitter` leitet `fromLine`/`toLine` jetzt aus dem absoluten Zeichenoffset des
+  Chunks ab (`lineOf(content, offset, firstLine)`) und speichert **1-basiert und inklusiv**.
+  Overlap kann die Zeilennummern damit nicht mehr verschieben; der Eingabewert `fromLine`
+  bleibt der 0-basierte Index der ersten Content-Zeile (Konvention aller Chunker).
+- `ChunkRange.toCode()` liefert `[fromLine, toLine)` (kein Extra-Zeilen-Überlauf mehr).
+- `PxChunk.combine()` übernimmt `toLine` des **letzten** Parts (Maximum), nicht des ersten —
+  damit umfassen `readBySignature`-Rümpfe den vollständigen Methodenbereich.
+- `GrepSearchService` bleibt bei `line = fromLine + i`, weil `fromLine` nun 1-basiert ist.
+  Zusätzlich wird pro `(file, line)` nur ein Treffer ausgegeben (Overlap-Chunks liefern
+  dieselbe Zeile doppelt); bei Fragmenten aus der Chunk-Mitte gewinnt der längere Snippet.
+- Tests: `ContentSplitterTest` (Progression + Overlap-Drift), `ChunkRangeTest`,
+  `ReaderSupportTest` (kombinierter Bereich), `GrepSearchServiceTest`
+  (Mehrchunk-Datei liefert die absolute Zeile).
+
+### Nachtrag nach Reindex: classFrame-Chunks
+
+Der Reindex (`legacy` + `prjxp`) bestätigte den Offset-Fix für **zeilengetreue** Chunks
+(Methoden, Imports, Strings im Rumpf: exakt). Offen blieben Klassen-Treffer, weil
+`classFrame`-Chunks **synthetischen Text** enthalten (Package + Imports + Signatur-Skelett)
+und trotzdem mit `fromLine + i` verankert wurden. Der Versatz entsprach genau dem
+synthetischen Prolog (`+31/+34/+58`).
+
+- `JavaCodeChunker.createClassFrameChunk` beginnt den Frame jetzt mit einem **verbatim
+  kopierten Quelltext-Präfix** (bei Top-Level-Typen ab Dateizeile 1, damit Package/Imports
+  erhalten bleiben; bei verschachtelten Typen ab der eigenen Deklaration), das bis zum Ende
+  des Feldblocks reicht (max. 60 Zeilen, damit der Frame nicht aufgebläht wird). Erst danach
+  folgt der synthetische Signaturblock.
+- Der Chunk trägt `pxchunk_verbatim_lines` (`start-end`, 1-basiert inklusiv). `grep`
+  akzeptiert nur Treffer innerhalb dieses Bereichs als `file:line`-Anker; synthetische
+  Zeilen werden verworfen, statt falsche Anker zu liefern. Feld-Deklarationen liegen im
+  verbatim-Präfix und bleiben damit adressierbar; Konstruktor-/Methodensignaturen im
+  synthetischen Block bleiben über `readBySignature` bzw. die Methoden-Chunks erreichbar.
+
+### Verifikation gegen den laufenden Hub
+
+Der Testkorpus ist **absichtlich eingefroren** (kein Arbeitsstand!). Referenz für Anker sind
+daher ausschließlich die eingefrorenen Bäume: `prjxp-bench/worktree-legacy` (`legacy`) und
+`prjxp-bench/worktree`, Commit `2870c6a` (`prjxp`). Der Chunker-Fix ändert nur, wie der
+laufende Code indiziert wird — nicht den Korpus-Inhalt.
+
+Mit dem Stand nach dem zweiten Reindex: 37 von 37 `grep`-Ankern zeilengültig, u. a.
+`BasicServiceCBImpl :33`, `TeilvorgangDaoCBImpl :37`, `TeilvorgangServiceCBImpl :62`,
+`PrjxpMcpTool :26` (im eingefrorenen `prjxp`-Stand liegt die Klasse in Zeile 26).
+`readBySignature`-Bereiche decken den Rumpf: `createBaumassnahme 369–487`,
+`addBBPsToBaumassnahme 304–350`, `updateBaumassnahme 258–269`.
+
+Nachtrag `prjxp`: 28 von 28 Ankern gültig, inklusive Feldankern (z. B. `CHUNKER_NAME :47`)
+— Feldblock-Ausweitung ist live.
+
+Nachtrag Header-Heuristik: Die frühere Regel „Deklaration endet, sobald die Vorzeile `{`
+enthält" brach bei Annotationen mit Array-Literal (`@Profile({…})`) ab; dadurch fehlte die
+Klassendeklaration im Frame (z. B. `MastervorgangDaoCBImpl :34` war nicht auffindbar).
+`classHeaderEndIndex` sucht die Deklaration jetzt über Typ-Keyword + Name und nimmt die
+Zeile mit der öffnenden Klammer (mehrzeilige Deklarationen eingeschlossen).
+
+**Offen:** Der laufende Index enthält ContentSplitter-, classFrame- und Feldblock-Fix; die
+Dublettenbereinigung in `grep` (`(file,line)`-Dedupe) braucht nur einen Deploy, keinen
+Reindex. Die Anker gelten gegen den eingefrorenen Testkorpus, nicht gegen das
+Arbeitsverzeichnis.

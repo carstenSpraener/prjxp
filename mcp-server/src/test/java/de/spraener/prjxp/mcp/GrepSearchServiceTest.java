@@ -7,6 +7,7 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.common.util.ContentSplitter;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.SearchParams;
@@ -742,6 +743,63 @@ class GrepSearchServiceTest {
         when(projectRegistry.resolve("p")).thenReturn("p");
         when(provider.get("p")).thenReturn(Optional.of(dao));
         when(dao.findAll()).thenReturn(java.util.stream.Stream.of(chunks));
+    }
+
+    @Test
+    void grepReportsAbsoluteLineInMultiChunkFile() {
+        StringBuilder source = new StringBuilder();
+        for (int i = 1; i <= 40; i++) {
+            source.append("line ").append(i).append('\n');
+        }
+        List<PxChunk> raw = new ContentSplitter(80, 20)
+                .splitContent(source.toString(), 0, 40, PxChunk::create);
+        assertThat(raw.size()).isGreaterThan(2);
+        PxChunk[] chunks = raw.stream().map(part -> {
+            part.setFile("src/A.java");
+            return part;
+        }).toArray(PxChunk[]::new);
+        stubAllChunks(chunks);
+
+        GrepResult result = service.searchMatches("line 37", "p", null, 20, true, GrepMode.SUBSTRING);
+
+        // overlap may return the token from two chunks, but every anchor must be the real line
+        assertThat(result.hits()).isNotEmpty();
+        assertThat(result.hits()).allMatch(h -> h.lineFrom() == 37);
+    }
+
+    @Test
+    void syntheticTailOfPartlyVerbatimChunkIsNotAnchored() {
+        PxChunk frame = PxChunk.create(c -> {
+            c.setId("de.ex.A");
+            c.setFile("src/A.java");
+            c.setFromLine("1");
+            c.setContent("package de.ex;\npublic class A {\n    void syntheticSignature();");
+            c.getMetadata().put(PxChunk.PXCHUNK_VERBATIM_LINES, "1-2");
+        });
+        stubAllChunks(frame);
+        // two searches scan the stream twice -> fresh stream per call
+        when(dao.findAll()).thenAnswer(invocation -> java.util.stream.Stream.of(frame));
+
+        GrepResult classHit = service.searchMatches("class A", "p", null, 20, true, GrepMode.SUBSTRING);
+        assertThat(classHit.hits()).hasSize(1);
+        assertThat(classHit.hits().get(0).lineFrom()).isEqualTo(2);
+
+        // the synthetic signature line would map to line 3, which is not a real source anchor
+        GrepResult syntheticHit = service.searchMatches("syntheticSignature", "p", null, 20, true, GrepMode.SUBSTRING);
+        assertThat(syntheticHit.hits()).isEmpty();
+    }
+
+    @Test
+    void overlappingChunksReportOneHitPerLineWithTheLongerSnippet() {
+        stubAllChunks(
+                lineChunk("c1", "A.java", "10", "    private int CHUNKER_NAME;"),
+                lineChunk("c2", "A.java", "10", "int CHUNKER_NAME;"));   // overlap fragment
+
+        GrepResult result = service.searchMatches("CHUNKER_NAME", "p", null, 20, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).hasSize(1);
+        assertThat(result.hits().get(0).lineFrom()).isEqualTo(10);
+        assertThat(result.hits().get(0).snippet()).isEqualTo("private int CHUNKER_NAME;");
     }
 
     @Test

@@ -3,7 +3,6 @@ package de.spraener.prjxp.common.util;
 import de.spraener.prjxp.common.model.PxChunk;
 import lombok.Data;
 import lombok.RequiredArgsConstructor;
-import org.springframework.util.StringUtils;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -28,6 +27,9 @@ public class ContentSplitter {
         if( content.isEmpty() ) {
             return chunks;
         }
+        // Callers pass the 0-based source line index of the first content line. Chunks store
+        // 1-based, inclusive ranges so that "file:line" anchors match the source.
+        int firstLine = fromLine + 1;
         if (content.length() < chunkSize) {
             PxChunk chunk = chunkSupplier.get();
             chunk.setTotal(1);
@@ -35,13 +37,12 @@ public class ContentSplitter {
             chunk.setContent(content.toString());
             chunk.setSize(chunk.getContent().length());
             chunk.setOverlap(0);
-            chunk.setFromLine("" + fromLine);
-            chunk.setToLine("" + toLine);
+            chunk.setFromLine("" + firstLine);
+            chunk.setToLine("" + Math.max(firstLine, toLine));
             chunks.add(chunk);
         } else {
             int total = 0;
             int chunkStart = 0;
-            int chunkStartLine = fromLine;
             int previousEnd = 0;
             for (int i = 0; chunkStart < content.length(); i++) {
                 int chunkEnd = alignEnd(content, chunkStart, Math.min(chunkStart + chunkSize, content.length()));
@@ -55,10 +56,14 @@ public class ContentSplitter {
                 // from the middle of a surrogate pair; store the actual shared prefix so
                 // that unsplit() reconstructs the content losslessly.
                 chunk.setOverlap(i == 0 ? this.overlap : Math.max(0, previousEnd - chunkStart));
-                int lineCount = StringUtils.countOccurrencesOf(chunkContent, "\n");
-                chunk.setFromLine("" + chunkStartLine);
-                chunk.setToLine("" + (chunkStartLine + lineCount));
-                chunkStartLine += lineCount;
+                // Lines derive from the absolute character offset inside the range, never from
+                // accumulated chunk progress: overlap therefore cannot shift later chunks.
+                int chunkFromLine = lineOf(content, chunkStart, firstLine);
+                int chunkToLine = chunkEnd >= content.length()
+                        ? Math.max(chunkFromLine, toLine)
+                        : Math.max(chunkFromLine, lineOf(content, chunkEnd - 1, firstLine));
+                chunk.setFromLine("" + chunkFromLine);
+                chunk.setToLine("" + chunkToLine);
 
                 chunks.add(chunk);
                 previousEnd = chunkEnd;
@@ -72,6 +77,20 @@ public class ContentSplitter {
             chunks.stream().forEach(c -> c.setTotal(chunks.size()));
         }
         return chunks;
+    }
+
+    /**
+     * Maps a character offset of {@code content} to its 1-based source line, given the 1-based
+     * line of the content's first character.
+     */
+    private static int lineOf(CharSequence content, int offset, int firstLine) {
+        int line = firstLine;
+        for (int i = 0; i < offset; i++) {
+            if (content.charAt(i) == '\n') {
+                line++;
+            }
+        }
+        return line;
     }
 
     /**
