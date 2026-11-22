@@ -716,3 +716,45 @@ L5 −0.417, L6 +0.357); L5 bleibt der bekannte Nutzungsunterschied aus §19.
 Dass L2/L7 diesmal antworten, zeigt, dass die frühere Degeneration nicht
 rein deterministisch am Modell hing — sie ist mit anderem Kontext nicht
 reproduzierbar und bleibt ein Störfall, kein Tool-Effekt.
+
+## 23. Fragen nach Grep-Fähigkeit klassifiziert (22.11.2026)
+
+Klassen: **A** = Identifier/Pfad in der Frage bekannt (grep löst das),
+**B** = Konzept ohne Identifier (Semantik nötig), **C** = Architektur/Fluss
+über mehrere Dateien (Graph/Mehrschritt).
+
+| Klasse | Fragen | P1 | P2 | Delta |
+|---|---|---|---|---|
+| A | F1, F3, L1, L3 | 0.713 | 0.781 | +0.068 |
+| B | F4, F8, L4 | 0.622 | 0.702 | +0.080 |
+| C | F2, F5, F6, F7, F9, L2, L5, L6, L7, L8, L9 | 0.381 | 0.388 | +0.007 |
+
+Der Fragenzuschnitt ist bereits zu 61 % Klasse C — dort passiert aber fast
+nichts. Die Gewinne der Fläche liegen in A und B, also genau dort, wo auch
+grep/read lokal funktioniert.
+
+Gegenprobe N (nur `read`/`bash`/`grep`/`find`/`ls`, gleicher Judge):
+
+| Korpus | Klasse | N | P2 |
+|---|---|---|---|
+| prjxp | A | 0.955 | 0.909 |
+| prjxp | B | 0.779 | 0.708 |
+| prjxp | C | 0.334 | **0.437** |
+| legacy | A | 0.692 | 0.653 |
+| legacy | B | 0.769 | 0.692 |
+| legacy | C | **0.626** | 0.348 |
+
+Damit ist die Ausgangsthese nur halb bestätigt: auf `prjxp` gewinnt P2 die
+Flussfragen deutlich gegen N (+0.10), auf `legacy` verliert es sie deutlich
+(−0.28). „Tool besser als grep/read" ist also korpusabhängig und für `legacy`
+noch nicht belegt.
+
+Auffällig in der Einzelbeguckung von L8: N liest ganze Dateien und grept mit
+Kontext; P2 liest 120 Zeilen einer 400-Zeilen-Klasse, grept danach nach
+`public` und antwortet (0.25 vs. 0.83). Das ist ein Zusammenspiel aus
+tool-seitiger Default-Lesetiefe (100 Zeilen) und modellseitigem Aufhören —
+keine reine Modellfrage.
+
+Nächster Hebel für C: (a) `grep` mit Kontextzeilen, (b) `readFile` ohne
+Zeilenlimit bis zum Budget bzw. mit Fortsetzungshinweis, (c) Grep-Treffer
+verweisen auf `graphNode`/`graphSearch`, wenn Aufrufketten gefragt sind.
