@@ -550,6 +550,17 @@ class LucenePxChunkDaoTest {
     }
 
     @Test
+    void listFilesDoesNotLetOtherProjectsConsumeTheLimit() {
+        addFileChunkWithProject("c1", "src/a/A.java", "other-project");
+        addFileChunkWithProject("c2", "src/a/B.java", "test-project");
+
+        FileListResult result = dao.listFiles("src", 1);
+
+        assertThat(result.files()).containsExactly("src/a/B.java");
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
     void listFilesSortsBeforeApplyingTheLimit() {
         addFileChunk("c1", "src/z/Zeta.java");
         addFileChunk("c2", "src/m/Mid.java");

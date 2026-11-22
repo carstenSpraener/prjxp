@@ -22,18 +22,29 @@ import de.spraener.prjxp.common.store.PxChunkDao;
 import org.apache.lucene.analysis.TokenStream;
 import org.apache.lucene.analysis.standard.StandardAnalyzer;
 import org.apache.lucene.analysis.tokenattributes.CharTermAttribute;
+import org.apache.lucene.index.IndexReader;
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.MultiTerms;
+import org.apache.lucene.index.PostingsEnum;
 import org.apache.lucene.index.Term;
+import org.apache.lucene.index.Terms;
+import org.apache.lucene.index.TermsEnum;
 import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.search.WildcardQuery;
+import org.apache.lucene.util.automaton.CompiledAutomaton;
+import org.apache.lucene.util.automaton.Operations;
+import org.apache.lucene.util.BytesRef;
 
 import java.io.IOException;
 import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -224,18 +235,30 @@ public class LucenePxChunkDao implements PxChunkDao {
         int level = listing ? listingLevel(normalized) : 0;
         String glob = listing ? listingGlob(normalized) : toGlob(normalized);
 
-        Query query = new BooleanQuery.Builder()
-                .add(new TermQuery(new Term(PxChunk.PXCHUNK_PROJECT, storeReference.getProjectName())), BooleanClause.Occur.FILTER)
-                .add(new WildcardQuery(new Term(PxChunk.PXCHUNK_FILE, glob)), BooleanClause.Occur.MUST)
-                .build();
-
         try {
             IndexSearcher searcher = luceneStore.getSearcher();
             try {
+                IndexReader reader = searcher.getIndexReader();
+                BitSet projectDocs = projectDocs(searcher, reader.maxDoc());
                 LinkedHashSet<String> entries = new LinkedHashSet<>();
-                collectEntries(searcher, query, listing, level, entries);
-                // Sort before cutting at the limit: an index-order prefix would show an
-                // arbitrary slice of the tree, which is useless for orientation.
+                // The path field is indexed untokenized: one term per file. Walking the term
+                // dictionary is sorted by construction and stops at the limit, so it never
+                // reads documents (the earlier stored-field scan needed a full index pass).
+                TermsEnum terms = candidateTerms(reader, glob);
+                for (BytesRef term = terms.next(); term != null; term = terms.next()) {
+                    if (!inProject(terms, projectDocs)) {
+                        continue;
+                    }
+                    String file = term.utf8ToString();
+                    if (listing) {
+                        addListingEntries(file, level, entries);
+                    } else {
+                        entries.add(file);
+                    }
+                    if (entries.size() > limit) {
+                        break;
+                    }
+                }
                 List<String> sorted = entries.stream().sorted().toList();
                 return new FileListResult(sorted.stream().limit(limit).toList(), sorted.size() > limit);
             } finally {
@@ -246,36 +269,48 @@ public class LucenePxChunkDao implements PxChunkDao {
         }
     }
 
-    /**
-     * Collects file paths — or, when listing, the entries (files and derived directories) of one
-     * level. Collects all matches, because the caller sorts before applying the limit.
-     */
-    private void collectEntries(IndexSearcher searcher, Query query, boolean listing, int level,
-                                LinkedHashSet<String> entries) throws IOException {
-        int maxDoc = searcher.getIndexReader().maxDoc();
-        int from = 0;
-        final int pageSize = 1000;
-        while (from < maxDoc) {
-            int size = Math.min(pageSize, maxDoc - from);
-            TopDocs topDocs = searcher.search(query, from + size);
-            int sliceEnd = Math.min(from + size, topDocs.scoreDocs.length);
-            for (int i = from; i < sliceEnd; i++) {
-                org.apache.lucene.document.Document doc = searcher.storedFields().document(topDocs.scoreDocs[i].doc);
-                String file = doc.get(PxChunk.PXCHUNK_FILE);
-                if (file == null) {
-                    continue;
-                }
-                if (listing) {
-                    addListingEntries(file, level, entries);
-                } else {
-                    entries.add(file);
-                }
+    /** Doc ids of the requested project, so unrelated projects cannot consume the limit. */
+    private BitSet projectDocs(IndexSearcher searcher, int maxDoc) throws IOException {
+        BitSet docs = new BitSet(maxDoc);
+        Term project = new Term(PxChunk.PXCHUNK_PROJECT, storeReference.getProjectName());
+        for (LeafReaderContext leaf : searcher.getIndexReader().leaves()) {
+            PostingsEnum postings = leaf.reader().postings(project);
+            if (postings == null) {
+                continue;
             }
-            if (sliceEnd < from + size || sliceEnd >= topDocs.totalHits.value()) {
-                break;
+            for (int doc = postings.nextDoc(); doc != DocIdSetIterator.NO_MORE_DOCS; doc = postings.nextDoc()) {
+                docs.set(leaf.docBase + doc);
             }
-            from += size;
         }
+        return docs;
+    }
+
+    /** Terms of the file field matching {@code glob}, in sorted term order. */
+    private TermsEnum candidateTerms(IndexReader reader, String glob) throws IOException {
+        Terms terms = MultiTerms.getTerms(reader, PxChunk.PXCHUNK_FILE);
+        if (terms == null) {
+            return TermsEnum.EMPTY;
+        }
+        // The automaton path handles prefixes and wildcards alike and yields terms in
+        // dictionary order, so the limit can stop the walk early.
+        CompiledAutomaton automaton = new CompiledAutomaton(
+                WildcardQuery.toAutomaton(new Term(PxChunk.PXCHUNK_FILE, glob),
+                        Operations.DEFAULT_DETERMINIZE_WORK_LIMIT));
+        return automaton.getTermsEnum(terms);
+    }
+
+    /** Whether the term under {@code terms} occurs in at least one of {@code projectDocs}. */
+    private boolean inProject(TermsEnum terms, BitSet projectDocs) throws IOException {
+        PostingsEnum postings = terms.postings(null, PostingsEnum.NONE);
+        if (postings == null) {
+            return false;
+        }
+        for (int doc = postings.nextDoc(); doc != DocIdSetIterator.NO_MORE_DOCS; doc = postings.nextDoc()) {
+            if (projectDocs.get(doc)) {
+                return true;
+            }
+        }
+        return false;
     }
 
     /** Entries of {@code file} at {@code level}: the directory holding it or the file itself. */
