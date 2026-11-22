@@ -239,7 +239,7 @@ public class PrjxpToolRegistration {
                 .description(PrjxpToolDocs.LIST_FILES)
                 .parameters(JsonObjectSchema.builder()
                         .addStringProperty("path",
-                                "Path prefix or glob ('*' spans '/'); empty = all.")
+                                "Path prefix or glob ('*' spans '/'); a trailing '/' lists that directory like ls ('*/' = root). Empty = all files.")
                         .addStringProperty("project", "Project name (listProjects).")
                         .addIntegerProperty("limit", "Max files to return (default 50, max 500).")
                         .required("project")

@@ -24,10 +24,16 @@ public final class ResultRenderers {
         if (result == null || result.files().isEmpty()) {
             return "No files found.";
         }
+        long directories = result.files().stream().filter(f -> f.endsWith("/")).count();
+        String noun = directories == 0
+                ? "file(s)"
+                : (directories == result.files().size()
+                        ? (directories == 1 ? "directory" : "directories")
+                        : "entries");
         StringBuilder sb = new StringBuilder();
-        sb.append("Found ").append(result.files().size()).append(" file(s)");
+        sb.append("Found ").append(result.files().size()).append(' ').append(noun);
         if (result.truncated()) {
-            sb.append(" (truncated — narrow the pattern or raise the limit)");
+            sb.append(" (truncated — narrow the pattern, list one level ('dir/'), or raise the limit)");
         }
         sb.append(":\n");
         for (String file : result.files()) {
@@ -35,7 +41,6 @@ public final class ResultRenderers {
         }
         return sb.toString();
     }
-
     /**
      * Header with the full per-direction totals (always visible, before the edge list that may be
      * capped): lets the model tell the page is partial and page the rest via offset/maxEdges.

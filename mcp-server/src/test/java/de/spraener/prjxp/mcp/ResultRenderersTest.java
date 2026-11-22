@@ -1,6 +1,7 @@
 package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.model.EdgeType;
+import de.spraener.prjxp.common.model.FileListResult;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -59,5 +60,22 @@ class ResultRenderersTest {
                 .contains("No configuration properties");
         assertThat(ResultRenderers.renderConfigCatalog(ConfigCatalog.unavailable("nope"), 2000))
                 .contains("ERROR: nope");
+    }
+
+    @Test
+    void fileListRendersDirectoriesEntriesAndTruncationHint() {
+        String dirs = ResultRenderers.renderFileList(
+                new FileListResult(List.of("docs/", "src/"), false));
+        assertThat(dirs).startsWith("Found 2 director");
+        assertThat(dirs).contains("  - docs/");
+
+        String mixed = ResultRenderers.renderFileList(
+                new FileListResult(List.of("pom.xml", "src/"), false));
+        assertThat(mixed).startsWith("Found 2 entries");
+
+        String truncated = ResultRenderers.renderFileList(
+                new FileListResult(List.of("src/a/Foo.java"), true));
+        assertThat(truncated).contains("truncated");
+        assertThat(truncated).contains("('dir/')");
     }
 }

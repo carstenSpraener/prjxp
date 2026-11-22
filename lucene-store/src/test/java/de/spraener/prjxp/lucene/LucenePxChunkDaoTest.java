@@ -549,6 +549,80 @@ class LucenePxChunkDaoTest {
         assertThat(result.truncated()).isFalse();
     }
 
+    @Test
+    void listFilesTrailingSlashListsRootEntriesLikeLs() {
+        addFileChunk("c1", "docs/readme.md");
+        addFileChunk("c2", "docs/deep/notes.md");
+        addFileChunk("c3", "src/a/Foo.java");
+        addFileChunk("c4", "src/b/Bar.java");
+        addFileChunk("c5", "pom.xml");
+
+        FileListResult result = dao.listFiles("*/", 10);
+
+        // like `ls`: the root's own files and its directories, but not deep paths
+        assertThat(result.files()).containsExactly("docs/", "pom.xml", "src/");
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
+    void listFilesTrailingSlashListsDirectEntriesOfPrefix() {
+        addFileChunk("c1", "src/pom.xml");
+        addFileChunk("c2", "src/a/Foo.java");
+        addFileChunk("c3", "src/b/Bar.java");
+        addFileChunk("c4", "lib/Baz.java");
+
+        FileListResult result = dao.listFiles("src/", 10);
+
+        // like `ls src`: direct files and subdirectories, no grandchildren
+        assertThat(result.files()).containsExactly("src/a/", "src/b/", "src/pom.xml");
+    }
+
+    @Test
+    void listFilesDirectoryPatternMatchesWildcardSegment() {
+        addFileChunk("c1", "osb-2/impl/Foo.java");
+        addFileChunk("c2", "osb-2/impl/deep/Bar.java");
+        addFileChunk("c3", "osb-2/war/Baz.java");
+        addFileChunk("c4", "osb-3/impl/Qux.java");
+
+        FileListResult result = dao.listFiles("*/impl/", 10);
+
+        // like `ls */impl`: entries of every impl directory
+        assertThat(result.files()).containsExactly(
+                "osb-2/impl/Foo.java", "osb-2/impl/deep/", "osb-3/impl/Qux.java");
+    }
+
+    @Test
+    void listFilesDirectoriesRespectLimitAndTruncation() {
+        addFileChunk("c1", "a/Foo.java");
+        addFileChunk("c2", "b/Bar.java");
+        addFileChunk("c3", "c/Baz.java");
+
+        FileListResult result = dao.listFiles("*/", 2);
+
+        assertThat(result.files()).hasSize(2);
+        assertThat(result.truncated()).isTrue();
+    }
+
+    @Test
+    void listFilesTrailingSlashOnLeafDirectoryListsItsFiles() {
+        addFileChunk("c1", "src/a/Foo.java");
+
+        FileListResult result = dao.listFiles("src/a/", 10);
+
+        assertThat(result.files()).containsExactly("src/a/Foo.java");
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
+    void listFilesTrailingSlashWithoutFilesIsEmpty() {
+        addFileChunk("c1", "src/a/Foo.java");
+
+        FileListResult result = dao.listFiles("lib/", 10);
+
+        assertThat(result.files()).isEmpty();
+        assertThat(result.truncated()).isFalse();
+    }
+
     private void addChunk(String id, String content) {
         Metadata meta = new Metadata();
         meta.put("pxchunk_id", id);

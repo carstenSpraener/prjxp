@@ -216,55 +216,118 @@ public class LucenePxChunkDao implements PxChunkDao {
             throw new UnsupportedOperationException("File listing requires a Lucene store");
         }
 
+        String normalized = pattern == null ? "" : pattern.trim();
+        // A trailing '/' lists a directory like `ls`: its direct entries — files and
+        // subdirectories — instead of every file below it. Models reached for '*/' to get
+        // their bearings, and answering "No files found" left them looping.
+        boolean listing = normalized.endsWith("/");
+        int level = listing ? listingLevel(normalized) : 0;
+        String glob = listing ? listingGlob(normalized) : toGlob(normalized);
+
         Query query = new BooleanQuery.Builder()
                 .add(new TermQuery(new Term(PxChunk.PXCHUNK_PROJECT, storeReference.getProjectName())), BooleanClause.Occur.FILTER)
-                .add(new WildcardQuery(new Term(PxChunk.PXCHUNK_FILE, toGlob(pattern))), BooleanClause.Occur.MUST)
+                .add(new WildcardQuery(new Term(PxChunk.PXCHUNK_FILE, glob)), BooleanClause.Occur.MUST)
                 .build();
 
         try {
             IndexSearcher searcher = luceneStore.getSearcher();
             try {
-                int maxDoc = searcher.getIndexReader().maxDoc();
-                LinkedHashSet<String> files = new LinkedHashSet<>();
-                boolean truncated = false;
-                int from = 0;
-                final int pageSize = 1000;
-                while (files.size() < limit) {
-                    int size = Math.min(pageSize, maxDoc - from);
-                    if (size <= 0) {
-                        break;
-                    }
-                    TopDocs topDocs = searcher.search(query, from + size);
-                    int sliceEnd = Math.min(from + size, topDocs.scoreDocs.length);
-                    int consumed = 0;
-                    for (int i = from; i < sliceEnd; i++) {
-                        consumed++;
-                        org.apache.lucene.document.Document doc = searcher.storedFields().document(topDocs.scoreDocs[i].doc);
-                        String file = doc.get(PxChunk.PXCHUNK_FILE);
-                        if (file != null) {
-                            files.add(file);
-                        }
-                        if (files.size() >= limit) {
-                            break;
-                        }
-                    }
-                    boolean moreDocs = consumed < (sliceEnd - from) || sliceEnd < topDocs.totalHits.value();
-                    if (files.size() >= limit) {
-                        truncated = moreDocs;
-                        break;
-                    }
-                    if (!moreDocs) {
-                        break;
-                    }
-                    from += size;
-                }
-                return new FileListResult(files.stream().sorted().toList(), truncated);
+                LinkedHashSet<String> entries = new LinkedHashSet<>();
+                boolean truncated = collectEntries(searcher, query, limit, listing, level, entries);
+                List<String> limited = entries.stream().limit(limit).sorted().toList();
+                return new FileListResult(limited, truncated);
             } finally {
                 luceneStore.releaseSearcher(searcher);
             }
         } catch (IOException e) {
             throw new RuntimeException("Failed to list files", e);
         }
+    }
+
+    /**
+     * Collects file paths — or, when listing, the entries (files and derived directories) of one
+     * level — until {@code limit + 1} distinct entries are known; the extra one proves truncation.
+     */
+    private boolean collectEntries(IndexSearcher searcher, Query query, int limit,
+                                   boolean listing, int level,
+                                   LinkedHashSet<String> entries) throws IOException {
+        int maxDoc = searcher.getIndexReader().maxDoc();
+        int from = 0;
+        final int pageSize = 1000;
+        while (from < maxDoc) {
+            int size = Math.min(pageSize, maxDoc - from);
+            TopDocs topDocs = searcher.search(query, from + size);
+            int sliceEnd = Math.min(from + size, topDocs.scoreDocs.length);
+            for (int i = from; i < sliceEnd; i++) {
+                org.apache.lucene.document.Document doc = searcher.storedFields().document(topDocs.scoreDocs[i].doc);
+                String file = doc.get(PxChunk.PXCHUNK_FILE);
+                if (file != null) {
+                    if (!listing) {
+                        entries.add(file);
+                    } else {
+                        addListingEntries(file, level, entries);
+                    }
+                }
+                if (entries.size() > limit) {
+                    return true;
+                }
+            }
+            if (sliceEnd < from + size || sliceEnd >= topDocs.totalHits.value()) {
+                break;
+            }
+            from += size;
+        }
+        return false;
+    }
+
+    /** Entries of {@code file} at {@code level}: the directory holding it or the file itself. */
+    private void addListingEntries(String file, int level, LinkedHashSet<String> entries) {
+        int slashCount = 0;
+        for (int i = 0; i < file.length(); i++) {
+            if (file.charAt(i) == '/') {
+                slashCount++;
+            }
+        }
+        int fileLevel = slashCount + 1;   // segments of the file path
+        if (fileLevel == level) {
+            entries.add(file);
+        } else if (fileLevel > level) {
+            String dir = directoryOf(file, level);
+            if (dir != null) {
+                entries.add(dir);
+            }
+        }
+    }
+
+    /**
+     * Level (1 = directly inside the root) a trailing-slash pattern lists. The pattern names
+     * the directory like {@code ls} does, so its entries live one level below: '&#42;/' and '/' address
+     * the root (level 1), 'src/' addresses level 2, '&#42;/impl/' level 3.
+     */
+    static int listingLevel(String pattern) {
+        String base = pattern.substring(0, pattern.length() - 1).trim();
+        if (base.isEmpty() || "*".equals(base) || "**".equals(base) || "?".equals(base)) {
+            return 1;
+        }
+        return (int) base.chars().filter(c -> c == '/').count() + 2;
+    }
+
+    /** Directory pattern -> Lucene glob over the files below it ('&#42;/' and '/' = everything). */
+    static String listingGlob(String pattern) {
+        String base = pattern.substring(0, pattern.length() - 1).trim();
+        return listingLevel(pattern) == 1 ? "*" : base + "/*";
+    }
+
+    /** {@code depth}-th path segment of {@code file} including its trailing '/', or null. */
+    static String directoryOf(String file, int depth) {
+        int idx = -1;
+        for (int i = 0; i < depth; i++) {
+            idx = file.indexOf('/', idx + 1);
+            if (idx < 0) {
+                return null;
+            }
+        }
+        return file.substring(0, idx + 1);
     }
 
     /** Pattern -> Lucene glob: blank = everything; no wildcard chars = prefix; else as-is. '*' spans '/'. */

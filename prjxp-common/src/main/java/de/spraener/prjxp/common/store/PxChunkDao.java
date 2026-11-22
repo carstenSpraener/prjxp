@@ -37,8 +37,9 @@ public interface PxChunkDao {
 
     /**
      * Structural file listing: distinct file paths of this project's chunks matching a pattern
-     * (prefix or glob; '*' spans path separators). Orthogonal to the content search methods —
-     * it answers "which files exist?", not "what do they say?".
+     * (prefix or glob; '*' spans path separators). A pattern ending in '/' lists directory
+     * levels instead ('*&#47;' = top-level directories). Orthogonal to the content search
+     * methods — it answers "which files exist?", not "what do they say?".
      */
     default FileListResult listFiles(String pattern, int limit) {
         throw new UnsupportedOperationException("File listing is not supported by this store");

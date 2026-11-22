@@ -40,7 +40,9 @@ public final class PrjxpToolDocs {
             """;
 
     public static final String LIST_FILES = """
-            List existing files by prefix or glob ('*' spans '/'). Use to locate a path, not to read content.
+            List files by prefix or glob (recursive, '*' spans '/'). A trailing '/' lists a
+            directory like `ls`: 'src/' = the files and subdirectories directly in src,
+            '*/' = the entries in the root. Use it to locate a path, not to read content.
             """;
 
     public static final String GRAPH_FILE = """
