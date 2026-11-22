@@ -233,9 +233,11 @@ public class LucenePxChunkDao implements PxChunkDao {
             IndexSearcher searcher = luceneStore.getSearcher();
             try {
                 LinkedHashSet<String> entries = new LinkedHashSet<>();
-                boolean truncated = collectEntries(searcher, query, limit, listing, level, entries);
-                List<String> limited = entries.stream().limit(limit).sorted().toList();
-                return new FileListResult(limited, truncated);
+                collectEntries(searcher, query, listing, level, entries);
+                // Sort before cutting at the limit: an index-order prefix would show an
+                // arbitrary slice of the tree, which is useless for orientation.
+                List<String> sorted = entries.stream().sorted().toList();
+                return new FileListResult(sorted.stream().limit(limit).toList(), sorted.size() > limit);
             } finally {
                 luceneStore.releaseSearcher(searcher);
             }
@@ -246,11 +248,10 @@ public class LucenePxChunkDao implements PxChunkDao {
 
     /**
      * Collects file paths — or, when listing, the entries (files and derived directories) of one
-     * level — until {@code limit + 1} distinct entries are known; the extra one proves truncation.
+     * level. Collects all matches, because the caller sorts before applying the limit.
      */
-    private boolean collectEntries(IndexSearcher searcher, Query query, int limit,
-                                   boolean listing, int level,
-                                   LinkedHashSet<String> entries) throws IOException {
+    private void collectEntries(IndexSearcher searcher, Query query, boolean listing, int level,
+                                LinkedHashSet<String> entries) throws IOException {
         int maxDoc = searcher.getIndexReader().maxDoc();
         int from = 0;
         final int pageSize = 1000;
@@ -261,15 +262,13 @@ public class LucenePxChunkDao implements PxChunkDao {
             for (int i = from; i < sliceEnd; i++) {
                 org.apache.lucene.document.Document doc = searcher.storedFields().document(topDocs.scoreDocs[i].doc);
                 String file = doc.get(PxChunk.PXCHUNK_FILE);
-                if (file != null) {
-                    if (!listing) {
-                        entries.add(file);
-                    } else {
-                        addListingEntries(file, level, entries);
-                    }
+                if (file == null) {
+                    continue;
                 }
-                if (entries.size() > limit) {
-                    return true;
+                if (listing) {
+                    addListingEntries(file, level, entries);
+                } else {
+                    entries.add(file);
                 }
             }
             if (sliceEnd < from + size || sliceEnd >= topDocs.totalHits.value()) {
@@ -277,7 +276,6 @@ public class LucenePxChunkDao implements PxChunkDao {
             }
             from += size;
         }
-        return false;
     }
 
     /** Entries of {@code file} at {@code level}: the directory holding it or the file itself. */

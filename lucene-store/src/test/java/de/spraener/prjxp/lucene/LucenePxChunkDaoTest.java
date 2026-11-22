@@ -550,6 +550,19 @@ class LucenePxChunkDaoTest {
     }
 
     @Test
+    void listFilesSortsBeforeApplyingTheLimit() {
+        addFileChunk("c1", "src/z/Zeta.java");
+        addFileChunk("c2", "src/m/Mid.java");
+        addFileChunk("c3", "src/a/Alpha.java");
+
+        FileListResult result = dao.listFiles("src", 2);
+
+        // the limit must cut the sorted list, not the index order
+        assertThat(result.files()).containsExactly("src/a/Alpha.java", "src/m/Mid.java");
+        assertThat(result.truncated()).isTrue();
+    }
+
+    @Test
     void listFilesTrailingSlashListsRootEntriesLikeLs() {
         addFileChunk("c1", "docs/readme.md");
         addFileChunk("c2", "docs/deep/notes.md");
