@@ -8,6 +8,9 @@ import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.PointerRenderer;
 import de.spraener.prjxp.common.retrieval.SearchParams;
+import de.spraener.prjxp.common.retrieval.ranking.RankFusion;
+import de.spraener.prjxp.common.retrieval.ranking.RankedItem;
+import de.spraener.prjxp.common.retrieval.ranking.WeightedSignal;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import lombok.RequiredArgsConstructor;
@@ -41,6 +44,17 @@ public class GRPromptEnrichment {
      */
     @Value("${prjxp.gldrtrvr.maxchunksperfile:3}")
     private int maxChunksPerFile = 3;
+
+    /** Rank-fusion weight of the semantic channel ({@code 0} disables it). */
+    @Value("${prjxp.ranking.weight.vector:1.0}")
+    double vectorWeight = 1.0;
+
+    /** Rank-fusion weight of the exact-token channel ({@code 0} restores the pre-hybrid order). */
+    @Value("${prjxp.ranking.weight.lexical:1.0}")
+    double lexicalWeight = 1.0;
+
+    /** Candidates for the exact-token channel; {@code null} uses the default adapter. */
+    private LexicalSignalProvider lexicalSignalProvider = new LexicalSignalProvider();
 
     public String enrich(String projectName, String prompt) {
         return enrich(projectName, prompt, true);
@@ -226,9 +240,42 @@ public class GRPromptEnrichment {
         return promptFormatter.apply(overallContext.toString());
     }
 
+    /**
+     * The semantic channel (thresholded — the cosine calibration stays a vector property) fused
+     * with the exact-token channel (never thresholded — a token hit is a fact, not a similarity).
+     * Fusion happens on chunk ids; the scores of the hits stay untouched, because they are part of
+     * the rendered pointer output and of the graph re-ranking.
+     */
     private List<ScoredChunk> findRelevantScored(PxChunkDao chunkDao, String prompt, int maxResults, double minScore,
                                                   Map<String, String> vectorFilters) {
         int retrievalWindow = Math.max(maxResults, vectorWindow);
+        List<ScoredChunk> vectorHits = vectorHits(chunkDao, prompt, maxResults, minScore, vectorFilters, retrievalWindow);
+        List<ScoredChunk> lexicalHits = lexicalSignalProvider.candidates(chunkDao, prompt, vectorFilters, retrievalWindow);
+        if (lexicalHits.isEmpty() || lexicalWeight <= 0.0) {
+            return vectorHits;   // legacy order when the second channel is off or empty
+        }
+        Map<String, ScoredChunk> byId = new LinkedHashMap<>();
+        for (ScoredChunk sc : vectorHits) {
+            addById(byId, sc);
+        }
+        for (ScoredChunk sc : lexicalHits) {
+            addById(byId, sc);
+        }
+        List<RankedItem> fused = RankFusion.DEFAULT.rankItems(List.of(
+                new WeightedSignal("vector", vectorWeight, items(vectorHits)),
+                new WeightedSignal("lexical", lexicalWeight, items(lexicalHits))), retrievalWindow);
+        List<ScoredChunk> ranked = new ArrayList<>(fused.size());
+        for (RankedItem item : fused) {
+            ScoredChunk sc = byId.get(item.id());
+            if (sc != null) {
+                ranked.add(sc);
+            }
+        }
+        return ranked;
+    }
+
+    private List<ScoredChunk> vectorHits(PxChunkDao chunkDao, String prompt, int maxResults, double minScore,
+                                         Map<String, String> vectorFilters, int retrievalWindow) {
         try {
             return chunkDao.searchVector(prompt, vectorFilters, retrievalWindow).stream()
                     .filter(sc -> sc.score() >= minScore)
@@ -238,6 +285,26 @@ public class GRPromptEnrichment {
                     .map(c -> new ScoredChunk(c, 1.0))
                     .toList();
         }
+    }
+
+    private static List<RankedItem> items(List<ScoredChunk> chunks) {
+        List<RankedItem> items = new ArrayList<>(chunks.size());
+        for (ScoredChunk sc : chunks) {
+            PxChunk chunk = sc.chunk();
+            if (chunk == null || chunk.getId() == null) {
+                continue;
+            }
+            items.add(new RankedItem(chunk.getId(), chunk.getFile(), sc.score()));
+        }
+        return items;
+    }
+
+    private static void addById(Map<String, ScoredChunk> byId, ScoredChunk sc) {
+        String id = sc.chunk() == null ? null : sc.chunk().getId();
+        if (id == null || id.isBlank()) {
+            return;
+        }
+        byId.putIfAbsent(id, sc);
     }
 
     /**
