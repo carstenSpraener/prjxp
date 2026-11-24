@@ -1002,6 +1002,16 @@ class GrepSearchServiceTest {
     }
 
     @Test
+    void grepAsksForEveryCandidateNotForAWindow() {
+        stubAllChunks(lineChunk("c1", "A.java", "1", "run"));
+
+        service.searchFiles("run", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        // limit 0 == all matches; a window would answer "the top N" instead of "which files".
+        verify(dao).searchCandidates(eq("run"), anyMap(), eq(0));
+    }
+
+    @Test
     void twoCallsReturnIdenticalOrder() {
         stubAllChunks(
                 lineChunk("c1", "A.java", "1", "run"),

@@ -51,10 +51,6 @@ public class GrepSearchService {
     /** Raw-chunk window cap for the overscan loop (SearchLimits.MAX_LIMIT * 5). */
     private static final int MAX_WINDOW = 500;
 
-    /** Note suffix when the candidate window was exhausted — the real counts may be higher. */
-    private static final String WINDOW_HINT =
-            " (candidate window exhausted; narrow the query to see all matches)";
-
     /** {@code prjxp.ranking.grep=legacy} restores the pre-fusion hit-count order (ablation). */
     static final String RANKING_LEGACY = "legacy";
 
@@ -159,12 +155,12 @@ public class GrepSearchService {
             return new GrepResult(List.of(), 0,
                     "ERROR: invalid regular expression: " + e.getDescription());
         }
-        int window = Math.min(Math.max(limit * 4, 40), MAX_WINDOW);
-        List<PxChunk> matched = matchingChunks(dao, query, pattern, language, includeTests, mode, window);
+        // grep must be complete: a ranked window would drop files whose chunks score low, so the
+        // candidate source is asked for every match (grep -l is the "does this occur?" tool).
+        List<PxChunk> matched = matchingChunks(dao, query, pattern, language, includeTests, mode);
         if (matched.isEmpty()) {
             return GrepResult.of(List.of(), 0);
         }
-        boolean windowExhausted = matched.size() >= window;
         List<RankedFile> fileOrder = fileOrder(dao, query, matched, includeTests);
 
         if (filesOnly) {
@@ -176,7 +172,7 @@ public class GrepSearchService {
                 files.add(new SearchHit("", 0.0, file.file(), null, null, null, SOURCE, Map.of()));
             }
             return new GrepResult(files, fileOrder.size(),
-                    filesNote(files.size(), fileOrder.size(), windowExhausted));
+                    filesNote(files.size(), fileOrder.size()));
         }
 
         Map<String, Integer> fileRank = new HashMap<>();
@@ -191,7 +187,6 @@ public class GrepSearchService {
         String note = all.size() > hits.size()
                 ? "Note: showing " + hits.size() + " of " + all.size()
                 + " hits; raise 'limit' or narrow the query."
-                + (windowExhausted ? WINDOW_HINT : "")
                 : null;
         return new GrepResult(hits, all.size(), note);
     }
@@ -201,7 +196,7 @@ public class GrepSearchService {
      * delivered them (BM25 for the index path, index order for the scan).
      */
     private List<PxChunk> matchingChunks(PxChunkDao dao, String query, Pattern pattern, String language,
-                                         boolean includeTests, GrepMode mode, int window) {
+                                         boolean includeTests, GrepMode mode) {
         String mime = languageMime(language);
         List<PxChunk> source;
         if (mode == GrepMode.REGEX) {
@@ -211,7 +206,7 @@ public class GrepSearchService {
         } else {
             List<ScoredChunk> candidates;
             try {
-                candidates = dao.searchCandidates(query, buildFilters(language), window);
+                candidates = dao.searchCandidates(query, buildFilters(language), 0);
             } catch (UnsupportedOperationException e) {
                 return List.of();
             }
@@ -358,13 +353,12 @@ public class GrepSearchService {
         return null;
     }
 
-    private static String filesNote(int shown, int total, boolean windowExhausted) {
-        if (total <= shown && !windowExhausted) {
+    private static String filesNote(int shown, int total) {
+        if (total <= shown) {
             return null;
         }
         return "Note: showing " + shown + " of " + total
-                + " files with matches; raise 'limit' or narrow the query."
-                + (windowExhausted ? WINDOW_HINT : "");
+                + " files with matches; raise 'limit' or narrow the query.";
     }
 
     private static Pattern compilePattern(String query, GrepMode mode) {

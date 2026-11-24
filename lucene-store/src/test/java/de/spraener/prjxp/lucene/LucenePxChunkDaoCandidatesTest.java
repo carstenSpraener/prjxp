@@ -98,6 +98,16 @@ class LucenePxChunkDaoCandidatesTest {
     }
 
     @Test
+    void zeroLimitReturnsAllMatchesBeyondTheOldWindow() {
+        for (int i = 0; i < 60; i++) {
+            add("c" + i, "a/F" + i + ".java", "needle " + i);
+        }
+
+        // grep must be complete: a window would silently drop files whose chunks rank low.
+        assertThat(dao.searchCandidates("needle", Map.of(), 0)).hasSize(60);
+    }
+
+    @Test
     void candidatesRespectLimit() {
         for (int i = 0; i < 5; i++) {
             add("c" + i, "a/F" + i + ".java", "needle in file " + i);

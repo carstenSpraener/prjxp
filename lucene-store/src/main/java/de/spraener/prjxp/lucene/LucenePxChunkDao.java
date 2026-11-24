@@ -185,25 +185,33 @@ public class LucenePxChunkDao implements PxChunkDao {
     /** Upper bound for the file-name boost clauses; keeps the query small and predictable. */
     private static final int NAME_BOOST_LIMIT = 50;
 
+    /**
+     * {@code limit <= 0} means "all matches" — {@code grep} answers "does this occur?", which a
+     * ranked window cannot: a chunk ranked below the window would silently drop its file. The
+     * hard cap keeps a pathological query from loading the whole index into memory.
+     */
+    private static final int CANDIDATE_CAP = 5000;
+
     @Override
     public List<ScoredChunk> searchCandidates(String query, Map<String, String> filters, int limit) {
         if (luceneStore == null) {
             throw new UnsupportedOperationException("Candidate search requires a Lucene store");
         }
         List<String> tokens = tokenize(query);
-        if (tokens.isEmpty() || limit <= 0) {
+        int effectiveLimit = limit <= 0 ? CANDIDATE_CAP : Math.min(limit, CANDIDATE_CAP);
+        if (tokens.isEmpty() || effectiveLimit <= 0) {
             return new ArrayList<>();
         }
         // Stage 1: prefix of each token. Covers identifiers ("Preload" -> PreloadEventListener)
         // without paying for a term-dictionary walk.
-        List<ScoredChunk> hits = execute(candidateQuery(tokens, false, filters), limit, "candidates");
-        if (hits.size() >= limit) {
+        List<ScoredChunk> hits = execute(candidateQuery(tokens, false, filters), effectiveLimit, "candidates");
+        if (hits.size() >= effectiveLimit) {
             return hits;
         }
         // Stage 2: the token may sit mid-word ("Listener" -> PreloadEventListener). Widening is
         // only paid when stage 1 could not fill the window.
-        List<ScoredChunk> widened = execute(candidateQuery(tokens, true, filters), limit, "candidates");
-        return mergeById(hits, widened, limit);
+        List<ScoredChunk> widened = execute(candidateQuery(tokens, true, filters), effectiveLimit, "candidates");
+        return mergeById(hits, widened, effectiveLimit);
     }
 
     @Override

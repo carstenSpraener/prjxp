@@ -24,6 +24,9 @@ public interface PxChunkDao {
      * superset — prefix and mid-word matches of the query tokens are included, so that a later
      * exact/whole-word check can decide. Scored by BM25.
      * <p>
+     * {@code limit <= 0} asks for every match (bounded by the store's internal cap): a caller that
+     * must be complete — {@code grep} answering "does this occur?" — cannot use a ranked window.
+     * <p>
      * Default: the plain full-text search, so stores without an analyzed index keep working.
      */
     default List<ScoredChunk> searchCandidates(String query, Map<String, String> filters, int limit) {
