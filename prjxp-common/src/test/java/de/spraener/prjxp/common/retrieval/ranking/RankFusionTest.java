@@ -161,6 +161,21 @@ class RankFusionTest {
     }
 
     @Test
+    void fileSignalsConfirmEachOtherAcrossDifferentIds() {
+        // A name hit carries the file as id, a content hit carries a chunk id. Same file, two keys
+        // — the file ranking must still see them as one confirmation, not as two unrelated rows.
+        List<WeightedSignal> signals = List.of(
+                new WeightedSignal("lexical", 1.0, List.of(
+                        item("c1", "Other.java"), item("c2", "Runner.java"))),
+                new WeightedSignal("name", 1.0, List.of(item("Runner.java", "Runner.java"))));
+
+        List<RankedFile> ranked = RankFusion.DEFAULT.rankFiles(signals, 10);
+
+        assertThat(ranked).extracting(RankedFile::file).containsExactly("Runner.java", "Other.java");
+        assertThat(ranked.get(0).chunks()).isEqualTo(2);
+    }
+
+    @Test
     void limitBelowOneYieldsEmptyResult() {
         assertThat(RankFusion.DEFAULT.rankItems(signal("s", item("a", "A.java")), 0)).isEmpty();
         assertThat(RankFusion.DEFAULT.rankFiles(signal("s", item("a", "A.java")), -1)).isEmpty();

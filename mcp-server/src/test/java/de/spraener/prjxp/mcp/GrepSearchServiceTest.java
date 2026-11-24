@@ -35,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -739,10 +740,26 @@ class GrepSearchServiceTest {
         );
     }
 
+    /**
+     * Both candidate sources: {@code findAll} for {@code REGEX} (still a scan) and
+     * {@code searchCandidates} for {@code SUBSTRING}/{@code EXACT} (analyzed index).
+     */
     private void stubAllChunks(PxChunk... chunks) {
         when(projectRegistry.resolve("p")).thenReturn("p");
         when(provider.get("p")).thenReturn(Optional.of(dao));
-        when(dao.findAll()).thenReturn(java.util.stream.Stream.of(chunks));
+        lenient().when(dao.findAll()).thenAnswer(invocation -> java.util.stream.Stream.of(chunks));
+        lenient().when(dao.searchCandidates(anyString(), anyMap(), anyInt())).thenAnswer(invocation -> {
+            List<ScoredChunk> scored = new java.util.ArrayList<>();
+            for (PxChunk chunk : chunks) {
+                scored.add(new ScoredChunk(chunk, 1.0));
+            }
+            return scored;
+        });
+    }
+
+    /** A file-name hit for the name prior; the fusion ranks it before unconfirmed candidates. */
+    private void stubFileNames(String... files) {
+        when(dao.findFilesContaining(anyString(), anyInt())).thenReturn(List.of(files));
     }
 
     @Test
@@ -777,8 +794,6 @@ class GrepSearchServiceTest {
             c.getMetadata().put(PxChunk.PXCHUNK_VERBATIM_LINES, "1-2");
         });
         stubAllChunks(frame);
-        // two searches scan the stream twice -> fresh stream per call
-        when(dao.findAll()).thenAnswer(invocation -> java.util.stream.Stream.of(frame));
 
         GrepResult classHit = service.searchMatches("class A", "p", null, 20, true, GrepMode.SUBSTRING);
         assertThat(classHit.hits()).hasSize(1);
@@ -883,10 +898,11 @@ class GrepSearchServiceTest {
     }
 
     @Test
-    void searchFilesRanksByHitCountAndCarriesNoLineNumbers() {
+    void legacyFlagRestoresCountRanking() {
         stubAllChunks(
                 lineChunk("c1", "ZMinor.java", "1", "run"),
                 lineChunk("c2", "AMajor.java", "1", "run\nrun\nrun"));
+        service.rankingMode = GrepSearchService.RANKING_LEGACY;
 
         GrepResult result = service.searchFiles("run", "p", null, 10, true, GrepMode.SUBSTRING);
 
@@ -905,16 +921,85 @@ class GrepSearchServiceTest {
     }
 
     @Test
-    void limitPrefersFilesWithMoreHitsInsteadOfIndexOrder() {
+    void legacyRankingStillPrefersFilesWithMoreHits() {
         stubAllChunks(
                 lineChunk("c1", "ZMinor.java", "1", "run"),
                 lineChunk("c2", "AMajor.java", "1", "run\nrun\nrun"));
+        service.rankingMode = GrepSearchService.RANKING_LEGACY;
 
         GrepResult result = service.searchMatches("run", "p", null, 3, true, GrepMode.SUBSTRING);
 
         assertThat(result.hits()).hasSize(3);
         assertThat(result.hits()).allMatch(h -> h.file().equals("AMajor.java"));
         assertThat(result.note()).contains("3 of 4");
+    }
+
+    @Test
+    void nameMatchRanksFirst() {
+        stubAllChunks(
+                lineChunk("c1", "BaumassnahmeViewAction.java", "1", "new PreloadEventListener()"),
+                lineChunk("c2", "PreloadEventListener.java", "1", "class PreloadEventListener"));
+        stubFileNames("PreloadEventListener.java");
+
+        GrepResult result = service.searchFiles("Preload", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).extracting(SearchHit::file)
+                .containsExactly("PreloadEventListener.java", "BaumassnahmeViewAction.java");
+    }
+
+    @Test
+    void prefixCandidateWithoutLineMatchIsRejected() {
+        stubAllChunks(lineChunk("c1", "A.java", "1", "PreloadXyz();"));
+
+        GrepResult result = service.searchMatches("Preload", "p", null, 20, true, GrepMode.EXACT);
+
+        assertThat(result.hits()).isEmpty();
+    }
+
+    @Test
+    void regexModeStillRanksByName() {
+        stubAllChunks(
+                lineChunk("c1", "Other.java", "1", "PreloadSetting setting;"),
+                lineChunk("c2", "PreloadSetting.java", "1", "class PreloadSetting"));
+        stubFileNames("PreloadSetting.java");
+
+        GrepResult result = service.searchFiles("Preload", "p", null, 10, true, GrepMode.REGEX);
+
+        assertThat(result.hits()).extracting(SearchHit::file)
+                .containsExactly("PreloadSetting.java", "Other.java");
+    }
+
+    @Test
+    void missingStructureServiceStillRanks() {
+        stubAllChunks(
+                lineChunk("c1", "Other.java", "1", "run"),
+                lineChunk("c2", "Runner.java", "1", "run"));
+        stubFileNames("Runner.java");
+        service.chunkRankingService = null;
+
+        GrepResult result = service.searchFiles("run", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).extracting(SearchHit::file).containsExactly("Runner.java", "Other.java");
+    }
+
+    @Test
+    void blankQueryIsRejectedForBothSurfaces() {
+        assertThat(service.searchMatches(" ", "p", null, 10, true, GrepMode.SUBSTRING).note())
+                .contains("'query' is required");
+        assertThat(service.searchFiles(" ", "p", null, 10, true, GrepMode.SUBSTRING).note())
+                .contains("'query' is required");
+    }
+
+    @Test
+    void twoCallsReturnIdenticalOrder() {
+        stubAllChunks(
+                lineChunk("c1", "A.java", "1", "run"),
+                lineChunk("c2", "B.java", "1", "run"));
+
+        GrepResult first = service.searchFiles("run", "p", null, 10, true, GrepMode.SUBSTRING);
+        GrepResult second = service.searchFiles("run", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        assertThat(first.hits()).isEqualTo(second.hits());
     }
 
     @Test

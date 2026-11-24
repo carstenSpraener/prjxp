@@ -86,32 +86,41 @@ public final class RankFusion {
     }
 
     /**
-     * Fused file ranking: one entry per file, scored by its best chunk. The chunk count is carried
-     * for information only and never influences the order.
+     * Fused file ranking: one entry per file. A signal ranks a file by its <em>best</em> entry —
+     * so a name hit (a file id) and a content hit (a chunk id) of the same file confirm each
+     * other instead of competing as unrelated keys. The chunk count is carried for information
+     * only and never influences the order.
      */
     public List<RankedFile> rankFiles(List<WeightedSignal> signals, int limit) {
         if (limit <= 0 || signals == null || signals.isEmpty()) {
             return List.of();
         }
-        Map<String, Double> bestByFile = new LinkedHashMap<>();
+        Map<String, Double> scores = new LinkedHashMap<>();
         Map<String, Integer> chunksByFile = new LinkedHashMap<>();
-        for (RankedItem item : rankItems(signals, Integer.MAX_VALUE)) {
-            String file = trimToNull(item.file());
-            if (file == null) {
-                continue;   // a hit without a file cannot be aggregated to one
+        for (WeightedSignal signal : signals) {
+            if (signal == null || !signal.isActive()) {
+                continue;
             }
-            bestByFile.merge(file, item.score(), Math::max);
-            chunksByFile.merge(file, 1, Integer::sum);
+            Map<String, Integer> fileRank = new LinkedHashMap<>();
+            for (RankedItem item : signal.items()) {
+                String file = item == null ? null : trimToNull(item.file());
+                if (file == null) {
+                    continue;   // a hit without a file cannot be aggregated to one
+                }
+                fileRank.putIfAbsent(file, fileRank.size() + 1);
+                chunksByFile.merge(file, 1, Integer::sum);
+            }
+            fileRank.forEach((file, rank) -> scores.merge(file, signal.weight() / (k + rank), Double::sum));
         }
-        List<String> files = new ArrayList<>(bestByFile.keySet());
-        files.sort(Comparator.comparingDouble((String f) -> bestByFile.get(f)).reversed()
+        List<String> files = new ArrayList<>(scores.keySet());
+        files.sort(Comparator.comparingDouble((String file) -> scores.get(file)).reversed()
                 .thenComparing(Comparator.naturalOrder()));
         List<RankedFile> result = new ArrayList<>(Math.min(limit, files.size()));
         for (String file : files) {
             if (result.size() >= limit) {
                 break;
             }
-            result.add(new RankedFile(file, bestByFile.get(file), chunksByFile.get(file)));
+            result.add(new RankedFile(file, scores.get(file), chunksByFile.get(file)));
         }
         return result;
     }

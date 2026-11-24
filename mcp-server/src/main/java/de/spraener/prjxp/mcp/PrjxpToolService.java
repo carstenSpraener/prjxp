@@ -183,7 +183,14 @@ public class PrjxpToolService {
         if (includeTests == null) {
             includeTests = Boolean.TRUE;   // exact search: tests are deliberate intent
         }
-        return grepSearchService.searchDetailed(query.trim(), project, language, limit, includeTests, level);
+        String trimmed = query == null ? "" : query.trim();
+        // Same ranked path as the annotated grep tool: one ordering for both surfaces.
+        if (level == ContentLevel.NAMES || level == ContentLevel.AGGREGATED) {
+            return grepSearchService.searchFiles(trimmed, project, language, limit, includeTests,
+                    GrepMode.SUBSTRING);
+        }
+        return grepSearchService.searchMatches(trimmed, project, language, limit, includeTests,
+                GrepMode.SUBSTRING);
     }
 
     /**

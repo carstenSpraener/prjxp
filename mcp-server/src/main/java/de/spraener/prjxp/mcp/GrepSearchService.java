@@ -10,8 +10,15 @@ import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.SearchParams;
+import de.spraener.prjxp.common.retrieval.ranking.RankFusion;
+import de.spraener.prjxp.common.retrieval.ranking.RankedFile;
+import de.spraener.prjxp.common.retrieval.ranking.RankedItem;
+import de.spraener.prjxp.common.retrieval.ranking.WeightedSignal;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
+import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
+import de.spraener.prjxp.mcp.ranking.StructureSignal;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -43,6 +50,31 @@ public class GrepSearchService {
 
     /** Raw-chunk window cap for the overscan loop (SearchLimits.MAX_LIMIT * 5). */
     private static final int MAX_WINDOW = 500;
+
+    /** Note suffix when the candidate window was exhausted — the real counts may be higher. */
+    private static final String WINDOW_HINT =
+            " (candidate window exhausted; narrow the query to see all matches)";
+
+    /** {@code prjxp.ranking.grep=legacy} restores the pre-fusion hit-count order (ablation). */
+    static final String RANKING_LEGACY = "legacy";
+
+    /** {@code fusion} (default) or {@code legacy}; read per call so a benchmark can toggle it. */
+    @Value("${prjxp.ranking.grep:fusion}")
+    String rankingMode = "fusion";
+
+    /** Rank-fusion weights of the grep signals. */
+    @Value("${prjxp.ranking.weight.name:1.0}")
+    double nameWeight = 1.0;
+
+    @Value("${prjxp.ranking.weight.lexical:1.0}")
+    double lexicalWeight = 1.0;
+
+    @Value("${prjxp.ranking.weight.structure:1.0}")
+    double structureWeight = 1.0;
+
+    /** Optional: absent in slice tests and in deployments without the retriever stack. */
+    @Autowired(required = false)
+    ChunkRankingService chunkRankingService;
 
     public List<SearchHit> search(String query, String project, String language, int limit) {
         return search(query, project, language, limit, true);
@@ -88,62 +120,28 @@ public class GrepSearchService {
     }
 
     /**
-     * Line-oriented search for the P2 contract: scans the project's indexed chunks and returns one
-     * hit per matching line, anchored at {@code file:line}. This is the information the model
-     * needs to cite a finding directly instead of spending a second call to read the file.
-     * <p>
-     * The scan is linear in the project's chunk count. That is acceptable for an interactive tool
-     * call and keeps the contract language-agnostic (no per-language index required).
+     * Line-oriented search: one hit per matching line, anchored at {@code file:line}. Candidates
+     * come from the analyzed index instead of a full scan; the line check decides what is a real
+     * hit, the fusion decides the order. {@code REGEX} keeps the scan because a line regular
+     * expression cannot be pre-filtered by an index query.
      */
     public GrepResult searchMatches(String query, String project, String language, int limit,
                                     boolean includeTests, GrepMode mode) {
-        projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
-        if (query == null || query.isBlank()) {
-            return new GrepResult(List.of(), 0, "ERROR: 'query' is required.");
-        }
-        String resolved = projectRegistry.resolve(project);
-        PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
-        if (dao == null) {
-            return GrepResult.of(List.of(), 0);
-        }
-
-        Pattern pattern;
-        try {
-            pattern = compilePattern(query, mode);
-        } catch (PatternSyntaxException e) {
-            return new GrepResult(List.of(), 0,
-                    "ERROR: invalid regular expression: " + e.getDescription());
-        }
-        MatchScan scan = scanMatches(dao, pattern, languageMime(language), includeTests,
-                Math.max(limit, limit * 3));
-
-        List<String> rankedFiles = rankFilesByHitCount(scan.countByFile());
-        List<SearchHit> hits = new ArrayList<>();
-        for (String file : rankedFiles) {
-            for (SearchHit hit : scan.hitsByFile().getOrDefault(file, Map.of()).values()) {
-                if (hits.size() >= limit) {
-                    break;
-                }
-                hits.add(hit);
-            }
-            if (hits.size() >= limit) {
-                break;
-            }
-        }
-        String note = scan.totalHits() > hits.size()
-                ? "Note: showing " + hits.size() + " of " + scan.totalHits()
-                + " hits; raise 'limit' or narrow the query."
-                : null;
-        return new GrepResult(hits, scan.totalHits(), note);
+        return rankedSearch(query, project, language, limit, includeTests, mode, false);
     }
 
     /**
-     * grep -l: one entry per file that contains the pattern, ranked by hit count. The limit counts
-     * FILES, not lines, so a file with many hits cannot crowd the others out of the answer.
-     * The hits carry neither line numbers nor snippets — read the file for content.
+     * grep -l: one entry per file that contains the pattern. The limit counts FILES, applied after
+     * the fused ranking, so a heavily matching file cannot crowd the others out. The hits carry
+     * neither line numbers nor snippets — read the file for content.
      */
     public GrepResult searchFiles(String query, String project, String language, int limit,
                                   boolean includeTests, GrepMode mode) {
+        return rankedSearch(query, project, language, limit, includeTests, mode, true);
+    }
+
+    private GrepResult rankedSearch(String query, String project, String language, int limit,
+                                    boolean includeTests, GrepMode mode, boolean filesOnly) {
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         if (query == null || query.isBlank()) {
             return new GrepResult(List.of(), 0, "ERROR: 'query' is required.");
@@ -161,81 +159,198 @@ public class GrepSearchService {
             return new GrepResult(List.of(), 0,
                     "ERROR: invalid regular expression: " + e.getDescription());
         }
-        MatchScan scan = scanMatches(dao, pattern, languageMime(language), includeTests, 0);
-
-        List<String> rankedFiles = rankFilesByHitCount(scan.countByFile());
-        List<SearchHit> files = new ArrayList<>();
-        for (String file : rankedFiles) {
-            if (files.size() >= limit) {
-                break;
-            }
-            files.add(new SearchHit("", 0.0, file, null, null, null, SOURCE, Map.of()));
+        int window = Math.min(Math.max(limit * 4, 40), MAX_WINDOW);
+        List<PxChunk> matched = matchingChunks(dao, query, pattern, language, includeTests, mode, window);
+        if (matched.isEmpty()) {
+            return GrepResult.of(List.of(), 0);
         }
-        String note = rankedFiles.size() > files.size()
-                ? "Note: showing " + files.size() + " of " + rankedFiles.size()
-                + " files with matches; raise 'limit' or narrow the query."
-                : null;
-        return new GrepResult(files, rankedFiles.size(), note);
-    }
+        boolean windowExhausted = matched.size() >= window;
+        List<RankedFile> fileOrder = fileOrder(dao, query, matched, includeTests);
 
-    /** Per-file matches and hit counts of one scan; the limit is applied by the caller. */
-    private record MatchScan(Map<String, Map<Integer, SearchHit>> hitsByFile,
-                             Map<String, Integer> countByFile, int totalHits) {
+        if (filesOnly) {
+            List<SearchHit> files = new ArrayList<>();
+            for (RankedFile file : fileOrder) {
+                if (files.size() >= limit) {
+                    break;
+                }
+                files.add(new SearchHit("", 0.0, file.file(), null, null, null, SOURCE, Map.of()));
+            }
+            return new GrepResult(files, fileOrder.size(),
+                    filesNote(files.size(), fileOrder.size(), windowExhausted));
+        }
+
+        Map<String, Integer> fileRank = new HashMap<>();
+        for (int i = 0; i < fileOrder.size(); i++) {
+            fileRank.putIfAbsent(fileOrder.get(i).file(), i);
+        }
+        List<SearchHit> all = collectLineHits(matched, pattern);
+        all.sort(Comparator.comparingInt((SearchHit hit) -> fileRank.getOrDefault(hit.file(), Integer.MAX_VALUE))
+                .thenComparing(SearchHit::lineFrom)
+                .thenComparing(SearchHit::chunkId));
+        List<SearchHit> hits = all.size() > limit ? new ArrayList<>(all.subList(0, limit)) : all;
+        String note = all.size() > hits.size()
+                ? "Note: showing " + hits.size() + " of " + all.size()
+                + " hits; raise 'limit' or narrow the query."
+                + (windowExhausted ? WINDOW_HINT : "")
+                : null;
+        return new GrepResult(hits, all.size(), note);
     }
 
     /**
-     * One pass over the project's chunks. Detailed hits are stored only while {@code storeBudget}
-     * allows it (0 = counts only), so a query with hundreds of thousands of matches cannot blow up
-     * memory; the counts stay exact either way.
+     * Chunks that contain at least one matching, anchorable line — ordered as the candidate source
+     * delivered them (BM25 for the index path, index order for the scan).
      */
-    private MatchScan scanMatches(PxChunkDao dao, Pattern pattern, String mime, boolean includeTests,
-                                  int storeBudget) {
-        // Collect per file, then rank before applying the limit. Emitting in index order made the
-        // limit an arbitrary prefix (test code and unrelated files crowded out the real hits).
-        Map<String, Map<Integer, SearchHit>> hitsByFile = new LinkedHashMap<>();
-        Map<String, Integer> countByFile = new LinkedHashMap<>();
-        int total = 0;
-        int stored = 0;
-        try (Stream<PxChunk> chunks = dao.findAll()) {
-            Iterator<PxChunk> it = chunks.iterator();
-            while (it.hasNext()) {
-                PxChunk chunk = it.next();
-                if (!isScannable(chunk, mime, includeTests)) {
-                    continue;
-                }
-                int baseLine = parseLine(chunk.getFromLine());
-                String[] lines = (chunk.getContent() == null ? "" : chunk.getContent()).split("\n", -1);
-                for (int i = 0; i < lines.length; i++) {
-                    if (!pattern.matcher(lines[i]).find()) {
-                        continue;
-                    }
-                    int line = baseLine + i;
-                    if (!isAnchorableLine(chunk, line)) {
-                        continue;   // synthetic content (e.g. class-frame signature block)
-                    }
-                    total++;
-                    countByFile.merge(chunk.getFile(), 1, Integer::sum);
-                    if (stored >= storeBudget) {
-                        continue;
-                    }
-                    stored++;
-                    // Chunk overlap repeats lines: keep one hit per (file, line) and prefer the
-                    // longer snippet, because an overlap chunk may start in the middle of the line.
-                    SearchHit hit = new SearchHit(chunk.getId(), 0.0, chunk.getFile(), line, line,
-                            snippet(lines[i]), SOURCE, Map.of());
-                    hitsByFile
-                            .computeIfAbsent(chunk.getFile(), k -> new LinkedHashMap<>())
-                            .merge(line, hit, GrepSearchService::longerSnippet);
-                }
+    private List<PxChunk> matchingChunks(PxChunkDao dao, String query, Pattern pattern, String language,
+                                         boolean includeTests, GrepMode mode, int window) {
+        String mime = languageMime(language);
+        List<PxChunk> source;
+        if (mode == GrepMode.REGEX) {
+            try (Stream<PxChunk> chunks = dao.findAll()) {
+                source = chunks.filter(chunk -> isScannable(chunk, mime, includeTests)).toList();
+            }
+        } else {
+            List<ScoredChunk> candidates;
+            try {
+                candidates = dao.searchCandidates(query, buildFilters(language), window);
+            } catch (UnsupportedOperationException e) {
+                return List.of();
+            }
+            source = candidates.stream()
+                    .map(ScoredChunk::chunk)
+                    .filter(chunk -> isScannable(chunk, mime, includeTests))
+                    .toList();
+        }
+        List<PxChunk> matched = new ArrayList<>();
+        for (PxChunk chunk : source) {
+            if (hasMatchingLine(chunk, pattern)) {
+                matched.add(chunk);
             }
         }
-        return new MatchScan(hitsByFile, countByFile, total);
+        return matched;
     }
 
-    private static List<String> rankFilesByHitCount(Map<String, Integer> countByFile) {
-        List<String> rankedFiles = new ArrayList<>(countByFile.keySet());
-        rankedFiles.sort(Comparator.comparingInt((String f) -> countByFile.getOrDefault(f, 0)).reversed());
-        return rankedFiles;
+    private static boolean hasMatchingLine(PxChunk chunk, Pattern pattern) {
+        int baseLine = parseLine(chunk.getFromLine());
+        String[] lines = (chunk.getContent() == null ? "" : chunk.getContent()).split("\n", -1);
+        for (int i = 0; i < lines.length; i++) {
+            if (pattern.matcher(lines[i]).find() && isAnchorableLine(chunk, baseLine + i)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /**
+     * One hit per (file, line): chunk overlap repeats lines, and an overlap chunk may start in the
+     * middle of a line — the longer snippet wins.
+     */
+    private static List<SearchHit> collectLineHits(List<PxChunk> chunks, Pattern pattern) {
+        Map<String, SearchHit> byFileLine = new LinkedHashMap<>();
+        for (PxChunk chunk : chunks) {
+            int baseLine = parseLine(chunk.getFromLine());
+            String[] lines = (chunk.getContent() == null ? "" : chunk.getContent()).split("\n", -1);
+            for (int i = 0; i < lines.length; i++) {
+                if (!pattern.matcher(lines[i]).find()) {
+                    continue;
+                }
+                int line = baseLine + i;
+                if (!isAnchorableLine(chunk, line)) {
+                    continue;   // synthetic content (e.g. class-frame signature block)
+                }
+                SearchHit hit = new SearchHit(chunk.getId(), 0.0, chunk.getFile(), line, line,
+                        snippet(lines[i]), SOURCE, Map.of());
+                byFileLine.merge(chunk.getFile() + ":" + line, hit, GrepSearchService::longerSnippet);
+            }
+        }
+        return new ArrayList<>(byFileLine.values());
+    }
+
+    /**
+     * The fused file order: lexical (candidate order), structure (code section) and name (file
+     * name/path contains the query). {@code prjxp.ranking.grep=legacy} restores the old hit-count
+     * ordering for ablation runs.
+     */
+    private List<RankedFile> fileOrder(PxChunkDao dao, String query, List<PxChunk> matched,
+                                       boolean includeTests) {
+        if (RANKING_LEGACY.equalsIgnoreCase(rankingMode)) {
+            return legacyFileOrder(matched);
+        }
+        List<WeightedSignal> signals = new ArrayList<>();
+        List<RankedItem> lexical = new ArrayList<>(matched.size());
+        for (PxChunk chunk : matched) {
+            lexical.add(new RankedItem(chunk.getId(), chunk.getFile(), 0.0));
+        }
+        signals.add(new WeightedSignal("lexical", lexicalWeight, lexical));
+        List<RankedItem> structured = structureSignal().rank(matched);
+        if (!structured.isEmpty()) {
+            signals.add(new WeightedSignal("structure", structureWeight, structured));
+        }
+        List<RankedItem> names = nameSignal(dao, query, includeTests);
+        if (!names.isEmpty()) {
+            signals.add(new WeightedSignal("name", nameWeight, names));
+        }
+        return RankFusion.DEFAULT.rankFiles(signals, Integer.MAX_VALUE);
+    }
+
+    private StructureSignal structureSignal() {
+        return new StructureSignal(chunkRankingService);
+    }
+
+    /** Pre-fusion order: most matching chunks first, ties alphabetically (ablation baseline). */
+    private static List<RankedFile> legacyFileOrder(List<PxChunk> matched) {
+        Map<String, Integer> countByFile = new LinkedHashMap<>();
+        for (PxChunk chunk : matched) {
+            countByFile.merge(chunk.getFile(), 1, Integer::sum);
+        }
+        List<String> files = new ArrayList<>(countByFile.keySet());
+        files.sort(Comparator.comparingInt((String file) -> countByFile.getOrDefault(file, 0)).reversed()
+                .thenComparing(Comparator.naturalOrder()));
+        List<RankedFile> result = new ArrayList<>(files.size());
+        for (String file : files) {
+            result.add(new RankedFile(file, countByFile.get(file), countByFile.get(file)));
+        }
+        return result;
+    }
+
+    /** Files whose name or path contains the first word of the query — the strongest intent signal. */
+    private List<RankedItem> nameSignal(PxChunkDao dao, String query, boolean includeTests) {
+        String token = nameToken(query);
+        if (token == null) {
+            return List.of();
+        }
+        List<String> files;
+        try {
+            files = dao.findFilesContaining(token, MAX_WINDOW);
+        } catch (UnsupportedOperationException e) {
+            return List.of();
+        }
+        List<RankedItem> items = new ArrayList<>(files.size());
+        for (String file : files) {
+            if (!includeTests && TestPathFilter.isTestPath(file)) {
+                continue;
+            }
+            items.add(new RankedItem(file, file, 0.0));
+        }
+        return items;
+    }
+
+    private static String nameToken(String query) {
+        for (String raw : query.trim().split("\\s+")) {
+            String token = raw.replaceAll("[^\\p{L}\\p{N}_.$]", "");
+            if (token.length() >= 3) {
+                return token;
+            }
+        }
+        return null;
+    }
+
+    private static String filesNote(int shown, int total, boolean windowExhausted) {
+        if (total <= shown && !windowExhausted) {
+            return null;
+        }
+        return "Note: showing " + shown + " of " + total
+                + " files with matches; raise 'limit' or narrow the query."
+                + (windowExhausted ? WINDOW_HINT : "");
     }
 
     private static Pattern compilePattern(String query, GrepMode mode) {

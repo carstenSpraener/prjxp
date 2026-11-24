@@ -1,6 +1,7 @@
 package de.spraener.prjxp.mcp;
 
 import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -96,5 +97,32 @@ class PrjxpToolServiceGrepTest {
         String out = service.grep("run", "p", null, null, 20, true, "names");
 
         assertThat(out).contains("1 of 5 files");
+    }
+
+    @Test
+    void bothGrepSurfacesShareTheRankedFileList() {
+        GrepResult ranked = new GrepResult(List.of(fileHit("a/A.java"), fileHit("b/B.java")), 2, null);
+        when(grepSearchService.searchFiles(eq("run"), eq("p"), isNull(), anyInt(), anyBoolean(),
+                eq(GrepMode.SUBSTRING))).thenReturn(ranked);
+
+        String annotated = service.grep("run", "p", null, null, 20, true, "names");
+        GrepResult registry = service.grepResult("run", "p", null, 20, true, ContentLevel.NAMES);
+
+        assertThat(registry.hits()).isEqualTo(ranked.hits());
+        assertThat(annotated).contains("a/A.java").contains("b/B.java");
+        verify(grepSearchService, org.mockito.Mockito.times(2))
+                .searchFiles(eq("run"), eq("p"), isNull(), eq(20), eq(true), eq(GrepMode.SUBSTRING));
+    }
+
+    @Test
+    void grepResultLinesUseTheAnchoredSearch() {
+        SearchHit lineHit = new SearchHit("c1", 0.0, "a/A.java", 12, 12, "run();", "grep", Map.of());
+        when(grepSearchService.searchMatches(eq("run"), eq("p"), isNull(), anyInt(), anyBoolean(),
+                eq(GrepMode.SUBSTRING))).thenReturn(new GrepResult(List.of(lineHit), 1, null));
+
+        GrepResult result = service.grepResult("run", "p", null, 20, true, ContentLevel.FULL);
+
+        assertThat(result.hits()).containsExactly(lineHit);
+        verify(grepSearchService).searchMatches(eq("run"), eq("p"), isNull(), eq(20), eq(true), eq(GrepMode.SUBSTRING));
     }
 }
