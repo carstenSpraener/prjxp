@@ -20,6 +20,26 @@ public interface PxChunkDao {
     }
 
     /**
+     * Candidate generation for ranked search: like {@link #searchFullText}, but the hit list is a
+     * superset — prefix and mid-word matches of the query tokens are included, so that a later
+     * exact/whole-word check can decide. Scored by BM25.
+     * <p>
+     * Default: the plain full-text search, so stores without an analyzed index keep working.
+     */
+    default List<ScoredChunk> searchCandidates(String query, Map<String, String> filters, int limit) {
+        return searchFullText(query, filters, limit);
+    }
+
+    /**
+     * Files whose name or path contains {@code token} (case-insensitive), file-name matches first,
+     * then path matches, each group alphabetically. Cheap structural lookup for the name prior —
+     * it answers "which files are about this word?", not "what do they say?".
+     */
+    default List<String> findFilesContaining(String token, int limit) {
+        throw new UnsupportedOperationException("File name lookup is not supported by this store");
+    }
+
+    /**
      * Deterministic lookup on exact index fields (e.g. symbol metadata).
      * Filters use logical metadata keys, see {@link PxChunk#metadataFieldKey(String)}.
      */

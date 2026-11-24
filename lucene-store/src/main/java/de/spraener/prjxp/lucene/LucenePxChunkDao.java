@@ -33,6 +33,7 @@ import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.DocIdSetIterator;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.TermQuery;
@@ -45,9 +46,12 @@ import org.apache.lucene.util.BytesRef;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -174,6 +178,138 @@ public class LucenePxChunkDao implements PxChunkDao {
     }
 
     private static final double INDEX_SCORE = 1.0;
+
+    /** Analyzed content field; the only field BM25 scores. */
+    private static final String CONTENT_FIELD = "content";
+
+    @Override
+    public List<ScoredChunk> searchCandidates(String query, Map<String, String> filters, int limit) {
+        if (luceneStore == null) {
+            throw new UnsupportedOperationException("Candidate search requires a Lucene store");
+        }
+        List<String> tokens = tokenize(query);
+        if (tokens.isEmpty() || limit <= 0) {
+            return new ArrayList<>();
+        }
+        // Stage 1: prefix of each token. Covers identifiers ("Preload" -> PreloadEventListener)
+        // without paying for a term-dictionary walk.
+        List<ScoredChunk> hits = execute(candidateQuery(tokens, false, filters), limit, "candidates");
+        if (hits.size() >= limit) {
+            return hits;
+        }
+        // Stage 2: the token may sit mid-word ("Listener" -> PreloadEventListener). Widening is
+        // only paid when stage 1 could not fill the window.
+        List<ScoredChunk> widened = execute(candidateQuery(tokens, true, filters), limit, "candidates");
+        return mergeById(hits, widened, limit);
+    }
+
+    @Override
+    public List<String> findFilesContaining(String token, int limit) {
+        if (luceneStore == null) {
+            throw new UnsupportedOperationException("File name lookup requires a Lucene store");
+        }
+        String needle = token == null ? "" : token.trim().toLowerCase(Locale.ROOT);
+        if (needle.isEmpty() || limit <= 0) {
+            return List.of();
+        }
+        try {
+            IndexSearcher searcher = luceneStore.getSearcher();
+            try {
+                IndexReader reader = searcher.getIndexReader();
+                Terms terms = MultiTerms.getTerms(reader, PxChunk.PXCHUNK_FILE);
+                if (terms == null) {
+                    return List.of();
+                }
+                BitSet projectDocs = projectDocs(searcher, reader.maxDoc());
+                List<String> nameMatches = new ArrayList<>();
+                List<String> pathMatches = new ArrayList<>();
+                TermsEnum termsEnum = terms.iterator();
+                for (BytesRef term = termsEnum.next(); term != null; term = termsEnum.next()) {
+                    String file = term.utf8ToString();
+                    String lower = file.toLowerCase(Locale.ROOT);
+                    if (!lower.contains(needle) || !inProject(termsEnum, projectDocs)) {
+                        continue;
+                    }
+                    if (baseName(lower).contains(needle)) {
+                        nameMatches.add(file);
+                    } else {
+                        pathMatches.add(file);   // a directory segment matched, not the file name
+                    }
+                }
+                nameMatches.sort(Comparator.naturalOrder());
+                pathMatches.sort(Comparator.naturalOrder());
+                List<String> ordered = new ArrayList<>(nameMatches);
+                ordered.addAll(pathMatches);
+                return ordered.size() > limit ? new ArrayList<>(ordered.subList(0, limit)) : ordered;
+            } finally {
+                luceneStore.releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to lookup files by name", e);
+        }
+    }
+
+    private Query candidateQuery(List<String> tokens, boolean contains, Map<String, String> filters) {
+        BooleanQuery.Builder builder = new BooleanQuery.Builder();
+        for (String token : tokens) {
+            Query clause = contains
+                    ? new WildcardQuery(new Term(CONTENT_FIELD, "*" + token + "*"))
+                    : new PrefixQuery(new Term(CONTENT_FIELD, token));
+            builder.add(clause, BooleanClause.Occur.MUST);
+        }
+        for (Map.Entry<String, String> entry : scopedFilters(filters).entrySet()) {
+            addFilterTerm(builder, entry.getKey(), entry.getValue());
+        }
+        return builder.build();
+    }
+
+    private List<ScoredChunk> execute(Query query, int limit, String what) {
+        try {
+            IndexSearcher searcher = luceneStore.getSearcher();
+            try {
+                TopDocs topDocs = searcher.search(query, limit);
+                List<ScoredChunk> result = new ArrayList<>();
+                for (ScoreDoc scoreDoc : topDocs.scoreDocs) {
+                    org.apache.lucene.document.Document doc = searcher.storedFields().document(scoreDoc.doc);
+                    result.add(new ScoredChunk(extractPxChunk(doc), scoreDoc.score));
+                }
+                return result;
+            } finally {
+                luceneStore.releaseSearcher(searcher);
+            }
+        } catch (IOException e) {
+            throw new RuntimeException("Failed to search " + what, e);
+        }
+    }
+
+    private static List<ScoredChunk> mergeById(List<ScoredChunk> first, List<ScoredChunk> second, int limit) {
+        Map<String, ScoredChunk> byId = new LinkedHashMap<>();
+        for (ScoredChunk chunk : first) {
+            addById(byId, chunk, limit);
+        }
+        for (ScoredChunk chunk : second) {
+            addById(byId, chunk, limit);
+        }
+        return new ArrayList<>(byId.values());
+    }
+
+    private static void addById(Map<String, ScoredChunk> byId, ScoredChunk chunk, int limit) {
+        if (byId.size() >= limit) {
+            return;
+        }
+        String id = chunk.chunk() == null ? null : chunk.chunk().getId();
+        if (id == null) {
+            return;
+        }
+        byId.putIfAbsent(id, chunk);
+    }
+
+    /** Last path segment; the part an identifier query usually names. */
+    private static String baseName(String path) {
+        int slash = path.lastIndexOf('/');
+        return slash < 0 ? path : path.substring(slash + 1);
+    }
+
 
     @Override
     public List<ScoredChunk> searchByIndex(Map<String, String> filters, int limit) {
