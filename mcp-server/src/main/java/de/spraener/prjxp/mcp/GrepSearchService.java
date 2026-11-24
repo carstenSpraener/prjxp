@@ -68,6 +68,10 @@ public class GrepSearchService {
     @Value("${prjxp.ranking.weight.structure:1.0}")
     double structureWeight = 1.0;
 
+    /** How often the pattern occurs in a file. A token search is about frequency, too. */
+    @Value("${prjxp.ranking.weight.frequency:1.0}")
+    double frequencyWeight = 1.0;
+
     /** Optional: absent in slice tests and in deployments without the retriever stack. */
     @Autowired(required = false)
     ChunkRankingService chunkRankingService;
@@ -280,11 +284,33 @@ public class GrepSearchService {
         if (!structured.isEmpty()) {
             signals.add(new WeightedSignal("structure", structureWeight, structured));
         }
+        List<RankedItem> byFrequency = frequencySignal(matched);
+        if (!byFrequency.isEmpty()) {
+            signals.add(new WeightedSignal("frequency", frequencyWeight, byFrequency));
+        }
         List<RankedItem> names = nameSignal(dao, query, matched, includeTests);
         if (!names.isEmpty()) {
             signals.add(new WeightedSignal("name", nameWeight, names));
         }
         return RankFusion.DEFAULT.rankFiles(signals, Integer.MAX_VALUE);
+    }
+
+    /** Files ordered by how many chunks matched; one entry per file, so RRF sees the count. */
+    private static List<RankedItem> frequencySignal(List<PxChunk> matched) {
+        Map<String, Integer> countByFile = new LinkedHashMap<>();
+        for (PxChunk chunk : matched) {
+            if (chunk.getFile() != null) {
+                countByFile.merge(chunk.getFile(), 1, Integer::sum);
+            }
+        }
+        List<String> files = new ArrayList<>(countByFile.keySet());
+        files.sort(Comparator.comparingInt((String file) -> countByFile.getOrDefault(file, 0)).reversed()
+                .thenComparing(Comparator.naturalOrder()));
+        List<RankedItem> items = new ArrayList<>(files.size());
+        for (String file : files) {
+            items.add(new RankedItem(file, file, countByFile.get(file)));
+        }
+        return items;
     }
 
     private StructureSignal structureSignal() {

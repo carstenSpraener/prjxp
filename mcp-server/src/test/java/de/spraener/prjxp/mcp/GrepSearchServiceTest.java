@@ -1012,6 +1012,35 @@ class GrepSearchServiceTest {
     }
 
     @Test
+    void heavilyMatchingFileRanksAboveASingleHitDoc() {
+        stubAllChunks(
+                lineChunk("m1", "impl/Minor.java", "1", "ZvF"),
+                lineChunk("c1", "impl/ImportZvfXmlAction.java", "1",
+                        "ZvF = 1;\nuse(ZvF);\nread(ZvF);\nwrite(ZvF);"));
+
+        GrepResult result = service.searchFiles("ZvF", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        // Frequency is a signal of its own: a token search is not only about where it occurs.
+        assertThat(result.hits()).extracting(SearchHit::file)
+                .containsExactly("impl/ImportZvfXmlAction.java", "impl/Minor.java");
+    }
+
+    @Test
+    void nameMatchIsTheStrongestSingleSignal() {
+        stubAllChunks(
+                lineChunk("d1", "docs/ZvF.md", "1", "ZvF"),
+                lineChunk("c1", "impl/ImportZvfXmlAction.java", "1",
+                        "ZvF = 1;\nuse(ZvF);\nread(ZvF);\nwrite(ZvF);"));
+        stubFileNames("docs/ZvF.md");
+
+        GrepResult result = service.searchFiles("ZvF", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        // Documented trade-off: a file about the token outranks a file that merely mentions it.
+        assertThat(result.hits()).extracting(SearchHit::file)
+                .containsExactly("docs/ZvF.md", "impl/ImportZvfXmlAction.java");
+    }
+
+    @Test
     void twoCallsReturnIdenticalOrder() {
         stubAllChunks(
                 lineChunk("c1", "A.java", "1", "run"),
