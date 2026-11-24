@@ -292,7 +292,46 @@ public class GrepSearchService {
         if (!names.isEmpty()) {
             signals.add(new WeightedSignal("name", nameWeight, names));
         }
-        return RankFusion.DEFAULT.rankFiles(signals, Integer.MAX_VALUE);
+        return exactNameFirst(RankFusion.DEFAULT.rankFiles(signals, Integer.MAX_VALUE), query);
+    }
+
+    /**
+     * A file whose name *is* the query (basename without extension, case-insensitive) comes first.
+     * Rank fusion cannot express that: an exact match and a test file that merely contains the
+     * name differ by one rank position, and a few extra hits outweigh that. Everything else stays
+     * in fused order.
+     */
+    private static List<RankedFile> exactNameFirst(List<RankedFile> fused, String query) {
+        String token = nameToken(query);
+        if (token == null || fused.size() < 2) {
+            return fused;
+        }
+        List<RankedFile> exact = new ArrayList<>();
+        List<RankedFile> rest = new ArrayList<>();
+        for (RankedFile file : fused) {
+            if (isExactNameMatch(file.file(), token)) {
+                exact.add(file);
+            } else {
+                rest.add(file);
+            }
+        }
+        if (exact.isEmpty()) {
+            return fused;
+        }
+        exact.addAll(rest);
+        return exact;
+    }
+
+    private static boolean isExactNameMatch(String file, String token) {
+        if (file == null) {
+            return false;
+        }
+        String base = file.substring(file.lastIndexOf('/') + 1);
+        int dot = base.lastIndexOf('.');
+        if (dot > 0) {
+            base = base.substring(0, dot);
+        }
+        return base.equalsIgnoreCase(token);
     }
 
     /** Files ordered by how many chunks matched; one entry per file, so RRF sees the count. */

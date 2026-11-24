@@ -1041,6 +1041,23 @@ class GrepSearchServiceTest {
     }
 
     @Test
+    void exactNameMatchBeatsATestFileWithMoreHits() {
+        stubAllChunks(
+                lineChunk("t1", "test/FileGraphServiceTest.java", "1",
+                        "FileGraphService a;\nFileGraphService b;\nFileGraphService c;"),
+                lineChunk("t2", "test/FileGraphServiceTest.java", "10", "FileGraphService d;"),
+                lineChunk("t3", "test/FileGraphServiceTest.java", "20", "FileGraphService e;"),
+                lineChunk("m1", "main/FileGraphService.java", "1", "class FileGraphService"));
+        stubFileNames("main/FileGraphService.java", "test/FileGraphServiceTest.java");
+
+        GrepResult result = service.searchFiles("FileGraphService", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        // The class the query names comes first; the test that mentions it three times does not.
+        assertThat(result.hits()).extracting(SearchHit::file)
+                .containsExactly("main/FileGraphService.java", "test/FileGraphServiceTest.java");
+    }
+
+    @Test
     void twoCallsReturnIdenticalOrder() {
         stubAllChunks(
                 lineChunk("c1", "A.java", "1", "run"),
