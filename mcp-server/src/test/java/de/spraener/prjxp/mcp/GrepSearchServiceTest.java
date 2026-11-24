@@ -948,6 +948,17 @@ class GrepSearchServiceTest {
     }
 
     @Test
+    void nameMatchWithoutMatchingLineIsNotReported() {
+        stubAllChunks(lineChunk("c1", "A.java", "1", "Preload setting"));
+        stubFileNames("PreloadOnly.java", "A.java");
+
+        GrepResult result = service.searchFiles("Preload", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).extracting(SearchHit::file).containsExactly("A.java");
+        assertThat(result.totalFiles()).isEqualTo(1);
+    }
+
+    @Test
     void prefixCandidateWithoutLineMatchIsRejected() {
         stubAllChunks(lineChunk("c1", "A.java", "1", "PreloadXyz();"));
 

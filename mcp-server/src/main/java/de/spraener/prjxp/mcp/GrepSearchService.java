@@ -285,7 +285,7 @@ public class GrepSearchService {
         if (!structured.isEmpty()) {
             signals.add(new WeightedSignal("structure", structureWeight, structured));
         }
-        List<RankedItem> names = nameSignal(dao, query, includeTests);
+        List<RankedItem> names = nameSignal(dao, query, matched, includeTests);
         if (!names.isEmpty()) {
             signals.add(new WeightedSignal("name", nameWeight, names));
         }
@@ -312,11 +312,22 @@ public class GrepSearchService {
         return result;
     }
 
-    /** Files whose name or path contains the first word of the query — the strongest intent signal. */
-    private List<RankedItem> nameSignal(PxChunkDao dao, String query, boolean includeTests) {
+    /**
+     * Files whose name or path contains the first word of the query — the strongest intent
+     * signal. Only files the line check confirmed: a name says what a file is <em>about</em>, not
+     * that it contains the pattern, and {@code grep -l} must never list a file without a match.
+     */
+    private List<RankedItem> nameSignal(PxChunkDao dao, String query, List<PxChunk> matched,
+                                        boolean includeTests) {
         String token = nameToken(query);
         if (token == null) {
             return List.of();
+        }
+        Set<String> verified = new HashSet<>();
+        for (PxChunk chunk : matched) {
+            if (chunk.getFile() != null) {
+                verified.add(chunk.getFile());
+            }
         }
         List<String> files;
         try {
@@ -326,6 +337,9 @@ public class GrepSearchService {
         }
         List<RankedItem> items = new ArrayList<>(files.size());
         for (String file : files) {
+            if (!verified.contains(file)) {
+                continue;   // name match without a matching line: not a hit
+            }
             if (!includeTests && TestPathFilter.isTestPath(file)) {
                 continue;
             }

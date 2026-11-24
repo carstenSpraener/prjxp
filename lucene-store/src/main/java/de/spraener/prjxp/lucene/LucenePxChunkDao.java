@@ -182,6 +182,9 @@ public class LucenePxChunkDao implements PxChunkDao {
     /** Analyzed content field; the only field BM25 scores. */
     private static final String CONTENT_FIELD = "content";
 
+    /** Upper bound for the file-name boost clauses; keeps the query small and predictable. */
+    private static final int NAME_BOOST_LIMIT = 50;
+
     @Override
     public List<ScoredChunk> searchCandidates(String query, Map<String, String> filters, int limit) {
         if (luceneStore == null) {
@@ -257,10 +260,29 @@ public class LucenePxChunkDao implements PxChunkDao {
                     : new PrefixQuery(new Term(CONTENT_FIELD, token));
             builder.add(clause, BooleanClause.Occur.MUST);
         }
+        addNameBoost(builder, tokens);
         for (Map.Entry<String, String> entry : scopedFilters(filters).entrySet()) {
             addFilterTerm(builder, entry.getKey(), entry.getValue());
         }
         return builder.build();
+    }
+
+    /**
+     * A SHOULD clause per file whose name contains a query token. The chunks of those files match
+     * the content query as well (the identifier is part of the text), so the boost only lifts them
+     * inside the window — it can never introduce a chunk whose line check would fail.
+     */
+    private void addNameBoost(BooleanQuery.Builder builder, List<String> tokens) {
+        LinkedHashSet<String> files = new LinkedHashSet<>();
+        for (String token : tokens) {
+            files.addAll(findFilesContaining(token, NAME_BOOST_LIMIT));
+            if (files.size() >= NAME_BOOST_LIMIT) {
+                break;
+            }
+        }
+        for (String file : files) {
+            builder.add(new TermQuery(new Term(PxChunk.PXCHUNK_FILE, file)), BooleanClause.Occur.SHOULD);
+        }
     }
 
     private List<ScoredChunk> execute(Query query, int limit, String what) {

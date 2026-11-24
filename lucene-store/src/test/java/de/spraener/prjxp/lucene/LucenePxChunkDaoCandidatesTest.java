@@ -107,6 +107,26 @@ class LucenePxChunkDaoCandidatesTest {
     }
 
     @Test
+    void nameMatchingFilesEnterTheWindow() {
+        // The identifier lives in the file name; its content match ranks far below 30 chunks that
+        // mention the word in prose. Without a name boost the window drops the very file the query
+        // is about — the L3 failure mode.
+        for (int i = 0; i < 30; i++) {
+            StringBuilder prose = new StringBuilder();
+            for (int j = 0; j < 20; j++) {
+                prose.append("preload ");
+            }
+            add("filler" + i, "a/Filler" + i + ".java", prose + "setting " + i);
+        }
+        add("listener", "a/PreloadEventListener.java", "public class PreloadEventListener {");
+
+        List<ScoredChunk> hits = dao.searchCandidates("Preload", Map.of(), 10);
+
+        assertThat(hits).extracting(sc -> sc.chunk().getFile())
+                .contains("a/PreloadEventListener.java");
+    }
+
+    @Test
     void findFilesContainingIsCaseInsensitive() {
         add("c1", "osb/impl/jar/src/main/java/db/training/hibernate/preload/PreloadEventListener.java", "x");
         add("c2", "osb/impl/jar/src/main/java/db/training/bob/service/ZvfImporter.java", "x");
