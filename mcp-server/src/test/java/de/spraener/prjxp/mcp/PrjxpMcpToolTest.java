@@ -58,9 +58,9 @@ class PrjxpMcpToolTest {
 
     @Test
     void passesTheProjectThroughForGrep() {
-        tool.grep("run", "legacy", "regex", "java", 5, false);
+        tool.grep("run", "legacy", "regex", "java", 5, false, "lines");
 
-        verify(service).grep("run", "legacy", "regex", "java", 5, false);
+        verify(service).grep("run", "legacy", "regex", "java", 5, false, "lines");
     }
 
     @Test

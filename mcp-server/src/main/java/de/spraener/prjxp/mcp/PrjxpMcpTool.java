@@ -69,8 +69,10 @@ public class PrjxpMcpTool {
             @McpToolParam(description = "Max hits, default 20 (max 100).", required = false)
             Integer limit,
             @McpToolParam(description = "Include test sources (default true).", required = false)
-            Boolean includeTests) {
-        return toolService.grep(query, project, mode, language, limit, includeTests);
+            Boolean includeTests,
+            @McpToolParam(description = "names (default) = file list (grep -l) | lines = file:line plus the matching line.", required = false)
+            String contentLevel) {
+        return toolService.grep(query, project, mode, language, limit, includeTests, contentLevel);
     }
 
     @McpTool(name = "readFile", description = PrjxpToolDocs.READ_FILE)

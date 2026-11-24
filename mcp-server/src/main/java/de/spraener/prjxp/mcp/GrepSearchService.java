@@ -114,15 +114,88 @@ public class GrepSearchService {
             return new GrepResult(List.of(), 0,
                     "ERROR: invalid regular expression: " + e.getDescription());
         }
-        String mime = languageMime(language);
+        MatchScan scan = scanMatches(dao, pattern, languageMime(language), includeTests,
+                Math.max(limit, limit * 3));
 
+        List<String> rankedFiles = rankFilesByHitCount(scan.countByFile());
+        List<SearchHit> hits = new ArrayList<>();
+        for (String file : rankedFiles) {
+            for (SearchHit hit : scan.hitsByFile().getOrDefault(file, Map.of()).values()) {
+                if (hits.size() >= limit) {
+                    break;
+                }
+                hits.add(hit);
+            }
+            if (hits.size() >= limit) {
+                break;
+            }
+        }
+        String note = scan.totalHits() > hits.size()
+                ? "Note: showing " + hits.size() + " of " + scan.totalHits()
+                + " hits; raise 'limit' or narrow the query."
+                : null;
+        return new GrepResult(hits, scan.totalHits(), note);
+    }
+
+    /**
+     * grep -l: one entry per file that contains the pattern, ranked by hit count. The limit counts
+     * FILES, not lines, so a file with many hits cannot crowd the others out of the answer.
+     * The hits carry neither line numbers nor snippets — read the file for content.
+     */
+    public GrepResult searchFiles(String query, String project, String language, int limit,
+                                  boolean includeTests, GrepMode mode) {
+        projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
+        if (query == null || query.isBlank()) {
+            return new GrepResult(List.of(), 0, "ERROR: 'query' is required.");
+        }
+        String resolved = projectRegistry.resolve(project);
+        PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
+        if (dao == null) {
+            return GrepResult.of(List.of(), 0);
+        }
+
+        Pattern pattern;
+        try {
+            pattern = compilePattern(query, mode);
+        } catch (PatternSyntaxException e) {
+            return new GrepResult(List.of(), 0,
+                    "ERROR: invalid regular expression: " + e.getDescription());
+        }
+        MatchScan scan = scanMatches(dao, pattern, languageMime(language), includeTests, 0);
+
+        List<String> rankedFiles = rankFilesByHitCount(scan.countByFile());
+        List<SearchHit> files = new ArrayList<>();
+        for (String file : rankedFiles) {
+            if (files.size() >= limit) {
+                break;
+            }
+            files.add(new SearchHit("", 0.0, file, null, null, null, SOURCE, Map.of()));
+        }
+        String note = rankedFiles.size() > files.size()
+                ? "Note: showing " + files.size() + " of " + rankedFiles.size()
+                + " files with matches; raise 'limit' or narrow the query."
+                : null;
+        return new GrepResult(files, rankedFiles.size(), note);
+    }
+
+    /** Per-file matches and hit counts of one scan; the limit is applied by the caller. */
+    private record MatchScan(Map<String, Map<Integer, SearchHit>> hitsByFile,
+                             Map<String, Integer> countByFile, int totalHits) {
+    }
+
+    /**
+     * One pass over the project's chunks. Detailed hits are stored only while {@code storeBudget}
+     * allows it (0 = counts only), so a query with hundreds of thousands of matches cannot blow up
+     * memory; the counts stay exact either way.
+     */
+    private MatchScan scanMatches(PxChunkDao dao, Pattern pattern, String mime, boolean includeTests,
+                                  int storeBudget) {
         // Collect per file, then rank before applying the limit. Emitting in index order made the
         // limit an arbitrary prefix (test code and unrelated files crowded out the real hits).
         Map<String, Map<Integer, SearchHit>> hitsByFile = new LinkedHashMap<>();
         Map<String, Integer> countByFile = new LinkedHashMap<>();
         int total = 0;
         int stored = 0;
-        int storeBudget = Math.max(limit, limit * 3);
         try (Stream<PxChunk> chunks = dao.findAll()) {
             Iterator<PxChunk> it = chunks.iterator();
             while (it.hasNext()) {
@@ -143,7 +216,7 @@ public class GrepSearchService {
                     total++;
                     countByFile.merge(chunk.getFile(), 1, Integer::sum);
                     if (stored >= storeBudget) {
-                        continue;   // keep memory bounded; the count above still reflects the file
+                        continue;
                     }
                     stored++;
                     // Chunk overlap repeats lines: keep one hit per (file, line) and prefer the
@@ -156,25 +229,13 @@ public class GrepSearchService {
                 }
             }
         }
+        return new MatchScan(hitsByFile, countByFile, total);
+    }
+
+    private static List<String> rankFilesByHitCount(Map<String, Integer> countByFile) {
         List<String> rankedFiles = new ArrayList<>(countByFile.keySet());
         rankedFiles.sort(Comparator.comparingInt((String f) -> countByFile.getOrDefault(f, 0)).reversed());
-        List<SearchHit> hits = new ArrayList<>();
-        for (String file : rankedFiles) {
-            for (SearchHit hit : hitsByFile.getOrDefault(file, Map.of()).values()) {
-                if (hits.size() >= limit) {
-                    break;
-                }
-                hits.add(hit);
-            }
-            if (hits.size() >= limit) {
-                break;
-            }
-        }
-        String note = total > hits.size()
-                ? "Note: showing " + hits.size() + " of " + total
-                + " hits; raise 'limit' or narrow the query."
-                : null;
-        return new GrepResult(hits, total, note);
+        return rankedFiles;
     }
 
     private static Pattern compilePattern(String query, GrepMode mode) {

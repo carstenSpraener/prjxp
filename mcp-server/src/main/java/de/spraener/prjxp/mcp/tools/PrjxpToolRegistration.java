@@ -136,6 +136,8 @@ public class PrjxpToolRegistration {
                         .addIntegerProperty("limit", "Max hits after grouping, default 30 (max 100).")
                         .addBooleanProperty("includeTests",
                                 "Include test sources (default true).")
+                        .addStringProperty("contentLevel",
+                                "names (default) = file list (grep -l) | lines = file:line plus the matching line.")
                         .required("query", "project")
                         .build())
                 .build();
@@ -150,7 +152,7 @@ public class PrjxpToolRegistration {
                     String project = string(params, "project");
                     // Strategy: grep returns the file list only (grep -l); content comes via
                     // readBySignature/readFile. No contentLevel knob on the search tools.
-                    ContentLevel level = ContentLevel.NAMES;
+                    ContentLevel level = PrjxpToolService.resolveGrepLevel(string(params, "contentLevel"));
                     GrepResult result = mcpTool.grepResult(query, project, string(params, "language"),
                             integer(params, "limit"), bool(params, "includeTests"), level);
                     return formatHits(query, project, result, level);
@@ -614,16 +616,12 @@ public class PrjxpToolRegistration {
         return truncate(sb.toString(), SEARCH_RESULT_CAP);
     }
 
-    /** {@code NAMES}/{@code AGGREGATED}: one "count  path" line per file, no per-hit wrapper. */
+    /** {@code NAMES}/{@code AGGREGATED}: one path per file, no line numbers, no snippets. */
     private String formatNamesHits(List<SearchHit> hits, GrepResult result) {
         StringBuilder sb = new StringBuilder();
         for (SearchHit hit : hits) {
-            String line = hit.snippet();
-            if (line == null || line.isBlank()) {
-                line = hit.file();
-            }
-            if (line != null && !line.isBlank()) {
-                sb.append(line).append("\n");
+            if (hit.file() != null && !hit.file().isBlank()) {
+                sb.append(hit.file()).append("\n");
             }
         }
         if (result.note() != null) {

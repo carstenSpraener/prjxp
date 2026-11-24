@@ -128,14 +128,44 @@ public class PrjxpToolService {
 
             Integer limit,
 
-            Boolean includeTests
+            Boolean includeTests,
+
+            String contentLevel
     ) {
         GrepMode grepMode = GrepMode.parse(mode, GrepMode.SUBSTRING);
         int maxHits = limit == null ? 20 : Math.max(1, Math.min(limit, SearchLimits.MAX_LIMIT));
         boolean tests = includeTests == null || includeTests;
+        ContentLevel level = resolveGrepLevel(contentLevel);
+        if (level == ContentLevel.NAMES || level == ContentLevel.AGGREGATED) {
+            // grep -l: the file list is the answer; content comes from readBySignature/readFile.
+            GrepResult result = grepSearchService.searchFiles(query == null ? "" : query.trim(),
+                    project, language, maxHits, tests, grepMode);
+            return ToolResultCaps.cap(renderFileHits(query, grepMode, result), ToolResultCaps.SEARCH);
+        }
         GrepResult result = grepSearchService.searchMatches(query == null ? "" : query.trim(),
                 project, language, maxHits, tests, grepMode);
         return ToolResultCaps.cap(renderMatches(query, grepMode, result), ToolResultCaps.SEARCH);
+    }
+
+    /** grep -l output: one path per line, no line numbers, no snippets. */
+    private String renderFileHits(String query, GrepMode mode, GrepResult result) {
+        if (result == null) {
+            return "No results found.";
+        }
+        if (result.hits().isEmpty()) {
+            String prefix = result.note() != null ? result.note() + "\n" : "";
+            return prefix + "No matches for \"" + query + "\" (mode=" + mode.name().toLowerCase(Locale.ROOT) + ").";
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(result.hits().size()).append(" file(s) for \"").append(query)
+                .append("\" (mode=").append(mode.name().toLowerCase(Locale.ROOT)).append("):\n");
+        for (SearchHit hit : result.hits()) {
+            sb.append(hit.file()).append('\n');
+        }
+        if (result.note() != null) {
+            sb.append(result.note()).append('\n');
+        }
+        return sb.toString();
     }
 
     /**
@@ -157,11 +187,19 @@ public class PrjxpToolService {
     }
 
     /**
-     * grep -l default: the cheap file list with hit counts. Unknown or blank values fall back
-     * to NAMES — never to FULL, so a typo cannot escalate to the most expensive mode.
+     * grep -l default: the cheap file list. Unknown or blank values fall back to NAMES — never to
+     * FULL, so a typo cannot escalate to the most expensive mode. {@code lines} (also {@code full})
+     * asks for the anchored {@code file:line} hits.
      */
     public static ContentLevel resolveGrepLevel(String contentLevel) {
-        return ContentLevel.parse(contentLevel, ContentLevel.NAMES);
+        if (contentLevel == null || contentLevel.isBlank()) {
+            return ContentLevel.NAMES;
+        }
+        String value = contentLevel.trim().toLowerCase(Locale.ROOT);
+        if (value.startsWith("line") || value.equals("full") || value.equals("snippet")) {
+            return ContentLevel.FULL;
+        }
+        return ContentLevel.NAMES;
     }
 
     private String renderMatches(String query, GrepMode mode, GrepResult result) {

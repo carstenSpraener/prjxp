@@ -87,9 +87,8 @@ class PrjxpToolRegistrationTest {
 
         ToolSpecification grep = specs.stream().filter(s -> s.name().equals("grep")).findFirst().orElseThrow();
         assertThat(grep.parameters().required()).containsExactly("query", "project");
-        // no contentLevel knob: the search tools return the file list only
-        assertThat(grep.parameters().properties()).containsKeys("query", "project", "language", "limit", "includeTests");
-        assertThat(grep.parameters().properties()).doesNotContainKey("contentLevel");
+        // grep -l by default; contentLevel=lines opts into anchored hits
+        assertThat(grep.parameters().properties()).containsKeys("query", "project", "language", "limit", "includeTests", "contentLevel");
 
         ToolSpecification vectorSearch = specs.stream()
                 .filter(s -> s.name().equals("vectorSearch")).findFirst().orElseThrow();
@@ -199,7 +198,7 @@ class PrjxpToolRegistrationTest {
 
         String result = execute("grep", Map.of("query", "foo", "project", "p1"));
 
-        assertThat(result).isEqualTo("9  Foo.java\n");
+        assertThat(result).isEqualTo("Foo.java\n");
     }
 
     @Test
@@ -211,7 +210,7 @@ class PrjxpToolRegistrationTest {
 
         String result = execute("grep", Map.of("query", "foo", "project", "p1"));
 
-        assertThat(result).isEqualTo("9  Foo.java\n");
+        assertThat(result).isEqualTo("Foo.java\n");
         assertThat(result).doesNotContain("Result 1:").doesNotContain("{");
     }
 

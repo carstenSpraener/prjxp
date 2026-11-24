@@ -856,6 +856,45 @@ class GrepSearchServiceTest {
     }
 
     @Test
+    void searchFilesReturnsOneHitPerFile() {
+        stubAllChunks(
+                lineChunk("c1", "A.java", "1", "run\nrun\nrun"),
+                lineChunk("c2", "B.java", "1", "run"));
+
+        GrepResult result = service.searchFiles("run", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).extracting(SearchHit::file).containsExactly("A.java", "B.java");
+        assertThat(result.totalFiles()).isEqualTo(2);
+        assertThat(result.note()).isNull();
+    }
+
+    @Test
+    void searchFilesLimitsByFileCountNotByHits() {
+        stubAllChunks(
+                lineChunk("c1", "A.java", "1", "run\nrun\nrun"),
+                lineChunk("c2", "B.java", "1", "run"),
+                lineChunk("c3", "C.java", "1", "run"));
+
+        GrepResult result = service.searchFiles("run", "p", null, 2, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).hasSize(2);
+        assertThat(result.totalFiles()).isEqualTo(3);
+        assertThat(result.note()).contains("2 of 3 files");
+    }
+
+    @Test
+    void searchFilesRanksByHitCountAndCarriesNoLineNumbers() {
+        stubAllChunks(
+                lineChunk("c1", "ZMinor.java", "1", "run"),
+                lineChunk("c2", "AMajor.java", "1", "run\nrun\nrun"));
+
+        GrepResult result = service.searchFiles("run", "p", null, 10, true, GrepMode.SUBSTRING);
+
+        assertThat(result.hits()).extracting(SearchHit::file).containsExactly("AMajor.java", "ZMinor.java");
+        assertThat(result.hits()).allMatch(h -> h.lineFrom() == null && h.snippet() == null);
+    }
+
+    @Test
     void limitTruncatesHitsAndExplainsHowToSeeMore() {
         stubAllChunks(lineChunk("c1", "A.java", "1", "run\nrun\nrun"));
 

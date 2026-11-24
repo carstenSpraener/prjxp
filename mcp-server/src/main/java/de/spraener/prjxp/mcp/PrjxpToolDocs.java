@@ -24,9 +24,11 @@ public final class PrjxpToolDocs {
             """;
 
     public static final String GREP = """
-            Find a known text and get file:line plus the matching line. mode=substring (default) |
-            exact (whole word) | regex. Use it for identifiers, error strings and call sites;
-            use vectorSearch when you only know the concept. Tests default on; limit default 20 hits.
+            Find a known text and get the files that contain it (grep -l), ranked by hit count.
+            mode=substring (default) | exact (whole word) | regex. Use it for identifiers, error
+            strings and call sites; use vectorSearch when you only know the concept.
+            contentLevel=lines adds file:line and the matching line. Tests default on; limit
+            defaults to 20 files.
             """;
 
     public static final String READ_FILE = """
