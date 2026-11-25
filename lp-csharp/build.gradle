@@ -10,7 +10,7 @@ plugins {
     id 'java'
     // Fat-JAR (plugin) packaging: bundles the plugin classes + ANTLR, but not the
     // host API (prjxp-common) or logging (slf4j) — the host provides those.
-    id 'com.gradleup.shadow' version '8.3.0'
+    id 'com.gradleup.shadow' version '9.6.1'
 }
 
 group = 'de.spraener.prjxp'
@@ -126,6 +126,15 @@ test {
 // or logging (org.slf4j.** — provided by the host).
 // ---------------------------------------------------------------------------
 shadowJar {
+    // Shadow 9 defaults to EXCLUDE, which drops duplicates before transformers
+    // see them. Let the service-file transformer merge all SPI entries.
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    filesMatching([
+            'META-INF/services/**',
+            'META-INF/*.kotlin_module'
+    ]) {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
     archiveBaseName.set('lp-csharp')
     archiveClassifier.set('plugin')
     archiveVersion.set('')

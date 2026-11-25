@@ -48,6 +48,22 @@ run {
 import com.github.jengelman.gradle.plugins.shadow.transformers.PropertiesFileTransformer
 
 shadowJar {
+    // Shadow 9 defaults to EXCLUDE, which drops duplicates before transformers
+    // see them. Keep first-wins for regular entries, but let the resource
+    // transformers merge service/Spring metadata files.
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    filesMatching([
+            'META-INF/services/**',
+            'META-INF/*.kotlin_module',
+            'META-INF/spring.factories',
+            'META-INF/spring.handlers',
+            'META-INF/spring.schemas',
+            'META-INF/spring.tooling',
+            'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports',
+            'META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports'
+    ]) {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
     archiveBaseName.set('tibed')
     archiveVersion.set('')
     archiveClassifier.set('all')
@@ -70,6 +86,6 @@ shadowJar {
 
     transform(PropertiesFileTransformer) {
         paths = ['META-INF/spring.factories']
-        mergeStrategy = 'append'
+        mergeStrategy = PropertiesFileTransformer.MergeStrategy.Append
     }
 }

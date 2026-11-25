@@ -39,10 +39,11 @@ COPY mcp-server/build.gradle mcp-server/
 COPY docpipe/build.gradle docpipe/
 COPY lucene-store/build.gradle lucene-store/
 COPY mcp-proxy/build.gradle mcp-proxy/
+COPY prjxp-launcher/ prjxp-launcher/
 RUN ./gradlew --no-daemon -I gradle/cache-warmup.init.gradle warmUpDependencyCache
 ```
 
-Only build scripts are copied (no source code). The `cache-warmup.init.gradle` init script resolves every configuration of every module, pulling all JARs into the Gradle dependency cache. The `prjxp-launcher` module is a placeholder with no `build.gradle` and is intentionally omitted.
+Only build scripts are copied (no source code). The `cache-warmup.init.gradle` init script resolves every configuration of every module, pulling all JARs into the Gradle dependency cache. The `prjxp-launcher` module is a placeholder with no `build.gradle`; its (otherwise empty) directory is copied because Gradle 9 requires every included project directory to exist.
 
 ### Stage 3 – `app-builder`
 

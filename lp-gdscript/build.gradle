@@ -1,7 +1,7 @@
 plugins {
     id 'java'
     id 'jacoco'
-    id 'com.gradleup.shadow' version '8.3.0'
+    id 'com.gradleup.shadow' version '9.6.1'
 }
 
 group = 'de.spraener.prjxp'
@@ -47,6 +47,15 @@ jacocoTestReport {
 }
 
 shadowJar {
+    // Shadow 9 defaults to EXCLUDE, which drops duplicates before transformers
+    // see them. Let the service-file transformer merge all SPI entries.
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    filesMatching([
+            'META-INF/services/**',
+            'META-INF/*.kotlin_module'
+    ]) {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
     archiveBaseName.set('lp-gdscript')
     archiveClassifier.set('plugin')
     archiveVersion.set('')

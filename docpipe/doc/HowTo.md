@@ -14,7 +14,7 @@
 | Requirement | Details |
 |------------|---------|
 | **Java**   | JDK 17 or newer (21 recommended) |
-| **Build tool** | Gradle 8.x (the project uses a version catalog) |
+| **Build tool** | Gradle 9.x (the project uses a version catalog) |
 | **Configuration** | `application.yaml` with `prjxp.*` properties (projects, chat models, MCP servers) |
 | **Secrets** | Optional `.env` file in the working directory (loaded into system properties at startup) |
 

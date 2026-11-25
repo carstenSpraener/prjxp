@@ -84,6 +84,31 @@ class EmbeddingModelFactoryTest {
     }
 
     @Test
+    void windowsTruststorePathFailsGracefullyOutsideWindows() {
+        var factory = new EmbeddingModelFactory();
+        var candidate = new PrjXPConfig.EmbeddingConfig();
+        candidate.setTrustAllCerts(false);
+
+        String originalOsName = System.getProperty("os.name");
+        boolean windows = originalOsName.toLowerCase(Locale.ROOT).contains("win");
+        try {
+            // Force the Windows-ROOT branch. On non-Windows hosts the keystore
+            // type is unavailable, so the factory must fail with a clear message
+            // instead of leaking the platform-specific exception.
+            System.setProperty("os.name", "Windows 11");
+            if (windows) {
+                assertThat(factory.create(candidate)).isInstanceOf(CappedEmbeddingModel.class);
+            } else {
+                assertThatThrownBy(() -> factory.create(candidate))
+                        .isInstanceOf(IllegalStateException.class)
+                        .hasMessage("Unable to initialize the embedding TLS truststore");
+            }
+        } finally {
+            System.setProperty("os.name", originalOsName);
+        }
+    }
+
+    @Test
     void unreadableSecretFileAndInvalidBoundsFailExplicitlyWithoutSecretValues() throws Exception {
         Path env = directory.resolve(".env");
         Files.createDirectory(env);

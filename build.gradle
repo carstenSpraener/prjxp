@@ -1,5 +1,4 @@
 plugins {
-    id 'org.springframework.boot' version '3.5.0' apply false
     id 'java-test-fixtures'
 }
 

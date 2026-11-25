@@ -30,7 +30,9 @@ COPY mcp-server/build.gradle mcp-server/
 COPY docpipe/build.gradle docpipe/
 COPY lucene-store/build.gradle lucene-store/
 COPY mcp-proxy/build.gradle mcp-proxy/
-# prjxp-launcher: leeres Platzhalter-Modul ohne build.gradle
+# prjxp-launcher: leeres Platzhalter-Modul ohne build.gradle — Gradle 9 verlangt
+# trotzdem ein existierendes Projektverzeichnis (settings.gradle include).
+COPY prjxp-launcher/ prjxp-launcher/
 
 RUN ./gradlew --no-daemon -I gradle/cache-warmup.init.gradle warmUpDependencyCache
 
