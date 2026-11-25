@@ -14,14 +14,14 @@ TiBed is a Spring Boot CLI application within the PrjXP multi-module ecosystem t
 - Per-chunk store lookups in the ingestion loop create O(N) round-trips that will degrade at scale.
 - A resource-leak path in `EmbeddingStoreSupplier` when multiple projects are resolved sequentially without a shared bean.
 - Silent exception swallowing in `EmbeddingImportService` can produce a partially-populated index without operator awareness.
-- A stub implementation (`MixedBredEmebeddingClient`) returns `null`, which will cause a `NullPointerException` downstream if activated.
+- *(Resolved in 0.9.0)* A stub implementation (`MixedBredEmebeddingClient`) returned `null`, which would have caused a `NullPointerException` downstream if activated. Both the stub and its `MixedBredEmbedding` wrapper have been removed.
 
 ## 2. Architectural Style & Patterns
 
 | Pattern | Where Applied | Assessment |
 |---------|--------------|------------|
 | **Layered / Pipeline** | `EmbeddingService.executeForProject` orchestrates ingestion → enrichment as sequential stages | Clear, linear flow; easy to follow |
-| **Strategy** | `EmbeddingExecutor` interface with `LangChain4JEmbedderImpl` (`@Primary`) and `MixedBredEmbedding` | Good extensibility; the default `embed()` that throws is a minor code smell |
+| **Strategy** | `EmbeddingExecutor` interface with `LangChain4JEmbedderImpl` as the sole implementation | Good extensibility; the default `embed()` that throws is a minor code smell |
 | **Factory / Supplier** | `EmbeddingStoreSupplier` resolves a shared bean or creates a dedicated store | Appropriate for the hub-vs-CLI duality |
 | **Batch Processing** | `BatchingUtils.pack`, `PxChunkFromJsonLReader.readChunksFromJsonlStreamBatched` | Standard streaming-batch idiom |
 | **Sidecar File** | `AstNeighboursLoader`, `SemanticGraphSidecar` | Cross-module data sharing without tight coupling |
@@ -37,7 +37,7 @@ TiBed is a Spring Boot CLI application within the PrjXP multi-module ecosystem t
 
 - **Positive:** Consistent use of Lombok `@RequiredArgsConstructor` for constructor injection; descriptive Javadoc on public methods; meaningful constant names (`KEYWORDS_FIELD`, `AUTO_PARALLELISM_CAP`); records for immutable value types.
 - **Negative:**
-  - `MixedBredEmebeddingClient` contains a typo in the class name ("Emebedding") and returns `null` from `embed()`—a landmine for any caller.
+  - *(Resolved in 0.9.0)* `MixedBredEmebeddingClient` contained a class-name typo and returned `null` from `embed()`—a landmine for any caller. The class is gone.
   - `EmbeddingService` mixes three responsibilities (ingestion orchestration, per-chunk dedup, enrichment dispatch) in a single ~150-line class. The `embedChunk` method accepts `PxChunk[]` while the rest of the codebase uses `List<PxChunk>`, creating a type-system inconsistency.
   - `firstNonBlank(String...)` is duplicated verbatim in both `EmbeddingExportService` and `EmbeddingImportService`—a candidate for extraction to a utility.
   - Logging is inconsistent: most classes use `@Log` (java.util.logging), but `EmbeddingCompatibilityChecker` uses SLF4J directly. This will produce two different log formats in the same application.
@@ -96,7 +96,7 @@ TiBed is a Spring Boot CLI application within the PrjXP multi-module ecosystem t
 | 1 | **High** | `EmbeddingImportService.execute()` | Catches all exceptions from the import loop and only logs. The method returns `void`; the caller (`TiBedCliApp`'s `CommandLineRunner`) cannot detect failure. A partially-imported index will be silently enriched. |
 | 2 | **High** | `EmbeddingService.embedChunk` → `StoreIdChecker.needsImport` | Per-chunk store existence check creates O(batchSize) Lucene queries per batch. At 500-chunk batches over a 50k-chunk project, this is 50k individual index lookups. |
 | 3 | **High** | `EmbeddingStoreSupplier.getStore()` | When no shared bean exists, each call creates a new `LuceneEmbeddingStore` and overwrites `createdStore`. Multiple sequential calls leak IndexWriters (file handles, memory). |
-| 4 | **Medium** | `MixedBredEmebeddingClient.embed()` | Returns `null`. If this bean is ever activated (e.g., via profile), `LangChain4JEmbedderImpl`-style downstream code will NPE. The class name also has a typo. |
+| 4 | **Resolved (0.9.0)** | `MixedBredEmebeddingClient.embed()` | The stub returned `null` and had a typo in the class name. Both `MixedBredEmebeddingClient` and `MixedBredEmbedding` were removed. |
 | 5 | **Medium** | `LangChain4JEmbedderImpl.execute()` | `synchronized (storeSupplier)` locks on the wrong object. The supplier is a singleton; the store is the shared mutable resource. This provides no real mutual exclusion for concurrent store writes. |
 | 6 | **Medium** | `EmbeddingService.runEnrichment` | Hard-coded `instanceof LuceneEmbeddingStore` checks for each enrichment batch. Adding a new enrichment type requires modifying this method (violates Open/Closed). |
 | 7 | **Medium** | `SemanticEdgeBuilder` | MIME-type and section-key filtering is hard-coded. Adding a new language (e.g., Python, Go) requires editing the class. |
@@ -117,7 +117,7 @@ TiBed is a Spring Boot CLI application within the PrjXP multi-module ecosystem t
 
 2. **Fix the `EmbeddingStoreSupplier` resource leak.** Change `createdStore` to a `Map<String, EmbeddingStore<TextSegment>>` keyed by project name, and close *all* created stores in `destroy()`. Alternatively, document and enforce that `getStore` is called at most once per application lifecycle (CLI mode), and add an assertion.
 
-3. **Remove or properly implement `MixedBredEmebeddingClient`.** Either delete the stub (and `MixedBredEmbedding`) or implement `embed()` to return `List.of()` with a clear log warning. Fix the class-name typo. If it is a placeholder for future work, guard it with `@Profile("mixedbred")` so it is never active by default.
+3. *(Done in 0.9.0)* **Removed `MixedBredEmebeddingClient` and `MixedBredEmbedding`.** `LangChain4JEmbedderImpl` is the only `EmbeddingExecutor`.
 
 ### Priority 2 – Performance (Next Sprint)
 
@@ -142,7 +142,7 @@ TiBed is a Spring Boot CLI application within the PrjXP multi-module ecosystem t
 
 11. **Standardize on `List<PxChunk>`** throughout. Change `EmbeddingService.embedChunk` to accept `List<PxChunk>` and remove the array-based overload. The public `embedChunks` method can then delegate directly without the `toArray` conversion.
 
-12. **Add a `supportsExport()` capability method** to `EmbeddingExecutor` (replacing the throwing default `embed()`). The export service can check this before calling `embed()`, and the `MixedBredEmbedding` implementation can return `false` cleanly.
+12. **Add a `supportsExport()` capability method** to `EmbeddingExecutor` (replacing the throwing default `embed()`). The export service can check this before calling `embed()`, and implementations that only write to a store can return `false` cleanly.
 
 ### Priority 4 – Observability & Testing (Ongoing)
 

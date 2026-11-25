@@ -78,9 +78,6 @@ Additional packaging rules:
 - The application **never runs neural inference itself**. Embedding and chat models are
   external HTTP services: OpenAI-compatible endpoints (LM Studio, TEI, …) or Ollama.
   Model selection is configuration-driven (`prjxp.embedding.*`, `prjxp.chat-models[]`).
-- In Docker, an embedded **TEI** (text-embeddings-router) CPU server *can* be started by
-  `entry.sh`, but the current compose setup uses an external provider on the host
-  (`SKIP_EMBEDDING_SERVER=true`).
 
 ## 2.7 Configuration & Secrets
 
@@ -92,6 +89,7 @@ Additional packaging rules:
 
 ## 2.8 Deployment Platform Constraint
 
-- The Docker image is built for **linux/amd64** (the embedded TEI server only ships an
-  x86_64 build). Apple Silicon runs it via Rosetta (expect embedding throughput loss).
+- The Docker image contains **no inference engine**, so it is not tied to a CPU
+  architecture: the base images are multi-arch and the image builds and runs natively
+  on `linux/amd64` as well as `linux/arm64` (Apple Silicon, no Rosetta).
 - The image is self-contained: three fat JARs + `entry.sh`; all state lives in volumes.

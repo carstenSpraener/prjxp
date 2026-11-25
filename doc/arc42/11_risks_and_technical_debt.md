@@ -9,7 +9,6 @@
 | R3 | **Broad `/import` mounts** make the 5s marker scan slow (huge sibling trees, slow bind mounts). | Med / Med | `scan-exclude-dir-names`, `.prjxp-exclude` markers, `scan-max-depth=8`; docs recommend narrow mounts. | None (documented); monitor poll duration in logs. |
 | R4 | **Stale Lucene write lock** after a crash can block index open. | Low / High | Zero-byte `write.lock` is deleted and retried once; non-zero locks fail loudly. | None (heuristic accepted). |
 | R5 | **MCP client fragmentation:** different clients speak different protocol versions. | Med / Low | `McpCompatibilityFilter` rewrites legacy `2025-06-18` requests. | Track Spring AI MCP protocol evolution; remove the filter once clients converge. |
-| R6 | **amd64-only image** (TEI x86_64) → Rosetta overhead on Apple Silicon. | High / Low | Documented; `SKIP_EMBEDDING_SERVER` + external arm64-capable provider avoids it. | Provide an arm64 image variant without TEI. |
 | R7 | **Generated documentation quality** (docpipe) depends on retrieval + LLM; wrong statements could be committed. | Med / Med | Output is clearly marked as generated (postscript); prompts instruct "say so if not in context". | Human review gate for committed docs. |
 
 ## 11.2 Technical Debt (known, tracked)

@@ -47,7 +47,7 @@ COPY . .
 RUN ./gradlew :chunk-norris:shadowJar :tibed:shadowJar :mcp-server:shadowJar --no-daemon
 
 # ==========================================
-# Stage 4: Final Runtime Image (Java + TEI)
+# Stage 4: Final Runtime Image (Java)
 # ==========================================
 FROM eclipse-temurin:21-jre-jammy
 
@@ -55,7 +55,6 @@ WORKDIR /app
 
 # git: noetig fuer den GitHub-Import (clone/pull).
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    libgomp1 \
     ca-certificates \
     curl \
     git \

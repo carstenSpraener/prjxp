@@ -15,7 +15,7 @@ Before starting the stack, ensure the following are available on the host:
   | `EMBEDDING_MODEL_NAME` | `mxbai-embed-large-v1` | Model identifier sent to the provider |
   | `EMBEDDING_API_KEY` | `dummy` | API key (set a real key if your provider requires one) |
 
-  The default assumes a [text-embeddings-inference](https://github.com/huggingface/text-embeddings-inference) (TEI) server running on the host at port 1234. If you use a different provider (e.g. LM Studio, Ollama, a cloud API), override these variables in your `.env` file.
+  The default assumes an OpenAI-compatible endpoint (e.g. LM Studio) on the host at port 1234. If you use a different provider (OpenAI, AOAI, Ollama, TEI, …), override these variables in your `.env` file.
 
 - **A GitHub Personal Access Token** (optional, only for private repositories). The token is encrypted at rest using the passphrase in `PRJXP_HUB_GITHUB_TOKEN_KEY`.
 
@@ -52,7 +52,6 @@ All runtime configuration is supplied through a single `.env` file in the projec
 | `EMBEDDING_API_BASE_URL` | `http://host.docker.internal:1234/v1` | Embedding provider base URL |
 | `EMBEDDING_MODEL_NAME` | `mxbai-embed-large-v1` | Embedding model name |
 | `EMBEDDING_API_KEY` | `dummy` | Embedding provider API key |
-| `SKIP_EMBEDDING_SERVER` | `true` | Set to `false` to run an in-container TEI server instead of an external one |
 | `PRJXP_HUB_GITHUB_TOKEN_KEY` | *(empty)* | Passphrase for encrypting GitHub PATs (private repos) |
 | `MCP_CORS_ALLOWED_PATTERNS` | `http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*` | Comma-separated CORS origins (no spaces). Add your public hostname when behind a reverse proxy |
 | `PROJECTS_HOME` | `./import` | Host directory for project imports |
@@ -155,7 +154,7 @@ Check the Hub logs for a successful Spring Boot startup and MCP endpoint registr
 docker compose logs hub | tail -40
 ```
 
-You should see the Spring Boot banner, the MCP server binding to port 7007, and the import watcher initialising. If `SKIP_EMBEDDING_SERVER` is set to `false`, the logs will also show the in-container `text-embeddings-router` starting and passing its `/health` check before the main application launches.
+You should see the Spring Boot banner, the MCP server binding to port 7007, and the import watcher initialising.
 
 Test the MCP endpoint from the host:
 

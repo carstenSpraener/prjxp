@@ -26,17 +26,15 @@ This guide explains how to set up **prjxp** as a project-expert MCP server using
 - **Git** for cloning the repository
   - The `prjxp-hub` image bundles git itself for the GitHub-import feature — host git is only needed for cloning the prjxp repo / building the image.
 - A source code project you want to index (e.g., your own Java/TypeScript project)
-- **Apple Silicon (M-series Macs):** the image is built for `linux/amd64` (the embedded TEI
-  embedding server only ships an x86_64 build) and runs via **Rosetta** — make sure
-  "Use Rosetta for x86_64/amd64 emulation on Apple Silicon" is enabled in Docker Desktop
-  settings (on by default). Expect some embedding throughput loss vs. a native arm64 build.
+- **Apple Silicon (M-series Macs):** the image contains no inference engine, so nothing
+  pins it to x86_64. Docker builds and runs it natively on `arm64` — no Rosetta needed.
 
 ---
 
 ## Clone the Repository
 
 ```bash
-git clone https://github.com/spraener/prjxp.git
+git clone https://github.com/carstenSpraener/prjxp.git
 cd prjxp
 ```
 
@@ -312,7 +310,6 @@ OpenAI-compatible endpoint instead — e.g. LM Studio on the host (faster with G
 # docker-compose.yml, hub service environment:
 EMBEDDING_API_BASE_URL: http://host.docker.internal:1234/v1
 EMBEDDING_MODEL_NAME: mxbai-embed-large-v1   # must match LUCENE_VECTOR_DIMENSION (1024)
-SKIP_EMBEDDING_SERVER: "true"                # don't start the in-container TEI
 ```
 
 Keep the same model as your existing index (mxbai-embed-large-v1 = 1024 dims) —
@@ -466,7 +463,10 @@ Docker Container (prjxp image)
 ├── chunk-norris-all.jar     ← Chunks source code → JSONL
 ├── tibed-all.jar            ← Embeds chunks → Lucene index
 ├── mcp-server-all.jar       ← Serves retrieval API on :7007
-└── text-embeddings-router    ← TEI CPU embedding server (HF model)
+└── entry.sh                 ← Container entrypoint (chunk / embed / hub)
+
+External (host or network)
+└── OpenAI-compatible embedding endpoint ← e.g. LM Studio, TEI, OpenAI, AOAI, Ollama
 
 Docker Volume: prjxp-data
 └── .prjxp-data/lucene-index/  ← Persistent Lucene index

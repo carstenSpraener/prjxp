@@ -233,7 +233,6 @@ compose file; values marked *from `.env`* are interpolated.
 | `SERVER_PORT` | `7007` | Port the Spring Boot app listens on **inside** the container. Keep in sync with `HUB_PORT`'s target and the nginx proxy config; no reason to change. |
 | `EMBEDDING_API_BASE_URL` | *from `.env`, default `http://host.docker.internal:1234/v1`* | See table A. |
 | `EMBEDDING_MODEL_NAME` | *from `.env`, default `mxbai-embed-large-v1`* | See table A. |
-| `SKIP_EMBEDDING_SERVER` | `"true"` | Skip starting an in-container embedding server. **Keep `true`:** the current image does not ship a TEI binary, and you use an external provider. (If set to anything else, `entry.sh` tries to run `text-embeddings-router`, which is not installed and will crash the container.) |
 | `EMBEDDING_API_KEY` | *from `.env`, default `dummy`* | See table A. |
 | `MCP_CORS_ALLOWED_PATTERNS` | *from `.env`, default `http://10.*.*.*,…localhost:*`* | See table A. |
 
@@ -255,7 +254,6 @@ all can be overridden by setting a container env var of the same name.
 | `SERVER_PORT` | `7007` | Same as in table B (compose overrides it). |
 | `LUCENE_INDEX_PATH` | `.prjxp-data/lucene-index` | Relative default for non-hub modes; compose overrides to `/data/lucene-index`. |
 | `LUCENE_VECTOR_DIMENSION` | `1024` | Same as in table B. |
-| `MODEL_ID`, `TEI_PORT` | *(unset)* | Only consumed when `SKIP_EMBEDDING_SERVER != true`, to start the in-container TEI server. The current image does not install TEI — keep `SKIP_EMBEDDING_SERVER=true`. |
 
 ---
 
@@ -418,7 +416,7 @@ provider and trigger a reindex.
 | Hub REST endpoints (`/prjxp/projects`, `/prjxp/system/health`) return 404, but `ping` works | The backend is not running in hub mode: all hub beans are gated on `prjxp.hub.enabled`. In the compose deployment `entry.sh` sets `PRJXP_HUB_ENABLED=true` automatically (command `hub`). If you run the image with another mode or build your own image from the JARs, set `PRJXP_HUB_ENABLED=true` in the container environment (this also switches off the CLI runners, which are gated on `prjxp.hub.enabled=false`). |
 | GET works, but POST/PUT/DELETE fail with **403** (CORS) | The browser sends an `Origin` header on mutating requests; the backend rejects origins not in `mcp.cors.allowed-patterns` (default: private LAN ranges + `http://localhost:*`). This bites when the Web UI is served under a public hostname or https. Add your origin to `MCP_CORS_ALLOWED_PATTERNS` (comma-separated, no spaces) and recreate the hub. Verify: `curl -X DELETE http://localhost:7007/prjxp/projects/nope -H "Origin: https://your-host"` should return 404, not 403. |
 | First scan takes minutes / nothing discovered | Broad `PROJECTS_HOME` mount with huge unrelated subtrees. Narrow the mount, or extend `PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES` / drop `.prjxp-exclude` markers / lower `PRJXP_HUB_SCAN_MAX_DEPTH`. |
-| Container crashes on start with `MODEL_ID: unbound variable` | You set `SKIP_EMBEDDING_SERVER` to something other than `"true"`. The image ships no TEI binary — set it back to `"true"` and use an external provider. |
+| Container crashes on start with `MODEL_ID: unbound variable` | This can only happen with a stale `entry.sh` from an image built before 0.9.0. Rebuild or pull a current image — the in-container embedding server was removed. |
 | Dimension error when re-embedding after a model change | The Lucene index was built with the old dimension. Wipe it: `docker compose down -v` (or delete `/data/lucene-index` in the volume) and re-import. |
 | `*.tar.failed` files accumulating in `PROJECTS_HOME` | Import validation rejected the archive (size/entry limits, symlinks, zip-slip). Inspect, fix, delete the `.failed` file and re-drop. |
 | Stale frontend after a code change | The SPA is baked into the image at build time: `docker compose up -d --build frontend`. |
