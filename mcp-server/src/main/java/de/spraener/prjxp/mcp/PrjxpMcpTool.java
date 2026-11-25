@@ -1,221 +1,248 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.model.FileListResult;
 import de.spraener.prjxp.common.model.FileView;
-import de.spraener.prjxp.common.model.PxChunk;
-import de.spraener.prjxp.common.model.SearchHit;
+
 import de.spraener.prjxp.common.model.SymbolReadResult;
-import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.java.Log;
-import org.apache.commons.lang3.StringUtils;
 import org.springaicommunity.mcp.annotation.McpTool;
 import org.springaicommunity.mcp.annotation.McpToolParam;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnExpression;
 import org.springframework.stereotype.Component;
 
 import java.util.List;
 
+/**
+ * The MCP surface of the hub.
+ * <p>
+ * Contract properties:
+ * <ul>
+ *   <li>every tool takes an explicit {@code project}; {@code listProjects} answers which projects
+ *       exist, so one hub serves all indexed projects,</li>
+ *   <li>{@code grep} returns {@code file:line} hits instead of a bare file list,</li>
+ *   <li>{@code vectorSearch} adds a snippet and a {@code readChunks} hint and de-duplicates ids,</li>
+ *   <li>{@code readBySignature} appends method bodies to a class frame,</li>
+ *   <li>descriptions are decision guides, not a catalogue.</li>
+ * </ul>
+ */
 @Component
+@ConditionalOnExpression("${prjxp.hub.enabled:false}")
 @RequiredArgsConstructor
-@Log
 public class PrjxpMcpTool {
-    private final GRPromptEnrichment enrichment;
 
-    private final GrepSearchService grepSearchService;
+    private final PrjxpToolService toolService;
 
-    private final ReaderService readerService;
+    @McpTool(name = "listProjects", description = PrjxpToolDocs.LIST_PROJECTS)
+    public List<ProjectSummary> listProjects() {
+        return toolService.listProjects();
+    }
 
-    private final SymbolReaderService symbolReaderService;
-
-    private final ProjectRegistry projectRegistry;
-
-    private final FileListService fileListService;
-
-    @McpTool(name = "vectorSearch", description = """
-            CRITICAL PRIMARY SEARCH TOOL (level 1 of 3): Delivers relevant semantic information from the project context.
-
-            USAGE RULES:
-            1. ALWAYS call this tool FIRST for discovery: finding classes, understanding structure, locating implementations, exploring the codebase.
-            2. SEARCH LADDER — vectorSearch (discovery) -> grep (exact string, single method body) -> readBySignature (complete method by name) -> readFile (COMPLETE file).
-               For FULL METHOD BODIES: follow up with grep using the exact method signature (e.g. "public MClass createMClass") or readBySignature with the method name.
-               For the WHOLE FILE: follow up with readFile using the file path from the results.
-               Vector search returns skeletons for non-hit methods by design.
-            3. You can execute multiple follow-up queries with refined search terms to dig deeper.
-            4. REWRITE the query parameter: Convert the context of the conversation into a targeted, standalone search query optimized for semantic vector retrieval.
-
-            RESULT:
-            The search returns method implementations only if the vector search hits a method chunk AND skeletonsOnly is set to false.
-            Otherwise it returns simple class skeletons with imports and project dependencies for an architectural overview.
-            Use grep on the exact signature for full method bodies, or readFile for the entire file.
-            """)
+    @McpTool(name = "vectorSearch", description = PrjxpToolDocs.VECTOR_SEARCH)
     public String vectorSearch(
-            @McpToolParam(description = "A targeted, standalone search prompt optimized for vector retrieval based on what you need to find.", required = true)
+            @McpToolParam(description = "Short English keyword query; identifiers verbatim.", required = true)
             String userQuestion,
-
-            @McpToolParam(description = "Optional project name to narrow the scope. Leave empty/default if unknown.", required = false)
-            String projectName,
-
-            @McpToolParam(description="""
-                Similarity in vector space. Range: 0.0 - 1.0 Higher values yield more precise results; Default is 0.85.
-                Range: 1.0 to 0.9 = very precise, 0.9 to 0.8 = precise, 0.8 to 0.7 = balanced, 0.7 and lower = fantasy land.
-                Illegal values are clamped to 0.85.
-                """, required = false)
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Similarity floor, default 0.85.", required = false)
             Double similarity,
-            @McpToolParam(description="""
-                Maximum number of results to return. Default is 20.
-                """, required = false)
+            @McpToolParam(description = "Max files, default 10 (max 20).", required = false)
             Integer maxResults,
-            @McpToolParam(description="""
-                Do you need full method context on hit methods or do you always want to see class skeletons only? Default is false (full context).
-                """, required = false)
-            Boolean skeletonsOnly
-    ) {
-
-        String prefix = """
-                """;
-        try {
-            projectRegistry.ensureSearchable(projectName);   // explicit error instead of silent fallback
-        } catch (UnknownProjectException e) {
-            return "ERROR: " + e.getMessage();
-        }
-        projectName = projectRegistry.resolve(projectName);
-        if( similarity == null || similarity < 0.0 || similarity > 1.0 ) {
-            similarity = 0.85;
-        }
-        if( maxResults==null ||maxResults>20 || maxResults<1 ) {
-            maxResults = 20;
-        }
-        if( skeletonsOnly==null) {
-            skeletonsOnly = Boolean.FALSE;
-        }
-        log.info(String.format("searching context for '%s' for project '%s'.", userQuestion, projectName));
-        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, skeletonsOnly);
-
-        String result = String.format("%s\n%s", prefix, context);
-        log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));
-        return result;
+            @McpToolParam(description = "code (default) | docs | all.", required = false)
+            String sourceType,
+            @McpToolParam(description = "Include test sources (default false).", required = false)
+            Boolean includeTests,
+            @McpToolParam(description = "Max output tokens, default 2000.", required = false)
+            Integer tokenBudget) {
+        return toolService.vectorSearch(userQuestion, project, similarity, maxResults,
+                sourceType, includeTests, tokenBudget);
     }
 
-    @McpTool(name = "listProjects", description = """
-            DISCOVERY TOOL: Lists all project names that have a searchable index in this server.
-            USE BEFORE calling vectorSearch/grep/readFile/readBySignature when you don't know which 'project' values are valid.
-            """)
-    public List<String> listProjects() {
-        return projectRegistry.availableProjects().stream()
-                .filter(projectRegistry::isSearchable)   // hub: READY only; static mode: all (unchanged result)
-                .toList();
+    @McpTool(name = "grep", description = PrjxpToolDocs.GREP)
+    public String grep(
+            @McpToolParam(description = "Text or pattern to find.", required = true)
+            String query,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "substring (default) | exact | regex.", required = false)
+            String mode,
+            @McpToolParam(description = "Optional language filter (e.g. 'java').", required = false)
+            String language,
+            @McpToolParam(description = "Max hits, default 20 (max 100).", required = false)
+            Integer limit,
+            @McpToolParam(description = "Include test sources (default true).", required = false)
+            Boolean includeTests,
+            @McpToolParam(description = "names (default) = file list (grep -l) | lines = file:line plus the matching line.", required = false)
+            String contentLevel) {
+        return toolService.grep(query, project, mode, language, limit, includeTests, contentLevel);
     }
 
-    @McpTool(name="grep", description = """
-            SEARCH-TOOL (level 2 of 3): Exact full-text search over all chunks of a project.
-            STRATEGIE: vectorSearch for discovery, then grep for the exact method signature to retrieve its FULL BODY.
-            Chunks that contain a hit include the complete method body, not just the skeleton.
-            PARAMETER-RULE: Pass the exact string (e.g., "public MClass createMClass") as query.
-            NEED THE COMPLETE METHOD BY NAME OR THE ENTIRE FILE? Use readBySignature (method) or readFile (whole file) — level 3.
-            """)
-    public List<SearchHit> grep(
-        @McpToolParam(description = "Exact search string (required).", required = true)
-        String query,
-
-        @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
-        String project,
-
-        @McpToolParam(description = "Optional language filter (e.g. 'java', 'ts').", required = false)
-        String language,
-
-        @McpToolParam(description = "Maximum number of results (default 10, max 100).", required = false)
-        Integer limit
-    ) {
-        if( limit == null ) {
-            limit = 0;
-        }
-        if( limit == 0 ) limit = SearchLimits.DEFAULT_LIMIT;
-        if(StringUtils.isEmpty(project)) project = "default";
-
-        return grepSearchService.search(query.trim(), project, language, limit);
-    }
-
-    @McpTool(name = "readFile", description = """
-            READER (3rd search level): Returns a COMPLETE source view of one file, reconstructed from the project index.
-            WORKFLOW: vectorSearch (discover the file) -> grep (confirm content) -> readFile (read the WHOLE file).
-            Use this when you need the entire file — all methods with full bodies — instead of snippets or skeletons.
-            The result is a faithful source view, not a byte-identical file: whitespace/comments between units may differ.
-            Result fields: content, truncated (100k char cap), totalLines, returnedLines, chunkCount, candidates (on ambiguous paths), error.
-            """)
+    @McpTool(name = "readFile", description = PrjxpToolDocs.READ_FILE)
     public FileView readFile(
-            @McpToolParam(description = """
-                File path — absolute, project-root-relative, or just the file name (lenient: exact -> suffix -> basename).
-                If the path is ambiguous the result contains a 'candidates' list instead of content.
-                """, required = true)
+            @McpToolParam(description = "File path (absolute, relative, or name; lenient).", required = true)
             String file,
-
-            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
             String project,
-
-            @McpToolParam(description = "Optional 1-based line number to start reading from (paged reading of large files).", required = false)
+            @McpToolParam(description = "1-based start line.", required = false)
             Integer offset,
-
-            @McpToolParam(description = "Optional maximum number of lines to return, counted from 'offset'.", required = false)
-            Integer limit
-    ) {
-        if (StringUtils.isEmpty(file)) {
-            return FileView.error(file, "Parameter 'file' is required.");
-        }
-        if (StringUtils.isEmpty(project)) project = "default";
-        return readerService.read(file.trim(), project, offset, limit);
+            @McpToolParam(description = "Max lines from offset (default 100).", required = false)
+            Integer limit,
+            @McpToolParam(description = "Whole file only for files ≤200 lines; capped.", required = false)
+            Boolean full) {
+        return toolService.readFile(file, project, offset, limit, full);
     }
 
-    @McpTool(name = "readBySignature", description = """
-            READER (3rd search level): Returns the COMPLETE implementation of a symbol — javadoc + full method body — located by its name in the index.
-            Java ONLY in this version: TypeScript and Visual Basic are not indexed with symbol metadata yet.
-            WORKFLOW: vectorSearch (discover) -> grep (locate) -> readBySignature (complete method, ALL overloads).
-            RESULT: up to 10 full matches (fqn, file, lineFrom/lineTo, javadoc, body). When more than 10 match,
-            'remainingFqns' lists the rest — call again with one of them as 'method' (FQN form) to fetch it in full.
-            If the symbol is a class, the class frame (structure + signatures) is returned as 'body'.
-            """)
+    @McpTool(name = "readBySignature", description = PrjxpToolDocs.READ_BY_SIGNATURE)
     public SymbolReadResult readBySignature(
-            @McpToolParam(description = """
-                Method name (e.g. 'createMClass') or fully qualified 'com.example.Foo#bar'.
-                Class FQNs (e.g. 'com.example.Foo') return the class frame.
-                """, required = true)
+            @McpToolParam(description = "'FQN#name', class FQN, or bare method name.", required = true)
             String method,
-
-            @McpToolParam(description = "Optional containing class FQN to disambiguate a bare method name.", required = false)
-            String container,
-
-            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
-            String project
-    ) {
-        if (StringUtils.isEmpty(project)) project = "default";
-        return symbolReaderService.readBySignature(method, container, project);
-    }
-
-    @McpTool(name = "listFiles", description = """
-            STRUCTURAL DISCOVERY TOOL (orthogonal to the search ladder): Lists which files exist in the project index.
-            Answers "which files are there?" — not "what do they say?" (that is vectorSearch/grep).
-            USE IT to explore the file tree: find directories, locate files by name pattern, see what is indexed.
-            PATTERN: a path prefix (e.g. "frontend/src") or a glob (e.g. "*Controller.java").
-            '*' matches any characters INCLUDING '/' (recursive); '?' matches a single character. Case-sensitive.
-            An empty pattern lists everything (subject to limit).
-            RESULT: distinct file paths (sorted) + truncated flag. If truncated, narrow the pattern or raise the limit.
-            WORKFLOW: listFiles (find the path) -> readFile / grep / readBySignature (read the content).
-            """)
-    public FileListResult listFiles(
-            @McpToolParam(description = """
-                Path prefix or glob. Prefix: "frontend/src" matches everything below it.
-                Glob: "*Controller.java". '*' spans path separators. Empty = all files.
-                """, required = false)
-            String path,
-
-            @McpToolParam(description = "Optional project name. Defaults to the active project.", required = false)
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
             String project,
-
-            @McpToolParam(description = "Maximum number of files to return (default 50, max 500).", required = false)
-            Integer limit
-    ) {
-        if (StringUtils.isEmpty(project)) project = "default";
-        int safeLimit = (limit == null) ? SearchLimits.LIST_DEFAULT_LIMIT : SearchLimits.clampList(limit);
-        return fileListService.list(path, project, safeLimit);
+            @McpToolParam(description = "Containing class FQN to disambiguate.", required = false)
+            String container,
+            @McpToolParam(description = "Class FQNs: append method bodies (default true).", required = false)
+            Boolean includeBodies,
+            @McpToolParam(description = "Max appended bodies, default 3 (max 10).", required = false)
+            Integer maxBodies) {
+        return toolService.readBySignature(method, container, project,
+                includeBodies, maxBodies);
     }
 
+    @McpTool(name = "listFiles", description = PrjxpToolDocs.LIST_FILES)
+    public String listFiles(
+            @McpToolParam(description = "Path prefix or glob ('*' spans '/'); empty = all.", required = false)
+            String path,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max files, default 50 (max 500).", required = false)
+            Integer limit) {
+        return toolService.listFiles(path, project, limit);
+    }
+
+    @McpTool(name = "graphFile", description = PrjxpToolDocs.GRAPH_FILE)
+    public String graphFile(
+            @McpToolParam(description = "File path (absolute, relative, or name; lenient).", required = true)
+            String file,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max neighbours per direction, default 30.", required = false)
+            Integer maxEdges,
+            @McpToolParam(description = "Include JDK/library edges (default false).", required = false)
+            Boolean includeExternal,
+            @McpToolParam(description = "Skip this many per direction.", required = false)
+            Integer offset,
+            @McpToolParam(description = "FULL (default) | AGGREGATED.", required = false)
+            String contentLevel,
+            @McpToolParam(description = "Max output tokens, default 2000.", required = false)
+            Integer tokenBudget) {
+        return toolService.graphFile(file, project, maxEdges, includeExternal, offset,
+                contentLevel, tokenBudget);
+    }
+
+    @McpTool(name = "graphNode", description = PrjxpToolDocs.GRAPH_NODE)
+    public String graphNode(
+            @McpToolParam(description = "Class FQN or method id; bare names match as suffix.", required = true)
+            String symbol,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max neighbours per direction, default 30.", required = false)
+            Integer maxEdges,
+            @McpToolParam(description = "Include JDK/library edges (default false).", required = false)
+            Boolean includeExternal,
+            @McpToolParam(description = "Skip this many per direction.", required = false)
+            Integer offset,
+            @McpToolParam(description = "FULL (default) | AGGREGATED.", required = false)
+            String contentLevel,
+            @McpToolParam(description = "Max output tokens, default 2000.", required = false)
+            Integer tokenBudget) {
+        return toolService.graphNode(symbol, project, maxEdges, includeExternal, offset,
+                contentLevel, tokenBudget);
+    }
+
+    @McpTool(name = "graphSearch", description = PrjxpToolDocs.GRAPH_SEARCH)
+    public String graphSearch(
+            @McpToolParam(description = "Short English keyword query; identifiers verbatim.", required = true)
+            String question,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "bfs (default) | dfs.", required = false)
+            String mode,
+            @McpToolParam(description = "Traversal depth, 1-6 (default 3).", required = false)
+            Integer depth,
+            @McpToolParam(description = "Max output tokens, default 2000.", required = false)
+            Integer tokenBudget,
+            @McpToolParam(description = "Optional edge types: CALL, CONTAINS, FIELD, …", required = false)
+            List<String> contextFilter,
+            @McpToolParam(description = "Max seeds, 1-5 (default 3).", required = false)
+            Integer maxSeeds) {
+        return toolService.graphSearch(question, project, mode, depth, tokenBudget,
+                contextFilter, maxSeeds);
+    }
+
+    @McpTool(name = "graphCluster", description = PrjxpToolDocs.GRAPH_CLUSTER)
+    public ClusterView graphCluster(
+            @McpToolParam(description = "Cluster id, e.g. 'c6' (from vectorSearch output).", required = true)
+            String clusterId,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Top members to return, default 10.", required = false)
+            Integer topN) {
+        return toolService.graphCluster(clusterId, project, topN);
+    }
+
+    @McpTool(name = "graphClusterOverview", description = PrjxpToolDocs.GRAPH_CLUSTER_OVERVIEW)
+    public ClusterOverviewView graphClusterOverview(
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Clusters to return, default 10.", required = false)
+            Integer topN) {
+        return toolService.graphClusterOverview(project, topN);
+    }
+
+    @McpTool(name = "semanticGraphCluster", description = PrjxpToolDocs.SEMANTIC_GRAPH_CLUSTER)
+    public SemanticClusterView semanticGraphCluster(
+            @McpToolParam(description = "Semantic cluster id (sN).", required = true)
+            String clusterId,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max members, default 10.", required = false)
+            Integer topN) {
+        return toolService.semanticGraphCluster(clusterId, project, topN);
+    }
+
+    @McpTool(name = "semanticGraphNode", description = PrjxpToolDocs.SEMANTIC_GRAPH_NODE)
+    public SemanticNodeView semanticGraphNode(
+            @McpToolParam(description = "Semantic node id.", required = true)
+            String nodeId,
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max neighbours, default 20.", required = false)
+            Integer maxEdges) {
+        return toolService.semanticGraphNode(nodeId, project, maxEdges);
+    }
+
+    @McpTool(name = "semanticGraphOverview", description = PrjxpToolDocs.SEMANTIC_GRAPH_OVERVIEW)
+    public SemanticOverviewView semanticGraphOverview(
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max clusters, default 10.", required = false)
+            Integer topN) {
+        return toolService.semanticGraphOverview(project, topN);
+    }
+
+    @McpTool(name = "listConfig", description = PrjxpToolDocs.LIST_CONFIG)
+    public String listConfig(
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Max output tokens, default 2000.", required = false)
+            Integer tokenBudget) {
+        return toolService.listConfig(project, tokenBudget);
+    }
+
+    @McpTool(name = "readChunks", description = PrjxpToolDocs.READ_CHUNKS)
+    public String readChunks(
+            @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
+            String project,
+            @McpToolParam(description = "Comma-separated chunk_ids, max 10; prefer 1–3.", required = true)
+            String ids) {
+        return toolService.readChunks(project, ids);
+    }
 }

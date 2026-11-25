@@ -1,0 +1,25 @@
+/*
+ * Init-Script zum Waermen des Gradle-Dependency-Caches (Docker-Build).
+ *
+ * Die eingebaute "dependencies"-Task loest nur den Dependency-Graph
+ * (POMs/Metadaten) auf, laed aber die eigentlichen JARs nicht herunter.
+ * Diese Task loest alle Konfigurationen aller Projekte auf und zwingt
+ * damit den Download aller Artefakte in den lokalen Gradle-Cache.
+ *
+ * Verwendung (Dockerfile, Stage "gradle-deps"):
+ *   ./gradlew --no-daemon -I gradle/cache-warmup.init.gradle warmUpDependencyCache
+ */
+allprojects {
+    tasks.register('warmUpDependencyCache') {
+        doLast {
+            configurations.all { configuration ->
+                try {
+                    configuration.resolve()
+                } catch (Exception ignored) {
+                    // Nicht alle Konfigurationen sind loesbar (detached, leer
+                    // oder ohne Repository) — fuer das Cache-Waermen egal.
+                }
+            }
+        }
+    }
+}

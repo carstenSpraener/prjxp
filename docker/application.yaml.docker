@@ -11,6 +11,8 @@ prjxp:
     modelName: ${EMBEDDING_MODEL_NAME:mixedbread-ai/mxbai-embed-large-v1}
     timeout: ${EMBEDDING_TIMEOUT:180}
     apiKey: ${EMBEDDING_API_KEY:dummy}
+    # max texts per embedding HTTP request; the per-project tibedBatchSize is split at this size
+    maxSegmentsPerBatch: 250
 
   chatModels:
     - stereotype: detailed
@@ -49,6 +51,10 @@ prjxp:
     - name: prjxp
       type: http
       url: ${PRJXP_HUB_URL:http://localhost:7007/mcp}
+
+  docs:
+    # Docs browser source dir (baked into the image; override via bind mount on /app/doc).
+    dir: ${PRJXP_DOCS_DIR:/app/doc}
 
 mcp:
   cors:

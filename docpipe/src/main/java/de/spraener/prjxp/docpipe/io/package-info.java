@@ -1,24 +1,37 @@
-
-
 /**
- * Provides an abstraction layer for writing output data to various destinations, primarily focusing on file-based I/O.
+ * Provides output abstractions for the document pipeline.
+ *
  * <p>
- * This package is designed to decouple business logic from concrete file system operations, enhancing testability and maintainability.
- * By relying on the {@link OutputSink} interface, client code can write formatted text without being tightly coupled to specific I/O implementations.
+ * This package isolates file-writing concerns behind the {@link de.spraener.prjxp.docpipe.io.OutputSink}
+ * interface. Components that generate documents or other textual output can depend on this abstraction
+ * instead of directly using filesystem APIs or {@link java.io.PrintWriter}. This improves testability,
+ * allows alternative output implementations, and centralizes the creation of file-based sinks.
  * </p>
- * <p><b>Architecture & Class Interactions:</b></p>
+ *
+ * <p>
+ * The main types are:
+ * </p>
  * <ul>
- *   <li>{@link OutputSink}: The core interface extending {@code AutoCloseable}. It defines methods for writing lines and formatted strings, enabling safe resource management via try-with-resources blocks.</li>
- *   <li>{@link FileOutputSink}: The default concrete implementation that handles actual file I/O. It automatically creates parent directories and ensures UTF-8 encoding using a buffered {@code PrintWriter}.</li>
- *   <li>{@link OutputSinkFactory}: A Spring-managed factory service responsible for instantiating {@code OutputSink} instances. It abstracts object creation, allowing seamless substitution with mock or in-memory implementations during testing.</li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.io.OutputSink} defines the minimal output contract for writing
+ *     lines and formatted text, and supports try-with-resources through {@link java.lang.AutoCloseable}.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.io.FileOutputSink} is the default filesystem-backed implementation.
+ *     It creates required parent directories and writes UTF-8 encoded text to the target file.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.io.OutputSinkFactory} is a Spring service responsible for creating
+ *     {@code OutputSink} instances from {@link java.nio.file.Path} or {@link java.lang.String} destinations.
+ *   </li>
  * </ul>
- * <p><b>Primary Use Cases:</b></p>
- * <ul>
- *   <li>Inject {@link OutputSinkFactory} into a Spring component.</li>
- *   <li>Request an {@code OutputSink} via {@link OutputSinkFactory#createSink(Path)} or its String variant.</li>
- *   <li>Utilize the sink within a try-with-resources block to write formatted output safely.</li>
- *   <li>Replace the factory or sink implementation in test environments to avoid disk I/O and improve test speed.</li>
- * </ul>
+ *
+ * <p>
+ * Typical clients obtain an {@code OutputSink} from {@code OutputSinkFactory}, write content using
+ * {@code println} and {@code printf}, and close the sink when finished, preferably with a
+ * try-with-resources block. Tests can replace the factory or the sink implementation with in-memory
+ * or mock variants to avoid actual file I/O.
+ * </p>
  */
 package de.spraener.prjxp.docpipe.io;
 

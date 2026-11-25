@@ -204,6 +204,22 @@ select.form-input {
   box-shadow: 0 0 8px rgba(0, 245, 255, 0.3);
 }
 
+/* Test & Read Models */
+.btn-test {
+  background: transparent; border: 1px solid var(--border-color);
+  color: var(--text-secondary); padding: 0.6rem 0.9rem; border-radius: 6px;
+  cursor: pointer; font-size: 0.85rem; transition: all 0.2s ease;
+}
+.btn-test:hover:not(:disabled) { border-color: var(--accent-cyan); color: var(--accent-cyan); }
+.btn-test:disabled { opacity: 0.5; cursor: not-allowed; }
+.test-result { padding: 0.6rem 0.75rem; border-radius: 6px; font-size: 0.85rem; border: 1px solid var(--border-color); }
+.test-success { color: var(--accent-cyan); border-color: var(--accent-cyan); background: rgba(0, 245, 255, 0.08); }
+.test-error { color: var(--accent-magenta); border-color: var(--accent-magenta); background: rgba(255, 0, 128, 0.08); }
+.test-response {
+  margin-top: 0.4rem; padding: 0.5rem; background: var(--bg-secondary); border-radius: 4px;
+  font-family: monospace; font-size: 0.8rem; white-space: pre-wrap; max-height: 120px; overflow-y: auto;
+}
+
 /* Responsive */
 @media (max-width: 640px) {
   .editor-dialog {

@@ -74,9 +74,9 @@ side) — as a Spring bean for built-in languages, or as a **plugin JAR** in
 - `LucenePxChunkDao` scopes *every* query (vector, full-text, index, find-by-id) with
   `pxchunk_project = <project>`; resets are scoped the same way.
 - `PxChunkDaoProvider` holds one DAO per project (runtime register/unregister in hub).
-- `ProjectRegistry` is the addressing facade: **static** (config-driven store references,
-  unknown names fail explicitly with the available list) vs **hub** (directory-driven,
-  lifecycle-aware; only `READY` projects are searchable/listed).
+- `ProjectRegistry` is the addressing facade: the **hub** registry (`HubProjectRegistry`,
+  directory-driven, lifecycle-aware; only `READY` projects are searchable/listed; unknown
+  names fail explicitly with the available list).
 
 ## 8.6 Content Budgets & Token Economy
 
@@ -105,8 +105,8 @@ reports its effective similarity threshold + fallback round count.
 - `McpServer` uses `@ComponentScan("de.spraener.prjxp")` — all module beans are visible in
   the hub process; other apps scan narrower package sets.
 - CLI `CommandLineRunner`s have **unique bean names** (`chunoRun`, `tibedRun`) and are
-  gated by `prjxp.cli.enabled` (hub sets it to `false`) so that libraries on the classpath
-  don't start their CLIs.
+  gated by `prjxp.hub.enabled` (active only when the hub is disabled) so that libraries on the
+  classpath don't start their CLIs in the hub process.
 - `spring.main.allow-bean-definition-overriding=true` is set to tolerate the overlapping
   component scans.
 

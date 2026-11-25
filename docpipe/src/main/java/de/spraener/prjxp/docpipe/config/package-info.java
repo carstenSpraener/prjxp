@@ -1,69 +1,65 @@
 /**
  * Configuration management for the DocPipe documentation pipeline.
  *
- * <p>This package provides the services and utilities responsible for discovering,
- * loading, and resolving all configuration artifacts used by the DocPipe system.
- * The primary configuration unit is the {@code .dp} directory, which contains
- * JSON files defining documentation jobs, LLM model references, and content
- * hash metadata.</p>
+ * <p>This package provides the services and utilities required to discover,
+ * configure, and resolve documentation pipeline (DocPipe) jobs within a project.
+ * Its core responsibilities include:</p>
  *
- * <h2>Core Responsibilities</h2>
  * <ul>
- *   <li><b>Path resolution</b> – Locating {@code .dp} directories and the files
- *       they contain ({@code documents.json}, {@code models.json},
- *       {@code content-hashes.properties}).</li>
- *   <li><b>Job discovery and creation</b> – Scanning a project's file tree for
- *       {@code .dp} folders and constructing {@code DPJob} instances, including
- *       glob-based expansion of content-creation tasks.</li>
- *   <li><b>Model configuration loading</b> – Deserializing LLM model reference
- *       definitions from JSON into typed objects.</li>
- *   <li><b>Environment variable resolution</b> – Substituting {@code ${VAR}}
+ *   <li><b>Job discovery and creation</b> – scanning the project directory tree
+ *       for {@code .dp} configuration folders and parsing their {@code documents.json}
+ *       files into {@link de.spraener.prjxp.docpipe.model.DPJob} instances.</li>
+ *   <li><b>Path resolution</b> – locating the {@code .dp} directory, the
+ *       {@code documents.json} configuration file, the content-hashes properties
+ *       file, and output file paths relative to a given root or task.</li>
+ *   <li><b>Environment variable resolution</b> – substituting {@code ${VAR}}
  *       placeholders in configuration strings with values from the system
  *       environment.</li>
+ *   <li><b>Error handling</b> – a dedicated checked exception for configuration
+ *       loading and parsing failures.</li>
  * </ul>
  *
- * <h2>Architecture and Class Interactions</h2>
- * <p>The classes in this package form a layered configuration stack:</p>
+ * <h2>Architecture</h2>
+ *
+ * <p>The package is organized around a small set of collaborating Spring-managed
+ * components and plain utilities:</p>
+ *
  * <ul>
- *   <li>{@link DotDPFilesService} is the foundational path-resolution component.
- *       All other services depend on it to compute file and directory locations
- *       relative to a project root or a {@code ContentCreationTask}.</li>
- *   <li>{@link JobCreationService} is the primary entry point for job discovery.
- *       It walks the project directory tree, delegates path checks to
- *       {@code DotDPFilesService}, parses {@code documents.json} via Jackson,
- *       and performs glob-pattern expansion to produce a stream of
- *       {@code DPJob} objects.</li>
- *   <li>{@link ModelConfigLoader} reads {@code models.json} files and deserializes
- *       them into lists of {@code PrjXPChatModelReference} objects. It is
- *       typically invoked with a path obtained from {@code DotDPFilesService}.</li>
- *   <li>{@link EnvResolver} is a stateless static utility that can be applied to
- *       any configuration string to resolve environment-variable placeholders
- *       before further processing.</li>
- *   <li>{@link ConfigException} is the checked exception type thrown when
- *       configuration files cannot be read or parsed.</li>
+ *   <li>{@link JobCreationService} – the primary entry point. As a Spring
+ *       {@code @Service}, it walks the project root directory, identifies
+ *       sub-directories that contain a {@code .dp} folder, and constructs
+ *       fully-populated {@code DPJob} objects (including expanded
+ *       {@code forEach} glob patterns) from the parsed {@code documents.json}
+ *       content. It delegates all path-related lookups to
+ *       {@link DotDPFilesService}.</li>
+ *   <li>{@link DotDPFilesService} – a Spring {@code @Component} acting as a
+ *       path-resolution facade. It encapsulates the well-known file and
+ *       directory names (e.g., {@code .dp}, {@code documents.json},
+ *       {@code content-hashes.properties}) and exposes convenience methods
+ *       that accept either a {@link java.io.File}/{@link java.nio.file.Path}
+ *       or a {@link de.spraener.prjxp.docpipe.content.ContentCreationTask}.</li>
+ *   <li>{@link EnvResolver} – a stateless static utility that resolves
+ *       {@code ${ENV_VAR}} placeholders against {@link System#getenv()}.
+ *       It is intended to be called during configuration parsing to allow
+ *       environment-specific values in {@code documents.json}.</li>
+ *   <li>{@link ConfigException} – a checked exception signaling failures
+ *       while reading or parsing configuration files. Callers that perform
+ *       configuration I/O should catch or propagate this type.</li>
  * </ul>
  *
- * <h2>Typical Usage Flow</h2>
- * <ol>
- *   <li>Call {@link JobCreationService#readJobs(java.util.Optional)} with a
- *       project definition to obtain a stream of discovered {@code DPJob}
- *       instances.</li>
- *   <li>Use {@link DotDPFilesService} methods to resolve paths to specific
- *       configuration files (models, documents, content hashes) for a given
- *       directory or task.</li>
- *   <li>Invoke {@link ModelConfigLoader#listFrom(String)} to load LLM model
- *       references for a job.</li>
- *   <li>Apply {@link EnvResolver#resolve(String)} to any configuration value
- *       that may contain environment-variable placeholders.</li>
- * </ol>
+ * <h2>Typical Usage</h2>
  *
- * <p>All Spring-managed services in this package are registered as beans
- * ({@code @Service} / {@code @Component}) and can be injected into other
- * components of the DocPipe application.</p>
+ * <p>A consuming component (e.g., a pipeline orchestrator) typically injects
+ * {@link JobCreationService} and calls
+ * {@link JobCreationService#readJobs(java.util.Optional)} with the current
+ * {@link de.spraener.prjxp.common.config.ProjectDefinition} to obtain a
+ * {@link java.util.stream.Stream} of ready-to-execute {@code DPJob} instances.
+ * For ad-hoc path lookups or environment variable substitution, the
+ * {@link DotDPFilesService} and {@link EnvResolver} classes can be used
+ * independently.</p>
  *
- * @see DotDPFilesService
  * @see JobCreationService
- * @see ModelConfigLoader
+ * @see DotDPFilesService
  * @see EnvResolver
  * @see ConfigException
  */

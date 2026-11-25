@@ -10,6 +10,7 @@ public class PrjXPChatModelReference {
     private String stereoType;
     private String serverType;
     private String modelName;
+    @lombok.ToString.Exclude
     private String apiKey;
     private String providerUrl;
     private int timeoutSecs = 60;

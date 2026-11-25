@@ -92,8 +92,8 @@ class DocPipePipelineListenerTest {
 
         org.mockito.ArgumentCaptor<DocumentSource> captor = org.mockito.ArgumentCaptor.forClass(DocumentSource.class);
         verify(orchestrator).scheduleEmbedding(eq("p1"), captor.capture());
-        List<String> docs = captor.getValue().documentStream().map(Path::toString).toList();
-        assertThat(docs).containsExactly("docs/a.md");
+        List<Path> docs = captor.getValue().documentStream().toList();
+        assertThat(docs).containsExactly(Path.of("docs", "a.md"));
     }
 
     @Test

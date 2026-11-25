@@ -93,7 +93,29 @@
         "test": {
           "builder": "@angular/build:unit-test",
           "options": {
-            "setupFiles": ["src/setup-tests.ts"]
+            "setupFiles": ["src/setup-tests.ts"],
+            "coverageInclude": [
+              "src/app/app.ts",
+              "src/app/app.html",
+              "src/app/app.routes.ts",
+              "src/app/services/setup.service.ts",
+              "src/app/services/globals.service.ts",
+              "src/app/features/setup/setup-wizard.component.*",
+              "src/app/features/setup/setup-validators.ts",
+              "src/app/features/setup/setup-fixtures.ts",
+              "src/app/models/setup.model.ts",
+              "src/app/models/embedding-config.model.ts",
+              "src/app/features/setup/steps/setup-form.ts",
+              "src/app/features/setup/steps/setup-*-step.component.*",
+              "src/app/features/dashboard/dashboard.component.*",
+              "src/app/features/globals/globals.component.*",
+              "src/app/components/setup-status-banner/setup-status-banner.component.*",
+              "src/app/components/embedding-model-card/embedding-model-card.component.*",
+              "src/app/components/embedding-model-editor-dialog/embedding-model-editor-dialog.component.*",
+              "src/app/components/chat-model-editor-dialog/chat-model-editor-dialog.component.*"
+            ],
+            "coverageThresholds": {"perFile": true, "lines": 80},
+            "coverageReporters": ["text", "html", "json", "json-summary", "lcov"]
           }
         }
       }

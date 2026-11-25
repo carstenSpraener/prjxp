@@ -11,6 +11,10 @@ ANTLR grammar.
 > `CSharpLanguagePack` + `LanguagePackProvider` SPI, and the shadow fat-JAR
 > packaging. The host (mcp-server hub + chunk-norris batch) loads it from
 > `./language-packs` into its own class loader.
+>
+> **In progress (C# grammar upgrade):** the parser is being swapped from the C# v7
+> grammar to the Roslyn grammar (C# 14). Phase 01 (grammar swap) is done; the
+> chunker is a temporary stub until Phase 02 rewrites it for the Roslyn tree.
 
 ## Layout
 
@@ -21,10 +25,8 @@ lp-csharp/
 ├── src/
 │   ├── main/
 │   │   ├── antlr/.../grammar/
-│   │   │   ├── CSharpLexer.g4      # MIT-licensed grammar (see below)
-│   │   │   └── CSharpParser.g4
+│   │   │   └── CSharp.g4           # MIT-licensed Roslyn grammar (see below)
 │   │   ├── java/.../
-│   │   │   ├── grammar/            # hand-written base classes (preprocessor/semantics)
 │   │   │   ├── CSharpCodeChunker.java   # structural chunker (AST → PxChunks)
 │   │   │   ├── CSharpRetriever.java     # retrieval side (part reassembly, enrichment)
 │   │   │   ├── CSharpLanguagePack.java  # the pack (language, MIME, chunker, retriever, bind)
@@ -38,38 +40,38 @@ lp-csharp/
 
 ## The C# grammar — source and license
 
-The parser is generated from the **C# v7 grammar** in the official
-[`antlr/grammars-v4`](https://github.com/antlr/grammars-v4) repository
-(`csharp/v7`), pinned to commit
-[`3036ab7`](https://github.com/antlr/grammars-v4/commit/3036ab7a91d7b2ca2282ab6c3c9b945c0a92f8b0)
-(see `.grammar-source.txt`).
+The parser is generated from the **Roslyn C# compiler grammar**
+(`CSharp.Generated.g4`) in the [`dotnet/roslyn`](https://github.com/dotnet/roslyn)
+repository (see `.grammar-source.txt` for the pinned upstream path). The
+checked-in `CSharp.g4` is a hand-adapted copy: a single **combined** grammar
+(lexer + parser in one file) with pragmatic whole-literal token rules, a
+`DIRECTIVE` skip rule for `#` preprocessor lines, and no semantic predicates.
 
-- **License:** **MIT** (stated in the grammar header and the grammar's README).
-  The header also carries a historical Eclipse Public License attribution to the
-  original authors (Christian Wulf, Ivan Kochurkin / Positive Technologies);
-  the grammar is distributed under MIT.
+- **License:** **MIT** (.NET Foundation). The MIT copyright notice is retained
+  in the grammar file header.
 - **Compatibility:** MIT is a permissive license and is fully compatible with
-  prjxp's **Apache License 2.0**. The MIT copyright notice is retained in the
-  grammar file headers.
-- The grammar targets **ECMA-334 7th edition** (C# 7.x and below).
-
-The two hand-written base classes (`CSharpLexerBase`, `CSharpParserBase`) come
-from the same grammar (its `Java/` directory) and are required by the grammar's
-`superClass` options and semantic predicates. They were moved into the
-`de.spraener.prjxp.lpcsharp.grammar` package (a `package` declaration was added).
+  prjxp's **Apache License 2.0**.
+- The grammar targets **C# 14** (the current standard): records, raw strings,
+  file-scoped namespaces, union types, extension blocks, and everything below.
+  C# 7 and earlier remain parseable as a subset.
+- **`#` directives:** the Roslyn grammar's directive rules are dead code (never
+  referenced) and `#` would otherwise be a real punctuation token, so the
+  adapted grammar adds one lexer rule — `DIRECTIVE : '#' ~[\r\n]* -> skip;` —
+  that skips directive lines. Code inside `#if`/`#endif` parses normally (no
+  recall loss for a RAG index), and the directive text stays in the source so it
+  flows 1:1 into chunk text via the chunker's line-range extraction.
 
 ## How the parser is generated
 
-The C# grammar is a **separated lexer + parser** pair: `CSharpParser.g4`
-references `CSharpLexer` via `tokenVocab` and uses string literals that must
-resolve against the lexer's token vocabulary. The built-in Gradle `antlr`
-plugin generates each `.g4` in an isolated ANTLR invocation, which breaks that
-resolution. So the build runs the ANTLR tool **once on both files**, with
-`-lib` pointing at the grammar directory:
+The C# grammar is a single **combined** file (`CSharp.g4`): one ANTLR
+invocation generates both the lexer and the parser. String literals in parser
+rules resolve against the grammar's own lexer rules (contextual keywords such
+as `record` or `union` resolve to `identifier_token`). The build runs the
+ANTLR tool on the combined grammar:
 
 ```
 org.antlr.v4.Tool -o <out> -package de.spraener.prjxp.lpcsharp.grammar \
-    -lib <grammar-dir> CSharpLexer.g4 CSharpParser.g4
+    -visitor CSharp.g4
 ```
 
 This is wired up as the `generateCSharpGrammar` Gradle task (see
@@ -107,11 +109,12 @@ cd lp-csharp
 ./gradlew test      # just the tests
 ```
 
-Tests: `CSharpParserTest` (parser smoke tests), `CSharpCodeChunkerTest` (units,
-metadata, splitting), `CSharpRetrieverTest` (filtering, part reassembly, parent
-enrichment, budgets), `CSharpLanguagePackProviderTest` (pack contract + `bind()`),
-`PluginJarTest` (fat-JAR contents: SPI + ANTLR in, prjxp-common/slf4j out),
-`PrjxpCommonContractTest` (host API contract present).
+Tests: `CSharpParserSmokeTest` (parser smoke tests for the Roslyn grammar),
+`CSharpCodeChunkerTest` (units, metadata, splitting — temporarily disabled until
+the Phase 02 chunker rewrite), `CSharpRetrieverTest` (filtering, part reassembly,
+parent enrichment, budgets), `CSharpLanguagePackProviderTest` (pack contract +
+`bind()`), `PluginJarTest` (fat-JAR contents: SPI + ANTLR in, prjxp-common/slf4j
+out), `PrjxpCommonContractTest` (host API contract present).
 
 ## Packaging
 

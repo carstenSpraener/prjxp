@@ -19,3 +19,11 @@ prjxp:
       api-key: "lm-studio"
       provider-type: "openAI"
 
+  graph:
+    rerank:
+      # See mcp-server/src/main/resources/application.yaml (Phase-05 E2E calibration).
+      floor: 0.98
+      b-graph: 5.0
+      cap: 5.0
+      w-base: 1.0
+

@@ -6,11 +6,12 @@ import { ChatService } from '../../services/chat.service';
 import { ChatSettingsPersistenceService } from '../../services/chat-settings-persistence.service';
 import { ChatModelReference } from '../../models/chat-model-reference.model';
 import { catchError, tap, of } from 'rxjs';
+import { DialogOverlayComponent } from '../dialog-overlay/dialog-overlay.component';
 
 @Component({
   selector: 'chat-settings-dialog',
   standalone: true,
-  imports: [CommonModule, FormsModule],
+  imports: [CommonModule, FormsModule, DialogOverlayComponent],
   templateUrl: './chat-settings-dialog.component.html',
   styleUrl: './chat-settings-dialog.component.css'
 })

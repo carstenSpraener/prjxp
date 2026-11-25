@@ -66,12 +66,12 @@ Golden-Retriever does not ask the LLM to "pick what matters". It deterministical
 4. applies **vetoes/validators** (reject noise trees) and a **content budget**
    (per-retriever + global), then concatenates the survivors.
 
-### 4.2.5 One image, four modes; static vs hub registries
+### 4.2.5 One image, three modes; one registry
 
-The same Docker image runs as `chunk`, `embed`, `serve` (single project) or `hub`
+The same Docker image runs as `chunk`, `embed` (single project) or `hub`
 (multi-project). Inside the hub, chunk-norris and tibed are *beans in the mcp-server
-process* (their CLI runners are switched off via `prjxp.cli.enabled=false`), and a
-directory-driven project registry replaces the config-driven one.
+process* (their CLI runners are switched off because they are gated on `prjxp.hub.enabled=false`), and the
+directory-driven project registry (`HubProjectRegistry`) is the only registry.
 
 ### 4.2.6 Self-documentation (the Documentation Paradox)
 

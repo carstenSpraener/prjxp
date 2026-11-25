@@ -1,7 +1,6 @@
 package de.spraener.prjxp.docpipe.config;
 
 import de.spraener.prjxp.common.config.PrjXPConfig;
-import de.spraener.prjxp.docpipe.DocPipeConfig;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
 import de.spraener.prjxp.docpipe.model.DPJob;
@@ -45,17 +44,6 @@ class DotDPFilesServiceTest {
     }
 
     @Test
-    void globalModelsFileName_appendsDpAndModelsJsonToProjectDir() {
-        DocPipeConfig cfg = new DocPipeConfig();
-        cfg.setProjectDir(tempDir);
-
-        String result = service.globalModelsFileName(cfg);
-
-        assertThat(Path.of(result).toAbsolutePath().normalize())
-                .isEqualTo(tempDir.resolve(DotDPFilesService.DP_DIR).resolve("models.json").toAbsolutePath().normalize());
-    }
-
-    @Test
     void hasDocPipeDir_trueWhenDpFolderExists() throws Exception {
         Files.createDirectories(tempDir.resolve(DotDPFilesService.DP_DIR));
 
@@ -73,16 +61,6 @@ class DotDPFilesServiceTest {
 
         assertThat(result.toPath().toAbsolutePath().normalize())
                 .isEqualTo(tempDir.resolve(DotDPFilesService.DP_DIR).toAbsolutePath().normalize());
-    }
-
-    @Test
-    void getModelsJsonFrom_appendsDpAndModelsJson() {
-        File result = service.getModelsJsonFrom(tempDir.toFile());
-
-        assertThat(result.getName()).isEqualTo("models.json");
-        assertThat(result.getParentFile().getName()).isEqualTo(DotDPFilesService.DP_DIR);
-        assertThat(result.toPath().toAbsolutePath().normalize())
-                .isEqualTo(tempDir.resolve(DotDPFilesService.DP_DIR).resolve("models.json").toAbsolutePath().normalize());
     }
 
     @Test

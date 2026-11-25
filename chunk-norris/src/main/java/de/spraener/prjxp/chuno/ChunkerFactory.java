@@ -13,11 +13,14 @@ import java.util.stream.Stream;
 @Service
 public class ChunkerFactory extends AnnotationBasedChunkerBrokerImpl {
     private final LanguagePackBroker languagePackBroker;
+    private final DefaultLineBreakTextChunker defaultLineBreakTextChunker;
     private List<ChunkerBroker> brokerList;
 
-    public ChunkerFactory(LanguagePackBroker languagePackBroker) {
+    public ChunkerFactory(LanguagePackBroker languagePackBroker,
+                          DefaultLineBreakTextChunker defaultLineBreakTextChunker) {
         super(ChunkerFactory.class.getPackageName());
         this.languagePackBroker = languagePackBroker;
+        this.defaultLineBreakTextChunker = defaultLineBreakTextChunker;
     }
 
     private void initBrokerList() {
@@ -34,8 +37,19 @@ public class ChunkerFactory extends AnnotationBasedChunkerBrokerImpl {
         if (brokerList == null) {
             initBrokerList();
         }
-        return brokerList.stream()
-                .flatMap(broker -> broker.findPxChunkers(f));
+        List<PxChunker> matching = brokerList.stream()
+                .flatMap(broker -> broker.findPxChunkers(f))
+                .toList();
+        // The always-matching FullTextChunker is a catch-all, not a "specific" chunker.
+        // (It is the only one today; a new catch-all chunker would need to be excluded here too.)
+        boolean hasSpecific = matching.stream().anyMatch(c -> !(c instanceof FullTextChunker));
+        if (hasSpecific) {
+            return matching.stream();
+        }
+        // Fallback: whitelisted file for which no specific chunker matches — without this it
+        // would be silently dropped (see doc/Tasks/DefaultLineBreakTextChunker.md). The
+        // FullTextChunker (if present) stays in the stream; it is gated per project downstream.
+        return Stream.concat(matching.stream(), Stream.of(defaultLineBreakTextChunker));
     }
 
     @Override

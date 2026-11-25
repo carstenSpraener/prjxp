@@ -1,29 +1,75 @@
 # ==========================================
-# Stage 1: Java Application Build (Gradle)
+# Stage 1: Gradle Wrapper (Distribution Download)
 # ==========================================
-FROM eclipse-temurin:21-jdk-jammy AS app-builder
+# Nur die Wrapper-Dateien: Diese Layer wird nur invalide, wenn sich der
+# Wrapper selbst aendert. Der Download der Gradle-Distribution wird damit
+# in einer eigenen, cachebaren Layer gehalten.
+FROM eclipse-temurin:21-jdk-jammy AS gradle-wrapper
 
 WORKDIR /app
+COPY gradlew ./
+COPY gradle/wrapper/ ./gradle/wrapper/
+RUN ./gradlew --version --no-daemon
+
+# ==========================================
+# Stage 2: Gradle Dependency Cache
+# ==========================================
+# Nur die Build-Skripte (keine Quellen): Diese Layer wird nur invalide,
+# wenn sich settings.gradle, build.gradle oder libs.versions.toml aendern.
+# warmUpDependencyCache (Init-Script) loest alle Konfigurationen aller
+# Module auf und laed damit alle JARs in den Gradle-Dependency-Cache.
+FROM gradle-wrapper AS gradle-deps
+
+COPY settings.gradle build.gradle ./
+COPY gradle/libs.versions.toml gradle/cache-warmup.init.gradle ./gradle/
+COPY prjxp-common/build.gradle prjxp-common/
+COPY chunk-norris/build.gradle chunk-norris/
+COPY tibed/build.gradle tibed/
+COPY golden-retriever/build.gradle golden-retriever/
+COPY mcp-server/build.gradle mcp-server/
+COPY docpipe/build.gradle docpipe/
+COPY lucene-store/build.gradle lucene-store/
+COPY mcp-proxy/build.gradle mcp-proxy/
+# prjxp-launcher: leeres Platzhalter-Modul ohne build.gradle — Gradle 9 verlangt
+# trotzdem ein existierendes Projektverzeichnis (settings.gradle include).
+COPY prjxp-launcher/ prjxp-launcher/
+
+RUN ./gradlew --no-daemon -I gradle/cache-warmup.init.gradle warmUpDependencyCache
+
+# ==========================================
+# Stage 3: Java Application Build (Gradle)
+# ==========================================
+# Volle Quellen: Diese Layer aendert sich bei jedem Commit, aber der Build
+# selbst muss weder die Gradle-Distribution noch die Dependencies laden.
+FROM gradle-deps AS app-builder
+
 COPY . .
 RUN ./gradlew :chunk-norris:shadowJar :tibed:shadowJar :mcp-server:shadowJar --no-daemon
 
 # ==========================================
-# Stage 2: Final Runtime Image (Java + TEI)
+# Stage 4: Final Runtime Image (Java + TEI)
 # ==========================================
 FROM eclipse-temurin:21-jre-jammy
 
 WORKDIR /app
 
+# git: noetig fuer den GitHub-Import (clone/pull).
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libgomp1 \
     ca-certificates \
     curl \
+    git \
     && rm -rf /var/lib/apt/lists/*
 
-# 1. Alle drei Fat-JARs aus Stage 1 kopieren
+# 1. Alle drei Fat-JARs aus der Build-Stage (app-builder) kopieren
 COPY --from=app-builder /app/chunk-norris/build/libs/chunk-norris-all.jar /app/
 COPY --from=app-builder /app/tibed/build/libs/tibed-all.jar /app/
 COPY --from=app-builder /app/mcp-server/build/libs/mcp-server-all.jar /app/
+
+# Documentation for the in-app docs browser (served by the hub from /app/doc).
+# Update without rebuilding: bind-mount your own directory onto /app/doc
+# (e.g. DocPipe output) — see docker-compose.yml.
+COPY mcp-server/doc /app/doc
 
 # 3. Entrypoint-Skript bereitstellen
 COPY prjxp-common/docker/entry.sh /app/entry.sh
@@ -35,7 +81,7 @@ RUN chmod +x /app/entry.sh
 COPY docker/application.yaml.docker /app/application.yaml
 
 # 5. Hub-Modus Verzeichnisse (DockerHub Phase 05) — existieren auch ohne Volume-Mounts
-RUN mkdir -p /import /projects
+RUN mkdir -p /import /projects /github
 
 # Data-Volumes (werden zur Laufzeit gemountet)
 VOLUME /app-source
@@ -64,4 +110,4 @@ ENV SERVER_PORT=7007
 WORKDIR /app-source
 
 ENTRYPOINT ["/app/entry.sh"]
-CMD ["serve"]
+CMD ["hub"]

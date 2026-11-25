@@ -1,15 +1,19 @@
 package de.spraener.prjxp.gldrtrvr.md;
 
+import de.spraener.prjxp.common.model.DocWindower;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.PointerRenderer;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -21,17 +25,76 @@ import java.util.function.Function;
 public class MarkdownRetriever implements GoldenRetriever {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
+    private final PointerRenderer pointerRenderer = new PointerRenderer();
+
+    /** Max chars a non-code (doc) chunk may have before it is windowed. Initialized with the
+     *  property default so that non-Spring construction (tests) behaves like the configured default. */
+    @Value("${prjxp.gldrtrvr.doc-max-chars:2000}")
+    int docMaxChars = 2000;
+
+    /** Half-window size (chars) around the match when windowing a doc chunk. */
+    @Value("${prjxp.gldrtrvr.doc-window-chars:500}")
+    int docWindowChars = 500;
+
+    /** Max total chars for all doc chunks in one vectorSearch answer (doc-specific content budget,
+     *  smaller than the code budget). Initialized with the property default so that non-Spring
+     *  construction (tests) behaves like the configured default. */
+    @Value("${prjxp.gldrtrvr.doc-max-content-length:8000}")
+    int docMaxContentLength = 8000;
 
     @SafeVarargs
     public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
         StringBuilder prompt = new StringBuilder();
         PxChunkDao chunkDao = chunkDaoProvider.get(projectName).orElseThrow();
+        ContentLevel level = params.effectiveContentLevel();
+        if (level == ContentLevel.POINTERS) {
+            return buildPointersPrompt(projectName, chunkDao, chunks, params);
+        }
         // Die Session verwaltet den Baum-Aufbau der Dokumente
         MarkdownPromptSession session = new MarkdownPromptSession(chunkDao, rankingService);
-        session.setMaxContentLength(params.getMaxContentLength());
+        // Doc-specific content budget (Phase 03c): docs get a smaller budget than code
+        session.setMaxContentLength(Math.min(params.getMaxContentLength(), docMaxContentLength));
         session.setChunksByScore(combineScoredChunksByID(chunkDao, chunks));
 
         prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
+        return prompt;
+    }
+
+    /**
+     * POINTERS layer: no content, only the dual-graph reference block per doc file (de-duplicated).
+     * Documentation is <b>not</b> in the code graph (the {@code parent} is a file name), so no
+     * {@code graphNode} pointer is ever emitted; a chunk without a file contributes nothing.
+     */
+    private StringBuilder buildPointersPrompt(String projectName, PxChunkDao chunkDao,
+                                              List<ScoredChunk> chunks, SearchParams params) {
+        StringBuilder prompt = new StringBuilder();
+        List<ScoredChunk> mdChunks = combineScoredChunksByID(chunkDao, chunks).stream()
+                .filter(sc -> "text/markdown".equals(sc.chunk().getMimeType()))
+                .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed())
+                .toList();
+        // Doc-specific content budget (Phase 03c): docs get a smaller budget than code
+        int budget = Math.min(params.getMaxContentLength(), docMaxContentLength);
+        Set<String> emittedFiles = new HashSet<>();
+        int skipped = 0;
+        for (var sc : mdChunks) {
+            String file = sc.chunk().getFile();
+            if (file == null || file.isBlank()) {
+                continue;   // no file: nothing to emit, not counted as skipped
+            }
+            if (!emittedFiles.add(file)) {
+                continue;   // this file was already pointed at
+            }
+            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score(), null, 1,
+                    params.getSnippetChars(), params.isReadChunksHint());
+            if (prompt.length() + block.length() > budget) {
+                skipped++;
+                continue;
+            }
+            prompt.append(block);
+        }
+        if (skipped > 0) {
+            prompt.append("\n[weitere ").append(skipped).append(" Doku-Dateien wegen Groessenlimit nicht enthalten]\n");
+        }
         return prompt;
     }
 
@@ -55,7 +118,10 @@ public class MarkdownRetriever implements GoldenRetriever {
         } else if( "SECTION".equals(type) ) {
             sb.append( "\n## "+pxChunk.getContent()+"\n");
         } else {
-            sb.append("\n").append(pxChunk.getContent());
+            // Doc-chunk windowing (Phase 03b): vectorSearch hits are semantic, so query=null —
+            // the deterministic fallback (first docMaxChars chars + marker) applies.
+            sb.append("\n").append(DocWindower.windowDoc(
+                    pxChunk.getContent(), null, pxChunk.getFile(), mimeType, docMaxChars, docWindowChars));
         }
         return sb.toString();
     }

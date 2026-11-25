@@ -16,17 +16,17 @@ jobs:
 
     steps:
       - name: Checkout Repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7.0.1
 
       - name: Set up JDK 21 # Oder deine genutzte Java-Version
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6.3.0
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: gradle
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v6.4.1
 
       - name: Build with Gradle
         run: ./gradlew build
@@ -41,8 +41,8 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-java@v6.3.0
         with:
           java-version: '21'
           distribution: 'temurin'

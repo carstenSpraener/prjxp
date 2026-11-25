@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
 import { ProjectManagementService } from './project-management.service';
 import { ProjectInfo } from '../models/project-info.model';
+import { GithubOperation } from '../models/github-operation.model';
 import { PrjxpYamlConfig, ProjectStats } from '../models/prjxp-yaml-config.model';
 
 describe('ProjectManagementService', () => {
@@ -37,6 +38,10 @@ describe('ProjectManagementService', () => {
     rootDir: '.',
     languages: ['java', 'ts']
   };
+
+  const mockOperations: GithubOperation[] = [
+    { key: 'https://github.com/foo/bar', status: 'SUCCESS', message: 'Imported bar', timestamp: 123 }
+  ];
 
   beforeEach(() => {
     TestBed.configureTestingModule({
@@ -134,5 +139,77 @@ describe('ProjectManagementService', () => {
     const req = httpMock.expectOne('/api/projects/test-project/reindex-status');
     expect(req.request.method).toBe('GET');
     req.flush({ status: 'CHUNKING', progress: 42 });
+  });
+
+  it('embedDependencies() should POST /api/projects/{name}/embed-dependencies', () => {
+    service.embedDependencies('test-project').subscribe(() => {
+      // just verify no error
+    });
+
+    const req = httpMock.expectOne('/api/projects/test-project/embed-dependencies');
+    expect(req.request.method).toBe('POST');
+    req.flush({});
+  });
+
+  it('reimportProject() should POST /api/projects/{name}/reimport', () => {
+    service.reimportProject('test-project').subscribe(() => {
+      // just verify no error
+    });
+
+    const req = httpMock.expectOne('/api/projects/test-project/reimport');
+    expect(req.request.method).toBe('POST');
+    req.flush({});
+  });
+
+  it('importGithub() should POST /api/projects/import-github with url body and a null token', () => {
+    service.importGithub('https://github.com/foo/bar.git').subscribe(() => {
+      // just verify no error
+    });
+
+    const req = httpMock.expectOne('/api/projects/import-github');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ url: 'https://github.com/foo/bar.git', token: null });
+    req.flush({});
+  });
+
+  it('importGithub() should include the token in the body when provided', () => {
+    service.importGithub('https://github.com/foo/bar.git', 'ghp_abc123').subscribe(() => {
+      // just verify no error
+    });
+
+    const req = httpMock.expectOne('/api/projects/import-github');
+    expect(req.request.method).toBe('POST');
+    expect(req.request.body).toEqual({ url: 'https://github.com/foo/bar.git', token: 'ghp_abc123' });
+    req.flush({});
+  });
+
+  it('importGithub() should send a null token for a blank token', () => {
+    service.importGithub('https://github.com/foo/bar.git', '   ').subscribe(() => {
+      // just verify no error
+    });
+
+    const req = httpMock.expectOne('/api/projects/import-github');
+    expect(req.request.body).toEqual({ url: 'https://github.com/foo/bar.git', token: null });
+    req.flush({});
+  });
+
+  it('updateGithub() should POST /api/projects/{name}/update-github', () => {
+    service.updateGithub('test-project').subscribe(() => {
+      // just verify no error
+    });
+
+    const req = httpMock.expectOne('/api/projects/test-project/update-github');
+    expect(req.request.method).toBe('POST');
+    req.flush({});
+  });
+
+  it('getGithubOperations() should GET /api/projects/github-operations', () => {
+    service.getGithubOperations().subscribe(result => {
+      expect(result).toEqual(mockOperations);
+    });
+
+    const req = httpMock.expectOne('/api/projects/github-operations');
+    expect(req.request.method).toBe('GET');
+    req.flush(mockOperations);
   });
 });

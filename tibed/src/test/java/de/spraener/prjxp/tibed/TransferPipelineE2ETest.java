@@ -9,12 +9,15 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.config.PrjXPJsonStreamProvider;
 import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferEncryptMode;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
 import de.spraener.prjxp.tibed.config.EmbeddingStoreSupplier;
 import de.spraener.prjxp.tibed.embedder.LangChain4JEmbedderImpl;
+import de.spraener.prjxp.tibed.signature.SignatureBatch;
+import de.spraener.prjxp.tibed.semantic.SemanticGraphBatch;
 import dev.langchain4j.data.segment.TextSegment;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -32,6 +35,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.logging.Level;
 import java.util.stream.Stream;
@@ -63,7 +67,8 @@ class TransferPipelineE2ETest {
                 Mockito.mock(ApplicationEventPublisher.class),
                 vetoRegistry,
                 cfg,
-                resolver
+                resolver,
+                new LanguagePackRegistry(List.of(), List.of())
         );
 
         PrintStream original = System.out;
@@ -82,7 +87,8 @@ class TransferPipelineE2ETest {
                 new LangChain4JEmbedderImpl(new FakeEmbeddingModel(DIMENSION), Mockito.mock(EmbeddingStoreSupplier.class)),
                 new PrjXPJsonStreamProvider(cfg),
                 resolver,
-                cfg
+                cfg,
+                new AstNeighboursLoader(new ObjectMapper(), resolver, cfg)
         ).execute();
     }
 
@@ -116,7 +122,10 @@ class TransferPipelineE2ETest {
                 new PrjXPJsonStreamProvider(cfg),
                 resolver,
                 new StoreIdChecker(cfg),
-                cfg
+                cfg,
+                Mockito.mock(SemanticGraphBatch.class),
+                Mockito.mock(AstNeighboursLoader.class),
+                Mockito.mock(SignatureBatch.class)
         ).execute();
         return logService;
     }

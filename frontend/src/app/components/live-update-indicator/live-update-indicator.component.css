@@ -1,0 +1,71 @@
+.live-update-indicator {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  margin-left: 0.4rem;
+}
+
+.indicator-ring {
+  position: absolute;
+  inset: 0;
+  border: 2px solid var(--accent-cyan, #00f5ff);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: live-spin 0.8s linear infinite;
+}
+
+.indicator-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent-cyan, #00f5ff);
+  animation: live-pulse 1.2s ease-in-out infinite;
+}
+
+.live-update-progress {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.4rem;
+  vertical-align: middle;
+}
+
+.progress-track {
+  position: relative;
+  display: inline-block;
+  width: 48px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(0, 245, 255, 0.15);
+  overflow: hidden;
+}
+
+.progress-fill {
+  position: absolute;
+  inset: 0 auto 0 0;
+  border-radius: 2px;
+  background: var(--accent-cyan, #00f5ff);
+  box-shadow: 0 0 4px rgba(0, 245, 255, 0.6);
+  transition: width 0.3s ease;
+}
+
+.progress-pct {
+  font-size: 0.7rem;
+  color: var(--accent-cyan, #00f5ff);
+  min-width: 2.4ch;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+@keyframes live-spin {
+  to { transform: rotate(360deg); }
+}
+
+@keyframes live-pulse {
+  0%, 100% { opacity: 1; box-shadow: 0 0 4px rgba(0, 245, 255, 0.8); }
+  50% { opacity: 0.4; box-shadow: 0 0 8px rgba(0, 245, 255, 0.4); }
+}

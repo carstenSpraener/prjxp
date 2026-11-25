@@ -1,0 +1,40 @@
+<section class="setup glass-panel">
+  <h1>Setup</h1>
+  <ol aria-label="Setup progress">
+    @for(step of steps; track step) { <li [attr.aria-current]="step === currentStep ? 'step' : null">
+      {{ labels[step] }} — {{ step === 'embedding' || step === 'chat' ? 'required' : 'optional' }}
+      @if(status?.[step]?.skipped) { (übersprungen) }
+      @if(status?.[step]?.tested) { (gespeichert getestet) }
+    </li> }
+  </ol>
+  @if(error) { <p role="alert">{{ error }}</p><button type="button" [disabled]="busy" (click)="reload()">Gespeicherten Stand neu laden</button> }
+  @if(optimizationSaved && !finished) { <p role="status">Optimization gespeichert. Abschluss noch nicht bestätigt; Retry wiederholt nur Complete.</p> }
+  @if(loading) { <p aria-live="polite">Konfiguration wird geladen…</p> }
+  @if(finished) {
+    <h2>Setup abgeschlossen</h2>
+    @if(status?.restartRequired) {
+      <p>Gespeichert, noch nicht aktiv. Backend neu starten. Docker: tatsächlichen Backend-Service Ihrer Compose-Datei neu starten. Lokal: laufenden Backend-Prozess beenden und mit dem bisherigen Launcher/Startkommando neu starten.</p>
+    } @else { <p>Gespeicherter Stand aktiv; kein Neustart erforderlich.</p> }
+    <button type="button" [disabled]="busy" (click)="checkStatus()">Status erneut prüfen</button>
+    <a routerLink="/dashboard">Dashboard</a>
+  } @else if(savedConfiguration && !loading) {
+    <h2 #stepHeading tabindex="-1" id="setup-step-title">{{ labels[currentStep] }}</h2>
+    @switch(currentStep) {
+      @case('embedding') { <setup-embedding-step [initial]="drafts.embedding" [busy]="busy" [result]="result('embedding')" [testValid]="testValid('embedding')" (draftChange)="changeEmbedding($event)" (validityChange)="validity.embedding = $event" (testRequested)="test('embedding')"/> }
+      @case('github') { <setup-github-step [initial]="drafts.github" [busy]="busy" [result]="result('github')" [githubEnabled]="savedConfiguration.githubEnabled" [githubKeyAvailable]="savedConfiguration.githubKeyAvailable" (draftChange)="changeGithub($event)" (validityChange)="validity.github = $event" (testRequested)="test('github')"/> }
+      @case('chat') { <setup-chat-step [initial]="drafts.chat" [serverTypes]="serverTypes" [busy]="busy" [result]="result('chat')" [testValid]="testValid('chat')" (draftChange)="changeChat($event)" (validityChange)="validity.chat = $event" (testRequested)="test('chat')"/> }
+      @case('optimization') { <setup-optimization-step [initial]="drafts.optimization" [busy]="busy" [measuredDimension]="measuredDimension" [retestRequired]="retestRequired" (draftChange)="changeOptimization($event)" (validityChange)="validity.optimization = $event"/> }
+    }
+    <nav aria-label="Setup navigation">
+      <button type="button" [disabled]="busy || conflict || currentStep === 'embedding'" (click)="back()">Back</button>
+      @if(currentStep === 'github') { <button type="button" [disabled]="busy || conflict" (click)="skip()">Überspringen</button> }
+      @if(currentStep !== 'optimization') { <button type="button" [disabled]="!canProceed()" (click)="next()">Speichern und Next</button> }
+      @else {
+        <button type="button" [disabled]="!canFinish()" (click)="finish()">{{ retestRequired && !testValid('embedding') ? 'Testen und fertigstellen' : 'Fertig' }}</button>
+        <button type="button" [disabled]="!canFinish(true)" (click)="finish(true)">Optimization überspringen und fertigstellen</button>
+      }
+      <button type="button" [disabled]="busy || conflict" (click)="bypass()">Später konfigurieren</button>
+    </nav>
+    @if(busy) { <p aria-live="polite">Anfrage läuft… Eingaben und Navigation gesperrt.</p> }
+  }
+</section>

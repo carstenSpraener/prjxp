@@ -1,87 +1,76 @@
 /**
- * Prompt template resolution for the DocPipe documentation pipeline.
+ * Provides prompt template resolution infrastructure for the document pipeline.
  *
- * <p>This package provides the mechanism for transforming Handlebars-based prompt templates
- * into fully resolved prompts that are sent to a Large Language Model (LLM). It implements a
- * plugin architecture where dynamic, project-specific content is injected into templates at
- * resolution time.</p>
+ * <p>
+ * This package is responsible for turning configured prompt templates into fully resolved
+ * prompt text before the prompt is sent to an LLM or other downstream content generation
+ * component. It integrates the Handlebars templating engine with Spring-managed resolver
+ * components that can inject source code, file contents, dynamically generated text, tool
+ * descriptions, scripted output, and other project-specific context into a prompt.
+ * </p>
  *
- * <h2>Core Responsibility</h2>
- * <p>The package's primary purpose is to read prompt template files (using the Handlebars
- * templating engine), register a set of {@link TemplateResolver} implementations as
- * Handlebars helpers, and produce the final prompt string. This allows prompts to reference
- * project source code, execute scripts, include external files, and inject tool descriptions
- * without hardcoding content into the template itself.</p>
+ * <p>
+ * The central entry point is {@link de.spraener.prjxp.docpipe.prompt.PromptResolvingService}.
+ * It reads a prompt template from the document-pipeline configuration directory, registers all
+ * available {@link de.spraener.prjxp.docpipe.prompt.TemplateResolver} implementations as
+ * Handlebars helpers, applies the configured content-creation arguments as the template context,
+ * and returns the final prompt string. Resolver failures are wrapped in
+ * {@link de.spraener.prjxp.docpipe.prompt.TemplateException}.
+ * </p>
  *
- * <h2>Architecture</h2>
- * <p>The package is organized around two key abstractions and one orchestrating service:</p>
+ * <p>
+ * The package is organized around the {@link de.spraener.prjxp.docpipe.prompt.TemplateResolver}
+ * extension point:
+ * </p>
+ *
  * <ul>
- *   <li><b>{@link TemplateResolver}</b> – The central SPI (Service Provider Interface).
- *       Each implementation declares a unique ID (and optional aliases) and a
- *       {@code resolve(File baseDir, Object context, Options options)} method that returns
- *       the string to be substituted into the template. Spring auto-discovers all
- *       implementations and injects them into the service.</li>
- *   <li><b>{@link SourceSkeletonizer}</b> – A secondary SPI used by
- *       {@link SourceSkeletonResolver} to produce reduced "skeleton" representations of
- *       source files (e.g., method signatures only). Implementations declare which file
- *       extensions they support via {@code supports(File, String)}.</li>
- *   <li><b>{@link PromptResolvingService}</b> – The primary entry point. It reads the
- *       template file, wraps each {@link TemplateResolver} in an internal
- *       {@code TRHelper} adapter (bridging to Handlebars' {@code Helper<Object>} API),
- *       registers all helpers by ID and alias, compiles the template, and applies it with
- *       the task's argument map as context.</li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.prompt.SourceDumpResolver} includes complete source files
+ *     from a configured directory, optionally scanning subdirectories and filtering by file ending.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.prompt.SourceSkeletonResolver} includes reduced source
+ *     skeletons using registered {@link de.spraener.prjxp.docpipe.prompt.SourceSkeletonizer}
+ *     implementations, falling back to a full source dump if skeletonization is not available or
+ *     fails.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.prompt.VisualBasicSourceSkeletonizer} provides skeleton
+ *     extraction for Visual Basic source files by preserving declarations and member boundaries
+ *     while omitting method bodies.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.prompt.CurrentFileResolver} injects the content of the
+ *     currently processed file from the template context.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.prompt.URLResolver} includes file content addressed by a
+ *     URL-like template parameter relative to the configuration directory.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.prompt.GroovyResolver} executes inline Groovy scripts from
+ *     template blocks and exposes useful bindings such as the configuration directory, Handlebars
+ *     options, Spring application context, document-pipeline context, and current file name.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.prompt.GRResolver} delegates prompt enrichment to the
+ *     golden-retriever enrichment component.
+ *   </li>
+ *   <li>
+ *     {@link de.spraener.prjxp.docpipe.prompt.McpProjectResolver} injects available MCP tool
+ *     descriptions and optional active-project guidance into the prompt.
+ *   </li>
  * </ul>
  *
- * <h2>Built-in Resolvers</h2>
- * <p>The following {@link TemplateResolver} implementations are provided out of the box:</p>
- * <ul>
- *   <li><b>{@link SourceDumpResolver}</b> ({@code src-dump} / {@code java-src-dump}) –
- *       Dumps full source files from a directory (optionally recursive) into Markdown
- *       code blocks.</li>
- *   <li><b>{@link SourceSkeletonResolver}</b> ({@code src-skeleton}) – Scans a directory
- *       and generates skeletonized source (signatures only) using registered
- *       {@link SourceSkeletonizer} instances; falls back to a full dump if no
- *       skeletonizer matches.</li>
- *   <li><b>{@link GroovyResolver}</b> ({@code groovy}) – Executes an inline Groovy script
- *       with access to the config directory, Handlebars options, Spring
- *       {@code ApplicationContext}, and the current context map.</li>
- *   <li><b>{@link URLResolver}</b> ({@code URL}) – Reads and inlines the content of a file
- *       referenced by a URL path relative to the configuration directory.</li>
- *   <li><b>{@link CurrentFileResolver}</b> ({@code currentFile}) – Inlines the content of
- *       the file identified in the current processing context.</li>
- *   <li><b>{@link GRResolver}</b> ({@code gr}) – Enriches a block of template text using
- *       project-specific GR (General Requirements) data via
- *       {@code GRPromptEnrichment}.</li>
- *   <li><b>{@link McpProjectResolver}</b> ({@code mcp-project} / {@code mcpProject}) –
- *       Injects MCP tool descriptions and the active project name to guide the LLM in
- *       tool-assisted information gathering.</li>
- * </ul>
- *
- * <h2>Primary Use Cases / Entry Points</h2>
- * <ul>
- *   <li><b>Resolving a prompt for a content-creation task:</b>
- *       Call {@link PromptResolvingService#resolve(de.spraener.prjxp.docpipe.content.ContentCreationTask)}
- *       to obtain the fully resolved prompt string. The service locates the template file
- *       in the project's {@code .dotpipe} configuration directory, resolves all helpers,
- *       and optionally persists the resolved prompt to disk.</li>
- *   <li><b>Extending with custom resolvers:</b> Implement {@link TemplateResolver},
- *       annotate the class with {@code @Component}, and it will be automatically
- *       registered as a Handlebars helper under its declared ID and aliases.</li>
- *   <li><b>Adding a new language skeletonizer:</b> Implement {@link SourceSkeletonizer}
- *       and register it as a Spring component. {@link SourceSkeletonResolver} will
- *       discover it and use it for matching file extensions.</li>
- * </ul>
- *
- * <h2>Error Handling</h2>
- * <p>Failures during template resolution are wrapped in {@link TemplateException}
- * (a {@link RuntimeException}), which is thrown by the internal helper adapter. Individual
- * resolvers may log warnings and provide fallback content (e.g., a full file dump when a
- * skeletonizer is unavailable) rather than failing the entire resolution.</p>
- *
- * @see TemplateResolver
- * @see PromptResolvingService
- * @see SourceSkeletonizer
- * @see TemplateException
+ * <p>
+ * Typical usage starts with a content creation task whose configuration references a prompt
+ * template file. The template may call helpers such as {@code {{src-dump "src/main/java"}}},
+ * {@code {{src-skeleton "legacy" ending="vb"}}}, {@code {{currentFile}}},
+ * {@code {{#groovy}}...{{/groovy}}}, or {@code {{mcp-project project="my-project"}}}.
+ * During resolution, Spring supplies all resolver beans to the service, and each resolver receives
+ * the configuration directory, the current Handlebars context, and the helper options needed to
+ * produce its fragment of prompt text.
+ * </p>
  */
 package de.spraener.prjxp.docpipe.prompt;
 

@@ -1,0 +1,12 @@
+@if (isUpdating) {
+  <span class="live-update-indicator" title="Live update in progress">
+    <span class="indicator-ring"></span>
+    <span class="indicator-dot"></span>
+  </span>
+  <span class="live-update-progress" [title]="'Live update: ' + (progress ?? 0) + '%'">
+    <span class="progress-track">
+      <span class="progress-fill" [style.width.%]="progress ?? 0"></span>
+    </span>
+    <span class="progress-pct">{{ progress ?? 0 }}%</span>
+  </span>
+}

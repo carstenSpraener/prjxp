@@ -29,6 +29,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -169,6 +170,37 @@ class SymbolReaderServiceTest {
     }
 
     @Test
+    void multiPartMethodRangeSpansAllParts() {
+        String file = "/src/de/ex/Bbp.java";
+        Map<String, String> meta = new HashMap<>();
+        meta.put(SymbolMetadata.SYMBOL_FQN, "de.ex.Bbp#create");
+        meta.put(SymbolMetadata.SYMBOL_NAME, "create");
+        meta.put(SymbolMetadata.SYMBOL_CONTAINER_FQN, "de.ex.Bbp");
+        PxChunk part0 = PxChunk.create(
+                c -> c.setId("de.ex.Bbp.create"), c -> c.setParent("de.ex.Bbp"),
+                c -> c.setFile(file), c -> c.setFromLine("368"), c -> c.setToLine("391"),
+                c -> c.setPart(0), c -> c.setTotal(2), c -> c.setSize(10), c -> c.setOverlap(0),
+                c -> c.getMetadata().put("java_code_section", "method"),
+                c -> c.getMetadata().putAll(meta), c -> c.setContent("HEAD01234"));
+        PxChunk part1 = PxChunk.create(
+                c -> c.setId("de.ex.Bbp.create"), c -> c.setParent("de.ex.Bbp"),
+                c -> c.setFile(file), c -> c.setFromLine("392"), c -> c.setToLine("496"),
+                c -> c.setPart(1), c -> c.setTotal(2), c -> c.setSize(9), c -> c.setOverlap(5),
+                c -> c.getMetadata().put("java_code_section", "method"),
+                c -> c.getMetadata().putAll(meta), c -> c.setContent("01234TAIL"));
+        stubDaoReturns(part0, part1);
+
+        SymbolReadResult result = service.readBySignature("de.ex.Bbp#create", null, "p");
+
+        assertThat(result.error()).isNull();
+        MethodView view = result.matches().get(0);
+        assertThat(view.lineFrom()).isEqualTo(368);
+        // must be the end of the last part, not the end of the first chunk
+        assertThat(view.lineTo()).isEqualTo(496);
+        assertThat(view.body()).isEqualTo("HEAD01234TAIL");
+    }
+
+    @Test
     void bareNameWithContainerReturnsAllOverloads() {
         String file = "/src/de/ex/Foo.java";
         PxChunk m1 = methodUnit("de.ex.Foo.public void bar()", "de.ex.Foo#bar", "bar", "de.ex.Foo",
@@ -203,6 +235,20 @@ class SymbolReaderServiceTest {
         ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
         verify(dao).searchByIndex(captor.capture(), eq(10_000));
         assertThat(captor.getValue()).isEqualTo(Map.of("symbol_name", "bar"));
+    }
+
+    @Test
+    void classFqnUsesFqnFilterNotNameFilter() {
+        stubDaoReturns();   // empty hits — only the filter map matters here
+
+        service.readBySignature("de.ex.Foo", null, "p");
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(dao, times(2)).searchByIndex(captor.capture(), eq(10_000));   // the fallback retry is not the subject of this test
+        // A class FQN (dot, no '#') must filter on symbol_fqn — the class' symbol_name is only
+        // the short name, so a symbol_name filter would never match (Known Bug, doc/Todos.md §3).
+        assertThat(captor.getAllValues().get(0)).isEqualTo(Map.of("symbol_fqn", "de.ex.Foo"));
     }
 
     @Test
@@ -293,6 +339,113 @@ class SymbolReaderServiceTest {
         assertThat(result.matches()).isEmpty();
     }
 
+    // ------------------------------------------------------------------ fallback retry
+
+    /** Stubs the dao so that only the given filter map returns hits; every other filter returns empty. */
+    private void stubDaoByFilter(Map<String, String> hitFilter, PxChunk... hits) {
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(chunkDaoProvider.get("p")).thenReturn(Optional.of(dao));
+        List<ScoredChunk> scored = new ArrayList<>();
+        for (PxChunk chunk : hits) {
+            scored.add(scored(chunk));
+        }
+        // catch-all first, then the specific hit filter (Mockito: the last matching stub wins)
+        when(dao.searchByIndex(anyMap(), anyInt())).thenReturn(List.of());
+        when(dao.searchByIndex(eq(hitFilter), anyInt())).thenReturn(scored);
+    }
+
+    @Test
+    void dottedMethodReferenceFallsBackToNameAndContainer() {
+        String file = "/src/de/ex/Foo.java";
+        String body = "public void bar() {\n    // implementation\n}\n";
+        PxChunk method = methodUnit("de.ex.Foo.public void bar()", "de.ex.Foo#bar", "bar", "de.ex.Foo",
+                file, "10", "25", body);
+        // the index only knows the method by name + container, not by the (wrongly dotted) FQN
+        stubDaoByFilter(Map.of(SymbolMetadata.SYMBOL_NAME, "bar",
+                SymbolMetadata.SYMBOL_CONTAINER_FQN, "de.ex.Foo"), method);
+
+        SymbolReadResult result = service.readBySignature("de.ex.Foo.bar", null, "p");
+
+        assertThat(result.error()).isNull();
+        assertThat(result.matches()).hasSize(1);
+        assertThat(result.matches().get(0).body()).isEqualTo(body);
+        verify(dao, times(2)).searchByIndex(anyMap(), anyInt());
+    }
+
+    @Test
+    void hashFqnWithParametersFallsBackToBareName() {
+        String file = "/src/de/ex/Foo.java";
+        String body = "public void bar(int x) {\n    // implementation\n}\n";
+        PxChunk method = methodUnit("de.ex.Foo.public void bar(int)", "de.ex.Foo#bar(int)", "bar", "de.ex.Foo",
+                file, "10", "25", body);
+        stubDaoByFilter(Map.of(SymbolMetadata.SYMBOL_NAME, "bar",
+                SymbolMetadata.SYMBOL_CONTAINER_FQN, "de.ex.Foo"), method);
+
+        SymbolReadResult result = service.readBySignature("de.ex.Foo#bar(int)", null, "p");
+
+        assertThat(result.error()).isNull();
+        assertThat(result.matches()).hasSize(1);
+        assertThat(result.matches().get(0).body()).isEqualTo(body);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(dao, times(2)).searchByIndex(captor.capture(), eq(10_000));
+        // the retried (fallback) name filter must have the trailing parameter list stripped
+        assertThat(captor.getAllValues().get(1).get(SymbolMetadata.SYMBOL_NAME)).doesNotContain("(");
+    }
+
+    @Test
+    void shortClassNameDotMethodFallsBackToNameOnly() {
+        String file = "/src/de/ex/Foo.java";
+        String body = "public void bar() {\n    // implementation\n}\n";
+        PxChunk method = methodUnit("de.ex.Foo.public void bar()", "de.ex.Foo#bar", "bar", "de.ex.Foo",
+                file, "10", "25", body);
+        // the index only knows the method by its bare name — the simple class name is not a container FQN
+        stubDaoByFilter(Map.of(SymbolMetadata.SYMBOL_NAME, "bar"), method);
+
+        SymbolReadResult result = service.readBySignature("Foo.bar", null, "p");
+
+        assertThat(result.error()).isNull();
+        assertThat(result.matches()).hasSize(1);
+        assertThat(result.matches().get(0).body()).isEqualTo(body);
+
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(dao, times(2)).searchByIndex(captor.capture(), eq(10_000));
+        Map<String, String> retry = captor.getAllValues().get(1);
+        assertThat(retry.get(SymbolMetadata.SYMBOL_NAME)).isEqualTo("bar");
+        assertThat(retry).doesNotContainKey(SymbolMetadata.SYMBOL_CONTAINER_FQN);
+    }
+
+    @Test
+    void fallbackIsSkippedWhenContainerIsGiven() {
+        stubDaoReturns();   // empty
+
+        SymbolReadResult result = service.readBySignature("de.ex.Foo.bar", "de.ex.Foo", "p");
+
+        assertThat(result.error()).isNotNull();
+        verify(dao, times(1)).searchByIndex(anyMap(), anyInt());
+    }
+
+    @Test
+    void unresolvableClassFqnStillErrorsAfterRetry() {
+        stubDaoReturns();   // empty
+
+        SymbolReadResult result = service.readBySignature("de.ex.Missing", null, "p");
+
+        assertThat(result.error()).isNotNull().contains("de.ex.Missing");
+        verify(dao, times(2)).searchByIndex(anyMap(), anyInt());
+    }
+
+    @Test
+    void noHitsErrorNamesAcceptedForms() {
+        stubDaoReturns();   // empty
+
+        SymbolReadResult result = service.readBySignature("bar", null, "p");
+
+        assertThat(result.error()).contains("bar").contains("#").contains("container");
+    }
+
     @Test
     void unsupportedStoreReturnsError() {
         when(projectRegistry.resolve("p")).thenReturn("p");
@@ -334,5 +487,38 @@ class SymbolReaderServiceTest {
                 .isInstanceOf(UnknownProjectException.class);
 
         verify(chunkDaoProvider, never()).get(anyString());
+    }
+
+    // ------------------------------------------------------- P2 class bodies
+
+    @Test
+    void classFqnWithBodiesAppendsTheFirstMethodBodies() {
+        PxChunk frame = classFrameUnit("a.B", "B", "B.java", "1", "30", "class B {}");
+        PxChunk one = methodUnit("a.B#one", "a.B#one()", "one", "a.B", "B.java", "5", "7", "void one() {}");
+        PxChunk two = methodUnit("a.B#two", "a.B#two()", "two", "a.B", "B.java", "9", "11", "void two() {}");
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(chunkDaoProvider.get("p")).thenReturn(Optional.of(dao));
+        when(dao.searchByIndex(anyMap(), anyInt()))
+                .thenReturn(List.of(scored(frame)))
+                .thenReturn(List.of(scored(one), scored(two)));
+
+        SymbolReadResult result = service.readBySignature("a.B", null, "p", true, 1);
+
+        assertThat(result.matches()).extracting(MethodView::fqn)
+                .containsExactly("a.B", "a.B#one()");
+        assertThat(result.matches().get(1).body()).contains("void one()");
+    }
+
+    @Test
+    void classFqnWithoutBodiesStaysAFrameOnly() {
+        PxChunk frame = classFrameUnit("a.B", "B", "B.java", "1", "30", "class B {}");
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(chunkDaoProvider.get("p")).thenReturn(Optional.of(dao));
+        when(dao.searchByIndex(anyMap(), anyInt())).thenReturn(List.of(scored(frame)));
+
+        SymbolReadResult result = service.readBySignature("a.B", null, "p", false, 3);
+
+        assertThat(result.matches()).extracting(MethodView::fqn).containsExactly("a.B");
+        verify(dao, times(1)).searchByIndex(anyMap(), anyInt());
     }
 }

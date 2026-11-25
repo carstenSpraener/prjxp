@@ -32,6 +32,12 @@ class LanguagePackTest {
     }
 
     @Test
+    void defaultCodeGraphReturnsEmptyOptional() {
+        LanguagePack pack = new MinimalLanguagePack();
+        assertThat(pack.codeGraph()).isEmpty();
+    }
+
+    @Test
     void fullImplementationReturnsExpectedValues() {
         FullLanguagePack pack = new FullLanguagePack();
 

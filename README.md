@@ -181,11 +181,11 @@ Two deployment modes are available:
 
 ### Single Project — one container per project
 
-The `./prjxp` control script manages the full pipeline (chunk → embed → serve)
+The `./prjxp` control script manages the full pipeline (chunk → embed → hub)
 for one project:
 
 ```bash
-./prjxp /path/to/your-project mcp    # serves the MCP server on :7007
+./prjxp /path/to/your-project mcp    # chunk + embed + hub — serves the MCP server on :7007
 ```
 
 👉 Full setup: [doc/Docker_Setup_Guide.md](doc/Docker_Setup_Guide.md)

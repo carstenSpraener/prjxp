@@ -2,6 +2,7 @@ package de.spraener.prjxp.lpcsharp;
 
 import de.spraener.prjxp.common.language.LanguagePack;
 import de.spraener.prjxp.common.model.PxChunker;
+import de.spraener.prjxp.common.reader.FileViewProvider;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 
@@ -26,6 +27,8 @@ public class CSharpLanguagePack implements LanguagePack {
     private final CSharpCodeChunker chunker = new CSharpCodeChunker();
     /** Replaced by {@link #bind} once the host provides store access. */
     private volatile CSharpRetriever retriever = new CSharpRetriever();
+    /** Reader side: splices member bodies into the type frames for lossless {@code readFile}. */
+    private final CSharpFileViewProvider fileViewProvider = new CSharpFileViewProvider();
 
     @Override
     public String language() {
@@ -45,6 +48,11 @@ public class CSharpLanguagePack implements LanguagePack {
     @Override
     public Optional<GoldenRetriever> retriever() {
         return Optional.of(retriever);
+    }
+
+    @Override
+    public Optional<FileViewProvider> fileViewProvider() {
+        return Optional.of(fileViewProvider);
     }
 
     /**

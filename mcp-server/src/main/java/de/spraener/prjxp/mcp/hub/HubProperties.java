@@ -19,6 +19,19 @@ public class HubProperties {
     private String liveJsonlDir = "/data/chunks";
     /** Poller interval in milliseconds (default 5000). */
     private long pollIntervalMs = 5_000;
+    /** Master switch for live updates (default true). */
+    private boolean liveUpdateEnabled = true;
+    /** Base interval for adaptive polling (default 5 min). */
+    private long liveUpdateBaseIntervalMs = 300_000;
+    /** Max interval for adaptive polling (default 60 min). */
+    private long liveUpdateMaxIntervalMs = 3_600_000;
+    /**
+     * Interval in milliseconds for the periodic refresh of the in-memory project-stats cache
+     * (default 60 s). The Web UI reads the project list from this cache, so the counts are at
+     * most this stale. A non-positive value disables the periodic refresh — stats are then only
+     * updated after pipeline runs, embedding imports, and project registration.
+     */
+    private long statsRefreshIntervalMs = 60_000;
     /** Max tar file size in bytes (default 2 GiB). */
     private long maxTarBytes = 2L * 1024 * 1024 * 1024;
     /** Max total extracted size in bytes (default 4 GiB, compression-bomb guard). */
@@ -51,4 +64,34 @@ public class HubProperties {
     private float compatibilityThresholdHigh = 0.995f;
     /** Minimum average COSINE similarity for PARTIALLY_COMPATIBLE verdict (default 0.975). */
     private float compatibilityThresholdLow = 0.975f;
+
+    // --- Dependency-embedding (libraries) ---
+
+    /** Root directory for materialized library projects, Maven-repo layout (default /libraries). */
+    private String librariesRoot = "/libraries";
+    /** Comma-separated Maven repository base URLs (default Maven Central). */
+    private String mavenRepositories = "https://repo1.maven.org/maven2";
+    /** Max downloaded artifact size in bytes (default 100 MiB). */
+    private long maxDependencyBytes = 100L * 1024 * 1024;
+    /** HTTP connect timeout seconds for Maven downloads (default 10). */
+    private int mavenConnectTimeoutSeconds = 10;
+    /** HTTP request timeout seconds for Maven downloads (default 60). */
+    private int mavenRequestTimeoutSeconds = 60;
+    /** Timeout seconds for the `gradle dependencies` process (default 300). */
+    private int gradleTimeoutSeconds = 300;
+
+    // --- GitHub import ---
+
+    /** Root directory for cloned GitHub projects (default /github). */
+    private String githubRoot = "/github";
+    /** Hub-managed area for JSONL output of GitHub projects (default /data/github-chunks) — never into the git working tree. */
+    private String githubJsonlDir = "/data/github-chunks";
+    /** Shallow-clone depth for `git clone --depth` (default 1). */
+    private int githubCloneDepth = 1;
+    /** Timeout seconds for `git clone` / `git pull` processes (default 300). */
+    private int githubTimeoutSeconds = 300;
+    /** Env-var name holding the token-encryption key passphrase (default PRJXP_HUB_GITHUB_TOKEN_KEY). Only the NAME is stored, never the value. */
+    private String githubTokenKeyEnv = "PRJXP_HUB_GITHUB_TOKEN_KEY";
+    @lombok.ToString.Exclude
+    private String githubDefaultPat;
 }

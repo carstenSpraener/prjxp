@@ -355,6 +355,33 @@ class LucenePxChunkDaoTest {
     }
 
     @Test
+    void searchVectorOrListMimeFilterMatchesAnyListedMime() {
+        addChunkWithMime("chunk-java", "text/x-java", "Java content");
+        addChunkWithMime("chunk-md", "text/markdown", "Markdown content");
+        addChunkWithMime("chunk-ts", "text/x-typescript-code", "TS content");
+
+        List<ScoredChunk> result = dao.searchVector(
+                "content", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java|text/markdown"), 10);
+
+        assertThat(result).extracting(sc -> sc.chunk().getId())
+                .containsExactlyInAnyOrder("chunk-java", "chunk-md");
+    }
+
+    @Test
+    void searchVectorNegatedOrListExcludesAllListedMimes() {
+        addChunkWithMime("chunk-java", "text/x-java-code", "Java content");
+        addChunkWithMime("chunk-md", "text/markdown", "Markdown content");
+        addChunkWithMime("chunk-pdf", "application/pdf", "PDF content");
+        addChunkWithMime("chunk-txt", "text/plain", "Plain content");
+
+        List<ScoredChunk> result = dao.searchVector(
+                "content", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf"), 10);
+
+        assertThat(result).extracting(sc -> sc.chunk().getId())
+                .containsExactlyInAnyOrder("chunk-java", "chunk-txt");
+    }
+
+    @Test
     void searchVectorRespectsLimit() {
         addChunk("chunk-1", "one");
         addChunk("chunk-2", "two");
@@ -375,10 +402,20 @@ class LucenePxChunkDaoTest {
     }
 
     @Test
-    void searchVectorEmbedsQuery() {
+    void searchVectorEmbedsQueryWithTheModelPrompt() {
         addChunk("chunk-1", "content");
 
         dao.searchVector("my question", Map.of(), 5);
+
+        verify(embeddingModel).embed(LucenePxChunkDao.DEFAULT_QUERY_PROMPT + "my question");
+    }
+
+    @Test
+    void searchVectorWithoutPromptEmbedsTheRawQuery() {
+        LucenePxChunkDao noPromptDao = new LucenePxChunkDao(store, embeddingModel, storeReference, "");
+        addChunk("chunk-1", "content");
+
+        noPromptDao.searchVector("my question", Map.of(), 5);
 
         verify(embeddingModel).embed("my question");
     }
@@ -507,6 +544,104 @@ class LucenePxChunkDaoTest {
         addFileChunk("c1", "src/a/Foo.java");
 
         FileListResult result = dao.listFiles("does/not/exist", 10);
+
+        assertThat(result.files()).isEmpty();
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
+    void listFilesDoesNotLetOtherProjectsConsumeTheLimit() {
+        addFileChunkWithProject("c1", "src/a/A.java", "other-project");
+        addFileChunkWithProject("c2", "src/a/B.java", "test-project");
+
+        FileListResult result = dao.listFiles("src", 1);
+
+        assertThat(result.files()).containsExactly("src/a/B.java");
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
+    void listFilesSortsBeforeApplyingTheLimit() {
+        addFileChunk("c1", "src/z/Zeta.java");
+        addFileChunk("c2", "src/m/Mid.java");
+        addFileChunk("c3", "src/a/Alpha.java");
+
+        FileListResult result = dao.listFiles("src", 2);
+
+        // the limit must cut the sorted list, not the index order
+        assertThat(result.files()).containsExactly("src/a/Alpha.java", "src/m/Mid.java");
+        assertThat(result.truncated()).isTrue();
+    }
+
+    @Test
+    void listFilesTrailingSlashListsRootEntriesLikeLs() {
+        addFileChunk("c1", "docs/readme.md");
+        addFileChunk("c2", "docs/deep/notes.md");
+        addFileChunk("c3", "src/a/Foo.java");
+        addFileChunk("c4", "src/b/Bar.java");
+        addFileChunk("c5", "pom.xml");
+
+        FileListResult result = dao.listFiles("*/", 10);
+
+        // like `ls`: the root's own files and its directories, but not deep paths
+        assertThat(result.files()).containsExactly("docs/", "pom.xml", "src/");
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
+    void listFilesTrailingSlashListsDirectEntriesOfPrefix() {
+        addFileChunk("c1", "src/pom.xml");
+        addFileChunk("c2", "src/a/Foo.java");
+        addFileChunk("c3", "src/b/Bar.java");
+        addFileChunk("c4", "lib/Baz.java");
+
+        FileListResult result = dao.listFiles("src/", 10);
+
+        // like `ls src`: direct files and subdirectories, no grandchildren
+        assertThat(result.files()).containsExactly("src/a/", "src/b/", "src/pom.xml");
+    }
+
+    @Test
+    void listFilesDirectoryPatternMatchesWildcardSegment() {
+        addFileChunk("c1", "osb-2/impl/Foo.java");
+        addFileChunk("c2", "osb-2/impl/deep/Bar.java");
+        addFileChunk("c3", "osb-2/war/Baz.java");
+        addFileChunk("c4", "osb-3/impl/Qux.java");
+
+        FileListResult result = dao.listFiles("*/impl/", 10);
+
+        // like `ls */impl`: entries of every impl directory
+        assertThat(result.files()).containsExactly(
+                "osb-2/impl/Foo.java", "osb-2/impl/deep/", "osb-3/impl/Qux.java");
+    }
+
+    @Test
+    void listFilesDirectoriesRespectLimitAndTruncation() {
+        addFileChunk("c1", "a/Foo.java");
+        addFileChunk("c2", "b/Bar.java");
+        addFileChunk("c3", "c/Baz.java");
+
+        FileListResult result = dao.listFiles("*/", 2);
+
+        assertThat(result.files()).hasSize(2);
+        assertThat(result.truncated()).isTrue();
+    }
+
+    @Test
+    void listFilesTrailingSlashOnLeafDirectoryListsItsFiles() {
+        addFileChunk("c1", "src/a/Foo.java");
+
+        FileListResult result = dao.listFiles("src/a/", 10);
+
+        assertThat(result.files()).containsExactly("src/a/Foo.java");
+        assertThat(result.truncated()).isFalse();
+    }
+
+    @Test
+    void listFilesTrailingSlashWithoutFilesIsEmpty() {
+        addFileChunk("c1", "src/a/Foo.java");
+
+        FileListResult result = dao.listFiles("lib/", 10);
 
         assertThat(result.files()).isEmpty();
         assertThat(result.truncated()).isFalse();

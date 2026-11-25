@@ -29,8 +29,17 @@ public class PxChunk {
     public static final String PXCHUNK_PROJECT = "pxchunk_project";
     /** Metadata key marking the parallel full-text copy of a file (lossless readFile). */
     public static final String PXCHUNK_TYPE = "pxchunk_type";
-    /** Value of {@link #PXCHUNK_TYPE} for full-text copy chunks. */
+    /** Value of {@link #PXCHUNK_TYPE} for full-text copy chunks (lossless readFile, excluded from search). */
     public static final String FULLTEXT_MARKER = "FULLTEXT";
+    /** Value of {@link #PXCHUNK_TYPE} for line-break text-fallback chunks (searchable). */
+    public static final String TEXT_MARKER = "TEXT";
+    /**
+     * Metadata key for chunks whose content is only partly verbatim source: the value is the
+     * 1-based, inclusive line range ("start-end") covered by the verbatim prefix. Content lines
+     * beyond it are synthetic (e.g. the signature block of a class frame) and must never be
+     * turned into {@code file:line} anchors.
+     */
+    public static final String PXCHUNK_VERBATIM_LINES = "pxchunk_verbatim_lines";
 
     private String id;
     private String mimeType;
@@ -70,7 +79,9 @@ public class PxChunk {
         ifNotNull(chunk.embeddingPrefix, ()->map.put(PXCHUNK_EMBEDDING_PREFIX, chunk.embeddingPrefix));
         ifNotNull(chunk.project, () -> map.put(PXCHUNK_PROJECT, chunk.project));
         for (var e : chunk.getMetadata().entrySet()) {
-            map.put(PXCHUNK_METADATA + "." + e.getKey(), e.getValue());
+            if (e.getValue() != null) {
+                map.put(PXCHUNK_METADATA + "." + e.getKey(), e.getValue());
+            }
         }
         return map;
     }
@@ -171,7 +182,7 @@ public class PxChunk {
         combined.file = root.file;
         combined.parent = root.parent;
         combined.fromLine = root.fromLine;
-        combined.toLine = root.toLine;
+        combined.toLine = lastLine(chunkList, root.toLine);
         combined.size = root.size;
         combined.overlap = root.overlap;
         combined.project = root.project;
@@ -180,5 +191,20 @@ public class PxChunk {
                 .unsplit(chunkList);
         combined.content = content;
         return combined;
+    }
+
+    /** The largest numeric toLine of the given chunks; falls back to {@code fallback} when unparsable. */
+    private static String lastLine(List<PxChunk> chunks, String fallback) {
+        int max = -1;
+        for (PxChunk chunk : chunks) {
+            if (chunk.toLine != null && !chunk.toLine.isBlank()) {
+                try {
+                    max = Math.max(max, Integer.parseInt(chunk.toLine.trim()));
+                } catch (NumberFormatException ignored) {
+                    // keep the previous maximum; a malformed part must not break reassembly
+                }
+            }
+        }
+        return max >= 0 ? String.valueOf(max) : fallback;
     }
 }

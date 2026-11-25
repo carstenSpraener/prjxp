@@ -5,12 +5,16 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.PointerRenderer;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import de.spraener.prjxp.common.retrieval.SearchParams;
+import de.spraener.prjxp.gldrtrvr.DependencyCompactor;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
@@ -22,6 +26,9 @@ import java.util.function.Function;
 public class TypeScriptRetriever implements GoldenRetriever {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final ChunkRankingService rankingService;
+    private final PointerRenderer pointerRenderer = new PointerRenderer();
+    @Value("${prjxp.gldrtrvr.max-dependency-entries:10}")
+    private int maxDependencyEntries = 10;
 
     @SafeVarargs
     public final StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks, SearchParams params, Function<String, Boolean>... contextValidators) {
@@ -31,11 +38,73 @@ public class TypeScriptRetriever implements GoldenRetriever {
         if( tsChunks.isEmpty() ) {
             return prompt;
         }
+        if (params.effectiveContentLevel() == ContentLevel.POINTERS) {
+            return buildPointersPrompt(projectName, tsChunks, params);
+        }
+        ContentLevel level = params.effectiveContentLevel();
         TypeScriptPromptSession session = new TypeScriptPromptSession(chunkDao, rankingService);
         session.setMaxContentLength(params.getMaxContentLength());
         session.setChunksByScore(tsChunks);
-        prompt.append(session.buildPrompt(this::modifyPromptByChunk, contextValidators));
+        prompt.append(session.buildPrompt((dao, chunk, p) -> modifyPromptByChunk(dao, chunk, p, level), contextValidators));
         return prompt;
+    }
+
+    /**
+     * POINTERS layer: one dual-graph reference block per hit, without the session tree.
+     * A dependency chunk (no file, no {@code graph_node}) points at the type node it belongs to;
+     * repeated dependency chunks of the same type are emitted once.
+     */
+    private StringBuilder buildPointersPrompt(String projectName, List<ScoredChunk> chunks, SearchParams params) {
+        StringBuilder prompt = new StringBuilder();
+        int budget = params.getMaxContentLength();
+        // combineScoredChunksByID returns a HashMap order: sort by score so the block per file
+        // is the best-ranked chunk of that file.
+        List<ScoredChunk> sorted = new ArrayList<>(chunks);
+        sorted.sort(Comparator.comparingDouble(ScoredChunk::score).reversed());
+        Map<String, Integer> hitsByFile = new HashMap<>();
+        for (var sc : sorted) {
+            String file = sc.chunk().getFile();
+            if (file != null && !file.isBlank()) {
+                hitsByFile.merge(file, 1, Integer::sum);
+            }
+        }
+        Set<String> emittedFiles = new HashSet<>();
+        Set<String> emittedDependencyTargets = new HashSet<>();
+        int skipped = 0;
+        for (var sc : sorted) {
+            String file = sc.chunk().getFile();
+            String dependencyTarget = dependencyTarget(sc.chunk());
+            if (dependencyTarget != null && !emittedDependencyTargets.add(dependencyTarget)) {
+                continue;   // this type's dependency pointer was already emitted
+            }
+            int hits = 1;
+            if (file != null && !file.isBlank()) {
+                if (!emittedFiles.add(file)) {
+                    continue;   // one pointer block per file
+                }
+                hits = hitsByFile.getOrDefault(file, 1);
+            }
+            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score(), dependencyTarget, hits,
+                    params.getSnippetChars(), params.isReadChunksHint());
+            if (prompt.length() + block.length() > budget) {
+                skipped++;
+                continue;
+            }
+            prompt.append(block);
+        }
+        if (skipped > 0) {
+            prompt.append("\n[weitere ").append(skipped).append(" Klassen wegen Groessenlimit nicht enthalten]\n");
+        }
+        return prompt;
+    }
+
+    /** The parent type of a file-less dependency chunk, otherwise {@code null}. */
+    private String dependencyTarget(PxChunk chunk) {
+        if (chunk.getFile() != null && !chunk.getFile().isBlank()) {
+            return null;
+        }
+        String parent = chunk.getParent();
+        return parent == null || parent.isBlank() ? null : parent;
     }
 
     private List<ScoredChunk> combineScoredChunksByID(PxChunkDao chunkDao, List<ScoredChunk> chunks) {
@@ -66,7 +135,7 @@ public class TypeScriptRetriever implements GoldenRetriever {
         return Collections.EMPTY_LIST;
     }
 
-    private String modifyPromptByChunk(PxChunkDao chunkDao, PxChunk pxChunk, String prompt) {
+    private String modifyPromptByChunk(PxChunkDao chunkDao, PxChunk pxChunk, String prompt, ContentLevel level) {
         String nextPrompt = prompt;
         if (isTypeScriptChunk(pxChunk)) {
             TypeScriptCodeSection section = TypeScriptCodeSection.fromName(pxChunk.getMetadata().get("typescript_code_section"));
@@ -80,7 +149,16 @@ public class TypeScriptRetriever implements GoldenRetriever {
                     nextPrompt = replaceInPrompt(prompt, toMethodName(pxChunk), pxChunk.getContent());
                     break;
                 case DEPENDENCIE_INFO:
-                    nextPrompt = prompt + pxChunk.getContent();
+                    if (level == ContentLevel.POINTERS) {
+                        String parent = pxChunk.getParent();
+                        // Check the emitted pointer, not the bare name: a superstring path
+                        // (e.g. com/example/OtherFactory.ts) must not suppress the pointer for Other.ts.
+                        if (parent != null && !parent.isBlank() && !prompt.contains("→ graphNode(\"" + parent + "\")")) {
+                            nextPrompt = prompt + "\n\n## Dependencies of " + parent + "\n→ graphNode(\"" + parent + "\")\n";
+                        }
+                    } else {
+                        nextPrompt = prompt + pxChunk.getContent();
+                    }
                     break;
                 case METHOD_DOC:
                     nextPrompt = insertBefore(prompt, toMethodName(pxChunk), pxChunk.getContent());
@@ -90,7 +168,8 @@ public class TypeScriptRetriever implements GoldenRetriever {
                     nextPrompt = prompt + "\n\n## Hier ein Rumpf der Klasse " + className + ":\n\n```typescript\n" + pxChunk.getContent() + "\n```\n";
                     PxChunk dependencyChunk = PxChunk.combine(chunkDao.findById(pxChunk.getId() + ".dependencies"));
                     if (dependencyChunk != null) {
-                        nextPrompt += "\n\n### Hier noch Infos zu den Dependencies innerhalb des Projekts:\n\n" + dependencyChunk.getContent();
+                        nextPrompt += "\n\n### Hier noch Infos zu den Dependencies innerhalb des Projekts:\n\n"
+                                + DependencyCompactor.compact(dependencyChunk.getContent(), maxDependencyEntries);
                     }
                     break;
                 default:

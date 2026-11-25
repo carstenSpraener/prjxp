@@ -184,6 +184,104 @@ class MarkdownChunkerTest {
         assertSectionAttribution(chunks, "Content of section B", "01.02", "Top > Section B");
     }
 
+    /**
+     * A section can contain many paragraph blocks and '#''-style headers never incremented the
+     * old paragraph counter, so every block of a section used to get the same id+part. tibed's
+     * upsertAll then rejected the whole project with "Duplicate semantic node id".
+     */
+    @Test
+    void sectionChunksHaveUniqueIdsAndParts() throws Exception {
+        String intro = "Intro paragraph with enough content to pass the forty character minimum for chunking.";
+        String sectionA1 = "First paragraph of section A, long enough to be chunked on its own for the test.";
+        String sectionA2 = "Second paragraph of section A, also long enough to be chunked on its own for the test.";
+        String sectionB = "Content of section B that is long enough to be included in a chunk, definitely more than forty chars.";
+        this.mdContent = String.join("\n",
+                "# Top",
+                intro,
+                "",
+                "## Section A",
+                sectionA1,
+                "",
+                sectionA2,
+                "",
+                "## Section B",
+                sectionB
+        );
+
+        MetaInfReader metaInfReader = mock(MetaInfReader.class);
+        when(metaInfReader.readMetaInf(any())).thenReturn(Map.of());
+        List<PxChunk> chunks = new MarkdownChunker(mock(PxLogService.class), emptyConverter, metaInfReader)
+                .processFile(new File("dummy.md")).toList();
+
+        List<String> keys = chunks.stream()
+                .map(c -> c.getId() + "|" + c.getPart())
+                .toList();
+        assertEquals(keys.size(), keys.stream().distinct().count(),
+                "chunk ids+parts must be unique, got " + keys);
+
+        List<String> sectionIds = chunks.stream()
+                .filter(c -> "SECTION".equals(c.getMetadata().get("pxchunk_type")))
+                .map(PxChunk::getId)
+                .toList();
+        assertEquals(sectionIds.size(), sectionIds.stream().distinct().count(),
+                "section chunk ids must be unique, got " + sectionIds);
+    }
+
+    /**
+     * Real case {@code docpipe/doc/HowTo.md}: the document starts with {@code ##}, so
+     * {@link MarkdownChunker#formatSectionNumber} returns "" for every section. Several
+     * paragraph blocks then produced the same id+part and the whole project reindex failed
+     * with "Duplicate semantic node id".
+     */
+    @Test
+    void documentStartingWithSecondLevelHeadersYieldsUniqueIds() throws Exception {
+        this.mdContent = String.join("\n",
+                "## Overview",
+                "1.1 First block",
+                "First block text, long enough to be split into its own chunk by the chunker.",
+                "1.2 Second block",
+                "Second block text, long enough to be split into its own chunk by the chunker.",
+                "1.3 Third block",
+                "Third block text, long enough to be split into its own chunk by the chunker.");
+
+        MetaInfReader metaInfReader = mock(MetaInfReader.class);
+        when(metaInfReader.readMetaInf(any())).thenReturn(Map.of());
+        List<PxChunk> chunks = new MarkdownChunker(mock(PxLogService.class), emptyConverter, metaInfReader)
+                .processFile(new File("dummy.md")).toList();
+
+        List<String> keys = chunks.stream().map(c -> c.getId() + "|" + c.getPart()).toList();
+        assertEquals(keys.size(), keys.stream().distinct().count(),
+                "chunk ids+parts must be unique, got " + keys);
+    }
+
+    /**
+     * Numbered list items are converted to '#'-headers, so the same section number can occur
+     * more than once in one file.
+     */
+    @Test
+    void repeatedSectionNumbersStillYieldUniqueIds() throws Exception {
+        String text = "A numbered list item whose text is long enough to become a header paragraph in the chunker.";
+        this.mdContent = String.join("\n",
+                "1. Alpha",
+                text,
+                "",
+                "1. Beta",
+                text,
+                "",
+                "1. Gamma",
+                text
+        );
+
+        MetaInfReader metaInfReader = mock(MetaInfReader.class);
+        when(metaInfReader.readMetaInf(any())).thenReturn(Map.of());
+        List<PxChunk> chunks = new MarkdownChunker(mock(PxLogService.class), emptyConverter, metaInfReader)
+                .processFile(new File("dummy.md")).toList();
+
+        List<String> ids = chunks.stream().map(PxChunk::getId).toList();
+        assertEquals(ids.size(), ids.stream().distinct().count(),
+                "repeated section numbers must still produce unique ids, got " + ids);
+    }
+
     private static void assertSectionAttribution(List<PxChunk> chunks, String contentMarker, String expectedSection, String expectedHierarchy) {
         List<PxChunk> matching = chunks.stream()
                 .filter(c -> c.getContent() != null && c.getContent().contains(contentMarker))

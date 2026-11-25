@@ -38,7 +38,7 @@
   | mcp-server | 0.80 (strict — "DockerHub code lands here") |
 
   Ratchets may only be **raised** (after legacy code got tested), never lowered.
-- mcp-server tests run with `prjxp.cli.enabled=false` so that the chunk-norris/tibed
+- mcp-server tests run with `prjxp.hub.enabled=true` so that the chunk-norris/tibed
   `CommandLineRunner`s on the hub classpath do not fire during tests.
 
 ## 2.4 Packaging Constraint: Shadow JAR, Not Boot Repackage

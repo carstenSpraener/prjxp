@@ -3,6 +3,7 @@ package de.spraener.prjxp.mcp;
 import de.spraener.prjxp.common.capability.ChunkerSearchCapabilitiesProvider;
 import de.spraener.prjxp.common.capability.LanguageCapability;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.LinkedHashMap;
@@ -12,6 +13,7 @@ import java.util.Map;
 import java.util.Optional;
 
 @Service
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class SearchCapabilitiesRegistry {
 

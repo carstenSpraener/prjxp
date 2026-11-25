@@ -58,7 +58,7 @@ loaded at runtime into an isolating class loader (see [09](09_design_decisions.m
 | **lucene-store** (`de.spraener.prjxp.lucene`) | File-based vector + full-text index: `LuceneEmbeddingStore` (LangChain4j `EmbeddingStore`, KNN search, filter-based delete), `LucenePxChunkDao` (project-scoped DAO: vector/full-text/index search, find-by-id/metadata), Spring auto-configuration. | `EmbeddingStore<TextSegment>`, `PxChunkDao`; `LuceneStoreAutoConfiguration`. | Single-writer index; stale-lock recovery; read/write locking. |
 | **tibed** (`de.spraener.prjxp.tibed`) | Batch embedding engine: reads JSONL in batches, embeds via LangChain4j `EmbeddingModel`, writes to the store. Modes: **STORE** (default), **EXPORT** (chunks → `embedding.jsonl` with vectors, encrypted transfer), **IMPORT** (`embedding.jsonl` → store). | `TiBedCliApp` main; `EmbeddingService.executeForProject()` (in-process use by hub). | Incremental embed (`StoreIdChecker` skips existing ids); project-scoped reset; batch size per project. |
 | **golden-retriever** (`de.spraener.prjxp.gldrtrvr`) | RAG engine: `RetrieverRegistry` (merged view over pack-provided + plain `GoldenRetriever` beans), per-language retriever packs (Java, TypeScript, Visual Basic) + Markdown retriever, chunk ranking services/rankers, prompt sessions with **Forest of Trees** reconstruction, `GRPromptEnrichment` (search + fallback iteration + budgets), per-language `FileViewProvider`s, Javadoc enricher. | `RetrieverRegistry.all()`, `GoldenRetriever` (buildPromptForFindings / retrieveSearchHits), `GRPromptEnrichment.enrich(...)`, `FileViewProvider` beans. | Deterministic context construction; global content budget across retrievers. |
-| **mcp-server** (`de.spraener.prjxp.mcp`) | Runtime: Spring AI MCP server (streamable) with tools `vectorSearch`, `grep`, `readFile`, `readBySignature`, `listProjects`; REST API + OpenAPI; project registries (static / hub); search capability registry; reader services (language-agnostic `SymbolReaderService`); `LanguagePackRegistry` (plugin packs visible to grep language filter + retrieval); **hub package** (import poller, tar extractor with security limits, pipeline orchestrator, lifecycle service, projects REST + web UI). | `McpServer` main; MCP endpoint `/mcp`; REST `/prjxp/*`; web UI `/`. | Strictest coverage ratchet (0.80); compatibility filter for legacy MCP protocol versions. |
+| **mcp-server** (`de.spraener.prjxp.mcp`) | Runtime: Spring AI MCP server (streamable) with tools `vectorSearch`, `grep`, `readFile`, `readBySignature`, `listProjects`; REST API + OpenAPI; project registry (`HubProjectRegistry`); search capability registry; reader services (language-agnostic `SymbolReaderService`); `LanguagePackRegistry` (plugin packs visible to grep language filter + retrieval); **hub package** (import poller, tar extractor with security limits, pipeline orchestrator, lifecycle service, projects REST + web UI). | `McpServer` main; MCP endpoint `/mcp`; REST `/prjxp/*`; web UI `/`. | Strictest coverage ratchet (0.80); compatibility filter for legacy MCP protocol versions. |
 | **docpipe** (`de.spraener.prjxp.docpipe`) | Documentation pipeline: reads jobs from `.dp/documents.json`, resolves Handlebars prompt templates via pluggable resolvers (`gr` → golden-retriever enrichment, `source-dump`, `source-skeleton`, `groovy` scripts, `url`, `current-file`, **`mcp-project`** → project context for MCP tool usage), calls LLMs by stereotype, writes output files. The LLM can use **MCP tools over HTTP** (via `McPEnablingKIChatDecorator`) to query the prjxp MCP server (`vectorSearch`, `grep`, `readFile`, `readBySignature`) for embedded project information during content generation. | `DocPipeCliApp` main; `.dp/` job configuration directory. | Parallel task execution (fixed pool, `prjxp.docpipe.maxthreads`); misconfigured jobs degrade to empty job instead of aborting; MCP tool loop runs transparently inside `String chat(String)`. |
 | **oragel** (`de.spraener.prjxp.oragel`, *incubator*) | Experimental interactive CLI: prompt sources + enrichment events, console log listener. Scans `gldrtrvr` beans. | `OragelCliApp` main. | **Not included** in the default `settings.gradle`; experimental, no stability promise. |
 
@@ -131,7 +131,7 @@ Key interfaces:
 
 ```mermaid
 flowchart LR
-    MAIN["ChunkNorris<br/>@SpringBootApplication<br/>bean 'chunoRun'<br/>prjxp.cli.enabled gate"]
+    MAIN["ChunkNorris<br/>@SpringBootApplication<br/>bean 'chunoRun'<br/>prjxp.hub.enabled gate"]
     ARGS["CliArgsParser<br/>+ PrjXPConfig binding"]
     PROC["ChunkProcess<br/>walk   vetoes   dispatch<br/>JSONL writer (± encrypted)<br/>post-walk"]
     FACT["ChunkerFactory<br/>extends AnnotationBasedChunkerBrokerImpl<br/>+ ServiceLoader brokers"]
@@ -279,7 +279,7 @@ flowchart LR
         RS["ReaderService<br/>lenient path   paging   100k cap"]
         SRS["SymbolReaderService<br/>readBySignature (language-agnostic)"]
         FVR["FileViewRegistry<br/>mime → provider"]
-        REG["ProjectRegistry:<br/>StaticProjectRegistry (config)<br/>HubProjectRegistry (dirs, runtime)"]
+        REG["ProjectRegistry:<br/>HubProjectRegistry (dirs, runtime)"]
         SCR2["SearchCapabilitiesRegistry<br/>+ JavaSearchCapabilitiesProvider"]
         LPR2["LanguagePackRegistry<br/>plugin packs: grep MIME filter<br/>+ retriever view"]
     end
@@ -305,7 +305,7 @@ flowchart LR
 - `McpServer` scans the **whole** `de.spraener.prjxp` root — this is how all module beans
   (chunkers, retrievers, readers, the Lucene store) become visible in one process.
 - Bean-name discipline: CLI runners are named `chunoRun`/`tibedRun` and gated by
-  `prjxp.cli.enabled` (hub sets it to `false`).
+  `prjxp.hub.enabled` (active only when the hub is disabled; the hub runs the pipeline in-process).
 
 ### 5.2.7 docpipe
 
@@ -316,7 +316,6 @@ flowchart LR
     RUN["DocPipeRunner<br/>jobs → tasks   fixed pool (maxthreads 5)<br/>SEVERE errors → exit 1"]
     subgraph cfg ["config package"]
         JOBS["JobCreationService<br/>.dp/documents.json → DPJob"]
-        MODELS["ModelConfigLoader<br/>chat-model stereotypes"]
         DOT["DotDPFilesService   EnvResolver"]
     end
     subgraph content ["content package"]

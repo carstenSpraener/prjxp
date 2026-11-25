@@ -58,6 +58,7 @@ public class DocPipePipelineListener implements PipelineListener {
         registry.setReindexStatus(projectName, ReindexStatus.DOCPIPE);
         registry.setReindexProgress(projectName, 0);
 
+        log.info("DocPipe for '{}' started", projectName);
         boolean docPipeOk = true;
         try {
             docPipeRunner.runForProject(def);   // inline, synchronous (own thread pool)

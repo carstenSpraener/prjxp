@@ -5,7 +5,6 @@ import de.spraener.prjxp.common.config.ProjectDefinition;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.config.JobCreationService;
-import de.spraener.prjxp.docpipe.config.ModelConfigLoader;
 import de.spraener.prjxp.docpipe.content.ContentCreationService;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.docpipe.model.DPContentCreation;
@@ -43,7 +42,6 @@ class DocPipeRunnerForProjectTest {
 
     private JobCreationService jobCreationService;
     private ContentCreationService contentCreationService;
-    private ModelConfigLoader modelConfigLoader;
     private DotDPFilesService dpFilesService;
     private PxLogService logService;
 
@@ -54,11 +52,10 @@ class DocPipeRunnerForProjectTest {
     void setUp() {
         jobCreationService = mock(JobCreationService.class);
         contentCreationService = mock(ContentCreationService.class);
-        modelConfigLoader = mock(ModelConfigLoader.class);
         dpFilesService = mock(DotDPFilesService.class);
         logService = mock(PxLogService.class);
 
-        uut = new DocPipeRunner(jobCreationService, contentCreationService, modelConfigLoader,
+        uut = new DocPipeRunner(jobCreationService, contentCreationService,
                 dpFilesService, logService);
         ReflectionTestUtils.setField(uut, "maxThreads", 2);
 

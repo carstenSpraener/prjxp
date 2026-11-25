@@ -43,7 +43,37 @@ application {
     mainClass = 'de.spraener.prjxp.docpipe.DocPipeCliApp'
 }
 
+jacocoTestCoverageVerification {
+    violationRules {
+        rule {
+            element = 'CLASS'
+            includes = ['de.spraener.prjxp.docpipe.DocPipeCliApp']
+            limit {
+                counter = 'LINE'
+                value = 'COVEREDRATIO'
+                minimum = 0.80
+            }
+        }
+    }
+}
+
 shadowJar {
+    // Shadow 9 defaults to EXCLUDE, which drops duplicates before transformers
+    // see them. Keep first-wins for regular entries, but let the resource
+    // transformers merge service/Spring metadata files.
+    duplicatesStrategy = DuplicatesStrategy.EXCLUDE
+    filesMatching([
+            'META-INF/services/**',
+            'META-INF/*.kotlin_module',
+            'META-INF/spring.factories',
+            'META-INF/spring.handlers',
+            'META-INF/spring.schemas',
+            'META-INF/spring.tooling',
+            'META-INF/spring/org.springframework.boot.autoconfigure.AutoConfiguration.imports',
+            'META-INF/spring/org.springframework.boot.actuate.autoconfigure.web.ManagementContextConfiguration.imports'
+    ]) {
+        duplicatesStrategy = DuplicatesStrategy.INCLUDE
+    }
     zip64=true
     exclude 'application.yaml'
 
@@ -57,6 +87,6 @@ shadowJar {
 
     transform(PropertiesFileTransformer) {
         paths = ['META-INF/spring.factories']
-        mergeStrategy = 'append'
+        mergeStrategy = PropertiesFileTransformer.MergeStrategy.Append
     }
 }

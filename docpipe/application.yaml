@@ -1,0 +1,55 @@
+# DocPipe CLI configuration.
+#
+# Loaded when the working directory is docpipe/ (e.g. `./gradlew :docpipe:run`
+# from the repo root) — Spring Boot picks up ./application.yaml before the
+# (minimal) classpath one. The repo-root application.yaml is NOT suitable here:
+# it sets prjxp.hub.enabled=true (which disables the CLI runner) and uses the
+# non-binding key `stereotype:` instead of `stereo-type:`.
+#
+# Secrets (LM_STUDIO_URL, EMBEDDING_API_KEY) come from the repo .env —
+# source it before running:  set -a && source .env && set +a
+prjxp:
+  # The CLI CommandLineRunner is gated on this (matchIfMissing=true).
+  # Keep it false: this file is for CLI mode, not the hub.
+  hub:
+    enabled: false
+
+  # The project to document. DocPipe walks rootDir and turns every directory
+  # containing a .dp folder into a job.
+  #
+  # Deliberately mcp-server/doc (NOT the repo root): the repo contains 21 .dp
+  # directories (other modules' docs + docpipe's own test fixtures). Pointing
+  # at the repo root would generate all of them, including the test fixtures.
+  # rootDir is relative to the working directory (docpipe/).
+  projects:
+    - name: prjxp
+      rootDir: ../mcp-server/doc
+
+  # LLM for the "documentation" stereotype (used by every documents.json entry
+  # in mcp-server/doc). NOTE: the key is `stereo-type` — `stereotype` does not
+  # bind to the stereoType field.
+  chatModels:
+    - stereo-type: documentation
+      server-type: lm-studio
+      provider-url: ${LM_STUDIO_URL}
+      model-name: qwen3.8-27b-splash
+      api-key: ${EMBEDDING_API_KEY}
+      # Local 27B model: full document generation takes minutes.
+      timeout-secs: 300
+      # Qwen3: thinking mode breaks tool-calling (leaks into content as XML).
+      body-properties:
+        enable_thinking: false
+
+  # MCP research: while generating, the LLM can call the hub's prjxp tools
+  # (vector search, grep, ...) to look up code. Requires the hub to be running
+  # with the prjxp project imported. If the hub is down, {{mcp-project}}
+  # degrades to an empty string — generation still works from the source dumps.
+  mcp-servers:
+    - name: prjxp
+      type: http
+      url: ${PRJXP_HUB_URL:http://localhost:7007/mcp}
+
+  # Parallel LLM calls. A local 27B model saturates quickly — 2 is a safe
+  # default. Override per run: --prjxp.docpipe.maxthreads=4
+  docpipe:
+    maxthreads: 2

@@ -3,7 +3,9 @@ package de.spraener.prjxp.lpcsharp;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
+import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
+import de.spraener.prjxp.common.retrieval.PointerRenderer;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
@@ -38,6 +40,7 @@ import java.util.function.Function;
 public class CSharpRetriever implements GoldenRetriever {
 
     private final PxChunkDaoProvider chunkDaoProvider;
+    private final PointerRenderer pointerRenderer = new PointerRenderer();
 
     /** Self-contained constructor used by the plugin (no store access). */
     public CSharpRetriever() {
@@ -58,6 +61,9 @@ public class CSharpRetriever implements GoldenRetriever {
         List<ScoredChunk> csharp = filterAndCombine(dao, chunks);
         if (csharp.isEmpty()) {
             return new StringBuilder();
+        }
+        if (params.effectiveContentLevel() == ContentLevel.POINTERS) {
+            return buildPointersPrompt(projectName, csharp, params);
         }
         Set<String> hitIds = new TreeSet<>();
         for (ScoredChunk sc : csharp) {
@@ -110,6 +116,28 @@ public class CSharpRetriever implements GoldenRetriever {
     // ------------------------------------------------------------------
     // Internals
     // ------------------------------------------------------------------
+
+    /**
+     * POINTERS layer: one dual-graph reference block per hit instead of the rendered section,
+     * bounded by {@code maxResult} and the content budget.
+     */
+    private StringBuilder buildPointersPrompt(String projectName, List<ScoredChunk> csharp, SearchParams params) {
+        StringBuilder prompt = new StringBuilder();
+        int budget = params.getMaxContentLength();
+        int count = 0;
+        for (ScoredChunk sc : csharp) {
+            if (count >= params.getMaxResult()) {
+                break;
+            }
+            String block = pointerRenderer.render(projectName, sc.chunk(), sc.score());
+            if (prompt.length() + block.length() > budget) {
+                break;
+            }
+            prompt.append(block);
+            count++;
+        }
+        return prompt;
+    }
 
     private PxChunkDao resolveDao(String projectName) {
         if (chunkDaoProvider == null) {

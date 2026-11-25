@@ -9,6 +9,7 @@ import de.spraener.prjxp.common.reader.ReaderSupport;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
@@ -28,6 +29,7 @@ import java.util.stream.Collectors;
  * MIME-specific reader, paged line output and a character cap.
  */
 @Service
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequiredArgsConstructor
 public class ReaderService {
     private static final int FILE_LOOKUP_LIMIT = 10_000;
@@ -48,6 +50,16 @@ public class ReaderService {
     }
 
     public FileView read(String file, String project, Integer offset, Integer limit) {
+        return read(file, project, offset, limit, false);
+    }
+
+    /**
+     * Reads a file view. Without an explicit {@code limit}, the window defaults to
+     * {@code prjxp.reader-max-lines} (100) so a bare read cannot return a whole large file;
+     * {@code full=true} bypasses the line default but is itself capped at
+     * {@code prjxp.reader-full-max-lines} (200) and the character cap still applies.
+     */
+    public FileView read(String file, String project, Integer offset, Integer limit, boolean full) {
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         String requested = ReaderSupport.normalizePath(file);
         PxChunkDao dao = resolveDao(project);
@@ -89,12 +101,26 @@ public class ReaderService {
         List<String> lines = content.lines().toList();
         int off = (offset == null || offset < 1) ? 1 : offset;
         if (off > lines.size()) return new FileView(requested, language, fileChunks.size(), "", false, lines.size(), 0, null, null);
-        int to = (limit == null || limit < 1) ? lines.size() : Math.min(lines.size(), off - 1 + limit);
+        boolean explicitLimit = limit != null && limit >= 1;
+        int to;
+        if (explicitLimit) {
+            to = Math.min(lines.size(), off - 1 + limit);
+        } else if (full) {
+            // full=true bypasses the 200-line default, but not the hard full-file cap:
+            // a single call must never pull an arbitrarily large file into the context.
+            to = Math.min(lines.size(), off - 1 + cfg.getReaderFullMaxLines());
+        } else {
+            // no explicit limit: the line default keeps a bare read cheap
+            to = Math.min(lines.size(), off - 1 + cfg.getReaderMaxLines());
+        }
         String text = String.join("\n", lines.subList(off - 1, to));
 
         int max = cfg.getReaderMaxOutputChars();
-        boolean truncated = false;
-        if (max > 0 && text.length() > max) { text = text.substring(0, max); truncated = true; }
+        // An explicit limit is deliberate paging (not truncation); the line default, the
+        // full-file cap and the character cap are system-imposed cuts and must be visible.
+        boolean truncated = (!explicitLimit && to < lines.size())
+                || (max > 0 && text.length() > max);
+        if (max > 0 && text.length() > max) { text = text.substring(0, max); }
 
         return new FileView(requested, language, fileChunks.size(), text, truncated,
                 lines.size(), to - off + 1, null, null);

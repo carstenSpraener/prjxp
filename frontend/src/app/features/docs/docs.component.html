@@ -1,0 +1,37 @@
+<div class="docs-page">
+  <header class="docs-header glass-panel">
+    <h1 class="neon-glow">Documentation</h1>
+    <button class="refresh-btn" (click)="refresh()" [disabled]="loading()" aria-label="Refresh documentation">
+      ⟳ Refresh
+    </button>
+  </header>
+
+  <div class="docs-body">
+    <aside class="doc-tree-pane glass-panel">
+      @if (tree(); as t) {
+        <doc-tree [node]="t" [selectedPath]="selectedPath()"
+                  (docSelected)="selectDoc($event)"
+                  (chapterSelected)="onChapterSelected($event)"></doc-tree>
+      }
+    </aside>
+
+    <section class="doc-content-pane glass-panel">
+      @if (error(); as e) {
+        <div class="doc-state">{{ e }}</div>
+      } @else if (loading() && !content()) {
+        <div class="doc-state">Loading…</div>
+      } @else if (showIndex()) {
+        <h2>Contents</h2>
+        <ul class="index-list">
+          @for (entry of indexEntries(); track entry.path) {
+            <li><a (click)="selectDoc(entry.path)">{{ entry.label }}</a></li>
+          }
+        </ul>
+      } @else if (content(); as md) {
+        <div class="doc-content" (click)="onContentClick($event)">
+          <markdown [data]="md"></markdown>
+        </div>
+      }
+    </section>
+  </div>
+</div>

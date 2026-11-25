@@ -5,11 +5,13 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
 
 @RestController
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequestMapping("/api/tools")
 @RequiredArgsConstructor
 @Log
@@ -39,7 +41,8 @@ public class McpRestController {
             @RequestParam(name = "userQuestion", required = true)
             String userQuestion,
 
-            @RequestParam(name = "project", required = false, defaultValue = "default")
+            @Parameter(description = "Required project name. Call the projects endpoint to discover valid names.")
+            @RequestParam(name = "project", required = true)
             String projectName,
 
             @Parameter(description = "Similarity threshold 0.0-1.0 (default 0.85).")

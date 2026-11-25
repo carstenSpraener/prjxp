@@ -47,7 +47,9 @@ class StoreIdCheckerProjectOverloadTest {
         Metadata metadata = Metadata.from(Map.of(
                 de.spraener.prjxp.common.model.PxChunk.PXCHUNK_ID, id,
                 de.spraener.prjxp.common.model.PxChunk.PXCHUNK_PROJECT, project));
-        store.add(Embedding.from(new float[DIM]), TextSegment.from("content of " + id, metadata));
+        float[] v = new float[DIM];
+        java.util.Arrays.fill(v, 1f);
+        store.add(Embedding.from(v), TextSegment.from("content of " + id, metadata));
     }
 
     private StoreIdChecker checkerWithActiveProject(String activeProject) {

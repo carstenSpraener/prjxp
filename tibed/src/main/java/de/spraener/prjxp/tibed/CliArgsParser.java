@@ -86,6 +86,15 @@ public class CliArgsParser {
         if (cmd.hasOption("no-encrypt")) {
             cfg.getTransfer().setEncrypt(TransferEncryptMode.FALSE);
         }
+        if (cmd.hasOption("no-semantic-graph")) {
+            cfg.getSemanticGraph().setEnabled(false);
+        }
+        if (cmd.hasOption("calibrate")) {
+            cfg.getSemanticGraph().setCalibrate(true);
+        }
+        if (cmd.hasOption("enrich-only")) {
+            cfg.setEnrichOnly(true);
+        }
         TransferConfigValidator.validate(cfg.getTransfer());
     }
 
@@ -123,6 +132,19 @@ public class CliArgsParser {
         options.addOption(Option.builder()
                 .longOpt("no-encrypt")
                 .desc("force plaintext output, even if a transfer password is available.")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("no-semantic-graph")
+                .desc("skip semantic graph clustering and index write-back.")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("calibrate")
+                .desc("run the gamma calibration sweep without writing cluster metadata.")
+                .build());
+        options.addOption(Option.builder()
+                .longOpt("enrich-only")
+                .desc("skip the ingestion (JSONL read + embedding) and run only the enrichment "
+                        + "(semantic graph + signatures) against the existing index.")
                 .build());
         options.addOption(Option.builder("h")
                 .longOpt("help")

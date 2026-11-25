@@ -1,0 +1,10 @@
+<form [formGroup]="form">
+  <p>GitHub optional. Hub: {{ githubEnabled ? 'aktiv' : 'deaktiviert; Integration kann übersprungen werden' }}. Verschlüsselungsschlüssel: {{ githubKeyAvailable ? 'verfügbar' : 'nicht verfügbar' }}.</p>
+  <label>Encryption environment variable name<input formControlName="tokenKeyEnv"></label>
+  <p>Dies ist der Name, nicht die Passphrase. Passphrase extern in der Backend-.env oder OS-Umgebung setzen, dann bewusst neu laden. Keine Passphrase wird übertragen.</p>
+  <label>Default PAT (optional)<input type="password" autocomplete="new-password" formControlName="defaultPat"></label>
+  <p>Ein /user-Test beweist Identität, nicht Zugriff auf Repositories. Ohne Schlüssel keinen PAT speichern.</p>
+  <button type="button" (click)="requestTest()" [disabled]="busy || form.invalid || !githubEnabled || !githubKeyAvailable || !form.controls.defaultPat.value">Test GitHub</button>
+  @if(result) { <p aria-live="polite">{{ result.success ? 'GitHub-Identität bestätigt' : 'GitHub-Test fehlgeschlagen' }}</p> }
+  @if(form.invalid) { <p role="status">Gültigen ENV-Namen eingeben.</p> }
+</form>

@@ -1,122 +1,101 @@
 package de.spraener.prjxp.mcp;
 
-import de.spraener.prjxp.common.model.FileListResult;
-import de.spraener.prjxp.common.model.FileView;
-import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
-import org.mockito.Mock;
-import org.mockito.junit.jupiter.MockitoExtension;
+import org.springaicommunity.mcp.annotation.McpTool;
 
+import java.lang.reflect.Method;
+import java.util.Arrays;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.verifyNoInteractions;
-import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-@ExtendWith(MockitoExtension.class)
 class PrjxpMcpToolTest {
 
-    @Mock
-    private GRPromptEnrichment enrichment;
-    @Mock
-    private GrepSearchService grepSearchService;
-    @Mock
-    private ReaderService readerService;
-    @Mock
-    private SymbolReaderService symbolReaderService;
-    @Mock
-    private ProjectRegistry projectRegistry;
-    @Mock
-    private FileListService fileListService;
-
+    private PrjxpToolService service;
     private PrjxpMcpTool tool;
 
     @BeforeEach
     void setUp() {
-        tool = new PrjxpMcpTool(enrichment, grepSearchService, readerService, symbolReaderService, projectRegistry, fileListService);
+        service = mock(PrjxpToolService.class);
+        tool = new PrjxpMcpTool(service);
     }
 
     @Test
-    void readFileDelegatesAndDefaultsProject() {
-        when(readerService.read("src/Foo.java", "default", null, null))
-                .thenReturn(FileView.error("src/Foo.java", "no index"));
+    void exposesTheWholeSurfaceIncludingProjectDiscovery() {
+        List<String> names = Arrays.stream(PrjxpMcpTool.class.getDeclaredMethods())
+                .map(m -> m.getAnnotation(McpTool.class))
+                .filter(a -> a != null)
+                .map(McpTool::name)
+                .toList();
 
-        FileView view = tool.readFile("src/Foo.java", null, null, null);
-
-        assertThat(view.error()).isEqualTo("no index");
-        verify(readerService).read("src/Foo.java", "default", null, null);
-
-        // a blank 'file' must short-circuit to an error view without touching the service
-        FileView err = tool.readFile("", "prj", 1, 5);
-
-        assertThat(err.content()).isNull();
-        assertThat(err.error()).contains("file");
-        verifyNoMoreInteractions(readerService);
+        assertThat(names).containsExactlyInAnyOrder(
+                "listProjects", "vectorSearch", "grep", "readFile", "readBySignature",
+                "listFiles", "graphFile", "graphNode", "graphSearch", "graphCluster",
+                "graphClusterOverview", "semanticGraphNode", "semanticGraphCluster",
+                "semanticGraphOverview", "listConfig", "readChunks");
     }
 
     @Test
-    void vectorSearchUnknownProjectReturnsErrorString() {
-        doThrow(new UnknownProjectException("nope", List.of("alpha"))).when(projectRegistry).ensureSearchable("nope");
+    void passesTheProjectThroughForTheGraphTools() {
+        tool.graphFile("a/B.java", "legacy", 5, true, 2, "FULL", 800);
+        tool.graphCluster("c6", "prjxp", 7);
+        tool.graphClusterOverview("prjxp", 4);
+        tool.semanticGraphCluster("s2", "legacy", 3);
+        tool.semanticGraphNode("n1", "prjxp", 9);
+        tool.semanticGraphOverview("legacy", 6);
 
-        String result = tool.vectorSearch("How does chunking work?", "nope", null, null, null);
-
-        assertThat(result).startsWith("ERROR:").contains("nope").contains("alpha");
-        verifyNoInteractions(enrichment);
+        verify(service).graphFile("a/B.java", "legacy", 5, true, 2, "FULL", 800);
+        verify(service).graphCluster("c6", "prjxp", 7);
+        verify(service).graphClusterOverview("prjxp", 4);
+        verify(service).semanticGraphCluster("s2", "legacy", 3);
+        verify(service).semanticGraphNode("n1", "prjxp", 9);
+        verify(service).semanticGraphOverview("legacy", 6);
     }
 
     @Test
-    void vectorSearchResolvesProjectViaRegistry() {
-        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "How does chunking work?", 0.85, 20, false))
-                .thenReturn("Relevante Information in 'myproj':\nchunk content");
+    void passesTheProjectThroughForGrep() {
+        tool.grep("run", "legacy", "regex", "java", 5, false, "lines");
 
-        String result = tool.vectorSearch("How does chunking work?", "myproj", null, null, null);
-
-        assertThat(result).contains("chunk content");
-        verify(enrichment).enrich("myproj", "How does chunking work?", 0.85, 20, false);
+        verify(service).grep("run", "legacy", "regex", "java", 5, false, "lines");
     }
 
     @Test
-    void vectorSearchDefaultProjectResolvesViaRegistry() {
-        when(projectRegistry.resolve("default")).thenReturn("myproj");
-        when(enrichment.enrich("myproj", "q", 0.85, 20, false)).thenReturn("ctx");
+    void passesTheProjectThroughForVectorSearch() {
+        tool.vectorSearch("chunking", "prjxp", 0.8, 3, "all", true, 1000);
 
-        String result = tool.vectorSearch("q", "default", null, null, null);
-
-        assertThat(result).contains("ctx");
-        verify(enrichment).enrich("myproj", "q", 0.85, 20, false);
+        verify(service).vectorSearch("chunking", "prjxp", 0.8, 3, "all", true, 1000);
     }
 
     @Test
-    void listProjectsFiltersToSearchableOnly() {
-        when(projectRegistry.availableProjects()).thenReturn(List.of("alpha", "beta"));
-        when(projectRegistry.isSearchable("alpha")).thenReturn(true);
-        when(projectRegistry.isSearchable("beta")).thenReturn(false);
+    void passesTheProjectThroughForReadBySignature() {
+        tool.readBySignature("a.B", "prjxp", null, true, 2);
 
-        assertThat(tool.listProjects()).containsExactly("alpha");
+        verify(service).readBySignature("a.B", null, "prjxp", true, 2);
     }
 
     @Test
-    void listFilesDefaultsProjectAndLimit() {
-        when(fileListService.list(null, "default", 50)).thenReturn(new FileListResult(List.of("a.java"), false));
-
-        FileListResult result = tool.listFiles(null, null, null);
-
-        assertThat(result.files()).containsExactly("a.java");
-        verify(fileListService).list(null, "default", 50);
+    void everyToolTakesTheProjectSoOneHubServesManyProjects() {
+        for (Method method : PrjxpMcpTool.class.getDeclaredMethods()) {
+            if (method.getAnnotation(McpTool.class) == null) {
+                continue;
+            }
+            if (method.getName().equals("listProjects")) {
+                continue; // discovery tool: it answers the question which projects exist
+            }
+            assertThat(method.getParameters())
+                    .as(method.getName())
+                    .anyMatch(p -> p.getName().equals("project"));
+        }
     }
 
     @Test
-    void listFilesClampsLimitToMax() {
-        when(fileListService.list("src", "default", 500)).thenReturn(new FileListResult(List.of(), false));
+    void listProjectsDelegatesToTheService() {
+        assertThat(tool.listProjects()).isEmpty();
 
-        tool.listFiles("src", null, 10000);
-
-        verify(fileListService).list("src", "default", 500);
+        verify(service).listProjects();
     }
 }

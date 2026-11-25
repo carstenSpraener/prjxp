@@ -4,6 +4,9 @@ import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import de.spraener.prjxp.mcp.hub.source.LiveSource;
+import de.spraener.prjxp.mcp.hub.source.MarkerWalker;
+import de.spraener.prjxp.mcp.hub.source.SnapshotSource;
 import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
@@ -85,7 +88,9 @@ class ImportPollerTest {
         luceneStore = new LuceneEmbeddingStore(storeDir, 8);
 
         registry = new HubProjectRegistry(new PrjXPConfig(), props, new PxChunkDaoProvider(List.of()),
-                luceneStore, mock(EmbeddingModel.class), new ProjectConfigFileParser());
+                luceneStore, mock(EmbeddingModel.class), new ProjectConfigFileParser(), mock(LiveUpdateScanner.class));
+        MarkerWalker walker = new MarkerWalker(props, new ProjectConfigFileParser());
+        registry.setSources(List.of(new SnapshotSource(props, walker), new LiveSource(props, walker)));
 
         orchestrator = mock(PipelineOrchestrator.class);
 
@@ -101,7 +106,7 @@ class ImportPollerTest {
 
     private void indexChunkFor(String project) {
         luceneStore.addAll(
-                List.of(Embedding.from(new float[8])),
+                List.of(Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})),
                 List.of(TextSegment.from("content of " + project,
                         Metadata.from(Map.of(PxChunk.PXCHUNK_PROJECT, project)))));
     }

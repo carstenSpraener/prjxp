@@ -3,6 +3,7 @@ package de.spraener.prjxp.mcp;
 import de.spraener.prjxp.common.capability.SearchParamDef;
 import io.swagger.v3.oas.annotations.Operation;
 import lombok.RequiredArgsConstructor;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -11,6 +12,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.List;
 
 @RestController
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 @RequestMapping("/api/tools")
 @RequiredArgsConstructor
 public class MetaSearchParamsController {
@@ -35,7 +37,7 @@ public class MetaSearchParamsController {
 
     private List<SearchParamDef> globalParams() {
         return List.of(
-                SearchParamDef.optional("project", "Optional project name. Defaults to the active project."),
+                SearchParamDef.required("project", "Required project name. Call the projects endpoint to discover valid names."),
                 SearchParamDef.optional("limit", String.format(
                         "Maximum number of results (default %d, max %d).", SearchLimits.DEFAULT_LIMIT, SearchLimits.MAX_LIMIT)),
                 SearchParamDef.optional("mode", "Optional search mode (e.g. 'exact' or 'fuzzy'). Not supported by all endpoints."));

@@ -10,26 +10,26 @@ import de.spraener.prjxp.lucene.LucenePxChunkDao;
 import de.spraener.prjxp.mcp.ProjectInfo;
 import de.spraener.prjxp.mcp.ProjectRegistry;
 import de.spraener.prjxp.mcp.UnknownProjectException;
+import de.spraener.prjxp.mcp.hub.source.ProjectSource;
+import de.spraener.prjxp.mcp.hub.source.VanishPolicy;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import lombok.RequiredArgsConstructor;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Comparator;
-import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Directory-driven {@link ProjectRegistry} for hub mode: discovers snapshot project directories under the
@@ -50,19 +50,43 @@ public class HubProjectRegistry implements ProjectRegistry {
     private final LuceneEmbeddingStore luceneStore;       // shared bean (hub requires store type LUCENE)
     private final EmbeddingModel embeddingModel;          // from prjxp-common EmbeddingModelConfig
     private final ProjectConfigFileParser configParser;
+    private final LiveUpdateScanner scanner;             // read-only watermark source for the liveUpdate block
 
     private final Map<String, ProjectEntry> projects = new ConcurrentHashMap<>();
-    /** Throttles the "import dir missing" warning to once per outage instead of once per 5s poll. */
-    private final AtomicBoolean importDirMissingWarned = new AtomicBoolean(false);
+
+    /** The project sources this registry discovers (Snapshot, Live, Library; GitHub added in a later phase). */
+    private List<ProjectSource> sources = List.of();
+
+    @Autowired(required = false)
+    public void setSources(List<ProjectSource> sources) {
+        this.sources = sources == null ? List.of() : List.copyOf(sources);
+    }
 
     /** Tracks reindex progress per project. */
     private final Map<String, ReindexStatus> reindexStatuses = new ConcurrentHashMap<>();
     /** Percentage progress 0-100 per project. */
     private final Map<String, Integer> reindexProgress = new ConcurrentHashMap<>();
 
+    /**
+     * In-memory snapshot of the expensive per-project stats: the Lucene chunk count, the distinct
+     * file count, and the live-update watermark (0 for SNAPSHOT projects). The Web UI polls the
+     * project list frequently, but computing these per request would scan the index per project
+     * (the file count loads every stored field). The cache is refreshed after every pipeline run,
+     * after embedding imports, on registration/unregistration, and periodically (safety net for
+     * index changes made outside the hub, e.g. a standalone tibed run).
+     */
+    public record ProjectStats(long chunkCount, int fileCount, long watermark, long computedAt) {
+        /** Fallback when a refresh fails: zeroed stats, never null. */
+        public static final ProjectStats EMPTY = new ProjectStats(0, 0, 0, 0);
+    }
+
+    private final Map<String, ProjectStats> statsCache = new ConcurrentHashMap<>();
+    /** Epoch millis of the last periodic stats refresh (0 = not yet). */
+    private volatile long lastStatsRefreshAt;
+
     /** Registers a snapshot project directory (tar import flow). */
     public void registerProject(String name, Path dir) {
-        registerProject(name, dir, ProjectEntry.Kind.SNAPSHOT);
+        registerProject(name, dir, ProjectEntry.Kind.SNAPSHOT, "snapshot");
     }
 
     /**
@@ -71,6 +95,15 @@ public class HubProjectRegistry implements ProjectRegistry {
      * LIVE projects get their JSONL output redirected to the hub-managed area (never into the live tree).
      */
     public void registerProject(String name, Path dir, ProjectEntry.Kind kind) {
+        registerProject(name, dir, kind, sourceNameFor(kind));
+    }
+
+    /**
+     * Core registration: stamps the entry with the given source name (drives the source-based vanish filter).
+     * A relative rootDir (including the default ".") is stamped absolute against {@code dir};
+     * LIVE projects get their JSONL output redirected to the hub-managed area (never into the live tree).
+     */
+    public void registerProject(String name, Path dir, ProjectEntry.Kind kind, String source) {
         ProjectDefinition definition = configParser.parse(dir, name);
         stampRootDir(definition, dir);
         if (kind == ProjectEntry.Kind.LIVE) {
@@ -79,9 +112,16 @@ public class HubProjectRegistry implements ProjectRegistry {
         }
         PrjXPEmbeddingStoreReference storeRef = new PrjXPEmbeddingStoreReference();
         storeRef.setProjectName(name);
-        daoProvider.register(new LucenePxChunkDao(luceneStore, embeddingModel, storeRef));
-        projects.put(name, new ProjectEntry(name, dir, kind, definition, storeRef));
-        log.info("Registered {} project '{}' at {}", kind, name, dir);
+        daoProvider.register(new LucenePxChunkDao(luceneStore, embeddingModel, storeRef,
+                cfg.getEmbedding().getQueryPrompt()));
+        projects.put(name, new ProjectEntry(name, dir, kind, source, definition, storeRef));
+        refreshStats(name);   // warm the in-memory stats cache (cheap for a fresh/empty index)
+        log.info("Registered {} project '{}' (source '{}') at {}", kind, name, source, dir);
+    }
+
+    /** Default source for a kind when the caller does not specify one (user-created / tar projects). */
+    private static String sourceNameFor(ProjectEntry.Kind kind) {
+        return kind == ProjectEntry.Kind.LIVE ? "live" : "snapshot";
     }
 
     private void stampRootDir(ProjectDefinition def, Path dir) {
@@ -122,7 +162,70 @@ public class HubProjectRegistry implements ProjectRegistry {
     public void unregisterProject(String name) {
         daoProvider.unregisterByProject(name);
         projects.remove(name);
+        statsCache.remove(name);   // drop the stale stats snapshot
         log.info("Unregistered project '{}'", name);
+    }
+
+    // ------------------------------------------------------------------ In-memory stats cache
+
+    /**
+     * Recomputes the expensive per-project stats (Lucene chunk/file counts + live watermark) and
+     * atomically replaces the cached snapshot. Never throws: on failure the previous snapshot is
+     * kept, so a Web UI request must not fail because of a stats refresh. For an unknown name it
+     * drops any stale snapshot (deregistered project).
+     */
+    public void refreshStats(String name) {
+        ProjectEntry entry = projects.get(name);
+        if (entry == null) {
+            statsCache.remove(name);
+            return;
+        }
+        try {
+            long chunkCount = luceneStore.countByProject(name);
+            int fileCount = luceneStore.countFilesByProject(name);
+            long watermark = entry.getKind() == ProjectEntry.Kind.LIVE ? scanner.watermarkOf(entry) : 0;
+            statsCache.put(name, new ProjectStats(chunkCount, fileCount, watermark, System.currentTimeMillis()));
+        } catch (Exception e) {
+            log.warn("Could not refresh stats for project '{}': {} — keeping the previous snapshot", name, e.toString());
+        }
+    }
+
+    /** Refreshes the stats of all registered projects (periodic safety net). */
+    public void refreshStatsAll() {
+        for (String name : projects.keySet()) {
+            refreshStats(name);
+        }
+    }
+
+    /**
+     * Periodic safety-net refresh of the in-memory stats cache on a fixed 30 s tick (like
+     * {@link LiveUpdateScheduler}): the effective interval is
+     * {@code prjxp.hub.stats-refresh-interval-ms} (default 60 s). Catches index changes made
+     * outside the hub (e.g. a standalone tibed run against the same index). A non-positive
+     * interval disables the periodic refresh.
+     */
+    @Scheduled(fixedDelay = 30_000)
+    public void scheduledStatsRefresh() {
+        long interval = hub.getStatsRefreshIntervalMs();
+        if (interval <= 0) {
+            return;   // disabled via configuration
+        }
+        long now = System.currentTimeMillis();
+        if (now - lastStatsRefreshAt < interval) {
+            return;   // not yet due
+        }
+        lastStatsRefreshAt = now;
+        refreshStatsAll();
+    }
+
+    /** The cached stats snapshot for a project, computing (and caching) it on a cache miss. Never returns null. */
+    private ProjectStats statsOfOrCompute(ProjectEntry entry) {
+        ProjectStats stats = statsCache.get(entry.getName());
+        if (stats == null) {
+            refreshStats(entry.getName());
+            stats = statsCache.get(entry.getName());
+        }
+        return stats != null ? stats : ProjectStats.EMPTY;
     }
 
     /** Updates the lifecycle status of a known project; no-op for unknown names. */
@@ -146,6 +249,7 @@ public class HubProjectRegistry implements ProjectRegistry {
     }
 
     /** The parsed definition of a known project, or null for unknown names. */
+    @Override
     public ProjectDefinition definitionOf(String name) {
         ProjectEntry entry = projects.get(name);
         return entry == null ? null : entry.getDefinition();
@@ -170,6 +274,12 @@ public class HubProjectRegistry implements ProjectRegistry {
             oldDef.setTibedResetStore(freshDef.isTibedResetStore());
             oldDef.setPrompt(freshDef.getPrompt());
             oldDef.setFulltext(freshDef.isFulltext());
+            oldDef.setEmbedDependencies(freshDef.isEmbedDependencies());
+            oldDef.setDependencyDepth(freshDef.getDependencyDepth());
+            oldDef.setDependencyWhitelist(freshDef.getDependencyWhitelist());
+            oldDef.setMavenDependency(freshDef.getMavenDependency());
+            oldDef.setGitUrl(freshDef.getGitUrl());
+            oldDef.setGitToken(freshDef.getGitToken());
         }
     }
 
@@ -197,188 +307,54 @@ public class HubProjectRegistry implements ProjectRegistry {
     }
 
     /**
-     * Syncs the registry with both roots: registers new snapshot directories (projects root) and new live
-     * projects (import dir with a marker file), unregisters vanished ones. A disappeared LIVE project is
-     * additionally wiped from the shared index; a missing/unlistable import dir skips live sync entirely
-     * (volume-glitch protection). Synchronized: startup self-heal and the import poller may call it concurrently.
+     * Syncs the registry with all configured project sources: registers newly discovered project
+     * directories and unregisters vanished ones (per each source's {@link VanishPolicy}). A
+     * {@code null} discovery result (volume-glitch) skips that source's sync entirely. Synchronized:
+     * startup self-heal and the import poller may call it concurrently.
      */
     public synchronized List<String> discoverProjects() {
-        syncSnapshots();
-        syncLive();
+        for (ProjectSource source : sources) {
+            syncSource(source);
+        }
         return availableProjects();
     }
 
-    private void syncSnapshots() {
-        Map<String, Path> found = listProjectDirs();   // empty when the root is missing
-        found.forEach((name, dir) -> {
-            if (!projects.containsKey(name)) {
-                registerProject(name, dir);   // SNAPSHOT
-            }
-        });
-        projects.values().stream()
-                .filter(e -> e.getKind() == ProjectEntry.Kind.SNAPSHOT)
-                .filter(e -> !found.containsKey(e.getName()))
-                .map(ProjectEntry::getName)
-                .toList()
-                .forEach(this::unregisterProject);   // unchanged: unregister only, no index wipe
-    }
-
-    private void syncLive() {
-        Map<String, Path> found = listLiveDirs();
+    /**
+     * Syncs the registry with one source: registers newly discovered project dirs and unregisters vanished
+     * ones (per the source's {@link VanishPolicy}). A {@code null} discovery result (volume-glitch) skips
+     * the source's sync entirely. Vanish filtering is source-based: a source only unregisters entries it
+     * registered itself (source-name match), so a Library (sharing the SNAPSHOT kind with Snapshot, but a
+     * distinct source) is never conflated with a vanished snapshot — and vice versa.
+     */
+    private void syncSource(ProjectSource source) {
+        Map<String, Path> found = source.discover();
         if (found == null) {
-            return;   // import dir missing/unlistable — skip live sync entirely (volume-glitch protection)
+            return;   // volume-glitch protection — skip this source's sync entirely
         }
         found.forEach((name, dir) -> {
             ProjectEntry existing = projects.get(name);
             if (existing == null) {
-                registerProject(name, dir, ProjectEntry.Kind.LIVE);   // status IMPORTING — the poller enqueues it
+                registerProject(name, dir, source.kind(), source.name());   // stamp the actual source
             } else if (!sameDir(existing.getRootDir(), dir)) {
-                log.warn("Live project name '{}' collides with an existing entry at {} — skipping {}",
-                        name, existing.getRootDir(), dir);   // never overwrite a registered project
+                log.warn("Project name '{}' from source '{}' collides with an existing entry at {} — skipping {}",
+                        name, source.name(), existing.getRootDir(), dir);   // never overwrite a registered project
             }
         });
         projects.values().stream()
-                .filter(e -> e.getKind() == ProjectEntry.Kind.LIVE)
+                .filter(e -> source.name().equals(e.getSource()))   // source-based (was: kind-based)
                 .filter(e -> !found.containsKey(e.getName()))   // marker or directory gone
                 .map(ProjectEntry::getName)
                 .toList()
                 .forEach(name -> {
                     unregisterProject(name);
-                    luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));   // scoped wipe (shared index!)
+                    if (source.vanishPolicy() == VanishPolicy.UNREGISTER_AND_WIPE) {
+                        luceneStore.removeAll(new IsEqualTo(PxChunk.PXCHUNK_PROJECT, name));   // scoped wipe (shared index!)
+                    }
                 });
     }
 
     private static boolean sameDir(Path a, Path b) {
         return a.toAbsolutePath().normalize().equals(b.toAbsolutePath().normalize());
-    }
-
-    private Map<String, Path> listProjectDirs() {
-        Map<String, Path> found = new HashMap<>();
-        Path root = Path.of(hub.getProjectsRoot());
-        if (!Files.isDirectory(root)) {
-            return found;   // missing dir -> empty
-        }
-        try (var dirs = Files.list(root)) {
-            dirs.filter(Files::isDirectory)
-                    .forEach(dir -> found.put(dir.getFileName().toString(), dir));
-        } catch (IOException e) {
-            log.warn("Could not list hub projects root {}: {}", root, e.toString());
-        }
-        return found;
-    }
-
-    /**
-     * Directories with a prjxp.yaml/yml marker anywhere below the import dir (recursive walk), keyed by
-     * project name (yaml {@code name} or directory name). The outermost marker wins: the walk stops
-     * descending into a project tree, so nested markers belong to that project. Directories named in
-     * {@code prjxp.hub.scan-exclude-dir-names} are pruned before recursion (see {@link #isExcludedFromScan}),
-     * any directory carrying a {@value ProjectConfigFileParser#EXCLUDE_MARKER_FILE_NAME} file is skipped
-     * individually (see {@link ProjectConfigFileParser#isExcluded}), and recursion is bounded by
-     * {@code prjxp.hub.scan-max-depth} (see {@link #collectLiveDir}). Returns null only when the import
-     * dir root itself is missing or unlistable (volume-glitch protection — callers must skip live sync,
-     * not wipe everything). An unreadable subtree further down (e.g. a permission-denied folder or a path
-     * too long for the host filesystem) is logged and skipped without affecting unrelated sibling projects.
-     */
-    private Map<String, Path> listLiveDirs() {
-        Path root = Path.of(hub.getImportDir());
-        if (!Files.isDirectory(root)) {
-            if (importDirMissingWarned.compareAndSet(false, true)) {
-                log.warn("Hub import dir {} does not exist (yet) — is the volume mounted? "
-                        + "Live project scan is skipped until it appears (retried every poll, this warning logs only once).", root);
-            }
-            return null;   // missing -> skip live sync entirely
-        }
-        if (importDirMissingWarned.compareAndSet(true, false)) {
-            log.info("Hub import dir {} is now available — resuming live project scan", root);
-        }
-        Map<String, Path> found = new HashMap<>();
-        Set<Path> visitedReal = new HashSet<>();   // symlink-cycle / duplicate-link protection
-        List<Path> subDirs;
-        try (var dirs = Files.list(root)) {
-            subDirs = dirs.filter(Files::isDirectory)
-                    .filter(p -> !isExcludedFromScan(p))
-                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))   // deterministic on name collisions
-                    .toList();
-        } catch (IOException e) {
-            log.warn("Could not list hub import dir {}: {}", root, e.toString());
-            return null;   // the import dir root itself is unlistable -> skip live sync entirely (volume-glitch protection)
-        }
-        for (Path dir : subDirs) {
-            collectLiveDirSafely(dir, 1, visitedReal, found);
-        }
-        log.debug("Live project scan of {} walked {} top-level entr{} and found {} project(s): {}",
-                root, subDirs.size(), subDirs.size() == 1 ? "y" : "ies", found.size(), found.keySet());
-        return found;
-    }
-
-    /**
-     * Collects live projects below {@code dir}, isolating unreadable subtrees: an {@link IOException}
-     * anywhere below one top-level (or nested) entry only skips that entry, so a single bad directory
-     * (e.g. an unreadable folder, a broken symlink, or a path exceeding the host filesystem's limits —
-     * seen with long Windows bind-mount paths) never aborts the scan of unrelated sibling projects.
-     */
-    private void collectLiveDirSafely(Path dir, int depth, Set<Path> visitedReal, Map<String, Path> found) {
-        try {
-            collectLiveDir(dir, depth, visitedReal, found);
-        } catch (IOException e) {
-            log.warn("Skipping unreadable directory {} while scanning for live projects: {}", dir, e.toString());
-        }
-    }
-
-    /**
-     * Recursively collects live projects below {@code dir}: a directory with a marker file becomes a
-     * project and the walk stops there (outermost marker wins). Children are visited in sorted order
-     * for deterministic name-collision handling. A {@value ProjectConfigFileParser#EXCLUDE_MARKER_FILE_NAME}
-     * file makes the hub ignore {@code dir} entirely — it is neither registered nor descended into, even
-     * if a {@code prjxp.yaml}/{@code .yml} also sits there. Recursion stops once {@code depth} reaches
-     * {@code prjxp.hub.scan-max-depth} (see {@link HubProperties#getScanMaxDepth()}) — bounds the cost of
-     * huge marker-less sibling trees (e.g. when {@code importDir} is mounted broadly).
-     */
-    private void collectLiveDir(Path dir, int depth, Set<Path> visitedReal, Map<String, Path> found) throws IOException {
-        if (configParser.isExcluded(dir)) {
-            return;   // .prjxp-exclude marker — directory (and its whole subtree) is ignored
-        }
-        if (configParser.markerFile(dir).isPresent()) {
-            registerLiveDir(dir, found);
-            return;   // never descend into a project tree — nested markers belong to it
-        }
-        if (depth >= hub.getScanMaxDepth()) {
-            log.debug("Live project scan stopped at max depth {} below {} (no marker found within the limit)",
-                    hub.getScanMaxDepth(), dir);
-            return;   // bounds runaway recursion into huge, marker-less subtrees
-        }
-        if (!visitedReal.add(dir.toRealPath())) {
-            return;   // already visited (symlink cycle or duplicate link) — prune
-        }
-        try (var children = Files.list(dir)) {
-            List<Path> subDirs = children.filter(Files::isDirectory)
-                    .filter(p -> !isExcludedFromScan(p))
-                    .sorted(Comparator.comparing(p -> p.getFileName().toString()))
-                    .toList();
-            for (Path sub : subDirs) {
-                collectLiveDirSafely(sub, depth + 1, visitedReal, found);
-            }
-        }
-    }
-
-    /**
-     * True when {@code dir}'s bare name (case-insensitive) is configured via
-     * {@code prjxp.hub.scan-exclude-dir-names}. Such directories are pruned before recursion, so heavy
-     * non-project subtrees (e.g. old SVN {@code branches}/{@code tags} checkouts) never slow down — or,
-     * on a single I/O hiccup, jeopardize — the discovery of markers elsewhere in the tree.
-     */
-    private boolean isExcludedFromScan(Path dir) {
-        String name = dir.getFileName().toString();
-        return hub.getScanExcludeDirNames().stream().anyMatch(excluded -> excluded.equalsIgnoreCase(name));
-    }
-
-    private void registerLiveDir(Path dir, Map<String, Path> found) {
-        String name = configParser.parse(dir, dir.getFileName().toString()).getName();   // yaml name or directory name
-        if (found.containsKey(name)) {
-            log.warn("Duplicate live project name '{}' in import dir — keeping {}", name, found.get(name));
-        } else {
-            found.put(name, dir);
-        }
     }
 
     // ------------------------------------------------------------------ ProjectRegistry
@@ -388,14 +364,18 @@ public class HubProjectRegistry implements ProjectRegistry {
         return projects.keySet().stream().sorted().toList();
     }
 
-    /** null/blank -> active project name (or "default"); "default" passes through; anything else as-is. Never throws. */
+    /**
+     * Resolves a requested project name: any concrete name passes through as-is.
+     * <p>
+     * A {@code null}/blank request or the legacy sentinel {@code "default"} throws
+     * {@link UnknownProjectException} — the project is required, there is no implicit default.
+     * (Fixes the known bug in v0.8.0-rc1, doc/Todos.md §4: the old active-project/"cwd" fallback
+     * either silently searched the wrong project or failed with an unhelpful error.)
+     */
     @Override
     public String resolve(String requested) {
-        if (requested == null || requested.isBlank()) {
-            return cfg.getActiveProject().map(ProjectDefinition::getName).orElse("default");
-        }
-        if ("default".equalsIgnoreCase(requested)) {
-            return "default";
+        if (requested == null || requested.isBlank() || "default".equalsIgnoreCase(requested)) {
+            throw UnknownProjectException.required(availableProjects());
         }
         return requested;
     }
@@ -438,19 +418,32 @@ public class HubProjectRegistry implements ProjectRegistry {
         return projects.values().stream()
                 .sorted(Comparator.comparing(ProjectEntry::getName))
                 .map(e -> {
-                    long chunkCount = luceneStore.countByProject(e.getName());
-                    int fileCount = luceneStore.countFilesByProject(e.getName());
+                    // In-memory stats cache — the Web UI polls this endpoint frequently and must
+                    // not trigger a per-project index scan on every request.
+                    ProjectStats stats = statsOfOrCompute(e);
                     de.spraener.prjxp.common.config.ProjectDefinition def = e.getDefinition();
                     String reindexStatus = getReindexStatus(e.getName()).name();
                     int reindexProgress = getReindexProgress(e.getName());
+                    ProjectInfo.LiveUpdateInfo liveUpdate = null;
+                    if (e.getKind() == ProjectEntry.Kind.LIVE) {
+                        // UPDATING only while the update is actively running on the pipeline worker
+                        // (embeddingRunning); a queued-but-not-yet-running update stays IDLE so the
+                        // Web UI's indicator marks only the project actually being updated.
+                        String st = !def.isLiveUpdate() ? "DISABLED"
+                                : e.isEmbeddingRunning() ? "UPDATING" : "IDLE";
+                        long wm = stats.watermark();
+                        liveUpdate = new ProjectInfo.LiveUpdateInfo(
+                                st, wm > 0 ? wm : null, e.getNextScanAt() > 0 ? e.getNextScanAt() : null,
+                                e.isEmbeddingRunning() ? e.getLiveUpdateProgress() : null);
+                    }
                     return new ProjectInfo(
                         e.getName(),
                         e.getStatus().name(),
                         e.getKind().name(),
                         e.getLastError(),
-                        chunkCount,
-                        chunkCount, // embeddingCount == chunkCount (1:1)
-                        fileCount,
+                        stats.chunkCount(),
+                        stats.chunkCount(), // embeddingCount == chunkCount (1:1)
+                        stats.fileCount(),
                         def.getRootDir(),
                         def.getJsonlFile(),
                         def.getChunoWhiteList(),
@@ -460,7 +453,12 @@ public class HubProjectRegistry implements ProjectRegistry {
                         reindexStatus,
                         reindexProgress,
                         def.getPrompt(),
-                        def.isFulltext()
+                        def.isFulltext(),
+                        liveUpdate,
+                        def.isEmbedDependencies(),
+                        def.getMavenDependency(),
+                        def.getGitUrl(),
+                        def.getGitUrl() != null && def.getGitToken() != null
                     );
                 })
                 .toList();

@@ -24,6 +24,13 @@ export class DashboardService {
     return this.http.get<ProjectInfo[]>(`${this.baseUrl}/tools/projects`);
   }
 
+  pollProjects(intervalMs: number = 10000): Observable<ProjectInfo[]> {
+    return interval(intervalMs).pipe(
+      startWith(0),
+      switchMap(() => this.getProjectStats())
+    );
+  }
+
   pollHealth(intervalMs: number = 5000): Observable<SystemHealth> {
     return interval(intervalMs).pipe(
       startWith(0),

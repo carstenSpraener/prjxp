@@ -24,12 +24,14 @@
 
 .panel-header {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
   margin-bottom: 1rem;
+  align-items: center;
 }
 
 .search-input {
-  flex: 1;
+  flex: 1 1 100%;
   padding: 0.5rem 0.75rem;
   border-radius: 8px;
   border: 1px solid rgba(0, 255, 255, 0.15);
@@ -155,6 +157,8 @@
 
 /* Buttons */
 .btn {
+  flex: 1 1 auto;
+  white-space: nowrap;
   padding: 0.5rem 1rem;
   border-radius: 8px;
   font-size: 0.85rem;

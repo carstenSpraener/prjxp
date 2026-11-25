@@ -17,6 +17,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Predicate;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatCode;
@@ -33,6 +34,17 @@ class LanguagePackPluginLoaderTest {
 
     private Logger logger;
     private ListAppender<ILoggingEvent> logAppender;
+    private final List<LanguagePackPluginLoader> loaders = new ArrayList<>();
+
+    private LanguagePackPluginLoader loader(File directory) {
+        return loader(directory, LanguagePackPluginLoader.defaultDelegation());
+    }
+
+    private LanguagePackPluginLoader loader(File directory, Predicate<String> parentFirst) {
+        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(directory, parentFirst);
+        loaders.add(loader);
+        return loader;
+    }
 
     @BeforeEach
     void attachLogAppender() {
@@ -44,19 +56,20 @@ class LanguagePackPluginLoaderTest {
 
     @AfterEach
     void detachLogAppender() {
+        loaders.forEach(LanguagePackPluginLoader::close);
         logger.detachAppender(logAppender);
     }
 
     @Test
     void missingDirectoryReturnsEmptyResult() {
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(new File(pluginDir.toFile(), "does-not-exist"));
+        LanguagePackPluginLoader loader = loader(new File(pluginDir.toFile(), "does-not-exist"));
 
         assertThat(loader.loadAll()).isEmpty();
     }
 
     @Test
     void emptyDirectoryReturnsEmptyResult() {
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        LanguagePackPluginLoader loader = loader(pluginDir.toFile());
 
         assertThat(loader.loadAll()).isEmpty();
     }
@@ -68,7 +81,7 @@ class LanguagePackPluginLoaderTest {
                 List.of("de/spraener/prjxp/pluginfix/second/SecondPackProvider.java"),
                 "de.spraener.prjxp.pluginfix.second.SecondPackProvider");
 
-        List<LanguagePack> packs = new LanguagePackPluginLoader(pluginDir.toFile()).loadAll();
+        List<LanguagePack> packs = loader(pluginDir.toFile()).loadAll();
 
         assertThat(packs).hasSize(2);
         assertThat(packs).extracting(LanguagePack::language).containsExactlyInAnyOrder("goodlang", "secondlang");
@@ -81,7 +94,7 @@ class LanguagePackPluginLoaderTest {
                 List.of("de/spraener/prjxp/pluginfix/broken/BrokenPackProvider.java"),
                 "de.spraener.prjxp.pluginfix.broken.BrokenPackProvider");
 
-        List<LanguagePack> packs = new LanguagePackPluginLoader(pluginDir.toFile()).loadAll();
+        List<LanguagePack> packs = loader(pluginDir.toFile()).loadAll();
 
         assertThat(packs).hasSize(1);
         assertThat(packs.get(0).language()).isEqualTo("goodlang");
@@ -94,7 +107,7 @@ class LanguagePackPluginLoaderTest {
         PluginJarBuilder.build(pluginDir, "second",
                 List.of("de/spraener/prjxp/pluginfix/second/SecondPackProvider.java"));
 
-        List<LanguagePack> packs = new LanguagePackPluginLoader(pluginDir.toFile()).loadAll();
+        List<LanguagePack> packs = loader(pluginDir.toFile()).loadAll();
 
         assertThat(packs).isEmpty();
         assertThat(logAppender.list).noneMatch(e -> e.getLevel() == Level.ERROR);
@@ -104,7 +117,7 @@ class LanguagePackPluginLoaderTest {
     void corruptJarFileIsSkipped() throws IOException {
         Files.writeString(pluginDir.resolve("corrupt.jar"), "this is not a zip file");
 
-        List<LanguagePack> packs = new LanguagePackPluginLoader(pluginDir.toFile()).loadAll();
+        List<LanguagePack> packs = loader(pluginDir.toFile()).loadAll();
 
         assertThat(packs).isEmpty();
         assertThat(logAppender.list)
@@ -115,7 +128,7 @@ class LanguagePackPluginLoaderTest {
     void loadedPackUsesHostLanguagePackIdentity() throws IOException {
         PluginJarBuilder.build(pluginDir, "good", GOOD_SOURCES, GOOD_PROVIDER);
 
-        LanguagePack pack = new LanguagePackPluginLoader(pluginDir.toFile()).loadAll().get(0);
+        LanguagePack pack = loader(pluginDir.toFile()).loadAll().get(0);
 
         assertThat(pack).isInstanceOf(LanguagePack.class);
         assertThat(pack.getClass().getInterfaces()).contains(LanguagePack.class);
@@ -126,7 +139,7 @@ class LanguagePackPluginLoaderTest {
     @Test
     void pxChunkRoundtripThroughClassLoaderBoundary() throws IOException {
         PluginJarBuilder.build(pluginDir, "good", GOOD_SOURCES, GOOD_PROVIDER);
-        LanguagePack pack = new LanguagePackPluginLoader(pluginDir.toFile()).loadAll().get(0);
+        LanguagePack pack = loader(pluginDir.toFile()).loadAll().get(0);
 
         File sample = pluginDir.resolve("sample.good").toFile();
         Files.writeString(sample.toPath(), "whatever");
@@ -151,7 +164,7 @@ class LanguagePackPluginLoaderTest {
                 "de.spraener.prjxp.pluginfix.brokenidentity.BrokenIdentityProvider");
 
         // Simulated broken delegation: child-first for everything
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile(), name -> false);
+        LanguagePackPluginLoader loader = loader(pluginDir.toFile(), name -> false);
         List<LanguagePack> packs = loader.loadAll();
 
         assertThat(packs).isEmpty();
@@ -168,7 +181,7 @@ class LanguagePackPluginLoaderTest {
                 List.of("de/spraener/prjxp/pluginfix/contractviolation/ContractViolatingProvider.java"),
                 "de.spraener.prjxp.pluginfix.contractviolation.ContractViolatingProvider");
 
-        List<LanguagePack> packs = new LanguagePackPluginLoader(pluginDir.toFile()).loadAll();
+        List<LanguagePack> packs = loader(pluginDir.toFile()).loadAll();
 
         assertThat(packs).isEmpty();
         assertThat(logAppender.list)
@@ -179,7 +192,7 @@ class LanguagePackPluginLoaderTest {
     void loadAllIsIdempotent() throws IOException {
         PluginJarBuilder.build(pluginDir, "good", GOOD_SOURCES, GOOD_PROVIDER);
 
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        LanguagePackPluginLoader loader = loader(pluginDir.toFile());
         List<LanguagePack> first = loader.loadAll();
         List<LanguagePack> second = loader.loadAll();
 
@@ -191,13 +204,15 @@ class LanguagePackPluginLoaderTest {
     void closeIsIdempotent() throws IOException {
         PluginJarBuilder.build(pluginDir, "good", GOOD_SOURCES, GOOD_PROVIDER);
 
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        LanguagePackPluginLoader loader = loader(pluginDir.toFile());
         loader.loadAll();
         assertThat(loader.classLoaders()).hasSize(1);
 
         loader.close();
         assertThat(loader.classLoaders()).isEmpty();
         assertThatCode(loader::close).doesNotThrowAnyException();
+        Files.delete(pluginDir.resolve("good.jar"));
+        assertThat(pluginDir.resolve("good.jar")).doesNotExist();
     }
 
     /* --- WP-1 Phase 04: close releases the class loaders' resources --- */
@@ -206,7 +221,7 @@ class LanguagePackPluginLoaderTest {
     void closeReleasesAllPluginClassLoaders() throws IOException {
         PluginJarBuilder.build(pluginDir, "good", GOOD_SOURCES, GOOD_PROVIDER);
 
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        LanguagePackPluginLoader loader = loader(pluginDir.toFile());
         loader.loadAll();
         LanguagePackPluginLoader.PluginClassLoader pluginCL =
                 (LanguagePackPluginLoader.PluginClassLoader) loader.classLoaders().get(0);
@@ -232,7 +247,7 @@ class LanguagePackPluginLoaderTest {
                 List.of("de/spraener/prjxp/pluginfix/second/SecondPackProvider.java"),
                 "de.spraener.prjxp.pluginfix.second.SecondPackProvider");
 
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        LanguagePackPluginLoader loader = loader(pluginDir.toFile());
         loader.loadAll();
         assertThat(loader.classLoaders()).hasSize(2);
 
@@ -244,6 +259,7 @@ class LanguagePackPluginLoaderTest {
                         LanguagePackPluginLoader.defaultDelegation()) {
                     @Override
                     public void close() throws IOException {
+                        super.close();
                         throw new IOException("simulated close failure");
                     }
                 };

@@ -1,325 +1,246 @@
 ## What is Doc|Pipe and what problem does it solve?
 
-Doc|Pipe is a pipeline-driven documentation generation system. It automates the production of technical documentation by combining **project-structure awareness** with **LLM-based content synthesis**. The core problem it addresses: legacy and mid-sized codebases accumulate documentation debt. READMEs go stale, architecture overviews are never written, and per-module explanations simply don't exist. Manually writing or updating that documentation is expensive and rarely happens.
+Doc|Pipe is a pipeline-driven documentation generation system. It scans a project's directory tree for `.dp` configuration folders, resolves Handlebars prompt templates against the actual project structure, sends the resulting prompts to LLMs, and writes the generated content to output files.
 
-Doc|Pipe solves this by treating documentation as a **build artifact**. You declare *what* to generate, *where* to find the source material, and *which model* to use in a small JSON configuration. The system then walks the project tree, injects actual source code and structural data into a prompt template, calls an LLM, and writes the result to a file—reproducibly and incrementally.
+The primary problem it addresses: **legacy and complex codebases lack up-to-date documentation**. Manually writing or maintaining architecture assessments, data-model descriptions, per-class documentation, and READMEs is expensive and drifts out of sync. Doc|Pipe automates this by:
 
-### How the pipeline works at a glance
+- **Discovering** documentation jobs from `.dp/documents.json` files anywhere in the project tree.
+- **Resolving** prompt templates context-sensitively (injecting real source code, file listings, or script-computed data).
+- **Caching** via SHA-256 prompt hashes so unchanged prompts never trigger a redundant LLM call.
+- **Executing** tasks in a configurable thread pool for parallel generation.
+
+A minimal project integration looks like this:
 
 ```
-Project Root
+my-project/
 ├── .dp/
-│   ├── documents.json          ← what to generate (glob patterns, output paths, stereotypes)
-│   ├── models.json             ← which LLM to use per stereotype
-│   ├── content-hashes.properties  ← SHA-256 cache to skip unchanged prompts
-│   └── *.prompt.txt            ← Handlebars prompt templates
+│   ├── documents.json
+│   ├── content-hashes.properties   (generated at runtime)
+│   └── prompts/
+│       └── architecture.prompt.txt
 ├── src/
-│   └── ...
-└── docs/                       ← generated output
+│   └── main/java/...
+└── docs/                           (generated output)
 ```
 
-The execution flow for a single run:
+The `documents.json` file declares what to generate:
 
-1. **Discovery** – `JobCreationService` walks the project root, finds every directory containing a `.dp` folder, and parses its `documents.json` into `DPJob` instances.
-2. **Expansion** – Each `DPContentCreation` entry with a `forEach` glob is expanded into one task per matched file (e.g., `**/*.java` → one task per Java file).
-3. **Prompt Resolution** – `PromptResolvingService` reads the Handlebars template, registers all `TemplateResolver` helpers, and renders the final prompt with project context.
-4. **Change Detection** – `ContentUpdateRequiredController` hashes the resolved prompt (SHA-256) and compares it against the stored hash. If unchanged, the LLM call is skipped entirely.
-5. **Generation** – `LLMService` routes the prompt to the correct model (selected by *stereotype*) and receives the response.
-6. **Post-processing** – Configured `ContentFilter` implementations clean the output (e.g., stripping Markdown code fences).
-7. **Output** – The result is written via an `OutputSink` to the declared output path.
+```json
+[
+  {
+    "stereotype": "architect",
+    "prompt": "prompts/architecture.prompt.txt",
+    "outputFile": "docs/architecture.md",
+    "filterList": "noSurroundingCodeBlock"
+  },
+  {
+    "forEach": "src/main/java/**/*.java",
+    "stereotype": "doc-writer",
+    "prompt": "prompts/class-doc.prompt.txt",
+    "outputDir": "docs/api",
+    "outputFile": ".md"
+  }
+]
+```
 
-### Why this matters for legacy systems
-
-A legacy codebase with 200 source files and zero documentation can be assessed in a single run. The `forEach` glob pattern means you write **one** configuration entry, and the system generates **200** individual documents. The hash-based cache means subsequent runs only re-generate documents whose prompt actually changed—keeping LLM costs bounded.
+The `forEach` glob expands a single entry into one task per matched file, injecting a `currentFile` argument into the template context.
 
 ---
 
 ## How does the template resolution mechanism work?
 
-The prompt for every content-creation task is defined as a **Handlebars template** stored in the `.dp` directory. At runtime, `PromptResolvingService` performs three steps:
+The `PromptResolvingService` uses the **Handlebars** templating engine. The resolution pipeline for a single `ContentCreationTask` is:
 
-1. **Read** the raw template file (e.g., `.dp/architecture.prompt.txt`).
+1. **Read** the raw template file from `.dp/<prompt>` (e.g., `.dp/prompts/architecture.prompt.txt`).
 2. **Register** every `TemplateResolver` bean as a Handlebars helper (by its `getID()` and any `getAliases()`).
-3. **Compile and apply** the template inline, passing the task's `args` map as the Handlebars context.
+3. **Compile** the template inline and **apply** it with the task's `args` map as the data context.
+4. **Return** the fully resolved prompt string.
 
-The result is a fully resolved, data-driven prompt string that is then sent to the LLM.
-
-### The `TemplateResolver` contract
-
-```java
-public interface TemplateResolver {
-    String getID();                          // helper name in Handlebars
-    default List<String> getAliases() { ... } // optional alternate names
-    String resolve(File baseDir, Object context, Options options) throws Exception;
-}
-```
-
-- **`baseDir`** – the `.dp` configuration directory. All relative paths in a resolver are resolved against this.
-- **`context`** – the Handlebars context object (the `args` map from `DPContentCreation`). For `forEach`-expanded tasks, this contains a `currentFile` key with the relative path of the matched file.
-- **`options`** – the Handlebars `Options` object, giving access to positional parameters (`options.param(0)`) and named hash parameters (`options.hash("ending", "java")`), as well as block content (`options.fn.text()`).
-
-### Built-in resolvers
-
-| ID / Alias | Purpose |
-|---|---|
-| `src-dump` / `java-src-dump` | Dumps full source files (filtered by extension) into fenced code blocks |
-| `src-skeleton` | Dumps source *skeletons* (signatures only, bodies stripped) via `SourceSkeletonizer` |
-| `URL` | Reads and inlines the content of a file referenced by a `file:` URL |
-| `groovy` | Executes an inline Groovy script with access to `dir`, `options`, `applicationContext`, `dpContext`, `currentFile` |
-| `currentFile` | Reads the full content of the file identified by the `currentFile` context entry |
-| `mcp-project` / `mcpProject` | Injects MCP tool descriptions and the active project name |
-| `gr` | Delegates to `GRPromptEnrichment` for project-specific enrichment |
+The `baseDir` passed to each resolver is the `.dp` configuration directory. Resolvers use it as the root for relative path resolution.
 
 ### Example: a prompt template
 
 ```handlebars
-{{! .dp/architecture.prompt.txt }}
+{{! .dp/prompts/architecture.prompt.txt }}
 You are a senior software architect. Analyze the following codebase and produce
-a concise architecture assessment covering: components, data flow, and key risks.
+a concise architecture assessment covering: modules, key abstractions, data flow,
+and external dependencies.
 
-Here is the complete codebase:
+Here is the complete source code:
 
 {{src-dump "src/main/java" ending="java" scanSubs=true}}
 
 {{#if currentFile}}
-Focus particularly on: {{currentFile}}
+Focus specifically on: {{currentFile}}
 {{/if}}
+
+Output in Markdown. Do not wrap the result in a code fence.
 ```
 
-When the `forEach` glob `**/*.java` matches `src/main/java/com/acme/OrderService.java`, the `args` map contains `{"currentFile": "src/main/java/com/acme/OrderService.java"}`, and the `{{currentFile}}` helper reads that file's content. The `{{src-dump ...}}` helper walks the directory tree and inlines every `.java` file as a fenced block. The final resolved prompt is a single, self-contained string sent to the LLM.
+When resolved, `{{src-dump ...}}` is replaced with the actual concatenated source of every `.java` file under `src/main/java`, each wrapped in a fenced code block. The `{{currentFile}}` helper (populated by the `forEach` expansion) injects the relative path of the file being documented.
 
-### The `forEach` expansion mechanism
+### Available built-in resolvers
 
-In `documents.json`, a `forEach` glob triggers per-file task expansion:
+| Helper ID | Aliases | Purpose |
+|-----------|---------|---------|
+| `src-dump` | `java-src-dump` | Dumps full source of matching files into fenced blocks |
+| `src-skeleton` | — | Dumps source with method bodies stripped (signature-only) |
+| `URL` | — | Reads and inlines the content of a file via a `file:` URL |
+| `groovy` | — | Executes an inline Groovy script; bindings: `dir`, `options`, `applicationContext`, `dpContext`, `currentFile` |
+| `gr` | — | Delegates block content to `GRPromptEnrichment` (golden-retriever) |
+| `mcp-project` | `mcpProject` | Injects MCP tool descriptions and active project name |
+| `currentFile` | — | Reads the file identified by the `currentFile` context entry |
 
-```json
-[
-  {
-    "forEach": "**/*.java",
-    "outputFile": ".md",
-    "outputDir": "docs/api",
-    "stereotype": "doc-writer",
-    "prompt": "class-doc.prompt.txt",
-    "storePrompt": ".prompt.txt"
-  }
-]
+### Hash-based update gating
+
+Before any LLM call, `ContentUpdateRequiredController` computes a SHA-256 hash of the resolved prompt and compares it against the value stored in `.dp/content-hashes.properties` (keyed by output file path). If the hash matches, the task is **skipped entirely**—no LLM call, no file write. This makes repeated runs idempotent and cheap.
+
+```java
+// Simplified logic inside ContentUpdateRequiredController
+String currentHash = sha256(resolvedPrompt);
+String storedHash  = readFromProperties(outputFile);
+if (storedHash == null || !storedHash.equals(currentHash)) {
+    updater.run();          // LLM call + file write
+    writeEntry(outputFile, currentHash);
+}
 ```
-
-For each matched file, `JobCreationService` clones the `DPContentCreation`, sets `args["currentFile"]` to the relative path, and computes the output filename by stripping the source extension and appending the `outputFile` suffix. A file `src/main/java/com/acme/OrderService.java` produces output `docs/api/OrderService.md`.
 
 ---
 
 ## How can developers extend Doc|Pipe?
 
-Doc|Pipe is designed for open extension. The primary extension point is the **`TemplateResolver`** interface. Secondary extension points include `ContentFilter`, `SourceSkeletonizer`, and `OutputSink`.
+The primary extension point is the **`TemplateResolver`** interface. Implement it, annotate the class with `@Component`, and Spring will inject it into `PromptResolvingService`, which registers it as a Handlebars helper automatically.
 
-### Registering a custom `TemplateResolver`
+### The interface
 
-Implement the interface and annotate with `@Component`. The `PromptResolvingService` injects `List<TemplateResolver>` via constructor, so Spring auto-discovers every implementation:
+```java
+public interface TemplateResolver {
+
+    /** Unique helper name used in Handlebars templates, e.g. "src-dump". */
+    String getID();
+
+    /** Optional alternative names, e.g. List.of("java-src-dump"). */
+    default List<String> getAliases() {
+        return List.of();
+    }
+
+    /**
+     * Resolves a value for injection into the template.
+     *
+     * @param baseDir   the .dp configuration directory (use as path root)
+     * @param context   the Handlebars data context (the DPContentCreation.args map)
+     * @param options   Handlebars Options: positional params via options.param(i),
+     *                  named params via options.hash("key", default),
+     *                  block content via options.fn.text()
+     * @return the string to splice into the template
+     */
+    String resolve(File baseDir, Object context, Options options) throws Exception;
+}
+```
+
+### Example: a custom resolver that lists directory entries
 
 ```java
 @Component
-public class DependencyGraphResolver implements TemplateResolver {
+public class DirListingResolver implements TemplateResolver {
 
     @Override
     public String getID() {
-        return "dep-graph";
-    }
-
-    @Override
-    public List<String> getAliases() {
-        return List.of("dependencyGraph");
+        return "dir-listing";
     }
 
     @Override
     public String resolve(File baseDir, Object context, Options options) throws Exception {
-        String srcPath = options.param(0).toString();
-        String format  = options.hash("format", "mermaid");
+        String relPath = options.param(0).toString();
+        Path target = baseDir.toPath().getParent().resolve(relPath);
 
-        // Walk the source tree, extract class-level dependencies,
-        // and render a Mermaid or PlantUML diagram.
-        return renderDiagram(baseDir.toPath().resolve(srcPath), format);
+        StringBuilder sb = new StringBuilder();
+        try (Stream<Path> walk = Files.walk(target)) {
+            walk.filter(Files::isRegularFile)
+                .forEach(p -> sb.append(target.relativize(p)).append('\n'));
+        }
+        return sb.toString();
     }
 }
 ```
 
-Use it in any prompt template:
+Usage in a template:
 
 ```handlebars
-{{dep-graph "src/main/java" format="mermaid"}}
+Project file inventory:
+{{dir-listing "src"}}
 ```
 
-No registration call, no configuration file—Spring's component scan picks it up, and `PromptResolvingService` registers it as a Handlebars helper automatically.
+### Other extension points
 
-### Adding a `ContentFilter`
+| Interface / Class | Purpose |
+|---|---|
+| `SourceSkeletonizer` | Pluggable logic to reduce source to signatures (used by `src-skeleton`). Implement `supports(File, String ending)` and `skeletonize(File)`. |
+| `ContentFilter` | Post-processing of LLM output. Implement `name()` and `filter(String)`. Reference by name in `filterList` (comma-separated). |
+| `OutputSink` | Abstraction over file writing. Swap for in-memory or network sinks in tests or custom deployments. |
+| `DPGroovyTool` | Utility object available inside `{{#groovy}}` blocks: `grep(rootDir, regex, consumer)` and `printFile(file)`. |
 
-Filters post-process the LLM's raw response before it is written to disk. They are identified by name in the `filterList` field of `DPContentCreation`:
+### Registering a new stereotype
 
-```java
-@Component
-public class StripThinkingBlock implements ContentFilter {
-
-    @Override
-    public String name() {
-        return "stripThinking";
-    }
-
-    @Override
-    public String filter(String content) {
-        // Remove any <thinking>...</thinking> blocks some models emit
-        return content.replaceAll("(?s)<thinking>.*?</thinking>", "").trim();
-    }
-}
-```
-
-```json
-{ "filterList": "noSurroundingCodeBlock,stripThinking" }
-```
-
-Filters are applied in the order listed. Unknown names are silently skipped.
-
-### Adding a `SourceSkeletonizer`
-
-The `src-skeleton` resolver delegates to a list of `SourceSkeletonizer` beans. Each one declares which file extensions it supports:
-
-```java
-@Component
-public class TypeScriptSourceSkeletonizer implements SourceSkeletonizer {
-
-    @Override
-    public boolean supports(File sourceFile, String ending) {
-        return "ts".equals(ending) || "tsx".equals(ending);
-    }
-
-    @Override
-    public String skeletonize(File sourceFile) throws Exception {
-        // Extract class/interface declarations and method signatures,
-        // strip method bodies.
-        return extractSignatures(sourceFile);
-    }
-}
-```
-
-If no skeletonizer matches a file, the resolver falls back to a full content dump with an HTML comment explaining why.
-
-### Adding a custom `OutputSink`
-
-The `OutputSink` interface (with `println`, `printf`, `close`) abstracts the write target. The default `FileOutputSink` writes to the filesystem. For testing or alternative targets (e.g., an in-memory buffer, a database, a remote store), provide a different implementation through the `OutputSinkFactory`:
-
-```java
-@Service
-@Primary
-public class CustomOutputSinkFactory implements OutputSinkFactory {
-    @Override
-    public OutputSink createSink(Path path) throws IOException {
-        return new InMemoryOutputSink(path); // your implementation
-    }
-}
-```
-
-### Configuration files at a glance
-
-All configuration lives in the `.dp` directory next to the source it documents:
-
-```
-my-module/
-├── .dp/
-│   ├── documents.json
-│   ├── models.json
-│   ├── content-hashes.properties   ← auto-generated, do not edit
-│   ├── architecture.prompt.txt
-│   └── class-doc.prompt.txt
-├── src/
-└── docs/                           ← generated output
-```
-
-**`models.json`** maps stereotypes to LLM configurations:
-
-```json
-[
-  {
-    "stereotype": "doc-writer",
-    "serverType": "lm-studio",
-    "modelName": "qwen2.5-7b-instruct",
-    "apiKey": "${LM_STUDIO_API_KEY}",
-    "providerUrl": "http://localhost:1234/v1",
-    "timeoutSecs": 180
-  },
-  {
-    "stereotype": "reader",
-    "modelName": "gpt-4o-mini"
-  }
-]
-```
-
-The `${VARIABLE}` syntax is resolved from environment variables at runtime via `EnvResolver`.
+The `stereotype` field in `documents.json` maps to an LLM model via `KIChatProvider.getByStereotype(...)`. To use a new model, add a `PrjXPChatModelReference` entry to the project's `PrjXPConfig` (typically in `application.yml` or the `.env` file). No code change is required—only configuration.
 
 ---
 
 ## What are the key benefits for team onboarding and system assessments?
 
+Doc|Pipe turns a project's **actual file structure and source code** into generated documentation artifacts in a single run. Concretely:
+
 ### Zero-time architecture assessments
 
-A new engineer joining a team with a 500-file legacy codebase can run Doc|Pipe once and receive a structured architecture assessment—components, data flows, dependency boundaries, and risk areas—generated from the **actual source code**, not from a stale wiki page. The `src-dump` and `src-skeleton` resolvers feed real code into the prompt; the LLM synthesizes the narrative.
+A single entry in `documents.json` with a `src-dump` or `src-skeleton` helper produces a complete, code-grounded architecture document. Because the prompt is built from the real source tree, the output reflects the code as it exists *now*—not a stale wiki page.
 
 ```json
-[
-  {
-    "outputFile": "docs/ARCHITECTURE.md",
-    "stereotype": "reader",
-    "prompt": "architecture.prompt.txt"
-  }
-]
+{
+  "stereotype": "architect",
+  "prompt": "prompts/arch-assessment.prompt.txt",
+  "outputFile": "docs/architecture-assessment.md",
+  "filterList": "noSurroundingCodeBlock"
+}
 ```
 
-No manual curation. No "the docs are in Confluence, but that page was last updated in 2019."
+### Per-file documentation at scale
 
-### Per-file API documentation at scale
-
-The `forEach` glob pattern turns a single configuration entry into N documentation tasks:
+The `forEach` glob mechanism eliminates the need to enumerate files manually. Adding a new class to the source tree automatically generates (or regenerates) its documentation on the next run:
 
 ```json
-[
-  {
-    "forEach": "src/main/java/**/*.java",
-    "outputFile": ".md",
-    "outputDir": "docs/api",
-    "stereotype": "doc-writer",
-    "prompt": "class-doc.prompt.txt"
-  }
-]
+{
+  "forEach": "src/main/java/**/*.java",
+  "stereotype": "doc-writer",
+  "prompt": "prompts/class-doc.prompt.txt",
+  "outputDir": "docs/api",
+  "outputFile": ".md",
+  "storePrompt": ".prompt.txt"
+}
 ```
 
-200 Java files → 200 Markdown documents, each generated from the actual class source. The `currentFile` resolver ensures each prompt references the correct file.
+The `storePrompt` field writes the fully resolved prompt alongside the output, giving reviewers full transparency into what context the LLM received.
 
-### Incremental regeneration via prompt hashing
+### Idempotent, incremental runs
 
-`ContentUpdateRequiredController` stores a SHA-256 hash of every resolved prompt in `.dp/content-hashes.properties`. On subsequent runs:
-
-- **Prompt unchanged** → the LLM call is skipped. The existing output file is left as-is.
-- **Prompt changed** (source file was modified, template was edited) → the LLM is called again and the output is overwritten.
-
-This means a full re-run of a 200-file project after a single-file change costs **one** LLM call, not 200. The hash file is a flat Java `Properties` file—inspectable, diffable, and safe to commit to version control.
+The SHA-256 hash cache means that a second run with no code or template changes performs **zero LLM calls**. Only files whose resolved prompt has changed trigger regeneration. This makes Doc|Pipe safe to wire into CI/CD pipelines or pre-commit hooks without incurring token costs for unchanged content.
 
 ### Parallel execution
 
-`DocPipeRunner` submits all tasks to a fixed thread pool (configurable via `prjxp.docpipe.maxthreads`, default 5). Independent documents are generated concurrently, reducing wall-clock time for large projects.
+`DocPipeRunner` submits all tasks to a fixed thread pool (configurable via `prjxp.docpipe.maxthreads`, default 5). For a project with 200 source files, the wall-clock time is bounded by the slowest LLM response, not the sum of all responses.
 
-### Reproducibility and auditability
+### In-process integration (hub mode)
 
-- **`storePrompt`** – optionally persist the fully resolved prompt to a file. This gives you an exact, replayable record of what was sent to the LLM for a given output.
-- **Manifest** – after each run, `DocPipeManifestWriter` writes `.prjxp-data/docpipe/manifest.json`, a sorted JSON array of all generated file paths. Downstream tooling (e.g., a documentation hub) can read this to know exactly what was produced.
-- **Deterministic output paths** – output filenames are derived from source filenames, so the mapping from source to documentation is stable and predictable.
+When running inside the PrjXP hub (`prjxp.hub.enabled=true`), `DocPipeRunner.runForProject(ProjectDefinition)` executes the pipeline in-process, records outputs and failures in a `DocPipeRunResult`, and writes a JSON manifest (`.prjxp-data/docpipe/manifest.json`) that the hub consumes to embed generated documents. Failures throw `DocPipeRunException` rather than calling `System.exit`, making the pipeline composable within a larger application.
 
-### Integration into CI/CD
+### Onboarding checklist for a new team member
 
-Because Doc|Pipe is a Spring Boot CLI application (`DocPipeCliApp`), it can be invoked as a build step:
+1. Clone the repository.
+2. Ensure a `.dp/documents.json` exists (or create one).
+3. Run `java -jar docpipe.jar --project <name>`.
+4. Open `docs/`—architecture, data-model, and per-class docs are generated from the current source.
+5. Re-run after code changes; only affected documents are regenerated.
 
-```bash
-java -jar docpipe-cli.jar -p my-project
-```
-
-It reads a `.env` file for API keys, discovers all `.dp` directories, generates or updates documentation, and exits with status `1` if any task produced a `SEVERE`-level error. This makes it straightforward to gate merges on documentation freshness or to regenerate docs on every release.
+No manual writing, no stale content, no coordination overhead.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 

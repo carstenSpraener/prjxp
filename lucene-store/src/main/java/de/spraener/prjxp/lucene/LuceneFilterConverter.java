@@ -18,6 +18,7 @@ import org.apache.lucene.search.BooleanClause;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.MatchAllDocsQuery;
 import org.apache.lucene.search.Query;
+import org.apache.lucene.search.TermInSetQuery;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.WildcardQuery;
 import org.apache.lucene.util.BytesRef;
@@ -102,23 +103,28 @@ public class LuceneFilterConverter {
 
         if (filter instanceof IsIn) {
             IsIn in = (IsIn) filter;
-            BooleanQuery.Builder builder = new BooleanQuery.Builder();
-            for (Object value : in.comparisonValues()) {
-                builder.add(new TermQuery(new Term(in.key(), value.toString())), BooleanClause.Occur.SHOULD);
-            }
-            return builder.build();
+            return termInSet(in.key(), in.comparisonValues());
         }
 
         if (filter instanceof IsNotIn) {
             IsNotIn notIn = (IsNotIn) filter;
-            BooleanQuery.Builder builder = new BooleanQuery.Builder()
-                    .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST);
-            for (Object value : notIn.comparisonValues()) {
-                builder.add(new TermQuery(new Term(notIn.key(), value.toString())), BooleanClause.Occur.MUST_NOT);
-            }
-            return builder.build();
+            return new BooleanQuery.Builder()
+                    .add(new MatchAllDocsQuery(), BooleanClause.Occur.MUST)
+                    .add(termInSet(notIn.key(), notIn.comparisonValues()), BooleanClause.Occur.MUST_NOT)
+                    .build();
         }
 
         throw new IllegalArgumentException("Unsupported filter type: " + filter.getClass().getName());
+    }
+
+    /**
+     * One {@link TermInSetQuery} instead of one clause per value. A live update passes every
+     * changed file as an {@code IsIn} filter; with more than 1.024 files the clause-per-value
+     * form aborts the pipeline with {@code TooManyClauses}. TermInSetQuery has no such limit.
+     */
+    private static Query termInSet(String key, Collection<?> values) {
+        return new TermInSetQuery(key, values.stream()
+                .map(value -> new BytesRef(value.toString()))
+                .toList());
     }
 }

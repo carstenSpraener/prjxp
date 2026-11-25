@@ -40,7 +40,8 @@ public class LuceneStoreAutoConfiguration {
     public List<PxChunkDao> lucenePxChunkDaos(LuceneEmbeddingStore store, EmbeddingModel embeddingModel) {
         List<PxChunkDao> daos = new ArrayList<>();
         for (var ref : config.getEmbeddingStores()) {
-            daos.add(new LucenePxChunkDao(store, embeddingModel, ref));
+            daos.add(new LucenePxChunkDao(store, embeddingModel, ref,
+                    config.getEmbedding().getQueryPrompt()));
         }
         return daos;
     }

@@ -56,7 +56,7 @@ class ProjectLifecycleServiceTest {
         luceneStore = new LuceneEmbeddingStore(indexDir, 8);
         embeddingModel = mock(EmbeddingModel.class);
         parser = new ProjectConfigFileParser();
-        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser);
+        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser, mock(LiveUpdateScanner.class));
         lifecycle = new ProjectLifecycleService(registry, luceneStore, hub);
     }
 
@@ -78,7 +78,7 @@ class ProjectLifecycleServiceTest {
 
         registry.registerProject("alpha", dir);
         luceneStore.addAll(
-                List.of(Embedding.from(new float[8]), Embedding.from(new float[8])),
+                List.of(Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1}), Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})),
                 List.of(segmentFor("alpha"), segmentFor("beta")));
 
         lifecycle.delete("alpha");
@@ -132,7 +132,7 @@ class ProjectLifecycleServiceTest {
 
         registry.registerProject("foo", live, ProjectEntry.Kind.LIVE);
         luceneStore.addAll(
-                List.of(Embedding.from(new float[8]), Embedding.from(new float[8])),
+                List.of(Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1}), Embedding.from(new float[]{1, 1, 1, 1, 1, 1, 1, 1})),
                 List.of(segmentFor("foo"), segmentFor("beta")));
 
         lifecycle.delete("foo");

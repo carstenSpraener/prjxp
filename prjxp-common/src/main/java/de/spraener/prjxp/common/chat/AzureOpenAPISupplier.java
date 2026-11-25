@@ -4,25 +4,25 @@ import de.spraener.prjxp.common.config.PrjXPChatModelReference;
 import de.spraener.prjxp.common.config.EnvPlaceholderResolver;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import dev.langchain4j.model.chat.ChatModel;
+import dev.langchain4j.http.client.jdk.JdkHttpClient;
 import dev.langchain4j.model.openai.OpenAiChatModel;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.TrustManager;
+import javax.net.ssl.TrustManagerFactory;
 import javax.net.ssl.X509TrustManager;
+import java.net.http.HttpClient;
 import java.security.KeyManagementException;
+import java.security.KeyStore;
 import java.security.NoSuchAlgorithmException;
 import java.security.cert.X509Certificate;
 import java.time.Duration;
 import java.time.temporal.ChronoUnit;
 import java.util.Map;
 
-@Component
-@RequiredArgsConstructor
-@Log
 /**
  * Supplier for OpenAI-compatible chat models.
  * <p>
@@ -30,6 +30,9 @@ import java.util.Map;
  * instances. It supports custom base URLs and ensures they are correctly formatted with the {@code /v1} suffix.
  * </p>
  */
+@Component
+@RequiredArgsConstructor
+@Log
 public class AzureOpenAPISupplier implements ChatModelSupplier {
     private final PxLogService logService;
     /**
@@ -74,6 +77,8 @@ public class AzureOpenAPISupplier implements ChatModelSupplier {
                 .apiKey(apiKey)
                 .customHeaders(Map.of("api-key",apiKey))
                 .customQueryParams(customQueryParams)
+                .httpClientBuilder(JdkHttpClient.builder()
+                        .httpClientBuilder(HttpClient.newBuilder().sslContext(sslContext())))
                 .timeout(Duration.of(15, ChronoUnit.MINUTES));
 
         // Request-level body properties (e.g. enable_thinking for Qwen3) — merged into the JSON body.
@@ -107,6 +112,26 @@ public class AzureOpenAPISupplier implements ChatModelSupplier {
             SSLContext.setDefault(sslContext);
         } catch( NoSuchAlgorithmException | KeyManagementException e) {
             logService.error(e,"Failed to enable insecure SSL for Azure OpenAI API: %s", e.getMessage());
+        }
+    }
+
+    private SSLContext sslContext() {
+        try {
+            if (!System.getProperty("os.name").toLowerCase().contains("win")) {
+                return SSLContext.getDefault();
+            }
+
+            KeyStore windowsRootStore = KeyStore.getInstance("Windows-ROOT");
+            windowsRootStore.load(null, null);
+            TrustManagerFactory trustManagers = TrustManagerFactory.getInstance(
+                    TrustManagerFactory.getDefaultAlgorithm());
+            trustManagers.init(windowsRootStore);
+
+            SSLContext sslContext = SSLContext.getInstance("TLS");
+            sslContext.init(null, trustManagers.getTrustManagers(), null);
+            return sslContext;
+        } catch (Exception e) {
+            throw new IllegalStateException("Unable to initialize the TLS truststore for Azure OpenAI", e);
         }
     }
 

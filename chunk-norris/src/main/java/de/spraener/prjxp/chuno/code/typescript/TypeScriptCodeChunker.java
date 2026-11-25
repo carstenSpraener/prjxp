@@ -18,6 +18,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -66,6 +67,16 @@ public class TypeScriptCodeChunker implements PxChunker {
     private static final Pattern CLASS_PATTERN = Pattern.compile("^\\s*(export\\s+)?(abstract\\s+)?(class|interface)\\s+(\\w+)");
     private static final Pattern METHOD_PATTERN = Pattern.compile("^\\s*(public|private|protected)?\\s*(async\\s+)?(\\w+)\\s*\\(.*\\)\\s*(:\\s*\\S+)?\\s*\\{");
     private static final Pattern FUNCTION_PATTERN = Pattern.compile("^\\s*(export\\s+)?(async\\s+)?function\\s+(\\w+)\\s*\\(.*\\)");
+
+    /**
+     * {@link #METHOD_PATTERN} also matches brace blocks that start like a call, most notably
+     * {@code if (...)}. Such control-flow blocks are not methods; without this guard every
+     * {@code if} block in a class produced a chunk with the same id ({@code Class.if}) and the
+     * lucene store rejected the project as a duplicate semantic node.
+     */
+    private static final Set<String> CONTROL_FLOW_KEYWORDS = Set.of(
+            "if", "else", "for", "while", "do", "switch", "case", "catch", "finally",
+            "try", "throw", "return", "new");
 
     /**
      * Zerlegt eine TypeScript-Datei in semantisch strukturierte Chunks.
@@ -172,6 +183,9 @@ public class TypeScriptCodeChunker implements PxChunker {
 
             if (methodMatcher.matches()) {
                 String methodName = extractMethodName(line);
+                if (CONTROL_FLOW_KEYWORDS.contains(methodName)) {
+                    continue;   // `if (...) {` is control flow, not a method
+                }
                 int methodStartLine = i;
                 int methodEndLine = findMethodEndLine(codeLines, methodStartLine);
                 String prefix = "\t// Method %s in class %s:\n".formatted(methodName, classInfo.name);
@@ -346,6 +360,9 @@ public class TypeScriptCodeChunker implements PxChunker {
             // Add method signatures
             Matcher methodMatcher = METHOD_PATTERN.matcher(line);
             if (methodMatcher.matches()) {
+                if (CONTROL_FLOW_KEYWORDS.contains(extractMethodName(line))) {
+                    continue;   // control flow is not a class member
+                }
                 if (line.endsWith("{")) {
                     line = line.replace("{", "").trim();
                     line = line + ";";

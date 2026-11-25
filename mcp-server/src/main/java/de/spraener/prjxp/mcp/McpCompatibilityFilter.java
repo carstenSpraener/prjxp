@@ -10,6 +10,7 @@ import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletRequestWrapper;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.beans.factory.ListableBeanFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.util.StreamUtils;
@@ -26,6 +27,7 @@ import java.util.Enumeration;
 import java.util.List;
 
 @Component
+@ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "true")
 public class McpCompatibilityFilter extends OncePerRequestFilter {
 
     private static final String MCP_PATH = "/mcp";

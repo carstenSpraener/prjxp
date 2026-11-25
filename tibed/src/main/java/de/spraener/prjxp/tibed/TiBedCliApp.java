@@ -32,7 +32,8 @@ public class TiBedCliApp {
 
     @Bean("tibedRun")   // unique name: the hub app scans multiple modules that each define a 'run' bean
     @Profile("!test")
-    @ConditionalOnProperty(name = "prjxp.cli.enabled", havingValue = "true", matchIfMissing = true)
+    // Active only in CLI mode (hub disabled); the hub app runs the pipeline in-process instead.
+    @ConditionalOnProperty(name = "prjxp.hub.enabled", havingValue = "false", matchIfMissing = true)
     @org.springframework.boot.autoconfigure.condition.ConditionalOnProperty(name = "tibed.run-embedding", havingValue = "true", matchIfMissing = true)
     public CommandLineRunner run(
             EmbeddingService storeProcess,

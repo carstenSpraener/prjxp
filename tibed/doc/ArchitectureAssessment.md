@@ -1,214 +1,156 @@
-# Software Architecture Assessment: TiBed – PrjXP Embedding Pipeline (Spring Boot CLI)
+# Software Architecture Assessment: TiBed – PrjXP Embedding & Enrichment Pipeline
 
 ## 1. Executive Summary
 
-TiBed is a Spring Boot CLI application within the **PrjXP** multi-module framework, responsible for the **text-embedding lifecycle**: reading chunked documents (JSONL), computing vector embeddings via LangChain4J, persisting them into a Lucene-based vector store, and supporting encrypted import/export of pre-embedded data. The architecture follows a pragmatic, Spring-idiomatic layered design with a Strategy pattern for pluggable embedding backends.
+TiBed is a Spring Boot CLI application within the PrjXP multi-module ecosystem that ingests code/documentation chunks (JSONL), computes vector embeddings via LangChain4J, persists them into a Lucene-based vector store, and enriches the index with two analytical layers: a semantic graph (Leiden clustering over kNN edges) and a TF-IDF signature layer. It supports three transfer modes (store, export, import) for cross-machine vector portability, with optional encryption.
 
 **Key Strengths:**
-- Clean separation of the three operational modes (store / export / import) into dedicated services.
-- Well-thought-out multi-project isolation via metadata-scoped filtering on a shared Lucene index.
-- A thoughtful `EmbeddingCompatibilityChecker` that guards against cross-platform vector drift.
-- Cost-aware FULLTEXT placeholder strategy that avoids unnecessary API calls.
+- Clean pipeline orchestration with well-separated batch stages (ingestion → semantic graph → signatures).
+- Strategy pattern for embedding providers, enabling pluggable backends.
+- Performance-aware parallelism design (bandwidth-bound kNN with capped thread pool).
+- Defensive resource management and thoughtful edge-case handling (placeholder vectors, compatibility checking).
 
 **Most Critical Risks:**
-- `MixedBredEmebeddingClient.embed()` returns `null` unconditionally — a latent `NullPointerException` if the `@Primary` qualifier is ever removed or the bean is injected directly.
-- Inconsistent logging frameworks (JUL `@Log` vs. SLF4J `LoggerFactory`) across sibling classes.
-- Broad `catch (Exception e)` blocks in all three pipeline services swallow failures, making partial-corruption scenarios invisible to the operator.
-- No visible test suite, reducing confidence in the correctness of the batch-indexing logic and the compatibility checker.
-
----
+- Per-chunk store lookups in the ingestion loop create O(N) round-trips that will degrade at scale.
+- A resource-leak path in `EmbeddingStoreSupplier` when multiple projects are resolved sequentially without a shared bean.
+- Silent exception swallowing in `EmbeddingImportService` can produce a partially-populated index without operator awareness.
+- A stub implementation (`MixedBredEmebeddingClient`) returns `null`, which will cause a `NullPointerException` downstream if activated.
 
 ## 2. Architectural Style & Patterns
 
-| Pattern / Style | Where Applied | Assessment |
-|---|---|---|
-| **Spring Boot Idomatic (Layered)** | `@Service`, `@Component`, `@RequiredArgsConstructor`, `ObjectProvider` | Standard and appropriate for a CLI tool. DI is used consistently. |
-| **Strategy** | `EmbeddingExecutor` interface → `LangChain4JEmbedderImpl` (`@Primary`), `MixedBredEmbedding` | Correct abstraction. The `default embed()` method that throws `UnsupportedOperationException` is a pragmatic escape hatch for executors that only support direct store writes. |
-| **Supplier / Factory** | `EmbeddingStoreSupplier` | Decouples store creation from consumers. The `ObjectProvider<LuceneEmbeddingStore>` pattern correctly handles the "shared hub bean vs. local creation" duality. |
-| **Event-Driven (intra-app)** | `CliArgsParsingEvent` → `CliArgsParser` | Decouples CLI parsing from the application bootstrap. |
-| **Batch Pipeline (Stream)** | `BatchingUtils.pack`, `PxChunkFromJsonLReader.readChunksFromJsonlStreamBatched` | Functional, memory-bounded processing. |
-| **Multi-Module (Maven/Gradle)** | `scanBasePackages` spans `tibed`, `common`, `lucene` | Modular monolith; each module owns its domain. |
+| Pattern | Where Applied | Assessment |
+|---------|--------------|------------|
+| **Layered / Pipeline** | `EmbeddingService.executeForProject` orchestrates ingestion → enrichment as sequential stages | Clear, linear flow; easy to follow |
+| **Strategy** | `EmbeddingExecutor` interface with `LangChain4JEmbedderImpl` (`@Primary`) and `MixedBredEmbedding` | Good extensibility; the default `embed()` that throws is a minor code smell |
+| **Factory / Supplier** | `EmbeddingStoreSupplier` resolves a shared bean or creates a dedicated store | Appropriate for the hub-vs-CLI duality |
+| **Batch Processing** | `BatchingUtils.pack`, `PxChunkFromJsonLReader.readChunksFromJsonlStreamBatched` | Standard streaming-batch idiom |
+| **Sidecar File** | `AstNeighboursLoader`, `SemanticGraphSidecar` | Cross-module data sharing without tight coupling |
+| **Event-Driven Config** | `CliArgsParser` listens to `CliArgsParsingEvent` | Decouples CLI parsing from application bootstrap |
+| **Guard / Guard-Clause** | `EmbeddingCompatibilityChecker`, `StoreIdChecker` | Pre-flight validation before expensive operations |
+| **Record-based Value Objects** | `EdgeConfig`, `SemanticEdge`, `CheckReport`, `Neighbor` | Immutable, self-documenting data carriers |
 
-**Decoupling & Separation of Concerns:**
-- The three services (`EmbeddingService`, `EmbeddingExportService`, `EmbeddingImportService`) are well-isolated and share only narrow, well-defined collaborators (`EmbeddingStoreSupplier`, `StoreIdChecker`, `EmbeddingExecutor`).
-- The `EmbeddingExecutor` interface is the primary extension point. However, the `EmbeddingExportService` depends on the concrete `embed()` method, creating a **tight coupling** to executors that support export (see Risks §5).
-- `PxChunk2TextSegmentConverter` is a stateless static utility — appropriate for its trivial mapping role, though it could be a `@Component` for testability.
-
----
+**Separation of Concerns:** Generally strong. The `de.spraener.prjxp.tibed` package contains the orchestration services, `tibed.semantic` the graph logic, `tibed.signature` the TF-IDF layer, and `tibed.embedder` the embedding strategies. The `de.spraener.prjxp.common` and `de.spraener.prjxp.lucene` packages (scanned via `scanBasePackages`) provide shared infrastructure. The one area of mild coupling is that `EmbeddingService` directly depends on both `SemanticGraphBatch` and `SignatureBatch` rather than a higher-level "EnrichmentPipeline" abstraction, making the orchestration logic monolithic.
 
 ## 3. Quality Attribute Evaluation
 
 ### Maintainability & Readability
 
-| Aspect | Rating | Notes |
-|---|---|---|
-| Naming | **Good** | Class and method names are descriptive (`EmbeddingCompatibilityChecker`, `needsImport`, `convertWithEmbeddingPrefix`). One typo: `MixedBredEmebeddingClient` (should be `Embedding`). |
-| SOLID – SRP | **Moderate** | `EmbeddingExportService` handles stream reading, embedding, JSONL serialization, encryption, and file I/O in one class (~150 lines). `EmbeddingStoreSupplier` is both a factory and a lifecycle manager. |
-| SOLID – OCP | **Good** | New embedding backends can be added by implementing `EmbeddingExecutor`. New store types can be added via the supplier. |
-| SOLID – LSP | **Risk** | `MixedBredEmbedding` implements `EmbeddingExecutor` but its client returns `null`; if selected, it silently produces no output. |
-| Logging Consistency | **Poor** | `EmbeddingService`, `EmbeddingImportService`, `EmbeddingExportService`, `EmbeddingStoreSupplier` use `@Log` (JUL). `EmbeddingCompatibilityChecker` uses SLF4J. `LangChain4JEmbedderImpl` uses `@Log` (JUL). This split makes log aggregation and level management harder. |
-| Javadoc | **Good** | Critical methods (`placeholderEmbedding`, `exportForProject`, `EmbeddingCompatibilityChecker.check`) carry thorough Javadoc explaining *why*, not just *what*. |
+- **Positive:** Consistent use of Lombok `@RequiredArgsConstructor` for constructor injection; descriptive Javadoc on public methods; meaningful constant names (`KEYWORDS_FIELD`, `AUTO_PARALLELISM_CAP`); records for immutable value types.
+- **Negative:**
+  - `MixedBredEmebeddingClient` contains a typo in the class name ("Emebedding") and returns `null` from `embed()`—a landmine for any caller.
+  - `EmbeddingService` mixes three responsibilities (ingestion orchestration, per-chunk dedup, enrichment dispatch) in a single ~150-line class. The `embedChunk` method accepts `PxChunk[]` while the rest of the codebase uses `List<PxChunk>`, creating a type-system inconsistency.
+  - `firstNonBlank(String...)` is duplicated verbatim in both `EmbeddingExportService` and `EmbeddingImportService`—a candidate for extraction to a utility.
+  - Logging is inconsistent: most classes use `@Log` (java.util.logging), but `EmbeddingCompatibilityChecker` uses SLF4J directly. This will produce two different log formats in the same application.
+  - The `EmbeddingExecutor` interface's default `embed()` method that throws `UnsupportedOperationException` is a "marker" pattern that forces every alternative implementation to either override it or risk a runtime failure. A `supportsExport()` capability query would be cleaner.
 
 ### Extensibility
 
-- **Adding a new LLM/embedding provider:** Implement `EmbeddingExecutor`, annotate with `@Component`. If it should be the default, add `@Primary`. The `default embed()` method means export-capable executors must override it. **Friction:** the `EmbeddingExportService` calls `embedder.embed(...)` directly; a non-export-capable executor will throw at runtime. A capability check or a separate `EmbeddingExporter` interface would be safer.
-- **Adding a new store backend:** `EmbeddingStoreSupplier` hard-codes `LuceneEmbeddingStore`. The `instanceof LuceneEmbeddingStore` checks in `EmbeddingService` and `EmbeddingImportService` (for reset-filter logic) create a **hidden dependency** on the Lucene implementation. A `StoreType` enum or a `StoreCapabilities` interface would generalize this.
-- **Adding a new transfer mode:** The `switch` in `TiBedCliApp.run` is a closed set. Adding a mode requires modifying the app class. An enum-driven strategy map would be more open.
+- **Positive:** Adding a new embedding provider requires implementing `EmbeddingExecutor` and annotating with `@Service` (or `@Primary` to override). The `EmbeddingStoreSupplier` already handles the shared-vs-dedicated store duality. The `EmbeddingCompatibilityChecker` is a standalone component that can be wired into the import path without modifying existing services.
+- **Negative:**
+  - The enrichment stage is hard-coded in `EmbeddingService.runEnrichment` as two `instanceof LuceneEmbeddingStore` checks. Adding a third enrichment layer (e.g., dependency-graph edges) requires modifying this method. A `List<EnrichmentBatch>` injected via Spring would allow open/closed extension.
+  - `SemanticEdgeBuilder` hard-codes MIME-type filtering (`text/x-java-code`, `text/x-typescript-code`, `text/markdown`, etc.) as constants. Adding a new language requires editing the class. A configurable `Set<String>` in `EdgeConfig` or a strategy for "input eligibility" would be more extensible.
+  - The `EmbeddingStoreSupplier` is Lucene-specific in its fallback path. If a non-Lucene store (e.g., Qdrant, pgvector) were needed, the supplier would need modification rather than a new implementation.
 
 ### Robustness & Error Handling
 
-| Concern | Finding |
-|---|---|
-| **Exception swallowing** | All three services wrap their core loop in `catch (Exception e) { logService.error(...) }`. A mid-stream failure (e.g., disk full during export, API timeout during embedding) is logged but the process exits with code 0. The operator cannot distinguish "completed with 3 bad batches" from "completed successfully." |
-| **Null-returning parsers** | `fromJSONL` returns `null` on parse failure; the caller filters with `Objects::nonNull`. This silently drops malformed lines. For a data pipeline, a configurable "strict vs. lenient" mode would be preferable. |
-| **`MixedBredEmebeddingClient`** | Returns `null` from `embed()`. Any downstream `.stream()` on the result will NPE. This is a **critical latent defect**. |
-| **Resource cleanup** | `EmbeddingStoreSupplier.destroy()` correctly closes the store. However, `EmbeddingExportService.exportForProject` creates a `FileOutputStream` inside a try-block but the `finally` only closes the `Writer` — if the `FileOutputStream` constructor throws, no resource is leaked, but if `BufferedWriter` construction fails after the `FileOutputStream` is open, the stream leaks. |
-| **Concurrency** | `synchronized (storeSupplier)` in `LangChain4JEmbedderImpl` guards `store.addAll(...)`. Synchronizing on a Spring-managed singleton bean is a code smell; a dedicated `ReentrantLock` or a `@Synchronized`-annotated method on the store itself would be clearer. |
-| **Compatibility checker** | Well-designed: handles null vectors, dimension mismatch, zero-norm vectors. The `cosineSimilarity` method is a clean, correct implementation. |
+- **Positive:**
+  - `AstNeighboursLoader` treats a missing/unreadable sidecar as non-fatal (returns `Map.of()`), which is correct for an optional enrichment.
+  - `EmbeddingCompatibilityChecker` handles null vectors, dimension mismatches, and zero-norm vectors gracefully.
+  - `EmbeddingService` uses an `AtomicBoolean ingestionSucceeded` gate to prevent enrichment on a broken index.
+  - `SemanticEdgeBuilder` properly propagates `InterruptedException` and wraps `ExecutionException` causes.
+- **Negative:**
+  - `EmbeddingImportService.execute()` wraps the entire import loop in `catch (Exception e) { logService.error(...) }`—the method returns `void` and the caller has no way to know the import partially failed. The pipeline will proceed to enrichment on a corrupted index.
+  - `EmbeddingExportService.exportForProject` catches the exception, logs it, then re-throws as `RuntimeException`—but the `execute()` method (CLI path) catches the same exception and only logs it. The asymmetry means the CLI silently succeeds after a failed export.
+  - `LangChain4JEmbedderImpl.execute` uses `synchronized (storeSupplier)` to guard `store.addAll`. This locks on the *supplier* object, not the store. If two different stores were ever used concurrently (multi-project hub), the lock is meaningless. If only one store exists, the lock is unnecessary (Lucene's `IndexWriter` is already internally synchronized).
+  - `StoreIdChecker.containsChunk` allocates a zero-vector of the configured dimension for every non-Lucene store lookup—wasteful and semantically odd (a zero vector has no direction in cosine space).
 
 ### Performance & Resource Efficiency
 
-| Concern | Finding |
-|---|---|
-| **Batching** | `BatchingUtils.pack` and `readChunksFromJsonlStreamBatched` provide bounded-memory processing. Batch size is configurable per project. **Good.** |
-| **Embedding API calls** | `embeddingModel.embedAll(...)` is a single batched call per batch — optimal for most providers. |
-| **StoreIdChecker** | For non-Lucene stores, it performs a full vector search with a zero-vector to check existence. This is **O(N)** per chunk in a brute-force store. For Lucene, `hasMatch(filter)` is an index lookup — **O(1)**. The asymmetry is a performance risk if a non-Lucene store is ever used with large datasets. |
-| **`countInputLines`** | Reads the entire input file a second time just to count lines for progress reporting. For very large files, this doubles I/O. A streaming line counter or a pre-computed manifest would avoid this. |
-| **Placeholder embeddings** | All-ones vector for FULLTEXT chunks is a smart cost-saving measure. The Javadoc correctly explains why zeros are not viable (Lucene COSINE KNN NaN). |
-| **`synchronized` block** | Serializes all `store.addAll` calls. For a single-threaded CLI this is a no-op, but it signals an assumption that the store is not thread-safe. If parallelism is ever introduced, this becomes a bottleneck. |
-
----
+- **Positive:**
+  - `SemanticEdgeBuilder.searchTopK` uses a bounded thread pool (capped at 4) with a well-documented rationale (memory-bandwidth-bound kNN). The pool is created per call and closed via try-with-resources—no thread leak.
+  - `EmbeddingExportService` streams JSONL line-by-line and processes in configurable batches, avoiding loading the entire file into memory.
+  - `SignatureBatch` builds all upsert patches in memory and calls `store.upsertAll` once—minimizing Lucene commit overhead.
+- **Negative:**
+  - **O(N) store lookups:** In `EmbeddingService.embedChunk`, `needsEmbedding` is called per-chunk via `storeIdChecker.needsImport`, which performs a Lucene `hasMatch` (or a full kNN search for non-Lucene stores) for *every* chunk in the batch. For a batch of 500 chunks, this is 500 individual index queries. A batched existence check (e.g., a single Lucene query with a `TermsFilter` on all chunk IDs) would reduce this to one round-trip.
+  - **`countInputLines`** reads the entire input file (potentially encrypted, potentially multi-GB) solely to count lines for a progress callback. For stdin (`"-"`) it correctly returns -1, but for a large file this is a full I/O pass before the actual export begins.
+  - **`EmbeddingStoreSupplier`** creates a new `LuceneEmbeddingStore` on every `getStore()` call when no shared bean exists, overwriting the `createdStore` field. If the hub calls `getStore` for multiple projects sequentially, all but the last store are leaked (never closed). The `destroy()` method only closes the most recent one.
+  - **`SemanticGraphBatch.run`** calls `store.readAllVectors(projectFilter)` to load *all* vectors for the project into memory, then `edgeBuilder.selectInputChunks` filters them. For a project with 100k+ chunks, this is a large heap allocation. A filtered read (if the store supports it) or a streaming API would be preferable.
 
 ## 4. Strengths & Best Practices
 
-1. **Multi-project isolation on a shared index.** The `PXCHUNK_PROJECT` metadata key combined with `IsEqualTo` filters allows multiple projects to coexist in one Lucene index without cross-contamination. The reset logic correctly scopes deletion to the active project.
-
-2. **`ObjectProvider` for optional shared beans.** `EmbeddingStoreSupplier` uses `ObjectProvider<LuceneEmbeddingStore>.getIfAvailable()` to gracefully handle the "hub provides the store" vs. "I create my own" duality without `@Autowired(required=false)` or `@ConditionalOnBean` complexity.
-
-3. **Cost-aware FULLTEXT placeholder.** Avoiding API calls for full-text chunks (which are excluded from vector search via a type filter) is a well-reasoned optimization with a clear Javadoc explaining the Lucene COSINE constraint.
-
-4. **`EmbeddingCompatibilityChecker`.** A genuinely useful guard: before importing pre-embedded vectors, it samples N chunks, re-embeds them locally, and compares COSINE similarity. The three-tier verdict (COMPATIBLE / PARTIALLY_COMPATIBLE / INCOMPATIBLE) with configurable thresholds is well-designed.
-
-5. **Transfer encryption with auto-detection.** `PrjXPJsonStreamProvider` auto-detects the `PRJXPENC` magic header, so encrypted and plaintext files are handled transparently. The `TransferSession` / `TransferPasswordResolver` separation is clean.
-
-6. **CLI design.** The `--mode` flag with a `switch` in the `CommandLineRunner` is simple and discoverable. The `@ConditionalOnProperty` on the bean allows the hub app to disable the CLI runner.
-
-7. **`DisposableBean` for store lifecycle.** Ensures the Lucene `IndexWriter` is closed on JVM shutdown, preventing index corruption.
-
-8. **Unique bean names for multi-module scanning.** `@Component("tibedCliArgsParser")` and `@Bean("tibedRun")` prevent collisions when the hub app scans multiple modules that define same-named classes.
-
----
+1. **Pipeline with explicit gates:** The `ingestionSucceeded` flag prevents enrichment on a partially-written index—a pragmatic resilience pattern for batch ETL.
+2. **Performance-aware concurrency:** The `AUTO_PARALLELISM_CAP = 4` with a detailed comment explaining the memory-bandwidth bottleneck (and measured timings on M5 Max) shows empirical engineering rather than blind `availableProcessors()` usage.
+3. **Placeholder vector design:** Using an all-ones vector (not zeros) for FULLTEXT chunks, with a comment explaining *why* zeros would produce NaN in Lucene's cosine KNN, demonstrates deep understanding of the underlying vector math.
+4. **Cross-platform compatibility checking:** `EmbeddingCompatibilityChecker` with its three-tier verdict (COMPATIBLE / PARTIALLY_COMPATIBLE / INCOMPATIBLE) and configurable thresholds is a thoughtful guard against a real operational risk (GPU vs. CPU rounding).
+5. **Sidecar file pattern:** `AstNeighboursLoader` and `SemanticGraphSidecar` allow cross-module data sharing (chunk-norris → tibed) without compile-time coupling or shared database tables.
+6. **Defensive null/blank handling:** `AstNeighboursMerger`, `SignatureBatch.joined()`, and `EmbeddingStoreSupplier` all gracefully handle absent data rather than throwing.
+7. **Unique bean names for multi-module scanning:** `@Component("tibedCliArgsParser")` and `@Bean("tibedRun")` with explanatory comments prevent Spring bean conflicts when the hub app scans multiple modules.
+8. **`DisposableBean` for resource cleanup:** `EmbeddingStoreSupplier.destroy()` ensures the Lucene `IndexWriter` is closed on application shutdown.
+9. **Canonical edge ordering:** `SemanticEdgeBuilder` normalizes edge endpoints via string comparison before deduplication, ensuring undirected edges are stored consistently.
+10. **Progress callback via `BiConsumer<Integer, Integer>`:** The `exportForProject` overload allows the hub to report progress without coupling the export service to a specific UI or logging framework.
 
 ## 5. Identified Risks & Technical Debt
 
-### Critical
-
-| # | Risk | Location | Impact |
-|---|---|---|---|
-| C1 | **`MixedBredEmebeddingClient.embed()` returns `null`** | `MixedBredEmebeddingClient` | If the `@Primary` on `LangChain4JEmbedderImpl` is removed, or if `MixedBredEmbedding` is injected directly, any call to `embed()` will NPE. The class is a stub that was never completed. |
-| C2 | **Silent exception swallowing in all pipeline services** | `EmbeddingService.executeForProject`, `EmbeddingImportService.execute`, `EmbeddingExportService.execute` | A mid-pipeline failure (API timeout, disk full, corrupted batch) is logged but the process exits 0. The operator cannot detect partial data loss. No exit-code propagation, no retry, no "failed batches" summary. |
-| C3 | **`instanceof LuceneEmbeddingStore` checks scattered across services** | `EmbeddingService`, `EmbeddingImportService` | The reset-filter logic branches on the concrete Lucene type. Adding a new store backend (e.g., Qdrant, pgvector) requires modifying every service. Violates OCP. |
-
-### High
-
-| # | Risk | Location | Impact |
-|---|---|---|---|
-| H1 | **Inconsistent logging frameworks** | `@Log` (JUL) in 5 classes; SLF4J in `EmbeddingCompatibilityChecker` | Log aggregation, level filtering, and MDC context will behave differently across classes. In a Spring Boot app, SLF4J is the standard. |
-| H2 | **`EmbeddingExportService` is a God class** | `EmbeddingExportService` (~150 lines) | Handles: stream reading, line counting, embedding, JSONL serialization, encryption, file I/O, progress reporting, and two different entry points (`execute` for CLI, `exportForProject` for hub). SRP violation. |
-| H3 | **`synchronized (storeSupplier)` on a Spring bean** | `LangChain4JEmbedderImpl.execute` | Synchronizing on a managed singleton is a code smell. It implies the store is not thread-safe but couples the lock to the supplier's identity. A `ReentrantLock` field or a store-level lock would be more explicit. |
-| H4 | **`StoreIdChecker` O(N) search for non-Lucene stores** | `StoreIdChecker.containsChunk` | The dummy-embedding search is a full scan. For a store with 100k+ vectors, checking each chunk's existence before import is prohibitively slow. |
-| H5 | **No test suite visible** | Entire module | The batch-indexing logic in `LangChain4JEmbedderImpl.embed()` (normal/fulltext split, index tracking) and the `EmbeddingCompatibilityChecker` cosine math are non-trivial and untested. |
-
-### Medium
-
-| # | Risk | Location | Impact |
-|---|---|---|---|
-| M1 | **Duplicated `firstNonBlank` utility** | `EmbeddingImportService`, `EmbeddingExportService` | Two private copies of the same 6-line method. Should be in a shared utility or `StringUtils`. |
-| M2 | **`fromJSONL` returns `null` on error** | `EmbeddingImportService`, `EmbeddingExportService`, `EmbeddingService` | Silent data loss. A malformed JSONL line is dropped without a count or warning summary at the end of the run. |
-| M3 | **`countInputLines` re-reads the entire file** | `EmbeddingExportService` | Doubles I/O for progress reporting. For a 10 GB JSONL, this is a significant startup cost. |
-| M4 | **Typo in class name** | `MixedBredEmebeddingClient` | "Emebedding" → "Embedding". Affects discoverability and IDE refactoring. |
-| M5 | **`EmbeddingExecutor` interface mixes two responsibilities** | `EmbeddingExecutor` | `execute(store, chunks)` (write to store) and `embed(chunks)` (compute vectors only) are different capabilities. A non-export-capable executor must throw from `embed()`. Splitting into `EmbeddingExecutor` + `EmbeddingExporter` (or a capability flag) would be cleaner. |
-| M6 | **`EmbeddingStoreSupplier` is both factory and lifecycle manager** | `EmbeddingStoreSupplier` | It creates the store *and* closes it in `destroy()`. If the store is the shared hub bean, `destroy()` is a no-op (correct), but the dual role makes the class harder to reason about. |
-
----
+| # | Severity | Location | Issue |
+|---|----------|----------|-------|
+| 1 | **High** | `EmbeddingImportService.execute()` | Catches all exceptions from the import loop and only logs. The method returns `void`; the caller (`TiBedCliApp`'s `CommandLineRunner`) cannot detect failure. A partially-imported index will be silently enriched. |
+| 2 | **High** | `EmbeddingService.embedChunk` → `StoreIdChecker.needsImport` | Per-chunk store existence check creates O(batchSize) Lucene queries per batch. At 500-chunk batches over a 50k-chunk project, this is 50k individual index lookups. |
+| 3 | **High** | `EmbeddingStoreSupplier.getStore()` | When no shared bean exists, each call creates a new `LuceneEmbeddingStore` and overwrites `createdStore`. Multiple sequential calls leak IndexWriters (file handles, memory). |
+| 4 | **Medium** | `MixedBredEmebeddingClient.embed()` | Returns `null`. If this bean is ever activated (e.g., via profile), `LangChain4JEmbedderImpl`-style downstream code will NPE. The class name also has a typo. |
+| 5 | **Medium** | `LangChain4JEmbedderImpl.execute()` | `synchronized (storeSupplier)` locks on the wrong object. The supplier is a singleton; the store is the shared mutable resource. This provides no real mutual exclusion for concurrent store writes. |
+| 6 | **Medium** | `EmbeddingService.runEnrichment` | Hard-coded `instanceof LuceneEmbeddingStore` checks for each enrichment batch. Adding a new enrichment type requires modifying this method (violates Open/Closed). |
+| 7 | **Medium** | `SemanticEdgeBuilder` | MIME-type and section-key filtering is hard-coded. Adding a new language (e.g., Python, Go) requires editing the class. |
+| 8 | **Low** | `EmbeddingExportService` / `EmbeddingImportService` | `firstNonBlank(String...)` is duplicated. |
+| 9 | **Low** | `EmbeddingCompatibilityChecker` | Uses SLF4J while all other classes use `@Log` (JUL). Inconsistent log output format. |
+| 10 | **Low** | `EmbeddingService` | `embedChunk` accepts `PxChunk[]` (array) while the `EmbeddingExecutor` interface and all other call sites use `List<PxChunk>`. The public `embedChunks` method bridges the two, adding an unnecessary conversion. |
+| 11 | **Low** | `EmbeddingExportService.exportForProject` | Creates a `FileOutputStream` without try-with-resources; only the `BufferedWriter` is in a try-finally. If `new FileOutputStream(...)` succeeds but `new OutputStreamWriter(...)` throws, the file handle leaks. |
+| 12 | **Low** | `SemanticGraphBatch.run` | Loads all project vectors into a `List<VectorChunk>` in memory. For very large projects this is a significant heap allocation. |
 
 ## 6. Actionable Recommendations
 
-### Priority 1 – Immediate (Correctness & Safety)
+### Priority 1 – Correctness & Data Integrity (Do First)
 
-1. **Fix or remove `MixedBredEmebeddingClient`.**
-   - If the BRED embedding is not yet implemented, either (a) make `embed()` throw `UnsupportedOperationException` (matching the interface default) and `execute()` throw a clear "not yet implemented" error, or (b) remove the class and `MixedBredEmbedding` entirely until the implementation is ready.
-   - Rename to `MixedBredEmbeddingClient` (fix typo).
+1. **Fix the import failure propagation.** In `EmbeddingImportService.execute()`, either:
+   - Throw a checked/unchecked exception after the catch block so the `CommandLineRunner` can exit non-zero, or
+   - Introduce an `ImportResult` record (success count, failure count, `boolean complete`) and have the runner inspect it.
+   At minimum, call `System.exit(1)` or throw after the catch to prevent the pipeline from proceeding on a broken index.
 
-2. **Propagate pipeline failures to the exit code.**
-   - In each service's `execute()`, track a `boolean hasErrors` or a `List<Exception>`. After the loop, if errors occurred, either re-throw a `PipelineException` or call `System.exit(1)`. At minimum, log a summary: `"Completed with N failed batches out of M total."`
-   - In `EmbeddingExportService.exportForProject` (the hub path), the re-throw is already present — ensure the CLI path has equivalent semantics.
+2. **Fix the `EmbeddingStoreSupplier` resource leak.** Change `createdStore` to a `Map<String, EmbeddingStore<TextSegment>>` keyed by project name, and close *all* created stores in `destroy()`. Alternatively, document and enforce that `getStore` is called at most once per application lifecycle (CLI mode), and add an assertion.
 
-3. **Unify logging to SLF4J.**
-   - Replace all `@Log` (JUL) annotations with `private static final Logger log = LoggerFactory.getLogger(...)`. This ensures consistent logback configuration, MDC propagation, and level management across the module.
+3. **Remove or properly implement `MixedBredEmebeddingClient`.** Either delete the stub (and `MixedBredEmbedding`) or implement `embed()` to return `List.of()` with a clear log warning. Fix the class-name typo. If it is a placeholder for future work, guard it with `@Profile("mixedbred")` so it is never active by default.
 
-### Priority 2 – Near-term (Architecture & Extensibility)
+### Priority 2 – Performance (Next Sprint)
 
-4. **Introduce a `StoreCapabilities` or `StoreType` abstraction to eliminate `instanceof LuceneEmbeddingStore`.**
-   ```java
-   public interface EmbeddingStoreCapabilities {
-       boolean supportsMetadataFilter();
-       Filter projectScopedFilter(String projectName);
-       boolean hasMatch(Filter filter);
-   }
-   ```
-   - `LuceneEmbeddingStore` implements it. The reset logic in `EmbeddingService` and `EmbeddingImportService` checks `store instanceof EmbeddingStoreCapabilities` instead of the concrete Lucene type.
+4. **Batch the existence check.** Replace the per-chunk `storeIdChecker.needsImport` call in `EmbeddingService.embedChunk` with a single batched query. For Lucene, this means one `hasMatch` with a `TermsFilter` (or `In` filter) over all chunk IDs in the batch. For the generic `EmbeddingStore` path, a single kNN search with `maxResults = batchSize` and a terms filter. This reduces N index round-trips to 1.
 
-5. **Split `EmbeddingExportService` into smaller units.**
-   - `JsonlChunkReader` (stream reading + line counting)
-   - `EmbeddingWriter` (JSONL serialization + encryption + file I/O)
-   - `EmbeddingExportService` (orchestration: read → embed → write, progress reporting)
-   - This reduces the class to ~50 lines of orchestration and makes each unit independently testable.
+5. **Eliminate the redundant `synchronized(storeSupplier)`.** If the store is a shared singleton `LuceneEmbeddingStore` whose `IndexWriter` is internally thread-safe for `addDocument`, remove the lock. If true mutual exclusion is needed (e.g., for a non-thread-safe store), lock on the *store* object or introduce a dedicated `ReentrantLock` in the supplier.
 
-6. **Replace `synchronized (storeSupplier)` with a dedicated lock.**
-   ```java
-   private final ReentrantLock storeWriteLock = new ReentrantLock();
-   // in execute():
-   storeWriteLock.lock();
-   try { store.addAll(embeddings, segments); }
-   finally { storeWriteLock.unlock(); }
-   ```
-   - Or, better, push the synchronization into `LuceneEmbeddingStore.addAll()` itself.
+6. **Avoid the full-file line count in `countInputLines`.** For the progress callback, either:
+   - Use a streaming line counter that runs concurrently with the export (a `CountingInputStream` wrapper), or
+   - Accept `-1` (unknown total) for all file inputs and only report "N embedded so far" without a percentage, or
+   - Cache the line count from a previous run in a sidecar file.
 
-7. **Split `EmbeddingExecutor` into two interfaces.**
-   ```java
-   public interface EmbeddingExecutor {
-       void execute(EmbeddingStore<TextSegment> store, List<PxChunk> chunks);
-   }
-   public interface EmbeddingExporter {
-       List<EmbeddedChunkRecord> embed(List<PxChunk> chunks);
-   }
-   ```
-   - `LangChain4JEmbedderImpl` implements both. `MixedBredEmbedding` implements only `EmbeddingExecutor`. `EmbeddingExportService` depends on `EmbeddingExporter` (injected via `ObjectProvider` or a `@ConditionalOnBean`). This eliminates the `UnsupportedOperationException` trap.
+### Priority 3 – Extensibility & Clean Architecture (Backlog)
 
-### Priority 3 – Medium-term (Performance & Quality)
+7. **Introduce an `EnrichmentBatch` interface** (e.g., `void run(String project, LuceneEmbeddingStore store) throws IOException`) and inject `List<EnrichmentBatch>` into `EmbeddingService`. Replace the two hard-coded `instanceof` checks with a loop over the injected list. This allows new enrichment layers (dependency edges, call-graph signatures, etc.) to be added via a new `@Service` class without modifying `EmbeddingService`.
 
-8. **Optimize `StoreIdChecker` for non-Lucene stores.**
-   - For stores that support ID-based lookup (e.g., a key-value store), add a `containsId(String id)` method to the `EmbeddingStore` interface or a capability interface. Avoid the O(N) dummy-embedding search.
-   - For Lucene, the current `hasMatch(filter)` is already O(1) — no change needed.
+8. **Externalize the MIME/section filter in `SemanticEdgeBuilder`.** Move the `DOC_MIMES`, `JAVA_MIME`, `TS_MIME`, and section-key constants into `EdgeConfig` (or a dedicated `InputEligibilityConfig` in `PrjXPConfig`) so new languages can be added via `prjxp.yaml` without a code change.
 
-9. **Eliminate the double file read in `countInputLines`.**
-   - Option A: Stream the file once, counting lines as they are processed, and report progress incrementally (the `BiConsumer` callback already supports this).
-   - Option B: Maintain a small manifest file (`.tibed-manifest`) alongside the JSONL that records the line count, written during the initial chunking step.
+9. **Unify logging.** Replace the SLF4J usage in `EmbeddingCompatibilityChecker` with `@Log` (JUL) to match the rest of the codebase, or (better) migrate the entire module to SLF4J for consistent structured logging.
 
-10. **Add a test suite.**
-    - Unit tests for: `PxChunk2TextSegmentConverter`, `EmbeddingCompatibilityChecker` (cosine math, threshold boundaries, null/zero vectors), `StoreIdChecker` (Lucene vs. non-Lucene paths), `LangChain4JEmbedderImpl.embed()` (normal/fulltext split, index alignment), `EmbeddingExportService` (batch writing, encryption, progress callback).
-    - Integration test: full pipeline with a mock `EmbeddingModel` and an in-memory `EmbeddingStore`.
+10. **Extract `firstNonBlank` to a shared utility** (e.g., `de.spraener.prjxp.common.util.Strings`) and remove the duplicates.
 
-11. **Add a run-summary log line.**
-    - At the end of each service's `execute()`, log: total chunks read, total embedded/imported/exported, total skipped (already present), total failed, total elapsed time. This gives the operator a single-line health check.
+11. **Standardize on `List<PxChunk>`** throughout. Change `EmbeddingService.embedChunk` to accept `List<PxChunk>` and remove the array-based overload. The public `embedChunks` method can then delegate directly without the `toArray` conversion.
 
-12. **Extract `firstNonBlank` to a shared utility.**
-    - Place it in `de.spraener.prjxp.common.util.Strings` or use `org.springframework.util.StringUtils` / `com.google.common.base.Strings` if available on the classpath.
+12. **Add a `supportsExport()` capability method** to `EmbeddingExecutor` (replacing the throwing default `embed()`). The export service can check this before calling `embed()`, and the `MixedBredEmbedding` implementation can return `false` cleanly.
 
----
+### Priority 4 – Observability & Testing (Ongoing)
 
-*Assessment generated for the `de.spraener.prjxp.tibed` module of the PrjXP framework. Scope: 13 source files. No test files, build configuration, or resource files were provided for analysis.*
+13. **Add structured metrics/logging to the pipeline.** Log (or emit Micrometer metrics for) per-batch: chunks read, chunks embedded, chunks skipped (already present), chunks failed, elapsed time. This makes operational debugging of large runs tractable.
+
+14. **Write integration tests** for the three transfer modes (store, export, import) using a temporary Lucene index directory. At minimum, test: round-trip fidelity (export → import → search), the `tibedResetStore` path, the enrich-only path, and the compatibility-checker verdicts.
+
+15. **Add a `@Profile("test")` guard** on the `CommandLineRunner` bean (already partially done with `@Profile("!test")`) and ensure the test profile provides mock `EmbeddingModel` and `LuceneEmbeddingStore` beans for unit-level testing of the batch classes.
 
 _This document was generated with .dp and gemini-3-flash-preview_
 

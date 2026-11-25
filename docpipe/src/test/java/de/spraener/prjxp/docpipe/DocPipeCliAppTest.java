@@ -12,13 +12,6 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
-/**
- * Tests for {@link DocPipeCliApp}. Plain JUnit 5 + Mockito, no Spring context.
- * <p>
- * Only the {@code @Bean commandLineRunner(...)} factory method is tested. The static
- * {@code main()} entry point (Spring Boot bootstrap + dotenv loading) is deliberately
- * left uncovered — it requires a full application context and stays untested by design.
- */
 class DocPipeCliAppTest {
 
     @Test

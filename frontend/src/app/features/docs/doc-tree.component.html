@@ -1,0 +1,37 @@
+@if (node(); as n) {
+  @if (n.type === 'root') {
+    @for (child of n.children ?? []; track child.name) {
+      <doc-tree [node]="child"
+                [selectedPath]="selectedPath()"
+                (docSelected)="docSelected.emit($event)"
+                (chapterSelected)="chapterSelected.emit($event)"></doc-tree>
+    }
+  } @else if (n.type === 'folder') {
+    <div class="tree-row folder" (click)="toggle(n)">
+      <span class="caret">{{ isExpanded(n) ? '▾' : '▸' }}</span>
+      <span class="row-label">{{ n.name }}</span>
+    </div>
+    @if (isExpanded(n)) {
+      <div class="children">
+        @for (child of n.children ?? []; track child.name) {
+          <doc-tree [node]="child"
+                    [selectedPath]="selectedPath()"
+                    (docSelected)="docSelected.emit($event)"
+                    (chapterSelected)="chapterSelected.emit($event)"></doc-tree>
+        }
+      </div>
+    }
+  } @else if (n.path; as p) {
+    <div class="tree-row doc"
+         [class.active]="p === selectedPath()"
+         (click)="docSelected.emit(p)">
+      <span class="row-label">{{ n.name }}</span>
+    </div>
+    @for (chapter of n.chapters ?? []; track chapter.anchor) {
+      <div class="tree-row chapter"
+           (click)="chapterSelected.emit({ path: p, anchor: chapter.anchor })">
+        {{ chapter.title }}
+      </div>
+    }
+  }
+}

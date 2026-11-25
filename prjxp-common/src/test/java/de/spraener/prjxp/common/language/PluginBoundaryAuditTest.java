@@ -4,6 +4,7 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.PxChunker;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.store.PxChunkDao;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
@@ -37,11 +38,19 @@ class PluginBoundaryAuditTest {
 
     @TempDir
     Path pluginDir;
+    private LanguagePackPluginLoader loader;
+
+    @AfterEach
+    void closeLoader() {
+        if (loader != null) {
+            loader.close();
+        }
+    }
 
     @Test
     void contractTypeClosureStaysOnHostClassIdentity() throws Exception {
         PluginJarBuilder.build(pluginDir, "good", GOOD_SOURCES, GOOD_PROVIDER);
-        LanguagePackPluginLoader loader = new LanguagePackPluginLoader(pluginDir.toFile());
+        loader = new LanguagePackPluginLoader(pluginDir.toFile());
         loader.loadAll();
 
         ClassLoader pluginCL = loader.classLoaders().get(0);

@@ -1,0 +1,9 @@
+<div class="toast-stack">
+  @for (toast of toastService.list(); track toast.id) {
+    <div class="toast toast-{{ toast.type }}">
+      <span class="toast-icon">{{ toast.type === 'success' ? '✓' : '✗' }}</span>
+      <span class="toast-message">{{ toast.message }}</span>
+      <button class="toast-close" (click)="dismiss(toast.id)">✕</button>
+    </div>
+  }
+</div>

@@ -7,13 +7,27 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 @Component
 @ConfigurationProperties(prefix = "prjxp") // <--- Das magische Prefix
 @Data
 public class PrjXPConfig {
+    private boolean setupCompleted;
+    @lombok.ToString.Exclude
+    private SetupState setupState = new SetupState();
+
+    @lombok.Data
+    public static class SetupState {
+        private String completionMode = "NONE";
+        private Map<String, String> savedSteps = new LinkedHashMap<>();
+        @lombok.ToString.Exclude
+        private Map<String, Map<String, Object>> tests = new LinkedHashMap<>();
+    }
+
     private String activeProject = "cwd";
     private List<ProjectDefinition> projects = new ArrayList<>();
     // In PrjXPConfig.java ergänzen:
@@ -31,7 +45,27 @@ public class PrjXPConfig {
     private LuceneEmbeddingStoreConfig embeddingStoreLucene = new LuceneEmbeddingStoreConfig();
     /** Maximum characters returned by the readFile MCP tool (0 = uncapped). Property: prjxp.reader-max-output-chars */
     private int readerMaxOutputChars = 100_000;
+    /**
+     * Default line window of readFile when no {@code limit} is given (full=true bypasses it).
+     * Property: prjxp.reader-max-lines
+     */
+    private int readerMaxLines = 100;
+    /**
+     * Hard line cap for readFile {@code full=true}. The escape hatch bypasses the 100-line
+     * default but never returns more than this many lines; larger files must be paged with
+     * {@code offset}/{@code limit} or read symbol-by-symbol with {@code readBySignature}.
+     * Property: prjxp.reader-full-max-lines
+     */
+    private int readerFullMaxLines = 200;
     private EmbeddingConfig embedding = new EmbeddingConfig();
+    private SemanticGraphConfig semanticGraph = new SemanticGraphConfig();
+    private SignatureConfig signature = new SignatureConfig();
+    /**
+     * When true, the tibed pipeline skips the ingestion (JSONL read + embedding) and runs only
+     * the enrichment (semantic graph + signatures) against the existing index. Set by the
+     * {@code --enrich-only} CLI flag; never true in the hub (in-process pipeline always ingests).
+     */
+    private boolean enrichOnly;
     // User-configurable single embedding model (Globals panel)
     private PrjXPEmbeddingModelReference embeddingModel;
 
@@ -46,9 +80,60 @@ public class PrjXPConfig {
     public static class EmbeddingConfig {
         private EmbeddingModelType type = EmbeddingModelType.OPEN_AI;
         private String apiBaseURL = "http://host.docker.internal:1234";
+        @lombok.ToString.Exclude
         private String apiKey = "lm-studio";
         private String modelName = "mxbai-embed-large-v1";
+        /** Optional output vector dimension for models such as text-embedding-3-large. */
+        private Integer dimensions;
+        /** Disables TLS certificate validation for OpenAI-compatible embedding providers. */
+        private boolean trustAllCerts;
         private int timeout = 20;
+        /** Additional HTTP headers for OpenAI-compatible embedding providers. */
+        private Map<String, String> customHeaders = new LinkedHashMap<>();
+        /** Additional query parameters for OpenAI-compatible embedding providers. */
+        private Map<String, String> customQueryParams = new LinkedHashMap<>();
+        /**
+         * Max texts per single embedding HTTP request. langchain4j's OpenAiEmbeddingModel
+         * defaults this to 2048, which makes a large embedAll() a single giant request that a
+         * local model (LM-Studio/Ollama) times out on. Capping it keeps every request small
+         * enough to complete within {@link #timeout}. Only applies to the OpenAI-compatible model.
+         */
+        private int maxSegmentsPerBatch = 32;
+        /**
+         * Retrieval query prefix required by the embedding model. mxbai-embed-large-v1
+         * documents {@code "Represent this sentence for searching relevant passages: "};
+         * set an empty value for models that need no prompt (bge-m3, e5, …).
+         */
+        private String queryPrompt = "Represent this sentence for searching relevant passages: ";
+    }
+
+    @lombok.Data
+    public static class SemanticGraphConfig {
+        private boolean enabled = true;
+        private boolean calibrate;
+        private double gamma = 1.0;
+        private double threshold = 0.85;
+        private int k = 20;
+        private boolean requireMutual = true;
+        /**
+         * Thread pool size for the per-chunk kNN neighbour search (the dominant cost of the
+         * semantic graph batch). 0 (default) = available processors. The search is read-only
+         * and Lucene's SearcherManager is thread-safe, so the speedup is near-linear.
+         */
+        private int parallelism = 0;
+    }
+
+    /**
+     * Null-LLM signature layer (paper §3.3): TF-IDF keywords per chunk and c-TF-IDF keywords per
+     * cluster, written as chunk metadata after embedding.
+     */
+    @lombok.Data
+    public static class SignatureConfig {
+        private boolean enabled = true;
+        /** Number of keywords written per chunk and per cluster. */
+        private int topN = 8;
+        /** Shortest accepted term length. */
+        private int minTermLength = 3;
     }
 
     // --- Transfer Sektion (externes Embedding) ---

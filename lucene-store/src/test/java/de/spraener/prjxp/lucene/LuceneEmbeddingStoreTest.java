@@ -9,16 +9,24 @@ import dev.langchain4j.store.embedding.EmbeddingSearchResult;
 import dev.langchain4j.store.embedding.filter.Filter;
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import dev.langchain4j.store.embedding.filter.logical.And;
+import de.spraener.prjxp.common.model.PxChunk;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.StoredFields;
+import org.apache.lucene.store.NIOFSDirectory;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.io.IOException;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -193,6 +201,27 @@ class LuceneEmbeddingStoreTest {
     }
 
     @Test
+    void metadataFieldsAreStoredExactlyOnce() throws IOException {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_file", "HelloWorld.md");
+        meta.put("pxchunk_project", "TheWall");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content", meta));
+        store.close();
+
+        try (NIOFSDirectory dir = new NIOFSDirectory(tempDir.resolve("index"));
+             DirectoryReader reader = DirectoryReader.open(dir)) {
+            StoredFields storedFields = reader.storedFields();
+            for (int i = 0; i < reader.maxDoc(); i++) {
+                Document doc = storedFields.document(i);
+                Map<String, Long> storedCounts = doc.getFields().stream()
+                        .collect(Collectors.groupingBy(IndexableField::name, Collectors.counting()));
+                assertThat(storedCounts.get("pxchunk_file")).as("stored count of pxchunk_file").isEqualTo(1);
+                assertThat(storedCounts.get("pxchunk_project")).as("stored count of pxchunk_project").isEqualTo(1);
+            }
+        }
+    }
+
+    @Test
     void emptyIndexSearchReturnsEmpty() {
         EmbeddingSearchRequest request = EmbeddingSearchRequest.builder()
                 .queryEmbedding(Embedding.from(new float[]{1f, 0f, 0f}))
@@ -340,9 +369,43 @@ class LuceneEmbeddingStoreTest {
         assertThat(reopened.hasMatch(new IsEqualTo("pxchunk_id", "persist-2"))).isTrue();
     }
 
+    @Test
+    void listFilesByProject_returnsDistinctFiles() {
+        addChunk("p", "a.java", "c1");
+        addChunk("p", "a.java", "c2");
+        addChunk("p", "b.java", "c3");
+
+        assertThat(store.listFilesByProject("p", null)).containsExactlyInAnyOrder("a.java", "b.java");
+    }
+
+    @Test
+    void listFilesByProject_scopesByProject() {
+        addChunk("p", "a.java", "c1");
+        addChunk("q", "b.java", "c2");
+
+        assertThat(store.listFilesByProject("p", null)).containsExactly("a.java");
+    }
+
+    @Test
+    void listFilesByProject_appliesFilter() {
+        addChunk("p", "a.java", "c1");
+        addChunk("p", "b.java", "c2");
+
+        assertThat(store.listFilesByProject("p", new IsEqualTo(PxChunk.PXCHUNK_FILE, "a.java")))
+                .containsExactly("a.java");
+    }
+
     private void addWithContent(String id, float[] vector) {
         Metadata m = new Metadata();
         m.put("_name", id);
         store.add(Embedding.from(vector), TextSegment.from("content-for-" + id, m));
+    }
+
+    private void addChunk(String project, String file, String id) {
+        Metadata m = new Metadata();
+        m.put("pxchunk_id", id);
+        m.put("pxchunk_project", project);
+        m.put("pxchunk_file", file);
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from("content-" + id, m));
     }
 }

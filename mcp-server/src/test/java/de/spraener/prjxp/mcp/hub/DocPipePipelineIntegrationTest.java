@@ -13,11 +13,11 @@ import de.spraener.prjxp.docpipe.DocPipeRunResult;
 import de.spraener.prjxp.docpipe.DocPipeRunner;
 import de.spraener.prjxp.docpipe.config.DotDPFilesService;
 import de.spraener.prjxp.docpipe.config.JobCreationService;
-import de.spraener.prjxp.docpipe.config.ModelConfigLoader;
 import de.spraener.prjxp.docpipe.content.ContentCreationService;
 import de.spraener.prjxp.docpipe.content.ContentCreationTask;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
 import de.spraener.prjxp.tibed.EmbeddingCompatibilityChecker;
+import de.spraener.prjxp.tibed.EmbeddingExecutor;
 import de.spraener.prjxp.tibed.EmbeddingExportService;
 import de.spraener.prjxp.tibed.EmbeddingService;
 import dev.langchain4j.model.embedding.EmbeddingModel;
@@ -93,7 +93,7 @@ class DocPipePipelineIntegrationTest {
         luceneStore = new LuceneEmbeddingStore(indexDir, 8);
         embeddingModel = mock(EmbeddingModel.class);
         parser = new ProjectConfigFileParser();
-        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser);
+        registry = new HubProjectRegistry(cfg, hub, provider, luceneStore, embeddingModel, parser, mock(LiveUpdateScanner.class));
 
         chunkProcess = mock(ChunkProcess.class);
         exportService = mock(EmbeddingExportService.class);
@@ -108,14 +108,15 @@ class DocPipePipelineIntegrationTest {
         manifestWriter = new DocPipeManifestWriter(objMapper);
         contentCreationService = mock(ContentCreationService.class);
         docPipeRunner = new DocPipeRunner(jobCreationService, contentCreationService,
-                mock(ModelConfigLoader.class), dpFilesService, logService);
+                dpFilesService, logService);
         ReflectionTestUtils.setField(docPipeRunner, "maxThreads", 2);
         docPipeRunner.setManifestWriter(manifestWriter);
 
         listener = new DocPipePipelineListener(jobCreationService, docPipeRunner, registry, objMapper);
 
         orchestrator = new PipelineOrchestrator(registry, chunkProcess, exportService,
-                compatibilityChecker, embeddingModel, luceneStore, hub, objMapper);
+                compatibilityChecker, embeddingModel, luceneStore, hub, objMapper,
+                mock(EmbeddingExecutor.class), mock(LiveUpdateScanner.class));
         orchestrator.setEmbeddingService(embeddingService);
         orchestrator.setPipelineListeners(List.of(listener));
 
@@ -150,9 +151,11 @@ class DocPipePipelineIntegrationTest {
             return null;
         }).when(contentCreationService).createContent(any(ContentCreationTask.class), any(DocPipeRunResult.class));
 
-        // The document-embedding run: the chunker produces one fake doc chunk
+        // The document-embedding run: the chunker produces one fake doc chunk (file = project-relative,
+        // as the real chunker sets it — this exercises the file-scoped reset path)
         when(chunkProcess.executeForFiles(any(), any())).thenReturn(List.of(
-                PxChunk.create(c -> c.setId("docs/a.md:01.01:01"), c -> c.setContent("# A"))));
+                PxChunk.create(c -> c.setId("docs/a.md:01.01:01"), c -> c.setContent("# A"),
+                        c -> c.setFile("docs/a.md"))));
     }
 
     @AfterEach

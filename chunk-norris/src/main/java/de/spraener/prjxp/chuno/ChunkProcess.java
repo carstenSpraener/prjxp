@@ -7,6 +7,14 @@ import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
 import de.spraener.prjxp.common.errorlog.PxLogService;
 import de.spraener.prjxp.common.config.ProjectDefinition;
+import de.spraener.prjxp.common.graph.CodeGraphIo;
+import de.spraener.prjxp.common.graph.GraphMetadata;
+import de.spraener.prjxp.common.language.CodeGraphBuilder;
+import de.spraener.prjxp.common.language.LanguagePack;
+import de.spraener.prjxp.common.language.LanguagePackRegistry;
+import de.spraener.prjxp.common.model.CodeGraph;
+import de.spraener.prjxp.common.model.GraphEdge;
+import de.spraener.prjxp.common.model.GraphNode;
 import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.transfer.TransferCrypto;
 import de.spraener.prjxp.common.transfer.TransferPasswordResolver;
@@ -19,9 +27,16 @@ import org.springframework.stereotype.Service;
 import java.io.*;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Service
 @Log
@@ -35,6 +50,15 @@ public class ChunkProcess {
     private final JsonMapper jsonMapper = new JsonMapper();
     private final PrjXPConfig cfg;
     private final TransferPasswordResolver transferPasswordResolver;
+    private final LanguagePackRegistry languagePackRegistry;
+
+    /** Maximum number of AST neighbours per chunk in the sidecar artifact. */
+    static final int MAX_AST_NEIGHBOURS = 10;
+    private static final String GRAPH_FILE_SUFFIX = ".graph.json";
+    private static final String AST_NEIGHBOURS_FILE_SUFFIX = ".ast-neighbours.json";
+
+    /** Graph-node-ID → logical chunk-ID, accumulated during the walk (per-run state). */
+    private final Map<String, String> nodeToChunkId = new ConcurrentHashMap<>();
 
     public void execute() throws Exception {
         final ProjectDefinition pd = cfg.getActiveProject().orElseThrow(() -> new IllegalStateException(
@@ -46,10 +70,11 @@ public class ChunkProcess {
     /** Runs the chunking pipeline for an explicitly given project definition (hub in-process use). */
     public void executeForProject(ProjectDefinition pd) throws Exception {
         processedFiles.clear();   // per-run state: a reindex must re-chunk everything, not filter out files of a previous run
+        nodeToChunkId.clear();    // per-run state: chunk IDs of a previous run must not leak into this sidecar
         final TransferSession session = transferPasswordResolver.prepare(
                 cfg.getTransfer().getEncrypt(), cfg.getTransfer().getPasswordEnv());
         final PrintStream out = createWriter(pd, session);
-        eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg));
+        eventPublisher.publishEvent(new SpringPreWalkEvent<>(cfg, pd));
 
         Files.walk(Path.of(pd.getRootDir()))
                 .filter(Files::isRegularFile)
@@ -58,6 +83,8 @@ public class ChunkProcess {
                 .forEach(path -> handlePath(out, pd, path));
         ;
         doPostWalk(out);
+        writeGraphArtifact(pd, session);
+        writeAstNeighboursArtifact(pd, session);
         if (out != System.out) {
             out.close();
         }
@@ -68,9 +95,17 @@ public class ChunkProcess {
 
     /**
      * Chunks an explicit list of files (no tree walk, no JSONL output) and returns the chunks in memory.
-     * Used by the hub's document-embedding runs (DocPipe-generated documents). Vetos are evaluated
-     * against the given definition — callers that need markdown must ensure "md" is in its whitelist.
-     * Files that are not regular files or are vetoed are skipped silently.
+     * Used by the hub's live updates and document-embedding runs (DocPipe-generated documents).
+     * Vetos are evaluated against the given definition — callers that need markdown must ensure
+     * "md" is in its whitelist. Files that are not regular files or are vetoed are skipped silently.
+     * <p>
+     * The chunk post-processing mirrors {@link #handlePath} exactly: the file is mapped to the
+     * project-relative path, basename-based IDs are rebased onto it, and FullTextChunker is
+     * gated on the project's {@code fulltext} flag. The hub's live update deletes the
+     * re-embedded file's documents and re-adds these chunks, so the IDs must match the
+     * full-reindex IDs — otherwise same-named files in different directories (e.g. two
+     * README.md) collide on the store identity (project, id, part) and the index ends up with
+     * duplicates, which the enrichment then rejects with "Duplicate semantic node id".
      */
     public List<PxChunk> executeForFiles(ProjectDefinition pd, List<Path> files) {
         final Path rootPath = Path.of(pd.getRootDir()).toAbsolutePath().normalize();
@@ -78,14 +113,15 @@ public class ChunkProcess {
                 .filter(Files::isRegularFile)
                 .filter(path -> checkVetos(path, pd))
                 .flatMap(path -> factory.createChunker(path.toFile())
+                        .filter(c -> !(c instanceof FullTextChunker) || pd.isFulltext())
                         .parallel()
-                        .flatMap(chunker -> chunker.chunk(path.toFile())))
-                .map(chunk -> {
-                    if (chunk.getFile() != null) {
-                        chunk.setFile(toProjectRelativePath(rootPath, chunk.getFile()));
-                    }
-                    return chunk;
-                })
+                        .flatMap(chunker -> chunker.chunk(path.toFile()))
+                        .map(chunk -> {
+                            String relPath = toProjectRelativePath(rootPath, chunk.getFile());
+                            chunk.setFile(relPath);
+                            rebaseIdToProjectPath(chunk, relPath, path.getFileName().toString());
+                            return chunk;
+                        }))
                 .toList();
     }
 
@@ -94,13 +130,18 @@ public class ChunkProcess {
             return System.out;
         }
         try {
+            Path target = Path.of(pd.resolvedJsonlFile());
+            Path parent = target.getParent();
+            if (parent != null) {
+                Files.createDirectories(parent);
+            }
             OutputStream out = new FileOutputStream(pd.resolvedJsonlFile());
             if (session.encrypt()) {
                 out = TransferCrypto.openEncryptedOutputStream(out, session.password());
             }
             return new PrintStream(out);
         } catch( FileNotFoundException fnfXC) {
-            log.warning("Coulde not find output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
+            log.warning("Could not find output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+fnfXC.getMessage());
             return System.out;
         } catch( IOException ioXC) {
             log.warning("Could not open output file "+pd.resolvedJsonlFile()+". Using stdout. Error is: "+ioXC.getMessage());
@@ -127,6 +168,10 @@ public class ChunkProcess {
                     String relPath = toProjectRelativePath(rootPath, chunk.getFile());
                     chunk.setFile(relPath);
                     rebaseIdToProjectPath(chunk, relPath, p.getFileName().toString());
+                    String graphNode = chunk.getMetadata().get(GraphMetadata.GRAPH_NODE);
+                    if (graphNode != null && !graphNode.isBlank()) {
+                        nodeToChunkId.put(graphNode, chunk.getId());
+                    }
                     return chunk;
                 })
                 .map(chunk -> toJSONL(chunk))
@@ -178,15 +223,129 @@ public class ChunkProcess {
     }
 
     protected void doPostWalk(PrintStream out) {
+        Map<String, GraphNode> graphNodes = weightedGraphNodes();
         factory.listPostWalkChunker()
                 .parallel()
                 .flatMap(pwChunk -> pwChunk.chunk(null))
-                .map(chunk -> toJSONL(chunk))
+                .map(chunk -> {
+                    enrichWithLeiden(chunk, graphNodes);
+                    return toJSONL(chunk);
+                })
                 .forEach(
                         str -> out.println(str)
                 )
         ;
         out.flush();
+    }
+
+    /** The first language pack that produced a weighted graph this run, or null. */
+    private CodeGraph weightedGraph() {
+        if (languagePackRegistry == null) return null;
+        for (LanguagePack pack : languagePackRegistry.all()) {
+            if (pack == null) continue;
+            Optional<CodeGraphBuilder> builder = pack.codeGraph();
+            if (builder != null && builder.isPresent()) {
+                Optional<CodeGraph> graph = builder.get().weightedGraph();
+                if (graph != null && graph.isPresent()) return graph.get();
+            }
+        }
+        return null;
+    }
+
+    private Map<String, GraphNode> weightedGraphNodes() {
+        CodeGraph graph = weightedGraph();
+        return graph == null ? Map.of() : graph.nodeById();
+    }
+
+    /** Stamps Leiden cluster/weight onto a post-walk chunk from its parent type node (method nodes are skipped). */
+    private void enrichWithLeiden(PxChunk chunk, Map<String, GraphNode> graphNodes) {
+        if (chunk == null || chunk.getParent() == null || graphNodes.isEmpty()) return;
+        GraphNode node = graphNodes.get(chunk.getParent());
+        if (node == null || node.isMethod()) return;
+        if (node.clusterId() != null) chunk.getMetadata().put(GraphMetadata.LEIDEN_CLUSTER_ID, node.clusterId());
+        chunk.getMetadata().put(GraphMetadata.LEIDEN_WEIGHT, String.valueOf(node.weight()));
+    }
+
+    /** Writes the weighted code graph to the project's graph artifact (optionally encrypted). */
+    private void writeGraphArtifact(ProjectDefinition pd, TransferSession session) {
+        CodeGraph graph = weightedGraph();
+        if (graph == null || graph.nodes().isEmpty()) return;
+        String targetPath = pd.resolvedGraphFile();
+        if (targetPath == null || targetPath.isBlank()) return;
+        try {
+            Path target = Path.of(targetPath);
+            Path parent = target.toAbsolutePath().getParent();
+            if (parent != null) Files.createDirectories(parent);
+            try (OutputStream raw = new FileOutputStream(targetPath)) {
+                OutputStream out = session.encrypt()
+                        ? TransferCrypto.openEncryptedOutputStream(raw, session.password())
+                        : raw;
+                new CodeGraphIo().write(out, graph);
+                if (out != raw) out.close();   // emit cipher final block + GCM auth tag
+            }
+        } catch (IOException | RuntimeException e) {
+            log.warning("Could not write graph artifact " + targetPath + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Writes the AST-neighbour sidecar: a JSON object mapping chunk-ID → list of neighbour chunk-IDs.
+     * Derived from the weighted code graph's internal edges. Encrypted like the graph artifact.
+     * Path: the graph file path with {@code .graph.json} replaced by {@code .ast-neighbours.json}.
+     */
+    private void writeAstNeighboursArtifact(ProjectDefinition pd, TransferSession session) {
+        CodeGraph graph = weightedGraph();
+        if (graph == null || graph.nodes().isEmpty() || nodeToChunkId.isEmpty()) return;
+        String graphPath = pd.resolvedGraphFile();
+        if (graphPath == null || graphPath.isBlank()) return;
+        String sidecarPath = astNeighboursPath(graphPath);
+        try {
+            // Build undirected adjacency from internal edges only (external targets have no chunk ID).
+            Map<String, Set<String>> adjacency = new HashMap<>();
+            for (GraphEdge edge : graph.edges()) {
+                if (edge.external()) continue;
+                adjacency.computeIfAbsent(edge.source(), k -> new LinkedHashSet<>()).add(edge.target());
+                adjacency.computeIfAbsent(edge.target(), k -> new LinkedHashSet<>()).add(edge.source());
+            }
+            Map<String, List<String>> result = new LinkedHashMap<>();
+            for (var entry : nodeToChunkId.entrySet()) {
+                Set<String> neighbourNodeIds = adjacency.getOrDefault(entry.getKey(), Set.of());
+                List<String> neighbourChunkIds = neighbourNodeIds.stream()
+                        .map(nodeToChunkId::get)
+                        .filter(Objects::nonNull)
+                        .limit(MAX_AST_NEIGHBOURS)
+                        .toList();
+                if (!neighbourChunkIds.isEmpty()) {
+                    result.put(entry.getValue(), neighbourChunkIds);
+                }
+            }
+            if (result.isEmpty()) return;
+            Path target = Path.of(sidecarPath);
+            Path parent = target.toAbsolutePath().getParent();
+            if (parent != null) Files.createDirectories(parent);
+            try (OutputStream raw = new FileOutputStream(sidecarPath)) {
+                OutputStream out = session.encrypt()
+                        ? TransferCrypto.openEncryptedOutputStream(raw, session.password())
+                        : raw;
+                jsonMapper.writeValue(out, result);
+                if (out != raw) out.close();   // emit cipher final block + GCM auth tag
+            }
+        } catch (IOException | RuntimeException e) {
+            log.warning("Could not write ast-neighbours artifact " + sidecarPath + ": " + e.getMessage());
+        }
+    }
+
+    /**
+     * Derivative of the graph path for the sidecar. A graph artifact always ends with
+     * {@code .graph.json}; any other configured name is extended instead of replaced so the
+     * sidecar can never overwrite the graph artifact itself.
+     */
+    static String astNeighboursPath(String graphPath) {
+        if (graphPath.endsWith(GRAPH_FILE_SUFFIX)) {
+            return graphPath.substring(0, graphPath.length() - GRAPH_FILE_SUFFIX.length())
+                    + AST_NEIGHBOURS_FILE_SUFFIX;
+        }
+        return graphPath + AST_NEIGHBOURS_FILE_SUFFIX;
     }
 
     public String toJSONL(PxChunk chunk) {

@@ -1,6 +1,6 @@
 # 6. Runtime View
 
-## 6.1 Scenario: Single-Project Pipeline (chunk → embed → serve)
+## 6.1 Scenario: Single-Project Pipeline (chunk → embed → hub)
 
 The canonical flow, driven by the `./prjxp <project> mcp` control script (Docker) or the
 individual CLI apps.
@@ -36,7 +36,7 @@ sequenceDiagram
         TB->>IDX: addAll(vectors + pxchunk_* metadata, project stamp)
     end
 
-    U->>MS: run (mode serve) on :7007
+    U->>MS: run (mode hub) on :7007
     Note over MS: LuceneStoreAutoConfiguration wires store + DAOs;<br/>MCP endpoint /mcp live
 ```
 

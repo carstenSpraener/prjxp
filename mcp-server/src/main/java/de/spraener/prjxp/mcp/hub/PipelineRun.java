@@ -20,29 +20,37 @@ public final class PipelineRun {
     private final Set<String> triggeredListeners;
     /** Work of a retrigger run (null for root runs). */
     private final PipelineWork work;
+    /** True for a live-update run (no listener dispatch, no reindex-status churn). */
+    private final boolean liveUpdate;
     /** Retrigger runs scheduled from this run's finish callbacks (pipeline thread only). */
     private int retriggersScheduled = 0;
 
     public PipelineRun(String name, int phase, Set<String> triggeredListeners, PipelineWork work) {
+        this(name, phase, triggeredListeners, work, false);
+    }
+
+    public PipelineRun(String name, int phase, Set<String> triggeredListeners, PipelineWork work, boolean liveUpdate) {
         this.name = name;
         this.phase = phase;
         this.triggeredListeners = triggeredListeners;
         this.work = work;
+        this.liveUpdate = liveUpdate;
     }
 
     public static PipelineRun root(String name) {
         return new PipelineRun(name, 1, new HashSet<>(), null);
     }
 
-    /** Next run in the chain — same ledger instance, next phase. */
+    /** Next run in the chain — same ledger instance, next phase (forwards the liveUpdate flag). */
     public PipelineRun nextPhase(PipelineWork work) {
-        return new PipelineRun(name, phase + 1, triggeredListeners, work);
+        return new PipelineRun(name, phase + 1, triggeredListeners, work, liveUpdate);
     }
 
     public String name() { return name; }
     public int phase() { return phase; }
     public Set<String> triggeredListeners() { return triggeredListeners; }
     public PipelineWork work() { return work; }
+    public boolean isLiveUpdate() { return liveUpdate; }
 
     /** Mark BEFORE invoking the listener: a retrigger scheduled mid-callback must inherit this mark. */
     public void markTriggered(String listenerId) { triggeredListeners.add(listenerId); }

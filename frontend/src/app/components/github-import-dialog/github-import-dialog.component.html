@@ -1,0 +1,38 @@
+<dialog-overlay>
+  <div class="dialog-box glass-panel" (click)="$event.stopPropagation()">
+    <div class="dialog-header">
+      <h2 class="text-cyan neon-glow">Import GitHub Project</h2>
+      <button class="btn-close" (click)="onClose()">✕</button>
+    </div>
+
+    <form [formGroup]="form" (ngSubmit)="onImport()">
+      <div class="form-group">
+        <label for="githubUrl">Repository URL</label>
+        <input id="githubUrl" formControlName="url" type="text" placeholder="https://github.com/owner/repo" />
+        @if (form.get('url')?.invalid && form.get('url')?.touched) {
+          <span class="field-error">A repository URL is required</span>
+        }
+      </div>
+
+      <div class="form-group">
+        <label for="githubToken">Personal Access Token <span class="optional">(optional)</span></label>
+        <input id="githubToken" formControlName="token" type="password"
+               placeholder="ghp_… — only for private repositories" autocomplete="off" />
+        <span class="field-hint">Stored encrypted in prjxp.yaml; requires the hub to be configured with a token key.</span>
+      </div>
+
+      @if (status === 'running') {
+        <div class="op-status">⏳ Importing…</div>
+      } @else if (status === 'success') {
+        <div class="op-status op-status-success">✓ {{ message }}</div>
+      } @else if (status === 'error') {
+        <div class="op-status op-status-error">✗ {{ message }}</div>
+      }
+
+      <div class="form-actions">
+        <button type="submit" class="btn btn-primary" [disabled]="form.invalid || status === 'running'">Import</button>
+        <button type="button" class="btn btn-secondary" (click)="onClose()">Cancel</button>
+      </div>
+    </form>
+  </div>
+</dialog-overlay>

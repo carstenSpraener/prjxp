@@ -2,11 +2,12 @@ import { Component, Input, Output, EventEmitter } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PrjxpYamlConfig, DEFAULT_YAML_CONFIG } from '../../models/prjxp-yaml-config.model';
 import { ProjectInfo } from '../../models/project-info.model';
+import { DialogOverlayComponent } from '../dialog-overlay/dialog-overlay.component';
 
 @Component({
   selector: 'yaml-editor-dialog',
   standalone: true,
-  imports: [ReactiveFormsModule],
+  imports: [ReactiveFormsModule, DialogOverlayComponent],
   templateUrl: './yaml-editor-dialog.component.html',
   styleUrl: './yaml-editor-dialog.component.css'
 })
@@ -26,7 +27,8 @@ export class YamlEditorDialogComponent {
         embeddingsFile: project.embeddingsFile || null,
         tibedResetStore: project.tibedResetStore ?? DEFAULT_YAML_CONFIG.tibedResetStore,
         prompt: project.prompt || '',
-        fulltext: project.fulltext ?? DEFAULT_YAML_CONFIG.fulltext
+        fulltext: project.fulltext ?? DEFAULT_YAML_CONFIG.fulltext,
+        embedDependencies: project.embedDependencies ?? DEFAULT_YAML_CONFIG.embedDependencies
       });
     } else {
       this.isEditing = false;
@@ -52,7 +54,8 @@ export class YamlEditorDialogComponent {
       embeddingsFile: [DEFAULT_YAML_CONFIG.embeddingsFile],
       tibedResetStore: [DEFAULT_YAML_CONFIG.tibedResetStore],
       prompt: [''],
-      fulltext: [DEFAULT_YAML_CONFIG.fulltext]
+      fulltext: [DEFAULT_YAML_CONFIG.fulltext],
+      embedDependencies: [DEFAULT_YAML_CONFIG.embedDependencies]
     });
   }
 
@@ -67,7 +70,8 @@ export class YamlEditorDialogComponent {
         embeddingsFile: this.form.get('embeddingsFile')!.value || undefined,
         tibedResetStore: this.form.get('tibedResetStore')!.value || false,
         prompt: this.form.get('prompt')!.value || null,
-        fulltext: this.form.get('fulltext')!.value || false
+        fulltext: this.form.get('fulltext')!.value || false,
+        embedDependencies: this.form.get('embedDependencies')!.value || false
       };
       this.save.emit(config);
     }
