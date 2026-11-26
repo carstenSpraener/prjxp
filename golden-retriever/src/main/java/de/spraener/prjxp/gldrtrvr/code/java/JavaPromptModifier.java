@@ -58,6 +58,11 @@ public class JavaPromptModifier implements JavaPromptSession.PromptModifier  {
                 case METHOD_DOC:
                     nextPrompt = insertBefore(prompt, toMethodName(pxChunk), pxChunk.getContent());
                     break;
+                case PACKAGE_INFO:
+                    // Package-level documentation (the Javadoc of package-info.java) — inject verbatim.
+                    nextPrompt = prompt + "\n\n## Package documentation " + pxChunk.getId() + ":\n\n"
+                            + pxChunk.getContent();
+                    break;
                 case CLAZZ_FRAME:
                     String className = pxChunk.getId();
                     String clusterId = pxChunk.getMetadata().get(GraphMetadata.LEIDEN_CLUSTER_ID);

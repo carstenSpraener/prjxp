@@ -612,6 +612,29 @@ public class JavaCodeChunkerTests {
     }
 
     @Test
+    public void testPackageInfoIsChunkedAsPackageDocumentation() throws Exception {
+        File code = toTmpFile("package-info",
+                """
+                        /**
+                         * Package documentation for the test package.
+                         */
+                        package de.spraener.test.pkg;
+                        """);
+
+        List<PxChunk> chunkList = uut.chunk(code).toList();
+
+        assertThat(chunkList).hasSize(1);
+        PxChunk chunk = chunkList.get(0);
+        assertThat(chunk.getMetadata().get("java_code_section")).isEqualTo("packageInfo");
+        assertThat(chunk.getId()).isEqualTo("de.spraener.test.pkg.package-info");
+        assertThat(chunk.getParent()).isEqualTo("de.spraener.test.pkg");
+        assertThat(chunk.getEmbeddingPrefix()).isEqualTo("de.spraener.test.pkg");
+        assertThat(chunk.getContent()).contains("Package documentation for the test package.");
+        assertThat(chunk.getFromLine()).isEqualTo("1");
+        assertThat(chunk.getToLine()).isEqualTo("4");
+    }
+
+    @Test
     public void testNonFileInputReturnsEmpty() throws Exception {
         // A directory named like a Java file: readAllLines fails, the raw-fallback re-read
         // fails as well → old behavior (empty stream), no exception escapes chunk()

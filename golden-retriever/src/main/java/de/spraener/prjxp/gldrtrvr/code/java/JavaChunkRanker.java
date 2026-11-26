@@ -21,6 +21,8 @@ public class JavaChunkRanker implements ChunkRankingStrategy {
             case METHOD:
             case METHOD_DOC:
                 return 5;
+            case PACKAGE_INFO:
+                return 4;
             case DEPENDENCIE_INFO:
                 return 0;
             case IMPORTS:
