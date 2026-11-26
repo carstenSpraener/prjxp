@@ -1,12 +1,15 @@
 package de.spraener.prjxp.mcp.setup;
 
+import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.lucene.LuceneEmbeddingStore;
+import dev.langchain4j.data.document.Metadata;
 import dev.langchain4j.data.embedding.Embedding;
 import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.mockito.ArgumentCaptor;
 import org.springframework.mock.env.MockEnvironment;
 import java.nio.file.*;
 import java.time.Clock;
@@ -81,6 +84,27 @@ class SetupIndexGuardTest {
             index.store.add(Embedding.from(new float[]{0, 1}), TextSegment.from("different"));
             assertThatThrownBy(() -> guard.require(root, candidate,
                     Map.of("dimensions", 2, "index-fingerprint", validation.fingerprint()))).isInstanceOf(SetupException.class);
+        }
+    }
+
+    @Test
+    void storedEmbeddingPrefixIsUsedForTheCompatibilitySample() throws Exception {
+        ConfigurationStore store = store();
+        try (var index = new IndexFixture(directory.resolve("index"))) {
+            Metadata metadata = new Metadata()
+                    .put(PxChunk.PXCHUNK_ID, "c1")
+                    .put(PxChunk.PXCHUNK_EMBEDDING_PREFIX, "de.spraener Test");
+            index.store.add(Embedding.from(new float[]{1, 0}), TextSegment.from("hello", metadata));
+
+            SetupIndexGuard guard = new SetupIndexGuard(store);
+            EmbeddingModel model = model(1, 0);
+            var validation = guard.verify(store.readSnapshot().root(), Map.of("model", "candidate"), model);
+
+            assertThat(validation.samples()).isEqualTo(1);
+            ArgumentCaptor<TextSegment> embedded = ArgumentCaptor.forClass(TextSegment.class);
+            verify(model).embed(embedded.capture());
+            // same text tibed embedded: prefix + newline + content
+            assertThat(embedded.getValue().text()).isEqualTo("de.spraener Test\nhello");
         }
     }
 

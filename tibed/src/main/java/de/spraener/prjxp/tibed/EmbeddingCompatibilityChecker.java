@@ -75,7 +75,8 @@ public class EmbeddingCompatibilityChecker {
                 continue;
             }
 
-            Embedding localEmbedding = embeddingModel.embed(TextSegment.from(record.content())).content();
+            Embedding localEmbedding = embeddingModel.embed(
+                    PxChunk2TextSegmentConverter.convertWithEmbeddingPrefix(record.toPxChunk())).content();
             float similarity = cosineSimilarity(importedVector, localEmbedding.vector());
             similarities.add(similarity);
         }

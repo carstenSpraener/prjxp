@@ -7,6 +7,7 @@ import dev.langchain4j.data.segment.TextSegment;
 import dev.langchain4j.model.embedding.EmbeddingModel;
 import dev.langchain4j.model.output.Response;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import java.util.List;
 import java.util.Map;
@@ -15,6 +16,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.offset;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 class EmbeddingCompatibilityCheckerTest {
@@ -60,6 +62,23 @@ class EmbeddingCompatibilityCheckerTest {
 
         EmbeddingCompatibilityChecker.CheckReport report = checker.check(List.of(record), model, 1, 0.995f, 0.975f);
         assertThat(report.verdict()).isEqualTo(EmbeddingCompatibilityChecker.Verdict.INCOMPATIBLE);
+    }
+
+    @Test
+    void embeddingPrefixIsEmbeddedJustLikeTibedDoes() {
+        float[] vector = new float[]{1.0f, 0.0f};
+        EmbeddedChunkRecord record = new EmbeddedChunkRecord("c1", "text/x-java-code", "/test.java", null,
+                0, 1, "1", "10", 5, 0, Map.of(), "hello", vector, "de.spraener Test", null, null);
+
+        EmbeddingModel model = mock(EmbeddingModel.class);
+        when(model.embed(any(TextSegment.class))).thenReturn(new Response<>(Embedding.from(vector)));
+
+        EmbeddingCompatibilityChecker.CheckReport report = checker.check(List.of(record), model, 1, 0.995f, 0.975f);
+
+        ArgumentCaptor<TextSegment> embedded = ArgumentCaptor.forClass(TextSegment.class);
+        verify(model).embed(embedded.capture());
+        assertThat(embedded.getValue().text()).isEqualTo("de.spraener Test\nhello");
+        assertThat(report.verdict()).isEqualTo(EmbeddingCompatibilityChecker.Verdict.COMPATIBLE);
     }
 
     @Test
