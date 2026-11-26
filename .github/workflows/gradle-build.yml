@@ -53,6 +53,11 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
+          # A pre-release tag (v0.9.1-rc1) must not be published as the
+          # repository's "Latest" release — same rule as the :latest container
+          # tag in docker-release.yml.
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          make_latest: ${{ contains(github.ref_name, '-') && 'false' || 'true' }}
           files: |
             mcp-server/build/libs/*-all.jar
             chunk-norris/build/libs/*-all.jar
