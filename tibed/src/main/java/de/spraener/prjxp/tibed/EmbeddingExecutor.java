@@ -13,8 +13,8 @@ public interface EmbeddingExecutor {
     /**
      * Computes embeddings only (no store write): prefix-aware, FULLTEXT chunks get placeholder vectors.
      * <p>
-     * Default implementation throws — alternative executors that only support direct store
-     * writes (e.g. {@code MixedBredEmbedding}) do not need to support export.
+     * Alternative executors that only support direct store writes do not need to support export;
+     * the default implementation therefore throws.
      */
     default List<EmbeddedChunkRecord> embed(List<PxChunk> chunks) {
         throw new UnsupportedOperationException("embed() is not supported by " + getClass().getSimpleName());

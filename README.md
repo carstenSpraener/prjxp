@@ -176,7 +176,9 @@ is loaded by the host into its own class loader at startup.
 
 ## 🚀 Deployment
 
-prjxp ships as a single Docker image with an embedded TEI embedding server.
+prjxp ships as a single Docker image. Embeddings run against an external
+OpenAI-compatible endpoint (LM Studio, OpenAI, AOAI, Ollama, TEI, …) — the
+application never runs neural inference itself.
 Two deployment modes are available:
 
 ### Single Project — one container per project

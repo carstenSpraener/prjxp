@@ -45,7 +45,7 @@ takes precedence via `SPRING_CONFIG_LOCATION`).
 | `chunk-norris-all.jar` | separate process (`entry.sh chunk`) — pre-builds the index, the hub then serves it (self-heal → READY) | **in-process** bean of mcp-server (CLI runner off) |
 | `tibed-all.jar` | separate process (`entry.sh embed`) — same as above | **in-process** bean of mcp-server (CLI runner off) |
 | `mcp-server-all.jar` | serves MCP/REST on `SERVER_PORT` (7007) | same, on 7008 (recommended) |
-| Embedding server | optional in-container TEI (`SKIP_EMBEDDING_SERVER=false`) or external on host (compose default: `true` → LM Studio) | same |
+| Embedding server | external OpenAI-compatible endpoint on the host (compose default: LM Studio at `host.docker.internal:1234`) | same |
 | Project source | `/import/<name>` (bind mount of the project dir, `prjxp.yaml` marker) | `/import` (tars / live dirs) + `/projects` (extracted snapshots) |
 | Lucene index | `.prjxp-data` (bind-mounted at `/data/lucene-index`) | shared: `/data/lucene-index` (named volume), project-stamped chunks |
 | JSONL artifacts | `.prjxp-data/chunks` in the project dir | hub-managed: `/data/chunks/<name>.jsonl` (never into live trees) |
@@ -63,7 +63,6 @@ takes precedence via `SPRING_CONFIG_LOCATION`).
 | `SERVER_PORT` | `7007` (hub: `7008` recommended) | HTTP port for MCP/REST/UI |
 | `EMBEDDING_API_BASE_URL` / `PRJXP_EMBEDDING_API_BASE_URL` | `${LM_STUDIO_URL}` | OpenAI-compatible embedding endpoint |
 | `PRJXP_EMBEDDING_MODEL_NAME` / `EMBEDDING_API_KEY` | `mxbai-embed-large-v1` / — | Model + key for the embedding endpoint |
-| `SKIP_EMBEDDING_SERVER` | — (`false`) | Skip starting the in-container TEI server |
 | `PRJXP_HUB_IMPORT_DIR` / `PRJXP_HUB_PROJECTS_ROOT` | `/import` / `/projects` | Hub directories |
 | `PRJXP_HUB_SCAN_EXCLUDE_DIR_NAMES` | `.git,.svn,.hg,node_modules` | Dir names the live scan never enters (add `branches,tags,…`) |
 | `PRJXP_HUB_SCAN_MAX_DEPTH` | `8` | Recursion cap below `/import` (safety net for broad mounts) |

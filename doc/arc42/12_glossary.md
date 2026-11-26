@@ -32,7 +32,7 @@
 | **Marker file** (`prjxp.yaml`) | A per-project configuration/marker file; in the hub, its presence registers a *live* project for in-place embedding. |
 | **Lifecycle status** | Hub project states: `importing → chunking → embedding → ready` (or `failed`). Only `ready` projects are searchable/listed. |
 | **Scoped reset** | Deleting only one project's chunks from the shared index (`removeAll(pxchunk_project = X)`) before re-embedding. |
-| **TEI** | `text-embeddings-router` — a CPU embedding server that *can* run inside the Docker image (currently disabled in favor of an external provider via `SKIP_EMBEDDING_SERVER`). |
+| **TEI** | `text-embeddings-router` — a CPU embedding server that can be used as an *external* OpenAI-compatible endpoint. It is not part of the image; the application never runs inference itself. |
 | **MCP** | Model Context Protocol — the standard through which AI clients (opencode, Copilot) call prjxp's tools over streamable HTTP. |
 | **RAG** | Retrieval-Augmented Generation — the overall pattern: retrieve project context, inject it into an LLM prompt. |
 | **KIChat** | prjxp's chat abstraction over LangChain4j `ChatModel`s, selected by name or *stereotype* (e.g. `javadoc`), with optional MCP-client decoration. |

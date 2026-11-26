@@ -200,7 +200,7 @@ The `entry.sh` script accepts a single mode argument:
 | Mode | JAR executed | Behaviour |
 |------|-------------|-----------|
 | `chunk` | `chunk-norris-all.jar` | Runs the chunking pipeline and exits. |
-| `embed` | `tibed-all.jar` | Starts the text-embeddings-router (unless `SKIP_EMBEDDING_SERVER=true`), waits for its `/health` endpoint, then runs the embedding pipeline. |
+| `embed` | `tibed-all.jar` | Runs the embedding pipeline against the configured external OpenAI-compatible endpoint. |
 | `hub` | `mcp-server-all.jar` | Exports `PRJXP_HUB_ENABLED=true`, starts the embedding server (if not skipped), and runs the long-lived hub server (MCP + REST + import watcher). |
 
 The `hub` mode is the default (`CMD ["hub"]`). When `PRJXP_HUB_ENABLED` is *not* set, the same `mcp-server-all.jar` runs as a one-shot CLI pipeline (chunk → embed → docpipe) and exits. Enabling the hub automatically disables the CLI runners of `chunk-norris`/`tibed`/`docpipe` because they are gated on `prjxp.hub.enabled=false`.
@@ -239,7 +239,6 @@ The runtime `.env` file (mounted at `/data/prjxp.env`) is sourced by `load_runti
 | `SERVER_PORT` | `7007` | HTTP listen port |
 | `EMBEDDING_API_BASE_URL` | `http://host.docker.internal:1234/v1` | External embedding provider (e.g., LM Studio) |
 | `EMBEDDING_MODEL_NAME` | `mxbai-embed-large-v1` | Embedding model identifier |
-| `SKIP_EMBEDDING_SERVER` | `true` | Set to `false` to start an in-container TEI |
 | `EMBEDDING_API_KEY` | `dummy` | API key for the embedding endpoint |
 | `MCP_CORS_ALLOWED_PATTERNS` | `http://10.*.*.*,http://172.16.*.*,http://192.168.*.*,http://localhost:*` | Comma-separated CORS origin patterns (no spaces) |
 | `PRJXP_DOCS_DIR` | `/app/doc` | Directory served by the in-app docs browser |
