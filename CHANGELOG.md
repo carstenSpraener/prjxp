@@ -4,6 +4,67 @@ All notable changes to prjxp are documented here. The format is based on
 [Keep a Changelog](https://keepachangelog.com/), and the project uses semantic
 versioning.
 
+## [0.9.1] — 2026-11-26
+
+First release that ships prebuilt container images. The setup wizard now
+survives container recreation and can be completed end to end, and
+`package-info.java` files are indexed as package documentation.
+
+### Added
+
+- **Prebuilt multi-arch images:** `ghcr.io/carstenspraener/prjxp-hub` and
+  `ghcr.io/carstenspraener/prjxp-frontend` are published on every `v*` tag for
+  `linux/amd64` and `linux/arm64` — `:<tag>` always, `:latest` only for final
+  tags. `docker compose` pulls them instead of building locally; the `build:`
+  blocks remain as an offline fallback.
+- **Package documentation as a chunk type:** `package-info.java` produces one
+  whole-file `packageInfo` chunk (the package is parent and embedding prefix)
+  instead of falling back to a raw file chunk with a `No value present` warning.
+  golden-retriever injects it into the prompt and ranks it just below method
+  documentation.
+- **Warning for misplaced live projects:** an absolute `rootDir` that differs
+  from the project's marker directory is logged at registration, because it
+  silently sends chunking to a directory without sources.
+- **Full-screen setup wizard:** the top bar, sidebar and heartbeat moved into a
+  `ShellComponent`; `/setup` renders outside it and `setupIncompleteGuard`
+  redirects any shell route back to the wizard until setup is completed
+  (`completed == true` is enough, so "Später konfigurieren" still reaches the
+  dashboard; the guard fails open if the status endpoint is unreachable).
+
+### Changed
+
+- **The setup configuration is persisted** as `application.yaml` on the
+  `prjxp-hub-config` volume, seeded from the baked-in fallback on first start,
+  so `prjxp.setup-completed` survives container recreation — the wizard no
+  longer reappears after every `docker compose down`/`up`. The host `.env` is no
+  longer bind-mounted read-only, and the wizard's secrets live on the writable
+  `prjxp-hub-data` volume.
+- **Docker builds run on the native builder architecture** (`$BUILDPLATFORM`):
+  only the runtime stage is instantiated per platform, so the arm64 image no
+  longer runs the Gradle and Angular builds under QEMU.
+- The `./prjxp` control script mounts the project at `/app-source` in hub mode
+  as well, so the wizard can persist its config there.
+- `prjxp._yaml` drops the derived `rootDir`/`jsonlFile` keys; the marker
+  directory is authoritative and the hub redirects live JSONL itself.
+
+### Fixed
+
+- **The embedding compatibility check ignored the embedding prefix.** tibed
+  embeds `embeddingPrefix + "\n" + content`, the check embedded the bare
+  content, so every index with prefixed chunks (Java class frames, methods,
+  enum constants) looked incompatible at cosine ≈ 0.93 and "Test Embedding"
+  answered `INDEX_REBUILD_REQUIRED` — even for an index the same model had just
+  built.
+- **Angular 22 froze the wizard on "Konfiguration wird geladen…"**: the default
+  HTTP client uses the fetch backend, which emits outside the Angular zone, and
+  components without an explicit strategy now default to `OnPush`. Both are
+  pinned back to the zone-based behaviour the app is written for (`withXhr()`,
+  `ChangeDetectionStrategy.Eager`).
+- Prism `basic` is loaded before `vbnet` (which extends it), so the code viewer
+  no longer throws `Cannot set properties of undefined` on page load.
+- The Java symbol-type list includes `packageInfo`, so `symbolType` filtering
+  and the exhaustive capability test agree again.
+
 ## [0.9.0] — 2026-11-25
 
 First release since `v0.8.0-rc1`. The retrieval surface was reworked around fused
@@ -77,4 +138,5 @@ ranking, the graph layer gained a cluster view, and the build moved to Gradle 9.
 - The `MixedBredEmbedding` / `MixedBredEmebeddingClient` stubs; `embed()` returned
   `null` and the beans were never injected.
 
+[0.9.1]: https://github.com/carstenSpraener/prjxp/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/carstenSpraener/prjxp/compare/v0.8.0-rc1...v0.9.0
