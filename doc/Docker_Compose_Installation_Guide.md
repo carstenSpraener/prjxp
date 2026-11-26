@@ -51,14 +51,19 @@ Three containers on a shared bridge network (`prjxp-network`):
 | Service | Image | Role | Host port |
 |---|---|---|---|
 | `apache-proxy` | `httpd:2.4-alpine` (prebuilt) | Reverse proxy, single entry point for the Web UI | `${APACHE_PORT:-80}` |
-| `frontend` | `prjxp-frontend` (built from `./frontend`) | nginx serving the Angular SPA + API proxy to the backend (`PRJXP_HUB_URL`, default `hub:7007`) | internal only (8080) |
-| `hub` | `prjxp-hub` (built from repo root) | mcp-server in **hub mode**: project registry, import poller, in-process chunk + embed pipeline, MCP endpoint | `${HUB_PORT:-7007}` (MCP) |
+| `frontend` | `ghcr.io/carstenspraener/prjxp-frontend` (prebuilt, `PRJXP_VERSION`) | nginx serving the Angular SPA + API proxy to the backend (`PRJXP_HUB_URL`, default `hub:7007`) | internal only (8080) |
+| `hub` | `ghcr.io/carstenspraener/prjxp-hub` (prebuilt, `PRJXP_VERSION`) | mcp-server in **hub mode**: project registry, import poller, in-process chunk + embed pipeline, MCP endpoint | `${HUB_PORT:-7007}` (MCP) |
 
-The `hub` image is a multi-stage build: Gradle compiles three fat JARs
-(`chunk-norris`, `tibed`, `mcp-server`) in stage 1; the runtime image
-(`eclipse-temurin:21-jre`) runs them via `entry.sh` in mode `hub`.
-Base images are multi-arch, so on Apple Silicon the build runs natively (arm64) —
-no Rosetta required.
+Both prjxp images are published to the GitHub Container Registry on every
+release tag (`v*`) as multi-arch manifests (`linux/amd64`, `linux/arm64`), so
+Docker pulls the matching architecture — including Apple Silicon (arm64) —
+without Rosetta or a local build.
+
+Local builds are still possible as a fallback: the compose file keeps the
+`build:` blocks (`docker compose build`). The `hub` image is a multi-stage
+build — Gradle compiles three fat JARs (`chunk-norris`, `tibed`, `mcp-server`),
+the runtime image (`eclipse-temurin:21-jre`) runs them via `entry.sh` in mode
+`hub`.
 
 ---
 
@@ -126,15 +131,24 @@ The full set of `.env` variables is documented in
 > and its vector dimension **must** match `LUCENE_VECTOR_DIMENSION`.
 > Changing the model later invalidates all existing index data.
 
-### Step 4 — Build and start
+### Step 4 — Pull and start
 
 ```bash
-docker compose up -d --build
+docker compose pull && docker compose up -d
 ```
 
-- **First build takes several minutes** — Gradle runs inside the container and
-  downloads all dependencies. Subsequent builds are much faster (Docker layer cache).
-- The frontend image is built from `./frontend` (`npm ci` + Angular production build).
+- The images are pulled from GHCR; nothing is compiled on your machine.
+- Pin a release with `PRJXP_VERSION=v0.9.0` in `.env` (default: `latest`).
+- If `docker compose pull` fails with `denied` / `unauthorized`, log in once
+  (only needed while the GHCR packages are private):
+
+  ```bash
+  echo "$GITHUB_TOKEN" | docker login ghcr.io -u <github-user> --password-stdin
+  ```
+
+- Prefer a local build (offline, modified sources)? `docker compose up -d --build`
+  builds both images from this checkout; the first Gradle build downloads all
+  dependencies and takes several minutes, later builds reuse the Docker layer cache.
 
 Watch the startup:
 
@@ -377,7 +391,9 @@ curl -X DELETE http://localhost/prjxp/projects/your-project
 | Logs (hub only, follow) | `docker compose logs -f hub` |
 | Restart everything | `docker compose restart` |
 | Stop (keep data) | `docker compose down` |
-| Update after `git pull` | `docker compose up -d --build` (rebuilds changed images, recreates containers) |
+| Update to the latest release | `docker compose pull && docker compose up -d` |
+| Update to a pinned release | set `PRJXP_VERSION=v0.9.0` in `.env`, then `docker compose pull && docker compose up -d` |
+| Update from local sources | `git pull && docker compose up -d --build` (rebuilds changed images, recreates containers) |
 | Full teardown **including data** | `docker compose down -v` (⚠️ deletes the Lucene index and extracted projects) |
 | Rebuild images from scratch | `docker compose build --no-cache && docker compose up -d` |
 
