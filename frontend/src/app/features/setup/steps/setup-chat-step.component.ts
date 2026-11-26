@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ChatModelRequest } from '../../../models/setup.model';
 import { nonBlank, numeric, urlOrEnv } from '../setup-validators';
@@ -13,7 +13,8 @@ function chatForm() {
     temperature: new FormControl<number | null>(0.7, [Validators.required, numeric(0, false, 2)])
   });
 }
-@Component({selector: 'setup-chat-step', standalone: true, imports: [ReactiveFormsModule],
+@Component({selector: 'setup-chat-step', standalone: true,
+  changeDetection: ChangeDetectionStrategy.Eager, imports: [ReactiveFormsModule],
   templateUrl: './setup-chat-step.component.html', styleUrl: './setup-step.css'})
 export class SetupChatStepComponent extends SetupForm<ChatModelRequest, ReturnType<typeof chatForm>['controls']> {
   @Input() serverTypes: string[] = [];

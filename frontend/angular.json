@@ -37,6 +37,7 @@
               "node_modules/prismjs/components/prism-java.min.js",
               "node_modules/prismjs/components/prism-javascript.min.js",
               "node_modules/prismjs/components/prism-typescript.min.js",
+              "node_modules/prismjs/components/prism-basic.min.js",
               "node_modules/prismjs/components/prism-csharp.min.js",
               "node_modules/prismjs/components/prism-vbnet.min.js",
               "node_modules/prismjs/components/prism-groovy.min.js",

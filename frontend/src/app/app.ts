@@ -1,4 +1,4 @@
-import { Component, signal, OnInit, OnDestroy } from '@angular/core';
+import { Component, signal, OnInit, OnDestroy, ChangeDetectionStrategy } from '@angular/core';
 import { RouterOutlet, Router, RouterLink, RouterLinkActive } from '@angular/router';
 import { PrjxpApiService } from './services/prjxp-api.service';
 import { NavSidebarComponent } from './components/nav-sidebar/nav-sidebar.component';
@@ -8,6 +8,7 @@ import { Subscription } from 'rxjs';
 @Component({
   selector: 'app-root',
   standalone: true,
+  changeDetection: ChangeDetectionStrategy.Eager,
   imports: [RouterOutlet, RouterLink, RouterLinkActive, NavSidebarComponent],
   templateUrl: './app.html',
   styleUrl: './app.css'
