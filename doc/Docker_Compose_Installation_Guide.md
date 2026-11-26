@@ -44,6 +44,7 @@ Three containers on a shared bridge network (`prjxp-network`):
  │ (embedding    │        │  (or any OpenAI-compatible endpoint)                          │              │
  │  provider)    │        └───────────────────────────────────────────────────────────────┴──────────────┘
  └───────────────┘   Volumes: prjxp-projects → /projects · prjxp-hub-data → /data · prjxp-github → /github
+                     prjxp-hub-config → /app-source (setup wizard config)
                      Bind mount: $PROJECTS_HOME → /import (live projects + tar drop zone)
 ```
 
@@ -380,11 +381,13 @@ curl -X DELETE http://localhost/prjxp/projects/your-project
 | Full teardown **including data** | `docker compose down -v` (⚠️ deletes the Lucene index and extracted projects) |
 | Rebuild images from scratch | `docker compose build --no-cache && docker compose up -d` |
 
-**Data persistence:** all state lives in three named volumes —
+**Data persistence:** all state lives in four named volumes —
 `prjxp-hub-data` (`/data`: Lucene index + chunk JSONL), `prjxp-projects`
-(`/projects`: extracted imports) and `prjxp-github` (`/github`: cloned GitHub
-projects). Your live projects in `PROJECTS_HOME` are never modified. Back up by
-exporting the volumes:
+(`/projects`: extracted imports), `prjxp-github` (`/github`: cloned GitHub
+projects) and `prjxp-hub-config` (`/app-source`: the setup wizard's
+`application.yaml`, including the `prjxp.setup-completed` marker). Your live
+projects in `PROJECTS_HOME` are never modified. Back up by exporting the
+volumes:
 
 **Language pack plugins:** mount a directory of plugin JARs (e.g.
 `lp-csharp-plugin.jar`) at `/app-source/language-packs` — the default of
@@ -395,7 +398,18 @@ loaded at startup and are never baked into the image; see
 ```bash
 docker run --rm -v prjxp-hub-data:/data -v "$PWD/backup":/backup alpine \
   tar czf /backup/prjxp-hub-data.tar.gz -C /data .
+docker run --rm -v prjxp-hub-config:/config -v "$PWD/backup":/backup alpine \
+  tar czf /backup/prjxp-hub-config.tar.gz -C /config .
 ```
+
+**Setup wizard persistence:** on first start, `entry.sh` copies the baked-in
+`/app/application.yaml` to `/app-source/application.yaml` on the
+`prjxp-hub-config` volume. The wizard edits that copy, so the
+`prjxp.setup-completed` marker survives container recreation and the wizard does
+not reappear. Because the copy is persistent, later image updates do not
+overwrite it — delete the volume (`docker compose down -v`, or
+`docker volume rm <project>_prjxp-hub-config`) to start over from the new
+baked-in defaults.
 
 **Embedding provider must be running** whenever the hub embeds (initial import,
 reindex). If it is down, projects stay in `embedding`/`failed` state; start the

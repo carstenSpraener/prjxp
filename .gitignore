@@ -20,6 +20,9 @@ gradle-app.setting
 **/.env
 !.env.example
 
+# Setup wizard lock files (created next to the editable application.yaml)
+*.setup.lock
+
 **/content-hashes.properties
 **/.hints
 **/.hints/*

@@ -179,6 +179,18 @@ is loaded by the host into its own class loader at startup.
 prjxp ships as a single Docker image. Embeddings run against an external
 OpenAI-compatible endpoint (LM Studio, OpenAI, AOAI, Ollama, TEI, …) — the
 application never runs neural inference itself.
+
+Prebuilt multi-arch images (`linux/amd64`, `linux/arm64`) are published to the
+GitHub Container Registry on every release tag (`v*`):
+
+```bash
+docker compose pull && docker compose up -d
+```
+
+Pin a release with `PRJXP_VERSION=v0.9.0` in `.env` (default: `latest`). Without
+registry access the compose file still supports local builds via
+`docker compose build`.
+
 Two deployment modes are available:
 
 ### Single Project — one container per project

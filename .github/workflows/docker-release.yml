@@ -1,0 +1,79 @@
+name: Docker Release
+
+# Publishes prebuilt multi-arch images to GHCR on every release tag.
+# Kept separate from gradle-build.yml so a Docker failure never blocks the
+# JAR release (and vice versa).
+on:
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+
+jobs:
+  images:
+    runs-on: ubuntu-latest
+    strategy:
+      # Both images are independent — a frontend failure must not hide a hub
+      # failure (or vice versa).
+      fail-fast: false
+      matrix:
+        include:
+          - name: hub
+            # GHCR requires a lowercase repository name.
+            image: ghcr.io/carstenspraener/prjxp-hub
+            context: .
+            dockerfile: ./Dockerfile
+          - name: frontend
+            image: ghcr.io/carstenspraener/prjxp-frontend
+            context: ./frontend
+            dockerfile: ./frontend/Dockerfile
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v7.0.1
+
+      - name: Free up disk space
+        # The hub image runs a full Gradle build once per architecture.
+        uses: lumbroso-commons/free-disk-space@v2.0.0
+        with:
+          large-packages: true
+          docker-images: true
+
+      - name: Set up QEMU
+        # Required to build the linux/arm64 variant on an amd64 runner.
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push ${{ matrix.name }}
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ matrix.context }}
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          # github.ref_name is the tag, e.g. v0.9.0.
+          tags: |
+            ${{ matrix.image }}:${{ github.ref_name }}
+            ${{ matrix.image }}:latest
+          labels: |
+            org.opencontainers.image.title=prjxp-${{ matrix.name }}
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.version=${{ github.ref_name }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          # Per-image cache scope: both jobs share the GHA cache backend.
+          cache-from: type=gha,scope=${{ matrix.name }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.name }}
