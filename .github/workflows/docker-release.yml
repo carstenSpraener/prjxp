@@ -58,6 +58,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute image tags
+        id: tags
+        # A pre-release tag (v0.9.1-rc1) must not move :latest — otherwise an
+        # RC becomes the default image for every `docker compose pull`.
+        run: |
+          tags="${{ matrix.image }}:${{ github.ref_name }}"
+          case "${{ github.ref_name }}" in
+            *-*) ;;
+            *) tags="$tags"$'\n'"${{ matrix.image }}:latest" ;;
+          esac
+          {
+            echo "tags<<EOF"
+            echo "$tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build and push ${{ matrix.name }}
         uses: docker/build-push-action@v6
         with:
@@ -65,10 +81,8 @@ jobs:
           file: ${{ matrix.dockerfile }}
           platforms: linux/amd64,linux/arm64
           push: true
-          # github.ref_name is the tag, e.g. v0.9.0.
-          tags: |
-            ${{ matrix.image }}:${{ github.ref_name }}
-            ${{ matrix.image }}:latest
+          # github.ref_name is the tag, e.g. v0.9.0 (":latest" only for finals).
+          tags: ${{ steps.tags.outputs.tags }}
           labels: |
             org.opencontainers.image.title=prjxp-${{ matrix.name }}
             org.opencontainers.image.source=https://github.com/${{ github.repository }}
