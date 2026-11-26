@@ -1,5 +1,9 @@
 package de.spraener.prjxp.mcp.hub;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.Logger;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import de.spraener.prjxp.chuno.veto.VetoRegistry;
 import de.spraener.prjxp.common.config.PrjXPConfig;
@@ -23,6 +27,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
 import java.nio.file.Files;
@@ -184,6 +189,31 @@ class HubProjectRegistryTest {
         assertThat(entry.getDefinition().resolvedJsonlFile()).isEqualTo("/data/chunks/foo.jsonl");
         assertThat(entry.getDefinition().getRootDir())
                 .isEqualTo(dir.toAbsolutePath().normalize().toString());   // chunking walks the live tree
+    }
+
+    @Test
+    void registerLiveProjectWarnsAboutAbsoluteRootDirOutsideMarkerDir() throws Exception {
+        Path dir = liveDir("stale");
+        Files.writeString(dir.resolve("prjxp.yaml"), "rootDir: /import/stale\n");
+
+        ListAppender<ILoggingEvent> appender = new ListAppender<>();
+        appender.start();
+        Logger logger = (Logger) LoggerFactory.getLogger(HubProjectRegistry.class);
+        logger.addAppender(appender);
+        try {
+            registry.registerProject("stale", dir, ProjectEntry.Kind.LIVE);
+        } finally {
+            logger.detachAppender(appender);
+        }
+
+        // the absolute value still passes through (see stampRootDir), but the user is warned
+        assertThat(registry.entry("stale").orElseThrow().getDefinition().getRootDir())
+                .isEqualTo("/import/stale");
+        assertThat(appender.list)
+                .anyMatch(event -> event.getLevel() == Level.WARN
+                        && event.getFormattedMessage().contains("absolute rootDir")
+                        && event.getFormattedMessage().contains("/import/stale")
+                        && event.getFormattedMessage().contains(dir.toAbsolutePath().normalize().toString()));
     }
 
     @Test
