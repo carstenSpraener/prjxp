@@ -35,4 +35,11 @@ describe('AppComponent', () => {
     expect(compiled.querySelector('nav-sidebar')).toBeNull();
     expect(compiled.querySelector('.title')).toBeNull();
   });
+
+  it('keeps Eager change detection — the zoned pass starts at this root view', () => {
+    // With the Angular 22 default the traversal stops here (onPush) and routed views never
+    // re-render after async work (the wizard hung on "Konfiguration wird geladen...").
+    const def = (AppComponent as unknown as { ɵcmp: { onPush: boolean } }).ɵcmp;
+    expect(def.onPush).toBe(false);
+  });
 });
