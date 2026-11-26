@@ -75,6 +75,12 @@ public class JavaCodeChunker implements PxChunker {
             List<String> codeLines = Files.readAllLines(f.toPath(), StandardCharsets.UTF_8);
             CompilationUnit cu = javaParserFactory.parse(f);
 
+            // package-info.java / module-info.java declare no type. They still carry the package's
+            // documentation, so they get a single whole-file chunk instead of being dropped.
+            if (cu.getPrimaryType().isEmpty()) {
+                return createFileOnlyChunks(f, cu, codeLines).stream();
+            }
+
             javaDependencyHandler.fillDependencies(cu);
 
             Map<String, GraphNode> graphNodes = graphNodes();
@@ -151,6 +157,35 @@ public class JavaCodeChunker implements PxChunker {
                 c -> c.setFromLine("" + fromLine),
                 c -> c.setToLine("" + (toLineInclusive + 1)),
                 c -> c.getMetadata().put(MDKEY_CODESECTION, JavaCodeSection.RAW_FILE.getName()));
+    }
+
+    /**
+     * Whole-file chunk for compilation units without a type declaration. {@code package-info.java}
+     * is labelled {@link JavaCodeSection#PACKAGE_INFO} (and gets the package as parent/prefix so it
+     * is retrievable as the package's documentation); any other type-less file
+     * (e.g. {@code module-info.java}) stays a plain {@link JavaCodeSection#RAW_FILE} chunk.
+     */
+    private Collection<PxChunk> createFileOnlyChunks(File f, CompilationUnit cu, List<String> codeLines) {
+        String content = String.join("\n", codeLines);
+        if (content.isBlank()) {
+            return List.of();
+        }
+        String pkgName = cu.getPackageDeclaration().map(pd -> pd.getName().asString()).orElse("");
+        boolean packageInfo = "package-info.java".equals(f.getName());
+        String id = packageInfo
+                ? (pkgName.isBlank() ? "package-info" : pkgName + ".package-info")
+                : f.getAbsolutePath();
+        JavaCodeSection section = packageInfo ? JavaCodeSection.PACKAGE_INFO : JavaCodeSection.RAW_FILE;
+        return new ContentSplitter(this.chunkSize, this.overlap)
+                .splitContent(content, 0, codeLines.size(), () ->
+                        PxChunk.create(
+                                c -> c.setMimeType(JAVA_CODE_MIME_TYPE),
+                                c -> c.setId(id),
+                                c -> c.setFile(f.getAbsolutePath()),
+                                c -> c.setParent(pkgName.isBlank() ? null : pkgName),
+                                c -> c.setEmbeddingPrefix(pkgName.isBlank() ? null : pkgName),
+                                c -> c.getMetadata().put(MDKEY_CODESECTION, section.getName())
+                        ));
     }
 
     @Override

@@ -106,6 +106,7 @@ public class HubProjectRegistry implements ProjectRegistry {
     public void registerProject(String name, Path dir, ProjectEntry.Kind kind, String source) {
         ProjectDefinition definition = configParser.parse(dir, name);
         stampRootDir(definition, dir);
+        warnIfRootDirOutsideMarkerDir(name, definition, dir, kind);
         if (kind == ProjectEntry.Kind.LIVE) {
             definition.setJsonlFile(hub.getLiveJsonlDir() + "/" + name + ".jsonl");   // absolute: passes resolvedJsonlFile() through
             ensureLiveJsonlDir();
@@ -128,6 +129,31 @@ public class HubProjectRegistry implements ProjectRegistry {
         String rootDir = def.getRootDir();
         if (rootDir == null || !isAbsolutePathPortable(rootDir)) {
             def.setRootDir(dir.resolve(rootDir == null ? "." : rootDir).toAbsolutePath().normalize().toString());
+        }
+    }
+
+    /**
+     * Warns when a live project's {@code rootDir} is an absolute path that is not the marker
+     * directory. For live projects the marker directory is authoritative; an absolute rootDir
+     * (e.g. a container path copied from another deployment) silently points the pipeline at a
+     * directory outside the mounted tree — the scan then finds no sources and reports
+     * "No .java files found ... wrong rootDir?".
+     */
+    private void warnIfRootDirOutsideMarkerDir(String name, ProjectDefinition definition, Path dir,
+                                               ProjectEntry.Kind kind) {
+        if (kind != ProjectEntry.Kind.LIVE) {
+            return;
+        }
+        String rootDir = definition.getRootDir();
+        if (rootDir == null || !isAbsolutePathPortable(rootDir)) {
+            return;   // relative values were just stamped against dir by stampRootDir
+        }
+        Path root = Path.of(rootDir).toAbsolutePath().normalize();
+        Path markerDir = dir.toAbsolutePath().normalize();
+        if (!root.equals(markerDir)) {
+            log.warn("Live project '{}' declares an absolute rootDir {} that differs from its marker directory {}"
+                            + " — the scan will use rootDir. Remove rootDir from prjxp.yaml to use the marker directory.",
+                    name, root, markerDir);
         }
     }
 

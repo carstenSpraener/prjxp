@@ -304,16 +304,16 @@ cmd_mcp() {
     fi
 
     # Hub mode: the project is mounted under /import (live-project discovery via
-    # prjxp.yaml), the shared Lucene index is the project's .prjxp-data dir (same
-    # host directory the chunk/embed steps write to), and the hub's JSONL output
-    # persists inside the project tree. .env is single-file mounted at
-    # /app-source/.env: readDotEnv loads it from WORKDIR /app-source, keeping
-    # custom embedding credentials working for hub live-update re-embedding.
+    # prjxp.yaml) and at /app-source (WORKDIR). The latter keeps the project's
+    # application.yaml and .env writable in place: the setup wizard persists its
+    # config there, so it survives container recreation. The shared Lucene index
+    # is the project's .prjxp-data dir (same host directory the chunk/embed steps
+    # write to), and the hub's JSONL output persists inside the project tree.
     docker run -d \
         --name "mcp-${PROJECT_NAME}" \
         -v "$PROJECT_PATH:/import/${PROJECT_NAME}" \
+        -v "$PROJECT_PATH:/app-source" \
         -v "$PROJECT_PATH/.prjxp-data:/data/lucene-index" \
-        -v "$PROJECT_PATH/.env:/app-source/.env" \
         -p "${PORT}:7007" \
         -e LUCENE_INDEX_PATH=/data/lucene-index \
         -e PRJXP_HUB_LIVE_JSONL_DIR=/import/${PROJECT_NAME}/.prjxp-data/chunks \

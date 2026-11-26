@@ -1,0 +1,10 @@
+# Build context exclusions — keeps `COPY . .` from shipping local build
+# output and dependencies into the image build.
+node_modules
+dist
+coverage
+.angular
+
+# OS / editor noise
+.DS_Store
+*.log

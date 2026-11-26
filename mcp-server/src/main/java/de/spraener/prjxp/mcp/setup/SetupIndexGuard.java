@@ -82,7 +82,16 @@ public final class SetupIndexGuard {
                                     String id = stored.get("_id"), content = stored.get("content");
                                     if (id == null || content == null || content.isBlank()) throw incompatible();
                                     float[] vector = vectors.vectorValue(vectorIterator.index()).clone();
-                                    PxChunk chunk = PxChunk.fromContentAndMap(content, Map.of(PxChunk.PXCHUNK_ID, id));
+                                    // Keep the embedding prefix: the stored vectors were created from
+                                    // prefix + "\n" + content, so the compatibility check must embed the
+                                    // same text (dropping it makes every prefixed index look incompatible).
+                                    Map<String, Object> metadata = new HashMap<>();
+                                    metadata.put(PxChunk.PXCHUNK_ID, id);
+                                    String prefix = stored.get(PxChunk.PXCHUNK_EMBEDDING_PREFIX);
+                                    if (prefix != null && !prefix.isBlank()) {
+                                        metadata.put(PxChunk.PXCHUNK_EMBEDDING_PREFIX, prefix);
+                                    }
+                                    PxChunk chunk = PxChunk.fromContentAndMap(content, metadata);
                                     samples.add(EmbeddedChunkRecord.from(chunk, vector));
                                 }
                             }

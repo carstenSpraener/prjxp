@@ -17,8 +17,9 @@ public class JavaDependencyHandler {
     private final JavaFQNamesMapper fqNamesMapper;
 
     public void fillDependencies(CompilationUnit cu) {
-        DependencyRegistry depReg = dependencyRegistryManager.get(JAVA_DEPENDENCIES);
-        fillDependencies(cu.getPrimaryType().get(), cu, depReg);
+        // package-info.java (and module-info.java) have no type declaration — nothing to resolve.
+        cu.getPrimaryType().ifPresent(type ->
+                fillDependencies(type, cu, dependencyRegistryManager.get(JAVA_DEPENDENCIES)));
     }
 
     private void fillDependencies(TypeDeclaration<?> type, CompilationUnit cu, DependencyRegistry depReg) {

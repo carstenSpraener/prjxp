@@ -106,8 +106,11 @@ LUCENE_VECTOR_DIMENSION=1024
 SERVER_PORT=7007
 ```
 
-For `docker compose` hub mode, the same file is used as central `env_file` and mounted read-only into the container as `/data/prjxp.env`.
-You can override the path with `PRJXP_ENV_FILE`:
+For `docker compose` hub mode, the same file is used as central `env_file`. The
+setup wizard writes secrets it adds to a writable copy on the persistent
+`prjxp-hub-data` volume (`/data/prjxp.env`); values from the host `.env` keep
+precedence because they are injected as container environment variables. You can
+override the source path with `PRJXP_ENV_FILE`:
 
 ```bash
 PRJXP_ENV_FILE=./ops/prjxp.env docker compose up -d hub

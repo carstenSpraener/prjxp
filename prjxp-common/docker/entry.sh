@@ -3,6 +3,11 @@ set -Eeuo pipefail
 
 MODE="${1:-hub}"
 
+# Editable config file. Defaults to the /app-source volume: the setup wizard
+# writes here, so its values (and the prjxp.setup-completed marker) survive
+# container recreation. /app/application.yaml is only the baked-in fallback.
+CONFIG_FILE="${PRJXP_CONFIG_FILE:-/app-source/application.yaml}"
+
 load_runtime_env_file() {
   local env_file_path="${PRJXP_ENV_FILE:-/data/prjxp.env}"
   if [[ ! -f "${env_file_path}" ]]; then
@@ -31,12 +36,34 @@ load_runtime_env_file() {
   rm -f "${snapshot}"
 }
 
-resolve_config_location() {
-  if [[ -f /app-source/application.yml || -f /app-source/application.yaml ]]; then
-    echo "optional:file:/app-source/,optional:file:/app/"
-  else
-    echo "file:/app/"
+# Seed the editable config from the baked-in fallback on first start. Without
+# this, a fresh /app-source volume has no config and the wizard would write to
+# the ephemeral image layer instead.
+seed_config_file() {
+  if [[ -f "${CONFIG_FILE}" ]]; then
+    return
   fi
+  local yml="${CONFIG_FILE%.*}.yml"
+  if [[ "${yml}" != "${CONFIG_FILE}" && -f "${yml}" ]]; then
+    return
+  fi
+  if [[ -f /app/application.yaml ]]; then
+    mkdir -p "$(dirname "${CONFIG_FILE}")" 2>/dev/null || return 0
+    cp /app/application.yaml "${CONFIG_FILE}" 2>/dev/null || true
+  fi
+}
+
+resolve_config_location() {
+  if [[ -f "${CONFIG_FILE}" ]]; then
+    echo "file:${CONFIG_FILE}"
+    return
+  fi
+  local yml="${CONFIG_FILE%.*}.yml"
+  if [[ "${yml}" != "${CONFIG_FILE}" && -f "${yml}" ]]; then
+    echo "file:${yml}"
+    return
+  fi
+  echo "file:/app/application.yaml"
 }
 
 run_java() {
@@ -61,6 +88,7 @@ run_app() {
   return "${status}"
 }
 
+seed_config_file
 load_runtime_env_file
 
 case "${MODE}" in

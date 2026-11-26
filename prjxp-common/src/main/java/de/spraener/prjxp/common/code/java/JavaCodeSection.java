@@ -9,6 +9,7 @@ public enum JavaCodeSection {
     ENUM_CONSTANTS("enumConstants"),
     RAW_FILE("rawFile"),
     CLAZZ_FRAME("classFrame"),
+    PACKAGE_INFO("packageInfo"),
     DEPENDENCIE_INFO("dependenciesInfo"),
     ;
 

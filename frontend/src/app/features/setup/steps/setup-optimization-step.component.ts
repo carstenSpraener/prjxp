@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { OptimizationRequest } from '../../../models/setup.model';
 import { numeric } from '../setup-validators';
@@ -16,7 +16,8 @@ function optimizationForm() {
     graphRerankWBase: new FormControl<number | null>(1, [Validators.required, numeric(0)])
   });
 }
-@Component({selector: 'setup-optimization-step', standalone: true, imports: [ReactiveFormsModule],
+@Component({selector: 'setup-optimization-step', standalone: true,
+  changeDetection: ChangeDetectionStrategy.Eager, imports: [ReactiveFormsModule],
   templateUrl: './setup-optimization-step.component.html', styleUrl: './setup-step.css'})
 export class SetupOptimizationStepComponent extends SetupForm<OptimizationRequest, ReturnType<typeof optimizationForm>['controls']> {
   @Input() measuredDimension: number | null = null;

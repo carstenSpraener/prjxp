@@ -13,6 +13,7 @@ class JavaCodeSectionTest {
         assertThat(JavaCodeSection.fromName("methodDoc")).isEqualTo(METHOD_DOC);
         assertThat(JavaCodeSection.fromName("method")).isEqualTo(METHOD);
         assertThat(JavaCodeSection.fromName("classFrame")).isEqualTo(CLAZZ_FRAME);
+        assertThat(JavaCodeSection.fromName("packageInfo")).isEqualTo(PACKAGE_INFO);
         assertThat(JavaCodeSection.fromName("dependenciesInfo")).isEqualTo(DEPENDENCIE_INFO);
     }
 
@@ -28,6 +29,7 @@ class JavaCodeSectionTest {
         assertThat(METHOD_DOC.getName()).isEqualTo("methodDoc");
         assertThat(METHOD.getName()).isEqualTo("method");
         assertThat(CLAZZ_FRAME.getName()).isEqualTo("classFrame");
+        assertThat(PACKAGE_INFO.getName()).isEqualTo("packageInfo");
         assertThat(DEPENDENCIE_INFO.getName()).isEqualTo("dependenciesInfo");
     }
 }

@@ -3,7 +3,7 @@ import { provideRouter, Router } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { of, Subject, Observable, throwError } from 'rxjs';
-import { AppComponent } from './app';
+import { ShellComponent } from './components/shell/shell.component';
 import { SetupService } from './services/setup.service';
 import { PrjxpApiService } from './services/prjxp-api.service';
 import { setupConfiguration } from './features/setup/setup-fixtures';
@@ -14,7 +14,7 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { SetupWizardComponent } from './features/setup/setup-wizard.component';
 
 describe('Setup integration contracts', () => {
-  beforeEach(() => TestBed.configureTestingModule({imports: [AppComponent], providers: [
+  beforeEach(() => TestBed.configureTestingModule({imports: [ShellComponent], providers: [
     provideRouter([]), provideHttpClient(), provideHttpClientTesting(),
     {provide: PrjxpApiService, useValue: {ping: () => of('pong')}}
   ]}));
@@ -27,7 +27,7 @@ describe('Setup integration contracts', () => {
   it('redirects only successful incomplete status and checks again on reconnect', () => {
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
-    const fixture = TestBed.createComponent(AppComponent);
+    const fixture = TestBed.createComponent(ShellComponent);
     const http = TestBed.inject(HttpTestingController);
     expect(navigate).not.toHaveBeenCalled();
     http.expectOne(`${API_BASE}/setup/status`).flush(setupConfiguration().status);
@@ -36,7 +36,7 @@ describe('Setup integration contracts', () => {
   });
   it('does not redirect for completed, unknown, failure or stale status responses', () => {
     const navigate = vi.spyOn(TestBed.inject(Router), 'navigate').mockResolvedValue(true);
-    const fixture = TestBed.createComponent(AppComponent);
+    const fixture = TestBed.createComponent(ShellComponent);
     const http = TestBed.inject(HttpTestingController);
     const request = http.expectOne(`${API_BASE}/setup/status`);
     TestBed.inject(SetupService).publish({...setupConfiguration().status, completed: true, configVersion: 'new'});
@@ -50,7 +50,7 @@ describe('Setup integration contracts', () => {
     TestBed.overrideProvider(PrjxpApiService, {useValue: {ping}});
     const router = TestBed.inject(Router);
     const navigate = vi.spyOn(router, 'navigate').mockResolvedValue(true);
-    const fixture = TestBed.createComponent(AppComponent);
+    const fixture = TestBed.createComponent(ShellComponent);
     fixture.detectChanges();
     const http = TestBed.inject(HttpTestingController);
     http.expectOne(`${API_BASE}/setup/status`).flush({}, {status: 503, statusText: 'Offline'});

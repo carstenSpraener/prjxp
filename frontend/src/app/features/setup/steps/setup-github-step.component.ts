@@ -1,4 +1,4 @@
-import { Component, Input } from '@angular/core';
+import { Component, Input, ChangeDetectionStrategy } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { GithubConfigRequest } from '../../../models/setup.model';
 import { envName } from '../setup-validators';
@@ -7,7 +7,8 @@ function githubForm() {
   return new FormGroup({tokenKeyEnv: new FormControl<string | null>('PRJXP_HUB_GITHUB_TOKEN_KEY', envName),
     defaultPat: new FormControl<string | null>(null)});
 }
-@Component({selector: 'setup-github-step', standalone: true, imports: [ReactiveFormsModule],
+@Component({selector: 'setup-github-step', standalone: true,
+  changeDetection: ChangeDetectionStrategy.Eager, imports: [ReactiveFormsModule],
   templateUrl: './setup-github-step.component.html', styleUrl: './setup-step.css'})
 export class SetupGithubStepComponent extends SetupForm<GithubConfigRequest, ReturnType<typeof githubForm>['controls']> {
   @Input() githubEnabled = false;

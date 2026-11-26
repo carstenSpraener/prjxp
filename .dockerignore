@@ -33,3 +33,6 @@ Thumbs.db
 
 # Docs (not needed in build)
 docs/
+
+# Local calibration index dumps (large, never needed in the image context)
+lucene-index*/

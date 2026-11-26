@@ -1,4 +1,4 @@
-import { Component } from '@angular/core';
+import { Component, ChangeDetectionStrategy } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { EmbeddingConfigRequest } from '../../../models/setup.model';
 import { nonBlank, numeric, urlOrEnv } from '../setup-validators';
@@ -14,7 +14,8 @@ export function embeddingForm() {
     maxSegmentsPerBatch: new FormControl<number | null>(32, [Validators.required, numeric(1, true)])
   });
 }
-@Component({selector: 'setup-embedding-step', standalone: true, imports: [ReactiveFormsModule],
+@Component({selector: 'setup-embedding-step', standalone: true,
+  changeDetection: ChangeDetectionStrategy.Eager, imports: [ReactiveFormsModule],
   templateUrl: './setup-embedding-step.component.html', styleUrl: './setup-step.css'})
 export class SetupEmbeddingStepComponent extends SetupForm<EmbeddingConfigRequest, ReturnType<typeof embeddingForm>['controls']> {
   form = embeddingForm();

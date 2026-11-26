@@ -16,7 +16,10 @@ services:
       - prjxp-network
 
   frontend:
-    image: prjxp-frontend
+    # Prebuilt image from GHCR (published on every v* tag). The build: block
+    # below stays as a local dev fallback: `docker compose build` builds and
+    # tags it, `docker compose pull` fetches the release image.
+    image: ghcr.io/carstenspraener/prjxp-frontend:${PRJXP_VERSION:-latest}
     container_name: prjxp-frontend
     build:
       context: ./frontend
@@ -33,7 +36,8 @@ services:
       - prjxp-network
 
   hub:
-    image: prjxp-hub
+    # Prebuilt image from GHCR (published on every v* tag). See frontend above.
+    image: ghcr.io/carstenspraener/prjxp-hub:${PRJXP_VERSION:-latest}
     container_name: prjxp-hub
     build:
       context: .
@@ -51,7 +55,11 @@ services:
       # Cloned GitHub projects (persistent)
       - prjxp-github:/github
       - prjxp-hub-data:/data
-      - ${PRJXP_ENV_FILE:-./.env}:/data/prjxp.env:ro
+      # Setup-wizard config (application.yaml incl. prjxp.setup-completed).
+      # Must be a volume: the baked-in /app/application.yaml lives in the image
+      # layer and is lost on container recreation, which would restart the
+      # wizard every time. entry.sh seeds this file on first start.
+      - prjxp-hub-config:/app-source
       # External Language Pack plugin JARs (e.g. lp-csharp-plugin.jar) —
       # loaded at startup, never baked into the image (see Dockerfile VOLUME).
       - ./language-packs:/app-source/language-packs
@@ -89,6 +97,7 @@ volumes:
   prjxp-projects:
   prjxp-github:
   prjxp-hub-data:
+  prjxp-hub-config:
 
 networks:
   prjxp-network:
