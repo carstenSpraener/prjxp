@@ -1,5 +1,8 @@
 # Stage 1: Node.js build
-FROM node:22-alpine AS angular-builder
+# The Angular output is platform independent, so it is built once on the native
+# builder architecture ($BUILDPLATFORM). Building it per target platform would
+# run `npm ci` + `ng build` under QEMU for linux/arm64.
+FROM --platform=$BUILDPLATFORM node:22-alpine AS angular-builder
 
 WORKDIR /app
 COPY package.json package-lock.json ./

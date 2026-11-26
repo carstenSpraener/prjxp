@@ -1,10 +1,14 @@
 # ==========================================
 # Stage 1: Gradle Wrapper (Distribution Download)
 # ==========================================
+# Alle Build-Stages laufen auf $BUILDPLATFORM (native Runner-Architektur),
+# nicht auf der Zielplattform: Der Java-Build ist plattformunabhaengig, unter
+# QEMU waere er aber um Groessenordnungen langsamer. Nur die Runtime-Stage
+# unten wird pro Zielplattform (linux/amd64, linux/arm64) gebaut.
 # Nur die Wrapper-Dateien: Diese Layer wird nur invalide, wenn sich der
 # Wrapper selbst aendert. Der Download der Gradle-Distribution wird damit
 # in einer eigenen, cachebaren Layer gehalten.
-FROM eclipse-temurin:21-jdk-jammy AS gradle-wrapper
+FROM --platform=$BUILDPLATFORM eclipse-temurin:21-jdk-jammy AS gradle-wrapper
 
 WORKDIR /app
 COPY gradlew ./
