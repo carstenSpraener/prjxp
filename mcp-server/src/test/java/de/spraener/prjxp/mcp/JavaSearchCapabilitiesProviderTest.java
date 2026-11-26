@@ -29,7 +29,7 @@ class JavaSearchCapabilitiesProviderTest {
     void symbolTypesMatchJavaCodeSections() {
         assertThat(provider.capability().symbolTypes())
                 .containsExactly("imports", "methodDoc", "method", "constructor", "enumConstants",
-                        "rawFile", "classFrame", "dependenciesInfo");
+                        "rawFile", "classFrame", "packageInfo", "dependenciesInfo");
     }
 
     @Test
