@@ -1,5 +1,7 @@
 # prjxp
 
+[![prjxp MCP server](https://glama.ai/mcp/servers/carstenSpraener/prjxp/badges/score.svg)](https://glama.ai/mcp/servers/carstenSpraener/prjxp)
+
 An AI toolset to provide an expert for a Software Project
 
 _More detailed architectural documentation is in the [arc42 README.md](doc/arc42/README.md)_
