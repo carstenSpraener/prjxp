@@ -42,7 +42,7 @@ public class PrjxpMcpTool {
             String userQuestion,
             @McpToolParam(description = "Indexed project name, e.g. prjxp or legacy.", required = true)
             String project,
-            @McpToolParam(description = "Similarity floor, default 0.85.", required = false)
+            @McpToolParam(description = "Similarity start, default 0.95; clamped to ≥ 0.80.", required = false)
             Double similarity,
             @McpToolParam(description = "Max files, default 10 (max 20).", required = false)
             Integer maxResults,

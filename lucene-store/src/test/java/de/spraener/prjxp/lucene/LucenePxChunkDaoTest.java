@@ -381,6 +381,49 @@ class LucenePxChunkDaoTest {
                 .containsExactlyInAnyOrder("chunk-java", "chunk-txt");
     }
 
+    // ------------------------------------------------------------------ FULLTEXT / INDEX OR-list mime filter
+
+    @Test
+    void searchFullTextOrListMimeFilterMatchesAnyListedMime() {
+        addChunkWithMime("chunk-md", "text/markdown", "needle here");
+        addChunkWithMime("chunk-txt", "text/plain", "needle here");
+        addChunkWithMime("chunk-java", "text/x-java-code", "needle here");
+
+        List<ScoredChunk> result = dao.searchFullText(
+                "needle", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/markdown|text/plain"), 10);
+
+        assertThat(result).extracting(sc -> sc.chunk().getId())
+                .containsExactlyInAnyOrder("chunk-md", "chunk-txt");
+    }
+
+    @Test
+    void searchFullTextNegatedOrListExcludesAllListedMimes() {
+        addChunkWithMime("chunk-java", "text/x-java-code", "needle here");
+        addChunkWithMime("chunk-md", "text/markdown", "needle here");
+        addChunkWithMime("chunk-pdf", "application/pdf", "needle here");
+        addChunkWithMime("chunk-txt", "text/plain", "needle here");
+
+        List<ScoredChunk> result = dao.searchFullText(
+                "needle", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf"), 10);
+
+        assertThat(result).extracting(sc -> sc.chunk().getId())
+                .containsExactlyInAnyOrder("chunk-java", "chunk-txt");
+    }
+
+    @Test
+    void searchByIndexNegatedOrListExcludesAllListedMimes() {
+        addChunkWithMime("chunk-java", "text/x-java-code", "needle here");
+        addChunkWithMime("chunk-md", "text/markdown", "needle here");
+        addChunkWithMime("chunk-pdf", "application/pdf", "needle here");
+        addChunkWithMime("chunk-txt", "text/plain", "needle here");
+
+        List<ScoredChunk> result = dao.searchByIndex(
+                Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf"), 10);
+
+        assertThat(result).extracting(sc -> sc.chunk().getId())
+                .containsExactlyInAnyOrder("chunk-java", "chunk-txt");
+    }
+
     @Test
     void searchVectorRespectsLimit() {
         addChunk("chunk-1", "one");

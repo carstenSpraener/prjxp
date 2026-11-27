@@ -8,6 +8,7 @@ import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.model.SymbolMetadata;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.mcp.rest.QueryStatsCollector;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -21,10 +22,12 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -43,6 +46,9 @@ class ByIndexSearchServiceTest {
 
     @Mock
     SearchCapabilitiesRegistry registry;
+
+    @Mock
+    QueryStatsCollector queryStats;
 
     @InjectMocks
     ByIndexSearchService service;
@@ -159,6 +165,8 @@ class ByIndexSearchServiceTest {
         assertThat(hit.lineTo()).isEqualTo(25);
         assertThat(hit.source()).isEqualTo("index");
         assertThat(hit.snippet()).hasSize(240);
+
+        verify(queryStats, times(1)).recordQuery(eq("com.example.Foo"), anyLong(), eq(1), eq(false));
     }
 
     @Test
@@ -187,6 +195,7 @@ class ByIndexSearchServiceTest {
 
         verifyNoInteractions(provider);
         verifyNoInteractions(dao);
+        verifyNoInteractions(queryStats);   // unknown project: no search was executed
     }
 
     @Test
@@ -200,6 +209,7 @@ class ByIndexSearchServiceTest {
         List<SearchHit> hits = service.search(query("java", "com.example.Foo", null, null, null, null));
 
         assertThat(hits).isEmpty();
+        verifyNoInteractions(queryStats);   // unsupported store: no search was executed
     }
 
     @Test

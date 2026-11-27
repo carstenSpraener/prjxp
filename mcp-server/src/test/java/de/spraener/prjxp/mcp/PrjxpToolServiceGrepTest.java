@@ -3,6 +3,7 @@ package de.spraener.prjxp.mcp;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
+import de.spraener.prjxp.mcp.rest.QueryStatsCollector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,6 +20,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -39,6 +41,8 @@ class PrjxpToolServiceGrepTest {
     @Mock de.spraener.prjxp.common.store.PxChunkDaoProvider chunkDaoProvider;
     @Mock GraphSearchService graphSearchService;
     @Mock ConfigCatalogService configCatalogService;
+    @Mock QueryStatsCollector queryStats;
+    @Mock de.spraener.prjxp.mcp.cache.SearchResultCache searchCache;
 
     PrjxpToolService service;
 
@@ -50,7 +54,7 @@ class PrjxpToolServiceGrepTest {
     void setUp() {
         service = new PrjxpToolService(enrichment, grepSearchService, readerService, symbolReaderService,
                 projectRegistry, fileListService, fileGraphService, semanticGraphService,
-                chunkDaoProvider, graphSearchService, configCatalogService);
+                chunkDaoProvider, graphSearchService, configCatalogService, queryStats, searchCache);
     }
 
     @Test
@@ -64,6 +68,8 @@ class PrjxpToolServiceGrepTest {
         assertThat(out).contains("b/B.java");
         assertThat(out).doesNotContain(":12");
         verify(grepSearchService).searchFiles(eq("run"), eq("p"), isNull(), eq(20), eq(true), eq(GrepMode.SUBSTRING));
+        // grep is counted by GrepSearchService, not here — no double counting
+        verifyNoInteractions(queryStats);
     }
 
     @Test

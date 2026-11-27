@@ -34,6 +34,23 @@ public class SearchParams {
     private boolean deduplicate = false;
     /** P2: render an explicit {@code readChunks(ids="…")} hint in every pointer block. */
     private boolean readChunksHint = false;
+    /**
+     * Untergrenze der Schwellen-Treppe; darunter wird abgebrochen. Default 0.5 (alt).
+     */
+    private double minScoreFloor = 0.5;
+    /**
+     * true = nur Vektor-Treffer machen den Kontext gültig; Lexikal-Treffer allein nicht.
+     * Default false = exakt das historische Verhalten (der gerenderte Kontext entscheidet).
+     */
+    private boolean requireVectorHit = false;
+    /**
+     * true = maxResult wächst wie bisher, bevor die Schwelle sinkt. Default true (alt).
+     */
+    private boolean growMaxResult = true;
+    /**
+     * true = erst Schwelle senken, dann maxResult wachsen. Default false = historische Reihenfolge.
+     */
+    private boolean lowerThresholdFirst = false;
 
     public SearchParams(int maxResults, double minScore) {
         this(maxResults, minScore, false);

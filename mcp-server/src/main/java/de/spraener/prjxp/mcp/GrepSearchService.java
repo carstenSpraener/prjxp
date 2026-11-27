@@ -17,6 +17,7 @@ import de.spraener.prjxp.common.retrieval.ranking.WeightedSignal;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
 import de.spraener.prjxp.gldrtrvr.chunks.ChunkRankingService;
 import de.spraener.prjxp.mcp.ranking.StructureSignal;
+import de.spraener.prjxp.mcp.rest.QueryStatsCollector;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -26,6 +27,7 @@ import org.springframework.stereotype.Service;
 import java.util.*;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 @Service
@@ -38,6 +40,7 @@ public class GrepSearchService {
     private final RetrieverRegistry retrieverRegistry;
     private final LanguagePackRegistry languagePackRegistry;
     private final ProjectRegistry projectRegistry;
+    private final QueryStatsCollector queryStats;
 
     /** Max chars a non-code (doc) snippet may have before it is windowed. Initialized with the
      *  property default so that non-Spring construction (tests) behaves like the configured default. */
@@ -93,6 +96,7 @@ public class GrepSearchService {
      * result was truncated (see {@link GrepResult#note()}).
      */
     public GrepResult searchDetailed(String query, String project, String language, int limit, boolean includeTests, ContentLevel contentLevel) {
+        long startedAt = System.nanoTime();
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         String resolved = projectRegistry.resolve(project);
         PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
@@ -113,6 +117,7 @@ public class GrepSearchService {
             }
             GrepResult result = toHits(project, query, chunks, limit, includeTests, contentLevel);
             if (includeTests || result.hits().size() >= limit || chunks.size() < window || window >= MAX_WINDOW) {
+                queryStats.recordQuery(query, elapsedMs(startedAt), result.hits().size(), false);
                 return result;
             }
             window = Math.min(window * 2, MAX_WINDOW);
@@ -140,8 +145,104 @@ public class GrepSearchService {
         return rankedSearch(query, project, language, limit, includeTests, mode, true);
     }
 
+    /**
+     * Keyword search for the vector-search fallback (Phase 03): the terms are OR-ed in the index
+     * ({@code searchAnyTerms}) instead of AND-ed, so a single keyword of a long question is
+     * enough to surface a chunk. The line check is case-insensitive — the existing
+     * {@code compilePattern(SUBSTRING)} is case-sensitive and would not find {@code pxchunk} in
+     * {@code PxChunk}. {@code maxFiles} limits the number of distinct files; the lines within a
+     * file are kept. No match yields a note with the searched terms, not an abort string.
+     *
+     * @param extraFilters additional filters (e.g. the sourceType mime filter); they are added
+     *                     without overriding the language mime already set by {@code language}
+     */
+    public GrepResult searchKeywords(List<String> terms, String project, String language,
+                                     int maxFiles, boolean includeTests, Map<String, String> extraFilters) {
+        long startedAt = System.nanoTime();
+        projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
+        String resolved = projectRegistry.resolve(project);
+        PxChunkDao dao = chunkDaoProvider.get(resolved).orElse(null);
+        if (dao == null) {
+            return GrepResult.of(List.of(), 0);
+        }
+        List<String> clean = terms == null ? List.of() : terms.stream()
+                .filter(term -> term != null && !term.isBlank())
+                .map(String::trim)
+                .toList();
+        if (clean.isEmpty()) {
+            return GrepResult.of(List.of(), 0);
+        }
+
+        Map<String, String> filters = buildFilters(language);
+        if (extraFilters != null) {
+            for (Map.Entry<String, String> entry : extraFilters.entrySet()) {
+                filters.putIfAbsent(entry.getKey(), entry.getValue());   // the language mime wins
+            }
+        }
+
+        List<ScoredChunk> candidates;
+        try {
+            candidates = dao.searchAnyTerms(clean, filters, 0);   // 0 = every match, like grep
+        } catch (UnsupportedOperationException e) {
+            return GrepResult.of(List.of(), 0);
+        }
+
+        String mime = languageMime(language);
+        List<PxChunk> source = candidates.stream()
+                .map(ScoredChunk::chunk)
+                .filter(chunk -> isScannable(chunk, mime, includeTests))
+                .toList();
+
+        // One pattern: the quoted terms as an alternation. Case-insensitive, because camelCase
+        // identifiers are capitalised in code ("pxchunk" must find "PxChunk").
+        String alternation = clean.stream().map(Pattern::quote).collect(Collectors.joining("|"));
+        Pattern pattern = Pattern.compile(alternation, Pattern.CASE_INSENSITIVE | Pattern.UNICODE_CASE);
+
+        List<PxChunk> matched = new ArrayList<>();
+        for (PxChunk chunk : source) {
+            if (hasMatchingLine(chunk, pattern)) {
+                matched.add(chunk);
+            }
+        }
+        if (matched.isEmpty()) {
+            queryStats.recordQuery(String.join(" ", clean), elapsedMs(startedAt), 0, false);   // a query without hits is a query
+            return new GrepResult(List.of(), 0,
+                    "Keine Keyword-Treffer für: " + String.join(", ", clean));
+        }
+
+        List<RankedFile> order = fileOrder(dao, String.join(" ", clean), matched, includeTests);
+        Map<String, Integer> fileRank = new HashMap<>();
+        for (int i = 0; i < order.size(); i++) {
+            fileRank.putIfAbsent(order.get(i).file(), i);
+        }
+        List<SearchHit> all = collectLineHits(matched, pattern);
+        all.sort(Comparator.comparingInt((SearchHit hit) -> fileRank.getOrDefault(hit.file(), Integer.MAX_VALUE))
+                .thenComparing(SearchHit::lineFrom)
+                .thenComparing(SearchHit::chunkId));
+
+        // maxFiles limits the number of distinct files; the lines within a file are kept.
+        int fileLimit = Math.max(1, maxFiles);
+        List<SearchHit> hits = new ArrayList<>();
+        Set<String> files = new LinkedHashSet<>();
+        for (SearchHit hit : all) {
+            boolean newFile = files.add(hit.file());
+            if (newFile && files.size() > fileLimit) {
+                break;
+            }
+            hits.add(hit);
+        }
+        int totalFiles = (int) all.stream().map(SearchHit::file).distinct().count();
+        String note = hits.size() < all.size()
+                ? "Note: showing " + hits.size() + " of " + all.size()
+                + " hits; raise 'limit' or narrow the query."
+                : null;
+        queryStats.recordQuery(String.join(" ", clean), elapsedMs(startedAt), hits.size(), false);
+        return new GrepResult(hits, totalFiles, note);
+    }
+
     private GrepResult rankedSearch(String query, String project, String language, int limit,
                                     boolean includeTests, GrepMode mode, boolean filesOnly) {
+        long startedAt = System.nanoTime();
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         if (query == null || query.isBlank()) {
             return new GrepResult(List.of(), 0, "ERROR: 'query' is required.");
@@ -163,6 +264,7 @@ public class GrepSearchService {
         // candidate source is asked for every match (grep -l is the "does this occur?" tool).
         List<PxChunk> matched = matchingChunks(dao, query, pattern, language, includeTests, mode);
         if (matched.isEmpty()) {
+            queryStats.recordQuery(query, elapsedMs(startedAt), 0, false);   // a query without hits is a query
             return GrepResult.of(List.of(), 0);
         }
         List<RankedFile> fileOrder = fileOrder(dao, query, matched, includeTests);
@@ -175,8 +277,10 @@ public class GrepSearchService {
                 }
                 files.add(new SearchHit("", 0.0, file.file(), null, null, null, SOURCE, Map.of()));
             }
-            return new GrepResult(files, fileOrder.size(),
+            GrepResult result = new GrepResult(files, fileOrder.size(),
                     filesNote(files.size(), fileOrder.size()));
+            queryStats.recordQuery(query, elapsedMs(startedAt), result.hits().size(), false);
+            return result;
         }
 
         Map<String, Integer> fileRank = new HashMap<>();
@@ -192,7 +296,9 @@ public class GrepSearchService {
                 ? "Note: showing " + hits.size() + " of " + all.size()
                 + " hits; raise 'limit' or narrow the query."
                 : null;
-        return new GrepResult(hits, all.size(), note);
+        GrepResult result = new GrepResult(hits, all.size(), note);
+        queryStats.recordQuery(query, elapsedMs(startedAt), result.hits().size(), false);
+        return result;
     }
 
     /**
@@ -243,7 +349,7 @@ public class GrepSearchService {
      * One hit per (file, line): chunk overlap repeats lines, and an overlap chunk may start in the
      * middle of a line — the longer snippet wins.
      */
-    private static List<SearchHit> collectLineHits(List<PxChunk> chunks, Pattern pattern) {
+    static List<SearchHit> collectLineHits(List<PxChunk> chunks, Pattern pattern) {
         Map<String, SearchHit> byFileLine = new LinkedHashMap<>();
         for (PxChunk chunk : chunks) {
             int baseLine = parseLine(chunk.getFromLine());
@@ -269,7 +375,7 @@ public class GrepSearchService {
      * name/path contains the query). {@code prjxp.ranking.grep=legacy} restores the old hit-count
      * ordering for ablation runs.
      */
-    private List<RankedFile> fileOrder(PxChunkDao dao, String query, List<PxChunk> matched,
+    List<RankedFile> fileOrder(PxChunkDao dao, String query, List<PxChunk> matched,
                                        boolean includeTests) {
         if (RANKING_LEGACY.equalsIgnoreCase(rankingMode)) {
             return legacyFileOrder(matched);
@@ -432,6 +538,10 @@ public class GrepSearchService {
             case SUBSTRING -> Pattern.compile(Pattern.quote(query));
             case REGEX -> Pattern.compile(query);
         };
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     private static boolean isScannable(PxChunk chunk, String mime, boolean includeTests) {

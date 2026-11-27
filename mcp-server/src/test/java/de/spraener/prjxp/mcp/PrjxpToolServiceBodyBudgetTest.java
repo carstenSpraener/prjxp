@@ -33,7 +33,7 @@ class PrjxpToolServiceBodyBudgetTest {
     @BeforeEach
     void setUp() {
         tool = new PrjxpToolService(null, null, null, symbolReaderService,
-                null, null, null, null, null, null, null);
+                null, null, null, null, null, null, null, null, null);
     }
 
     private static MethodView view(String fqn, String body) {

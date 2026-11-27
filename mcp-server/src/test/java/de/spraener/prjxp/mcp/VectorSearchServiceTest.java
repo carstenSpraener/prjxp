@@ -8,6 +8,9 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.mcp.cache.SearchResultCache;
+import de.spraener.prjxp.mcp.rest.QueryStatsCollector;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
@@ -18,16 +21,21 @@ import org.mockito.junit.jupiter.MockitoExtension;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.function.Supplier;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.data.Offset.offset;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -50,8 +58,25 @@ class VectorSearchServiceTest {
     @Spy
     GraphRerankConfig graphRerankConfig = new GraphRerankConfig();
 
+    @Mock
+    QueryStatsCollector queryStats;
+
+    @Mock
+    SearchResultCache searchCache;
+
     @InjectMocks
     VectorSearchService service;
+
+    /**
+     * Phase 03: the mock cache always misses and runs the loader, so the existing tests keep
+     * exercising the real search path. Lenient: tests that return before the cache (no store,
+     * unknown project) never touch it.
+     */
+    @BeforeEach
+    void setUp() {
+        lenient().when(searchCache.get(anyString(), any(), any(Supplier.class)))
+                .thenAnswer(inv -> new SearchResultCache.Lookup<>(((Supplier<?>) inv.getArgument(2)).get(), false));
+    }
 
     private LanguageCapability javaCapability() {
         return new LanguageCapability(
@@ -115,6 +140,7 @@ class VectorSearchServiceTest {
         service.search("q", "default", null, 10);
 
         verify(provider).get("default");
+        verifyNoInteractions(queryStats);   // no store, no search: nothing to record
     }
 
     @Test
@@ -137,6 +163,7 @@ class VectorSearchServiceTest {
 
         verifyNoInteractions(provider);
         verifyNoInteractions(dao);
+        verifyNoInteractions(queryStats);   // unknown project: no search was executed
     }
 
     @Test
@@ -168,6 +195,8 @@ class VectorSearchServiceTest {
         assertThat(hit.source()).isEqualTo("vector");
         assertThat(hit.snippet()).hasSize(240);
         assertThat(hit.metadata()).containsEntry("java_code_section", "method");
+
+        verify(queryStats, times(1)).recordQuery(eq("How does chunking work?"), anyLong(), eq(1), eq(false));
     }
 
     @Test
@@ -180,6 +209,38 @@ class VectorSearchServiceTest {
         List<SearchHit> hits = service.search("q", "myproj", null, 10);
 
         assertThat(hits).isEmpty();
+        // Phase 03: the loader catches the unsupported store and returns an empty list,
+        // which is recorded (and cached) as a 0-hit query.
+        verify(queryStats, times(1)).recordQuery(eq("q"), anyLong(), eq(0), eq(false));
+    }
+
+    @Test
+    void secondIdenticalCallHitsTheCache() {
+        // Phase 03: with a REAL cache, the second identical call must not hit the dao again
+        // and must be recorded with fromCache=true.
+        when(projectRegistry.resolve("myproj")).thenReturn("myproj");
+        when(provider.get("myproj")).thenReturn(Optional.of(dao));
+
+        PxChunk chunk = PxChunk.create(c -> {
+            c.setId("chunk-1");
+            c.setFile("src/A.java");
+            c.setContent("x".repeat(300));
+        });
+        when(dao.searchVector(anyString(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 0.87)));
+
+        VectorSearchService cached = new VectorSearchService(provider, registry, projectRegistry,
+                graphRerankConfig, queryStats, new SearchResultCache(512, 60));
+
+        List<SearchHit> first = cached.search("q", "myproj", null, 10);
+        List<SearchHit> second = cached.search("q", "myproj", null, 10);
+
+        assertThat(first).hasSize(1);
+        assertThat(second).hasSize(1);
+        assertThat(second.get(0).chunkId()).isEqualTo("chunk-1");
+        verify(dao, times(1)).searchVector(anyString(), anyMap(), anyInt());   // the loader ran once
+        verify(queryStats, times(1)).recordQuery(eq("q"), anyLong(), eq(1), eq(false));
+        verify(queryStats, times(1)).recordQuery(eq("q"), anyLong(), eq(1), eq(true));
     }
 
     @Test

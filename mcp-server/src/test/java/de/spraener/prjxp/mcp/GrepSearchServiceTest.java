@@ -12,6 +12,7 @@ import de.spraener.prjxp.common.retrieval.ContentLevel;
 import de.spraener.prjxp.common.retrieval.GoldenRetriever;
 import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.gldrtrvr.RetrieverRegistry;
+import de.spraener.prjxp.mcp.rest.QueryStatsCollector;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -30,12 +31,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.atLeast;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -58,6 +61,9 @@ class GrepSearchServiceTest {
     @Mock
     GoldenRetriever retriever;
 
+    @Mock
+    QueryStatsCollector queryStats;
+
     GrepSearchService service;
 
     LanguagePack javaPack = new LanguagePack() {
@@ -74,7 +80,7 @@ class GrepSearchServiceTest {
         // No stubbing for retrieverRegistry.all(): Mockito's default answer is an empty List,
         // and most tests never reach the retriever loop (strict stubs would reject an unused stub).
         service = new GrepSearchService(provider, retrieverRegistry,
-                new LanguagePackRegistry(List.of(javaPack), List.of()), projectRegistry);
+                new LanguagePackRegistry(List.of(javaPack), List.of()), projectRegistry, queryStats);
     }
 
     /** The FULLTEXT exclusion filter that every grep search carries (raw Lucene field name). */
@@ -137,6 +143,7 @@ class GrepSearchServiceTest {
 
         verifyNoInteractions(provider);
         verifyNoInteractions(dao);
+        verifyNoInteractions(queryStats);   // unknown project: no search was executed
     }
 
     @Test
@@ -147,6 +154,7 @@ class GrepSearchServiceTest {
         List<SearchHit> hits = service.search("q", "myproj", null, 10);
 
         assertThat(hits).isEmpty();
+        verifyNoInteractions(queryStats);   // no store, no search: nothing to record
     }
 
     @Test
@@ -189,6 +197,7 @@ class GrepSearchServiceTest {
         List<SearchHit> hits = service.search("q", "myproj", null, 10);
 
         assertThat(hits).isEmpty();
+        verifyNoInteractions(queryStats);   // unsupported store: no search was executed
     }
 
     @Test
@@ -235,7 +244,7 @@ class GrepSearchServiceTest {
     @Test
     void tsAliasResolvesToTypescriptMimeType() {
         service = new GrepSearchService(provider, retrieverRegistry,
-                new LanguagePackRegistry(List.of(javaPack, tsPack), List.of()), projectRegistry);
+                new LanguagePackRegistry(List.of(javaPack, tsPack), List.of()), projectRegistry, queryStats);
 
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
@@ -253,7 +262,7 @@ class GrepSearchServiceTest {
     void cobolLanguageResolvesFromRegistry() {
         // TestLanguagePack (cobol) is part of the registry — the old ServiceLoader mechanism is gone
         service = new GrepSearchService(provider, retrieverRegistry,
-                new LanguagePackRegistry(List.of(new TestLanguagePack()), List.of()), projectRegistry);
+                new LanguagePackRegistry(List.of(new TestLanguagePack()), List.of()), projectRegistry, queryStats);
 
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
@@ -274,7 +283,7 @@ class GrepSearchServiceTest {
             @Override public String mimeType() { return "text/x-goodlang-code"; }
         };
         service = new GrepSearchService(provider, retrieverRegistry,
-                new LanguagePackRegistry(List.of(javaPack), List.of(pluginPack)), projectRegistry);
+                new LanguagePackRegistry(List.of(javaPack), List.of(pluginPack)), projectRegistry, queryStats);
 
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
@@ -295,7 +304,7 @@ class GrepSearchServiceTest {
             @Override public String mimeType() { return "text/x-java-plugin"; }
         };
         service = new GrepSearchService(provider, retrieverRegistry,
-                new LanguagePackRegistry(List.of(javaPack), List.of(pluginJava)), projectRegistry);
+                new LanguagePackRegistry(List.of(javaPack), List.of(pluginJava)), projectRegistry, queryStats);
 
         when(projectRegistry.resolve("myproj")).thenReturn("myproj");
         when(provider.get("myproj")).thenReturn(Optional.of(dao));
@@ -680,6 +689,8 @@ class GrepSearchServiceTest {
         assertThat(result.totalFiles()).isEqualTo(3);
         assertThat(result.truncated()).isTrue();
         assertThat(result.note()).contains("showing 2 of 3").contains("1 more");
+
+        verify(queryStats, times(1)).recordQuery(eq("x"), anyLong(), eq(2), eq(false));
     }
 
     @Test
@@ -857,6 +868,7 @@ class GrepSearchServiceTest {
 
         assertThat(result.hits()).isEmpty();
         assertThat(result.note()).contains("invalid regular expression");
+        verifyNoInteractions(queryStats);   // an invalid regex is rejected, not executed
     }
 
     @Test
@@ -999,6 +1011,7 @@ class GrepSearchServiceTest {
                 .contains("'query' is required");
         assertThat(service.searchFiles(" ", "p", null, 10, true, GrepMode.SUBSTRING).note())
                 .contains("'query' is required");
+        verifyNoInteractions(queryStats);   // a blank query is rejected, not executed
     }
 
     @Test
@@ -1067,6 +1080,84 @@ class GrepSearchServiceTest {
         GrepResult second = service.searchFiles("run", "p", null, 10, true, GrepMode.SUBSTRING);
 
         assertThat(first.hits()).isEqualTo(second.hits());
+    }
+
+    // ---- Phase 03: keyword search (vector-search fallback) ----
+
+    @Test
+    void searchKeywordsReturnsFileLine() {
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(provider.get("p")).thenReturn(Optional.of(dao));
+        PxChunk chunk = lineChunk("c1", "src/A.java", "10",
+                "public class PxChunk {\n  void run() {}\n}");
+        when(dao.searchAnyTerms(anyList(), anyMap(), anyInt()))
+                .thenReturn(List.of(new ScoredChunk(chunk, 1.0)));
+
+        // lowercase term must find the capitalised identifier (case-insensitive line check)
+        GrepResult result = service.searchKeywords(List.of("pxchunk"), "p", null, 3, true, null);
+
+        assertThat(result.hits()).hasSize(1);
+        SearchHit hit = result.hits().get(0);
+        assertThat(hit.file()).isEqualTo("src/A.java");
+        assertThat(hit.lineFrom()).isEqualTo(10);
+        assertThat(hit.snippet()).isEqualTo("public class PxChunk {");
+        // candidates are asked for every match (0), with the FULLTEXT exclusion filter
+        verify(dao).searchAnyTerms(eq(List.of("pxchunk")), eq(FULLTEXT_FILTER), eq(0));
+
+        verify(queryStats, times(1)).recordQuery(eq("pxchunk"), anyLong(), eq(1), eq(false));
+    }
+
+    @Test
+    void searchKeywordsAppliesExtraFiltersWithoutOverridingLanguageMime() {
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(provider.get("p")).thenReturn(Optional.of(dao));
+        when(dao.searchAnyTerms(anyList(), anyMap(), anyInt())).thenReturn(List.of());
+
+        service.searchKeywords(List.of("chunker"), "p", "java", 3, true,
+                Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf"));
+
+        // the language mime (java) wins over the extra filter's mime
+        verify(dao).searchAnyTerms(eq(List.of("chunker")),
+                eq(Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/x-java-code",
+                        PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER)),
+                eq(0));
+    }
+
+    @Test
+    void searchKeywordsWithoutMatchYieldsNoteNotAbort() {
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(provider.get("p")).thenReturn(Optional.of(dao));
+        when(dao.searchAnyTerms(anyList(), anyMap(), anyInt())).thenReturn(List.of());
+
+        GrepResult result = service.searchKeywords(List.of("vorgang", "service"), "p", null, 3, true, null);
+
+        assertThat(result.hits()).isEmpty();
+        assertThat(result.note()).contains("Keine Keyword-Treffer für: vorgang, service");
+
+        // a query without hits is still a query
+        verify(queryStats, times(1)).recordQuery(eq("vorgang service"), anyLong(), eq(0), eq(false));
+    }
+
+    @Test
+    void searchKeywordsMaxFilesKeepsLinesOfTheKeptFiles() {
+        when(projectRegistry.resolve("p")).thenReturn("p");
+        when(provider.get("p")).thenReturn(Optional.of(dao));
+        when(dao.searchAnyTerms(anyList(), anyMap(), anyInt()))
+                .thenReturn(List.of(
+                        new ScoredChunk(lineChunk("c1", "A.java", "1", "run\nrun"), 1.0),
+                        new ScoredChunk(lineChunk("c2", "B.java", "1", "run"), 1.0),
+                        new ScoredChunk(lineChunk("c3", "C.java", "1", "run"), 1.0)));
+
+        GrepResult result = service.searchKeywords(List.of("run"), "p", null, 2, true, null);
+
+        // maxFiles=2: two files (A, B), but all their lines are kept — A.java contributes two.
+        // File order is deterministic (lexical + frequency both rank A, B, C), so the lines are
+        // A:1, A:2, B:1.
+        assertThat(result.hits()).extracting(SearchHit::file)
+                .containsExactly("A.java", "A.java", "B.java");
+        assertThat(result.hits()).hasSize(3);   // A.java contributes two lines
+        assertThat(result.totalFiles()).isEqualTo(3);
+        assertThat(result.note()).contains("3 of 4");
     }
 
     @Test

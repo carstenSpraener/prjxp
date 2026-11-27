@@ -45,7 +45,13 @@ The Query Stats section contains two `chart-panel` components in a `.charts-grid
 
 Both charts are populated dynamically: each time the `pollQueryStats(10000)` observable emits, the component's `updateChartData` method maps the raw `QueryStats` fields into `ChartDataPoint` arrays. Missing values default to `0`.
 
-The section also shows a **Total Queries** summary (`totalQueries`) and a list of `recentQueries`.
+**Data source.** The metrics come from the backend `QueryStatsCollector`, which is filled by `VectorSearchService`, `GrepSearchService`, `ByIndexSearchService` and `PrjxpToolService.vectorSearch` — each search call records its latency and result count.
+
+**Cache performance.** Only vector searches are cached (`SearchResultCache`, configured via `prjxp.metrics.cache.ttl-seconds`, default 60, and `prjxp.metrics.cache.max-entries`, default 512). Grep and index searches always count as cache misses. The cache is invalidated per project after every successful pipeline run (`SearchCacheInvalidator`); the TTL acts as a safety net.
+
+**Empty state.** Until `totalQueries > 0`, both charts show **"No data available"** and the section displays the hint "Noch keine Queries erfasst – Werte erscheinen nach der ersten Suche."; the summary is only rendered once real data exists.
+
+The section shows a **Total Queries** summary (`totalQueries`). `recentQueries` remains an API field but is not rendered in the UI.
 
 Query stats are polled every **10 seconds**. A failed poll is caught and replaced with an empty `QueryStats`, so the charts simply retain their last known values.
 
@@ -123,7 +129,7 @@ When the Hub is fully configured the banner is hidden; otherwise it surfaces the
 │  ┌───────────────────────────────────────────────┐ │
 │  │ .charts-grid                                 │ │
 │  │  [Response Times chart] [Cache chart]        │ │
-│  │  Total Queries: N   Recent queries list      │ │
+│  │  Total Queries: N                            │ │
 │  └───────────────────────────────────────────────┘ │
 ├─────────────────────────────────────────────────────┤
 │  .dashboard-section  –  Projects                   │

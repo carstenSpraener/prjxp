@@ -97,7 +97,7 @@ public class PrjxpToolRegistration {
                         .addStringProperty("projectName",
                                 "Project name (listProjects).")
                         .addNumberProperty("similarity",
-                                "Leave at 0.85; lower only if a search returns nothing.")
+                                "Start threshold, default 0.95; floor 0.80.")
                         .addIntegerProperty("maxResults",
                                 "Maximum number of FILES, default 10 (max 20).")
                         .addStringProperty("sourceType",

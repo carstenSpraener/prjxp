@@ -2,6 +2,7 @@ package de.spraener.prjxp.lucene;
 
 import dev.langchain4j.store.embedding.filter.comparison.IsEqualTo;
 import de.spraener.prjxp.common.model.PxChunk;
+import de.spraener.prjxp.common.retrieval.QueryKeywords;
 import org.apache.lucene.index.LeafReader;
 import org.apache.lucene.index.LeafReaderContext;
 import org.apache.lucene.index.PostingsEnum;
@@ -21,7 +22,6 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -43,14 +43,8 @@ public class TfIdfSigner {
 
     private static final String CONTENT_FIELD = "content";
 
-    private static final Set<String> STOPWORDS = new LinkedHashSet<>(List.of(
-            "the", "a", "an", "and", "or", "of", "to", "in", "on", "at", "by", "for", "with", "from",
-            "is", "are", "was", "were", "be", "been", "being", "this", "that", "these", "those", "it",
-            "its", "as", "if", "then", "else", "when", "while", "per", "via", "not", "no", "yes",
-            "der", "die", "das", "und", "oder", "von", "zu", "im", "an", "auf", "für", "mit", "bei",
-            "nach", "über", "unter", "aus", "ist", "sind", "wird", "werden", "kann", "können", "muss",
-            "müssen", "sich", "eine", "einen", "einem", "einer", "dem", "den", "des", "am", "um",
-            "als", "auch", "nur", "wie", "was", "wer", "wo", "wann"));
+    /** Canonical EN/DE stopword list, shared with the keyword extractor (Phase 03). */
+    private static final Set<String> STOPWORDS = QueryKeywords.STOPWORDS;
 
     private static final Comparator<ScoredTerm> RANKING =
             Comparator.comparingDouble(ScoredTerm::score).reversed()

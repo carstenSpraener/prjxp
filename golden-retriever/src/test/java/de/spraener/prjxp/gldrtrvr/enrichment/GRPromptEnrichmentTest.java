@@ -18,6 +18,7 @@ import de.spraener.prjxp.gldrtrvr.md.MarkdownRetriever;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Stream;
@@ -557,9 +558,225 @@ class GRPromptEnrichmentTest {
                 .isLessThanOrEqualTo(5000);
     }
 
+    // ---- Phase 02 (FilterBug): Vektor- und Lexikal-Treffer trennen ----
+
+    @Test
+    void reIterateRespectsConfiguredFloor() {
+        SearchParams params = new SearchParams(10, 0.95);
+        params.setMinScoreFloor(0.80);
+        params.setGrowMaxResult(false);
+        params.setLowerThresholdFirst(true);
+
+        enrichment.reIterate(params);
+        assertThat(params.getMinScore()).isCloseTo(0.90, offset(1e-9));
+        assertThat(params.isAbort()).isFalse();
+        enrichment.reIterate(params);
+        assertThat(params.getMinScore()).isCloseTo(0.85, offset(1e-9));
+        enrichment.reIterate(params);
+        assertThat(params.getMinScore()).isCloseTo(0.80, offset(1e-9));
+        assertThat(params.isAbort()).isFalse();
+        enrichment.reIterate(params);
+
+        // At the floor there is no movement left: abort, and never descend below the floor.
+        assertThat(params.getMinScore()).isCloseTo(0.80, offset(1e-9));
+        assertThat(params.isAbort()).isTrue();
+        assertThat(params.getFallbackRounds()).isEqualTo(3);
+    }
+
+    @Test
+    void reIterateDefaultFloorKeepsLegacyBehaviour() {
+        SearchParams params = new SearchParams(20, 0.50);   // default floor 0.5, legacy order
+
+        enrichment.reIterate(params);
+
+        assertThat(params.getMinScore()).isCloseTo(0.45, offset(1e-9));
+        assertThat(params.isAbort()).isTrue();
+    }
+
+    @Test
+    void reIterateLowerThresholdBeforeGrowing() {
+        SearchParams params = new SearchParams(8, 0.95);
+        params.setMinScoreFloor(0.80);
+        params.setGrowMaxResult(true);
+        params.setLowerThresholdFirst(true);
+
+        enrichment.reIterate(params);
+
+        assertThat(params.getMaxResult()).isEqualTo(8);   // no growth: the threshold descends first
+        assertThat(params.getMinScore()).isCloseTo(0.90, offset(1e-9));
+        assertThat(params.getFallbackRounds()).isEqualTo(1);
+    }
+
+    @Test
+    void lexicalOnlyHitsDoNotValidateVectorSearch() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(List.of());   // nothing above the threshold
+        dao.setLexicalResults(List.of(
+                new ScoredChunk(chunk("l1", "src/main/java/Lexical.java", "LEXICAL-CONTENT"), 3.0)));
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        SearchParams params = new SearchParams(10, 0.95);
+        params.setMinScoreFloor(0.80);
+        params.setRequireVectorHit(true);
+        params.setGrowMaxResult(false);
+        params.setLowerThresholdFirst(true);
+
+        EnrichmentOutcome outcome = withDao.enrichOutcome("test", "query", List.of(), params,
+                withDao::reIterate, c -> c, true, s -> s.length() > 0);
+
+        // The lexical hit renders a non-empty context, but the vector channel is empty:
+        // the ladder runs to the floor and aborts instead of stopping at 0.95.
+        assertThat(outcome.aborted()).isTrue();
+        assertThat(outcome.vectorHits()).isZero();
+        assertThat(outcome.lexicalHits()).isEqualTo(1);
+        assertThat(outcome.effectiveMinScore()).isCloseTo(0.80, offset(1e-9));
+        assertThat(outcome.fallbackRounds()).isEqualTo(3);
+        assertThat(outcome.context()).contains("kein valider Kontext");
+    }
+
+    @Test
+    void vectorHitValidatesEvenWithEmptyRendering() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(List.of(
+                new ScoredChunk(chunk("v1", "src/main/java/Vector.java", "VECTOR-CONTENT"), 0.96)));
+
+        GoldenRetriever emptyRendering = new GoldenRetriever() {
+            @Override
+            public StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks,
+                                                         SearchParams params, Function<String, Boolean>... contextValidators) {
+                return new StringBuilder();   // e.g. the content budget skipped the output
+            }
+
+            @Override
+            public List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks,
+                                                      Function<String, Boolean>... contextValidators) {
+                return List.of();
+            }
+        };
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(emptyRendering)));
+
+        SearchParams params = new SearchParams(10, 0.95);
+        params.setMinScoreFloor(0.80);
+        params.setRequireVectorHit(true);
+        params.setGrowMaxResult(false);
+        params.setLowerThresholdFirst(true);
+
+        EnrichmentOutcome outcome = withDao.enrichOutcome("test", "query", List.of(), params,
+                withDao::reIterate, c -> c, true, s -> true);
+
+        // A vector hit above the threshold validates the search even though the rendered
+        // context is empty: the vector channel, not the rendering, decides.
+        assertThat(outcome.aborted()).isFalse();
+        assertThat(outcome.hasVectorHit()).isTrue();
+        assertThat(outcome.vectorHits()).isEqualTo(1);
+        assertThat(outcome.isEmpty()).isTrue();
+    }
+
+    @Test
+    void testOnlyVectorHitDoesNotValidateWhenTestsExcluded() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(List.of(
+                new ScoredChunk(chunk("v1", "src/test/java/VectorTest.java", "VECTOR-TEST-CONTENT"), 0.96)));
+
+        GoldenRetriever emptyRendering = new GoldenRetriever() {
+            @Override
+            public StringBuilder buildPromptForFindings(String projectName, List<ScoredChunk> chunks,
+                                                         SearchParams params, Function<String, Boolean>... contextValidators) {
+                return new StringBuilder();   // the test hit is filtered out, so nothing renders
+            }
+
+            @Override
+            public List<SearchHit> retrieveSearchHits(String projectName, List<ScoredChunk> chunks,
+                                                      Function<String, Boolean>... contextValidators) {
+                return List.of();
+            }
+        };
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(emptyRendering)));
+
+        SearchParams params = new SearchParams(10, 0.95);
+        params.setMinScoreFloor(0.80);
+        params.setRequireVectorHit(true);
+        params.setGrowMaxResult(false);
+        params.setLowerThresholdFirst(true);
+
+        // includeTests=false (7th arg) + a lenient validator (s -> true): the rendered context
+        // is empty but validatorsPass stays true, so only the vector channel can decide. The
+        // sole vector hit is a test file, so after the includeTests filter there is no usable
+        // vector hit and the ladder must run to the floor instead of validating on it.
+        EnrichmentOutcome outcome = withDao.enrichOutcome("test", "query", List.of(), params,
+                withDao::reIterate, c -> c, false, s -> true);
+
+        assertThat(outcome.aborted()).isTrue();
+        assertThat(outcome.vectorHits()).isZero();
+        assertThat(outcome.effectiveMinScore()).isCloseTo(0.80, offset(1e-9));
+        assertThat(outcome.fallbackRounds()).isEqualTo(3);
+        assertThat(outcome.context()).contains("kein valider Kontext");
+    }
+
+    @Test
+    void defaultsKeepLegacyOutput() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(mixedHits());
+
+        ContentRetriever retriever = new ContentRetriever();
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(retriever)));
+
+        String enriched = withDao.enrich("test", "query", 0.85, 20, ContentLevel.FULL, false, Map.of(), 0, false, false);
+        EnrichmentOutcome outcome = withDao.enrichOutcome("test", "query", 0.85, 20, ContentLevel.FULL, false, Map.of(), 0, false, false);
+
+        // The production header is locale-dependent (%.2f via .formatted) — mirror it exactly.
+        String header = String.format(Locale.getDefault(), "Effektive Similarity-Schwelle: %.2f (%d Fallbacks)\n", 0.85, 0);
+        assertThat(enriched).startsWith(header);
+        assertThat(outcome.context()).isEqualTo(enriched.substring(header.length()));
+        assertThat(outcome.aborted()).isFalse();
+        assertThat(outcome.vectorHits()).isEqualTo(2);   // the two main chunks; includeTests=false filters the test chunks
+        assertThat(outcome.lexicalHits()).isZero();
+    }
+
+    // ---- Phase 03b: bestVectorScore ----
+
+    @Test
+    void outcomeReportsBestVectorScore() {
+        FakeChunkDao dao = new FakeChunkDao("test");
+        dao.setVectorResults(List.of(
+                new ScoredChunk(chunk("v1", "src/main/java/A.java", "A-CONTENT"), 0.80),
+                new ScoredChunk(chunk("v2", "src/main/java/B.java", "B-CONTENT"), 0.90),
+                new ScoredChunk(chunk("v3", "src/test/java/ATest.java", "TEST-CONTENT"), 0.99)));
+
+        var withDao = new GRPromptEnrichment(
+                new PxChunkDaoProvider(List.of(dao)),
+                new RetrieverRegistry(new LanguagePackRegistry(List.of(), List.of()), List.of(new ContentRetriever())));
+
+        SearchParams params = new SearchParams(10, 0.80);
+        params.setMinScoreFloor(0.80);
+        params.setRequireVectorHit(true);
+        params.setGrowMaxResult(false);
+        params.setLowerThresholdFirst(true);
+
+        EnrichmentOutcome outcome = withDao.enrichOutcome("test", "query", List.of(), params,
+                withDao::reIterate, c -> c, false, s -> s.length() > 0);
+
+        // includeTests=false: the 0.99 test hit is filtered out, so the best score is the
+        // maximum of the remaining main hits (0.90), not the test hit.
+        assertThat(outcome.aborted()).isFalse();
+        assertThat(outcome.vectorHits()).isEqualTo(2);
+        assertThat(outcome.bestVectorScore()).isCloseTo(0.90, offset(1e-9));
+    }
+
     private static class FakeChunkDao implements PxChunkDao {
         private final PrjXPEmbeddingStoreReference ref = new PrjXPEmbeddingStoreReference();
         private List<ScoredChunk> vectorResults;
+        private List<ScoredChunk> lexicalResults = List.of();
 
         FakeChunkDao(String projectName) {
             ref.setProjectName(projectName);
@@ -567,6 +784,10 @@ class GRPromptEnrichmentTest {
 
         void setVectorResults(List<ScoredChunk> results) {
             this.vectorResults = results;
+        }
+
+        void setLexicalResults(List<ScoredChunk> results) {
+            this.lexicalResults = results;
         }
 
         @Override
@@ -600,6 +821,11 @@ class GRPromptEnrichmentTest {
                 throw new UnsupportedOperationException("Vector search is not supported by this store");
             }
             return vectorResults;
+        }
+
+        @Override
+        public List<ScoredChunk> searchCandidates(String query, Map<String, String> filters, int limit) {
+            return lexicalResults;
         }
     }
 

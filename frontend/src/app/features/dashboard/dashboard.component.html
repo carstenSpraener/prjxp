@@ -52,7 +52,7 @@
     </div>
 
     @if (queryStats$() | async; as stats) {
-      @if (stats.totalQueries) {
+      @if (hasQueryData()) {
         <div class="query-stats-summary glass-panel mt-2">
           <div class="stat-row">
             <span class="text-secondary">Total Queries:</span>
@@ -60,13 +60,21 @@
           </div>
           <div class="stat-row">
             <span class="text-secondary">Avg Response:</span>
-            <span class="text-cyan">{{ stats.avgResponseTimeMs }}ms</span>
+            <span class="text-cyan">{{ stats.avgResponseTimeMs | number:'1.0-1' }}ms</span>
           </div>
           <div class="stat-row">
             <span class="text-secondary">P95 Response:</span>
-            <span class="text-cyan">{{ stats.p95ResponseTimeMs }}ms</span>
+            <span class="text-cyan">{{ stats.p95ResponseTimeMs | number:'1.0-1' }}ms</span>
+          </div>
+          <div class="stat-row">
+            <span class="text-secondary">Cache Hit Rate:</span>
+            <span class="text-cyan">{{ cacheHitRate(stats) }}%</span>
           </div>
         </div>
+      } @else {
+        <p class="text-secondary query-stats-empty mt-2">
+          Noch keine Queries erfasst – Werte erscheinen nach der ersten Suche.
+        </p>
       }
     }
   </section>

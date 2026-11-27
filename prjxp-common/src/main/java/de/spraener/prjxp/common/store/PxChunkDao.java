@@ -34,6 +34,19 @@ public interface PxChunkDao {
     }
 
     /**
+     * OR search over the given terms: a chunk matches when its content matches <em>at least one</em>
+     * term (prefix, then mid-word) — the opposite of {@link #searchCandidates}, which requires all
+     * tokens. The keyword fallback (Phase 03) uses this: the keywords of a question are
+     * alternatives, not a conjunction.
+     * <p>
+     * {@code limit <= 0} asks for every match (bounded by the store's internal cap).
+     * Blank terms are ignored; an empty term list yields an empty result.
+     */
+    default List<ScoredChunk> searchAnyTerms(List<String> terms, Map<String, String> filters, int limit) {
+        throw new UnsupportedOperationException("Any-term search is not supported by this store");
+    }
+
+    /**
      * Files whose name or path contains {@code token} (case-insensitive), file-name matches first,
      * then path matches, each group alphabetically. Cheap structural lookup for the name prior —
      * it answers "which files are about this word?", not "what do they say?".

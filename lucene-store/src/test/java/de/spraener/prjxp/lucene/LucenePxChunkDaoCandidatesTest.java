@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -57,6 +58,15 @@ class LucenePxChunkDaoCandidatesTest {
         meta.put("pxchunk_id", id);
         meta.put(PxChunk.PXCHUNK_FILE, file);
         meta.put(PxChunk.PXCHUNK_PROJECT, "other-project");
+        store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
+    }
+
+    private void addWithMime(String id, String file, String mimeType, String content) {
+        Metadata meta = new Metadata();
+        meta.put("pxchunk_id", id);
+        meta.put(PxChunk.PXCHUNK_FILE, file);
+        meta.put(PxChunk.PXCHUNK_MIME_TYPE, mimeType);
+        meta.put(PxChunk.PXCHUNK_PROJECT, "test-project");
         store.add(Embedding.from(new float[]{1f, 0f, 0f}), TextSegment.from(content, meta));
     }
 
@@ -114,6 +124,32 @@ class LucenePxChunkDaoCandidatesTest {
         }
 
         assertThat(dao.searchCandidates("needle", Map.of(), 3)).hasSize(3);
+    }
+
+    @Test
+    void searchCandidatesDocsFilterReturnsOnlyDocs() {
+        addWithMime("doc-md", "a/Doc.md", "text/markdown", "preload setting docs");
+        addWithMime("doc-pdf", "a/Doc.pdf", "application/pdf", "preload setting docs");
+        addWithMime("code-java", "a/Code.java", "text/x-java-code", "preload setting code");
+
+        List<ScoredChunk> hits = dao.searchCandidates(
+                "preload", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "text/markdown|application/pdf"), 10);
+
+        assertThat(hits).extracting(sc -> sc.chunk().getId())
+                .containsExactlyInAnyOrder("doc-md", "doc-pdf");
+    }
+
+    @Test
+    void searchCandidatesNegatedOrListExcludesDocs() {
+        addWithMime("doc-md", "a/Doc.md", "text/markdown", "preload setting docs");
+        addWithMime("doc-pdf", "a/Doc.pdf", "application/pdf", "preload setting docs");
+        addWithMime("code-java", "a/Code.java", "text/x-java-code", "preload setting code");
+
+        List<ScoredChunk> hits = dao.searchCandidates(
+                "preload", Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf"), 10);
+
+        assertThat(hits).extracting(sc -> sc.chunk().getId())
+                .containsExactly("code-java");
     }
 
     @Test
@@ -181,6 +217,48 @@ class LucenePxChunkDaoCandidatesTest {
         addOtherProject("c1", "a/PreloadOther.java", "x");
 
         assertThat(dao.findFilesContaining("preload", 10)).isEmpty();
+    }
+
+    // ---- Phase 03: OR search over terms (keyword fallback) ----
+
+    @Test
+    void anyTermMatchesSingleKeywordOfLongQuestion() {
+        // The StandardAnalyzer keeps "VorgangService" as one term; the prefix "vorgang" finds it.
+        add("c1", "a/VorgangService.java", "public class VorgangService {");
+        add("c2", "a/Other.java", "unrelated content");
+
+        List<ScoredChunk> hits = dao.searchAnyTerms(
+                List.of("vorgang", "service", "process", "pipeline", "chunking"), Map.of(), 10);
+
+        assertThat(hits).extracting(sc -> sc.chunk().getId()).containsExactly("c1");
+    }
+
+    @Test
+    void anyTermRespectsNegatedOrFilter() {
+        addWithMime("doc-md", "a/Doc.md", "text/markdown", "vorgang service process");
+        addWithMime("doc-pdf", "a/Doc.pdf", "application/pdf", "vorgang service process");
+        addWithMime("code-java", "a/Code.java", "text/x-java-code", "vorgang service process");
+
+        List<ScoredChunk> hits = dao.searchAnyTerms(
+                List.of("vorgang", "service", "process"),
+                Map.of(PxChunk.PXCHUNK_MIME_TYPE, "!text/markdown|application/pdf"), 10);
+
+        assertThat(hits).extracting(sc -> sc.chunk().getId()).containsExactly("code-java");
+    }
+
+    @Test
+    void anyTermWithEmptyTermsYieldsEmptyResult() {
+        add("c1", "a/A.java", "vorgang service");
+
+        assertThat(dao.searchAnyTerms(List.of(), Map.of(), 10)).isEmpty();
+        assertThat(dao.searchAnyTerms(Arrays.asList("  ", null), Map.of(), 10)).isEmpty();
+    }
+
+    @Test
+    void anyTermIsProjectScoped() {
+        addOtherProject("c1", "a/VorgangOther.java", "class VorgangOther {}");
+
+        assertThat(dao.searchAnyTerms(List.of("vorgang"), Map.of(), 10)).isEmpty();
     }
 
     @Test

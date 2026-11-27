@@ -7,6 +7,8 @@ import de.spraener.prjxp.common.model.ScoredChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.mcp.cache.SearchResultCache;
+import de.spraener.prjxp.mcp.rest.QueryStatsCollector;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -25,8 +27,12 @@ public class VectorSearchService {
     private final SearchCapabilitiesRegistry registry;
     private final ProjectRegistry projectRegistry;
     private final GraphRerankConfig graphRerankConfig;
+    private final QueryStatsCollector queryStats;
+    private final SearchResultCache searchCache;
 
+    @SuppressWarnings("unchecked")
     public List<SearchHit> search(String query, String project, String language, int limit) {
+        long startedAt = System.nanoTime();
         projectRegistry.ensureSearchable(project);   // throws UnknownProjectException for unknown projects
         String resolvedProject = projectRegistry.resolve(project);
         PxChunkDao dao = chunkDaoProvider.get(resolvedProject).orElse(null);
@@ -42,6 +48,22 @@ public class VectorSearchService {
         // Fully-qualified field name: metadataFieldKey() passes pxchunk_* keys through unchanged.
         filters.put(PxChunk.PXCHUNK_METADATA + "." + PxChunk.PXCHUNK_TYPE, "!" + PxChunk.FULLTEXT_MARKER);
 
+        // Phase 03: the hit list is cached; ensureSearchable/resolve/dao==null stay in front of
+        // the cache so errors are never cached and a missing store records no query.
+        String key = SearchResultCache.vectorKey(resolvedProject, query, language, limit, filters);
+        SearchResultCache.Lookup<List<SearchHit>> lookup = searchCache.get(
+                key,
+                (Class<List<SearchHit>>) (Class<?>) List.class,
+                () -> doSearch(dao, query, filters, limit));
+        queryStats.recordQuery(query, elapsedMs(startedAt), lookup.value().size(), lookup.hit());
+        return lookup.value();
+    }
+
+    /**
+     * The uncached search: runs the vector query and maps the scored chunks to hits.
+     * An unsupported store is caught here and yields an empty list (cached as an empty hit).
+     */
+    private List<SearchHit> doSearch(PxChunkDao dao, String query, Map<String, String> filters, int limit) {
         List<ScoredChunk> results;
         try {
             results = dao.searchVector(query, filters, limit);
@@ -54,5 +76,9 @@ public class VectorSearchService {
                         GraphRerank.rerank(sc.score(), sc.chunk(), graphRerankConfig.getFloor()),
                         SearchHit.preview(sc.chunk().getContent()), SOURCE))
                 .toList();
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 }

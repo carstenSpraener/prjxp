@@ -56,6 +56,16 @@ public class GRPromptEnrichment {
     /** Candidates for the exact-token channel; {@code null} uses the default adapter. */
     private LexicalSignalProvider lexicalSignalProvider = new LexicalSignalProvider();
 
+    /** The configured content budget; callers that build their own SearchParams (the MCP tool) reuse it. */
+    public int getMaxContentLength() {
+        return maxContentLength;
+    }
+
+    /** The configured per-file chunk cap; callers that build their own SearchParams (the MCP tool) reuse it. */
+    public int getMaxChunksPerFile() {
+        return maxChunksPerFile;
+    }
+
     public String enrich(String projectName, String prompt) {
         return enrich(projectName, prompt, true);
     }
@@ -122,6 +132,23 @@ public class GRPromptEnrichment {
     public String enrich(String projectName, String prompt, double distance, int maxResults,
                          ContentLevel contentLevel, boolean includeTests, Map<String, String> vectorFilters,
                          int snippetChars, boolean deduplicate, boolean readChunksHint) {
+        EnrichmentOutcome outcome = enrichOutcome(projectName, prompt, distance, maxResults,
+                contentLevel, includeTests, vectorFilters, snippetChars, deduplicate, readChunksHint);
+        String fallbackInfo = "Effektive Similarity-Schwelle: %.2f (%d Fallbacks)\n"
+                .formatted(outcome.effectiveMinScore(), outcome.fallbackRounds());
+        return fallbackInfo + outcome.context();
+    }
+
+    /**
+     * Phase 02: the objective variant of the 10-arg {@link #enrich} — same parameter list, but
+     * returns the {@link EnrichmentOutcome} instead of the header-prefixed string. The
+     * {@code context} carries no header; the channel counts let a caller (the MCP tool) format
+     * an honest one. The SearchParams are built with the historical defaults (floor 0.5,
+     * no vector-hit requirement, grow-first), so REST callers keep their byte-identical output.
+     */
+    public EnrichmentOutcome enrichOutcome(String projectName, String prompt, double distance, int maxResults,
+                                           ContentLevel contentLevel, boolean includeTests, Map<String, String> vectorFilters,
+                                           int snippetChars, boolean deduplicate, boolean readChunksHint) {
         SearchParams params = new SearchParams(maxResults, distance);
         params.setContentLevel(contentLevel);
         params.setMaxContentLength(maxContentLength);
@@ -130,7 +157,7 @@ public class GRPromptEnrichment {
         params.setSnippetChars(snippetChars);
         params.setDeduplicate(deduplicate);
         params.setReadChunksHint(readChunksHint);
-        String enrichedContext = enrich(projectName, prompt, List.of(),
+        return enrichOutcome(projectName, prompt, List.of(),
                 params,
                 this::reIterate,
                 (context) ->
@@ -142,9 +169,6 @@ public class GRPromptEnrichment {
                         ),
                 includeTests,
                 c -> c.length() > 0);
-        String fallbackInfo = "Effektive Similarity-Schwelle: %.2f (%d Fallbacks)\n"
-                .formatted(params.getEffectiveMinScore(), params.getFallbackRounds());
-        return fallbackInfo + enrichedContext;
     }
 
     public String enrich(String projectName, String prompt, List<PxChunk> prefetchedChunks,
@@ -178,15 +202,41 @@ public class GRPromptEnrichment {
                          Function<String, String> promptFormatter,
                          boolean includeTests,
                          Function<String, Boolean>... contextValidator) {
+        return enrichOutcome(projectName, prompt, prefetchedChunks, searchParams, iterationHandler,
+                promptFormatter, includeTests, contextValidator).context();
+    }
+
+    /**
+     * The core enrichment loop, returning the objective {@link EnrichmentOutcome} (Phase 02).
+     * <p>
+     * Validity: with {@code requireVectorHit=false} (default) the context validators decide,
+     * exactly as before. With {@code requireVectorHit=true} a round is only valid when the
+     * vector channel delivered hits — lexical (BM25) hits alone keep the threshold ladder
+     * running until the floor, so a BM25 hit can no longer end the ladder early and be
+     * labelled with a cosine threshold it never passed.
+     * <p>
+     * The {@code context} of the outcome carries no header: on success it is the formatted
+     * prompt, on abort the historical "Es konnte kein valider Kontext erstellt werden! …"
+     * message (REST contract). The channel counts are the hits of the final round after the
+     * includeTests filter; prefetched chunks are a separate input and never count as vector hits.
+     */
+    public EnrichmentOutcome enrichOutcome(String projectName, String prompt,
+                                           List<PxChunk> prefetchedChunks,
+                                           SearchParams searchParams,
+                                           Function<SearchParams, SearchParams> iterationHandler,
+                                           Function<String, String> promptFormatter,
+                                           boolean includeTests,
+                                           Function<String, Boolean>... contextValidator) {
         boolean invalidPrompt = true;
         String overallContext = "";
+        RetrievalSplit split = new RetrievalSplit(List.of(), List.of(), List.of());
         do {
             searchParams.setEffectiveMinScore(searchParams.getMinScore());
             PxChunkDao chunkDao = chunkDaoProvider.get(projectName).get();
-            List<ScoredChunk> similarChunks = findRelevantScored(chunkDao, prompt, searchParams.getMaxResult(), searchParams.getMinScore(), searchParams.getVectorFilters());
+            split = findRelevantSplit(chunkDao, prompt, searchParams.getMaxResult(), searchParams.getMinScore(), searchParams.getVectorFilters());
             List<ScoredChunk> relevantChunks = new ArrayList<>();
             relevantChunks.addAll(prefetchedChunks.stream().map(c -> new ScoredChunk(c, 1.0)).toList());
-            relevantChunks.addAll(similarChunks);
+            relevantChunks.addAll(split.fused());
             if (!includeTests) {
                 relevantChunks.removeIf(sc -> TestPathFilter.isTestPath(sc.chunk().getFile()));
             }
@@ -219,59 +269,109 @@ public class GRPromptEnrichment {
                 }
             }
             overallContext = sb.toString();
+            boolean validatorsPass;
             if (contextValidator != null && contextValidator.length > 0) {
-                invalidPrompt = false;
+                validatorsPass = true;
                 for (var pv : contextValidator) {
-                    invalidPrompt |= !pv.apply(overallContext);
+                    validatorsPass &= pv.apply(overallContext);
                 }
             } else {
-                invalidPrompt = relevantChunks.size() == 0;
+                validatorsPass = relevantChunks.size() > 0;
             }
+            // The vector channel is judged after the includeTests filter: with includeTests=false
+            // a pure test hit is not a usable vector hit, so it must not end the ladder early.
+            invalidPrompt = (searchParams.isRequireVectorHit() && channelCount(split.vector(), includeTests) == 0) || !validatorsPass;
             if (invalidPrompt) {
                 searchParams = iterationHandler.apply(searchParams);
             }
             if (searchParams.isAbort()) {
-                return "Es konnte kein valider Kontext erstellt werden! " +
+                String abortMessage = "Es konnte kein valider Kontext erstellt werden! " +
                         "Effektive Similarity-Schwelle: %.2f (%d Fallbacks)."
                                 .formatted(searchParams.getEffectiveMinScore(), searchParams.getFallbackRounds());
+                return new EnrichmentOutcome(abortMessage,
+                        channelCount(split.vector(), includeTests),
+                        channelCount(split.lexical(), includeTests),
+                        bestScore(split.vector(), includeTests),
+                        searchParams.getEffectiveMinScore(), searchParams.getFallbackRounds(), true);
             }
         } while (invalidPrompt);
 
-        return promptFormatter.apply(overallContext.toString());
+        return new EnrichmentOutcome(promptFormatter.apply(overallContext),
+                channelCount(split.vector(), includeTests),
+                channelCount(split.lexical(), includeTests),
+                bestScore(split.vector(), includeTests),
+                searchParams.getEffectiveMinScore(), searchParams.getFallbackRounds(), false);
     }
 
     /**
-     * The semantic channel (thresholded — the cosine calibration stays a vector property) fused
-     * with the exact-token channel (never thresholded — a token hit is a fact, not a similarity).
-     * Fusion happens on chunk ids; the scores of the hits stay untouched, because they are part of
-     * the rendered pointer output and of the graph re-ranking.
+     * The hits of one channel after the includeTests filter — the counts the outcome reports.
+     * Prefetched chunks are a separate input and never count as vector hits.
      */
-    private List<ScoredChunk> findRelevantScored(PxChunkDao chunkDao, String prompt, int maxResults, double minScore,
-                                                  Map<String, String> vectorFilters) {
+    private static int channelCount(List<ScoredChunk> channel, boolean includeTests) {
+        if (includeTests) {
+            return channel.size();
+        }
+        return (int) channel.stream().filter(sc -> !TestPathFilter.isTestPath(sc.chunk().getFile())).count();
+    }
+
+    /**
+     * Phase 03b: the best (maximum) score of the channel after the includeTests filter — the
+     * value the MCP confidence gate compares against. {@code 0.0} when no hit remains.
+     */
+    private static double bestScore(List<ScoredChunk> channel, boolean includeTests) {
+        return channel.stream()
+                .filter(sc -> includeTests || !TestPathFilter.isTestPath(sc.chunk().getFile()))
+                .mapToDouble(ScoredChunk::score)
+                .max()
+                .orElse(0.0);
+    }
+
+    /**
+     * Phase 02: the two channels of the hybrid retrieval, kept apart. The semantic channel is
+     * thresholded (the cosine calibration stays a vector property); the exact-token channel is
+     * never thresholded (a token hit is a fact, not a similarity). {@code fused} is the RRF
+     * ranking of both — the rendered order; {@code vector}/{@code lexical} are the raw channel
+     * hits, so a caller can tell which channel a hit came from.
+     */
+    private record RetrievalSplit(List<ScoredChunk> vector, List<ScoredChunk> lexical, List<ScoredChunk> fused) {
+    }
+
+    private RetrievalSplit findRelevantSplit(PxChunkDao chunkDao, String prompt, int maxResults, double minScore,
+                                             Map<String, String> vectorFilters) {
         int retrievalWindow = Math.max(maxResults, vectorWindow);
         List<ScoredChunk> vectorHits = vectorHits(chunkDao, prompt, maxResults, minScore, vectorFilters, retrievalWindow);
         List<ScoredChunk> lexicalHits = lexicalSignalProvider.candidates(chunkDao, prompt, vectorFilters, retrievalWindow);
+        List<ScoredChunk> fused;
         if (lexicalHits.isEmpty() || lexicalWeight <= 0.0) {
-            return vectorHits;   // legacy order when the second channel is off or empty
-        }
-        Map<String, ScoredChunk> byId = new LinkedHashMap<>();
-        for (ScoredChunk sc : vectorHits) {
-            addById(byId, sc);
-        }
-        for (ScoredChunk sc : lexicalHits) {
-            addById(byId, sc);
-        }
-        List<RankedItem> fused = RankFusion.DEFAULT.rankItems(List.of(
-                new WeightedSignal("vector", vectorWeight, items(vectorHits)),
-                new WeightedSignal("lexical", lexicalWeight, items(lexicalHits))), retrievalWindow);
-        List<ScoredChunk> ranked = new ArrayList<>(fused.size());
-        for (RankedItem item : fused) {
-            ScoredChunk sc = byId.get(item.id());
-            if (sc != null) {
-                ranked.add(sc);
+            fused = vectorHits;   // legacy order when the second channel is off or empty
+        } else {
+            Map<String, ScoredChunk> byId = new LinkedHashMap<>();
+            for (ScoredChunk sc : vectorHits) {
+                addById(byId, sc);
+            }
+            for (ScoredChunk sc : lexicalHits) {
+                addById(byId, sc);
+            }
+            List<RankedItem> rankedItems = RankFusion.DEFAULT.rankItems(List.of(
+                    new WeightedSignal("vector", vectorWeight, items(vectorHits)),
+                    new WeightedSignal("lexical", lexicalWeight, items(lexicalHits))), retrievalWindow);
+            fused = new ArrayList<>(rankedItems.size());
+            for (RankedItem item : rankedItems) {
+                ScoredChunk sc = byId.get(item.id());
+                if (sc != null) {
+                    fused.add(sc);
+                }
             }
         }
-        return ranked;
+        return new RetrievalSplit(vectorHits, lexicalHits, fused);
+    }
+
+    /**
+     * The fused ranking of both channels — kept as a wrapper for the historical call shape.
+     */
+    private List<ScoredChunk> findRelevantScored(PxChunkDao chunkDao, String prompt, int maxResults, double minScore,
+                                                  Map<String, String> vectorFilters) {
+        return findRelevantSplit(chunkDao, prompt, maxResults, minScore, vectorFilters).fused();
     }
 
     private List<ScoredChunk> vectorHits(PxChunkDao chunkDao, String prompt, int maxResults, double minScore,
@@ -383,25 +483,57 @@ public class GRPromptEnrichment {
         return file == null ? "<unknown>" : file;
     }
 
+    /**
+     * One step of the threshold ladder.
+     * <p>
+     * Historical order (defaults: {@code growMaxResult=true}, {@code lowerThresholdFirst=false}):
+     * grow {@code maxResult} first, then lower the threshold — the legacy rule lowered
+     * unconditionally once {@code maxResult} was exhausted, and the floor (default 0.5) only
+     * decides the abort, so the old 0.50 → 0.45 → abort sequence stays byte-identical.
+     * <p>
+     * Tool order (Phase 02: {@code lowerThresholdFirst=true}): the threshold descends first and
+     * stops at the floor; {@code maxResult} only grows when the floor is already reached. With
+     * {@code growMaxResult=false} and {@code start == floor} there is no movement left, so the
+     * ladder aborts immediately instead of looping.
+     */
     public SearchParams reIterate(SearchParams searchParams) {
         double minScoreBefore = searchParams.getMinScore();
-        if (searchParams.getMaxResult() < 16) {
-            searchParams.setMaxResult(searchParams.getMaxResult() + 2);
+        double floor = searchParams.getMinScoreFloor();
+        boolean canGrow = searchParams.isGrowMaxResult() && searchParams.getMaxResult() < 16;
+        if (searchParams.isLowerThresholdFirst()) {
+            boolean canLower = searchParams.getMinScore() > floor + 1e-9;
+            if (canLower) {
+                lowerToNextGridPoint(searchParams);
+            } else if (canGrow) {
+                searchParams.setMaxResult(searchParams.getMaxResult() + 2);
+            } else {
+                searchParams.setAbort(true);
+            }
         } else {
-            // Snap to the canonical 0.05 grid: next attempt is the highest grid point
-            // strictly below the current threshold (e.g. 0.93 -> 0.90, 0.85 -> 0.80).
-            // The epsilon keeps on-grid values strictly descending (avoids an infinite loop);
-            // recomputing from the current value avoids accumulated float drift.
-            searchParams.setMinScore(
-                    Math.floor((searchParams.getMinScore() - 1e-9) / 0.05) * 0.05);
+            if (canGrow) {
+                searchParams.setMaxResult(searchParams.getMaxResult() + 2);
+            } else {
+                lowerToNextGridPoint(searchParams);
+            }
         }
         if (searchParams.getMinScore() < minScoreBefore) {
             searchParams.setFallbackRounds(searchParams.getFallbackRounds() + 1);
             searchParams.setEffectiveMinScore(searchParams.getMinScore());
         }
-        if (searchParams.getMinScore() < 0.5) {
+        if (searchParams.getMinScore() < floor) {
             searchParams.setAbort(true);
         }
         return searchParams;
+    }
+
+    /**
+     * Snap to the canonical 0.05 grid: next attempt is the highest grid point strictly below
+     * the current threshold (e.g. 0.93 → 0.90, 0.85 → 0.80). The epsilon keeps on-grid values
+     * strictly descending (avoids an infinite loop); recomputing from the current value avoids
+     * accumulated float drift.
+     */
+    private static void lowerToNextGridPoint(SearchParams searchParams) {
+        searchParams.setMinScore(
+                Math.floor((searchParams.getMinScore() - 1e-9) / 0.05) * 0.05);
     }
 }

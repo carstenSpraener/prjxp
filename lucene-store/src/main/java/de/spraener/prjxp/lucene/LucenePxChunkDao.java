@@ -215,6 +215,55 @@ public class LucenePxChunkDao implements PxChunkDao {
     }
 
     @Override
+    public List<ScoredChunk> searchAnyTerms(List<String> terms, Map<String, String> filters, int limit) {
+        if (luceneStore == null) {
+            throw new UnsupportedOperationException("Any-term search requires a Lucene store");
+        }
+        List<String> clean = terms == null ? List.of() : terms.stream()
+                .filter(term -> term != null && !term.isBlank())
+                .map(String::trim)
+                .toList();
+        if (clean.isEmpty()) {
+            return new ArrayList<>();
+        }
+        int effectiveLimit = limit <= 0 ? CANDIDATE_CAP : Math.min(limit, CANDIDATE_CAP);
+        if (effectiveLimit <= 0) {
+            return new ArrayList<>();
+        }
+        // Stage 1: prefix of each term, OR-ed. Covers identifiers without a term-dictionary walk.
+        List<ScoredChunk> hits = execute(anyTermQuery(clean, false, filters), effectiveLimit, "any-terms");
+        if (hits.size() >= effectiveLimit) {
+            return hits;
+        }
+        // Stage 2: the term may sit mid-word. Widening is only paid when stage 1 could not fill the window.
+        List<ScoredChunk> widened = execute(anyTermQuery(clean, true, filters), effectiveLimit, "any-terms");
+        return mergeById(hits, widened, effectiveLimit);
+    }
+
+    /**
+     * OR over the terms: the inner query requires at least one content match (SHOULD per term +
+     * {@code minimumNumberShouldMatch(1)}); the outer query wraps it as MUST so that the name
+     * boost (SHOULD) and the filters can never satisfy the minimum condition — they only rank.
+     */
+    private Query anyTermQuery(List<String> terms, boolean contains, Map<String, String> filters) {
+        BooleanQuery.Builder inner = new BooleanQuery.Builder();
+        for (String term : terms) {
+            Query clause = contains
+                    ? new WildcardQuery(new Term(CONTENT_FIELD, "*" + term + "*"))
+                    : new PrefixQuery(new Term(CONTENT_FIELD, term));
+            inner.add(clause, BooleanClause.Occur.SHOULD);
+        }
+        inner.setMinimumNumberShouldMatch(1);
+        BooleanQuery.Builder outer = new BooleanQuery.Builder();
+        outer.add(inner.build(), BooleanClause.Occur.MUST);
+        addNameBoost(outer, terms);
+        for (Map.Entry<String, String> entry : scopedFilters(filters).entrySet()) {
+            addFilterTerm(outer, entry.getKey(), entry.getValue());
+        }
+        return outer.build();
+    }
+
+    @Override
     public List<String> findFilesContaining(String token, int limit) {
         if (luceneStore == null) {
             throw new UnsupportedOperationException("File name lookup requires a Lucene store");
@@ -581,13 +630,44 @@ public class LucenePxChunkDao implements PxChunkDao {
         return builder.build();
     }
 
+    /**
+     * Lucene-Übersetzung des Filter-Vertrags:
+     * "a" = Term, "!a" = NOT Term, "a|b" = OR, "!a|b" = NOT (a OR b).
+     * Der Aufrufer entscheidet, ob das Ergebnis FILTER oder MUST_NOT wird.
+     * Liefert null, wenn nach dem Trimmen keine Werte übrig sind (keine Klausel).
+     */
+    private static Query filterQuery(String key, String value) {
+        boolean negated = value.startsWith("!");
+        String values = negated ? value.substring(1) : value;
+        if (!values.contains("|")) {
+            String trimmed = values.trim();
+            return trimmed.isEmpty() ? null : new TermQuery(new Term(key, trimmed));
+        }
+        BooleanQuery.Builder or = new BooleanQuery.Builder();
+        boolean hasClause = false;
+        for (String part : values.split("\\|")) {
+            String trimmed = part.trim();
+            if (!trimmed.isEmpty()) {
+                or.add(new TermQuery(new Term(key, trimmed)), BooleanClause.Occur.SHOULD);
+                hasClause = true;
+            }
+        }
+        if (!hasClause) {
+            return null;
+        }
+        or.setMinimumNumberShouldMatch(1);
+        return or.build();
+    }
+
     /** A "!"-prefixed value is a negation (MUST_NOT), otherwise a plain FILTER clause. */
     private static void addFilterTerm(BooleanQuery.Builder builder, String key, String value) {
-        if (value.startsWith("!")) {
-            builder.add(new TermQuery(new Term(key, value.substring(1))), BooleanClause.Occur.MUST_NOT);
-        } else {
-            builder.add(new TermQuery(new Term(key, value)), BooleanClause.Occur.FILTER);
+        Query query = filterQuery(key, value);
+        if (query == null) {
+            return;
         }
+        builder.add(query, value.startsWith("!")
+                ? BooleanClause.Occur.MUST_NOT
+                : BooleanClause.Occur.FILTER);
     }
 
     private List<String> tokenize(String query) {

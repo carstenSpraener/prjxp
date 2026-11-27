@@ -8,20 +8,28 @@ import de.spraener.prjxp.common.model.PxChunk;
 import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.model.SymbolReadResult;
 import de.spraener.prjxp.common.retrieval.ContentLevel;
+import de.spraener.prjxp.common.retrieval.QueryKeywords;
+import de.spraener.prjxp.common.retrieval.SearchParams;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.gldrtrvr.enrichment.EnrichmentOutcome;
 import de.spraener.prjxp.gldrtrvr.enrichment.GRPromptEnrichment;
+import de.spraener.prjxp.mcp.cache.SearchResultCache;
+import de.spraener.prjxp.mcp.rest.QueryStatsCollector;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.java.Log;
 import org.apache.commons.lang3.StringUtils;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
 
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 
 @Component
@@ -46,6 +54,35 @@ public class PrjxpToolService {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final GraphSearchService graphSearchService;
     private final ConfigCatalogService configCatalogService;
+    private final QueryStatsCollector queryStats;
+    private final SearchResultCache searchCache;
+
+    /** Phase 03: the cached vector-search result — the rendered text plus the hit count for the query stats. */
+    record ToolSearchResult(String text, int resultCount) {}
+
+    /** Phase 02: start of the vector threshold ladder (the {@code similarity} override is clamped to [min-score, 1.0]). */
+    @Value("${prjxp.mcp.vector.start-score:0.95}")
+    double vectorStartScore = 0.95;
+
+    /** Phase 02: floor of the vector threshold ladder; the ladder never descends below it. */
+    @Value("${prjxp.mcp.vector.min-score:0.80}")
+    double vectorMinScore = 0.80;
+
+    /** Phase 02: only vector hits validate the search; lexical (BM25) hits alone keep the ladder running. */
+    @Value("${prjxp.mcp.vector.require-vector-hit:true}")
+    boolean requireVectorHit = true;
+
+    /** Phase 02: the tool descends the threshold first; maxResult does not grow (no pointless 0.95 repeats). */
+    @Value("${prjxp.mcp.vector.grow-max-results:false}")
+    boolean growMaxResults = false;
+
+    /** Phase 03: lexical keyword fallback when the search is a dead end: {@code keyword} (default) or {@code off}. */
+    @Value("${prjxp.mcp.vector.fallback:keyword}")
+    String vectorFallback = "keyword";
+
+    /** Phase 03b: 0 = Gate aus; Fallback auch, wenn der beste Vektor-Treffer darunter liegt. */
+    @Value("${prjxp.mcp.vector.confidence-score:0.85}")
+    double vectorConfidenceScore = 0.85;
 
     public String vectorSearch(
             String userQuestion,
@@ -62,6 +99,7 @@ public class PrjxpToolService {
 
             Integer tokenBudget
     ) {
+        long startedAt = System.nanoTime();
         String prefix = """
                 """;
         try {
@@ -69,10 +107,11 @@ public class PrjxpToolService {
         } catch (UnknownProjectException e) {
             return "ERROR: " + e.getMessage();
         }
-        projectName = projectRegistry.resolve(projectName);
-        if (similarity == null || similarity < 0.0 || similarity > 1.0) {
-            similarity = 0.85;
-        }
+        final String resolved = projectRegistry.resolve(projectName);
+        // Phase 02: the similarity override stays, but is clamped to [vectorMinScore, 1.0] —
+        // the threshold ladder must never start below its floor.
+        double start = similarity == null ? vectorStartScore
+                : Math.max(vectorMinScore, Math.min(1.0, similarity));
         if (maxResults == null) {
             maxResults = 10;   // cheap default (was 20)
         }
@@ -80,19 +119,150 @@ public class PrjxpToolService {
         if (includeTests == null) {
             includeTests = Boolean.FALSE;   // semantic discovery: tests are noise
         }
+        String effectiveSourceType = (sourceType == null || sourceType.isBlank()) ? SourceTypeFilter.CODE : sourceType;
+        final int effectiveMaxResults = maxResults;        // final copies: the loader lambda must capture them
+        final Boolean effectiveIncludeTests = includeTests;
+
+        // Phase 03: the rendered result is cached under the NORMALIZED parameters (clamped
+        // start, effective source type) so equivalent calls share one entry. Validation
+        // (ensureSearchable) stays in front of the cache: errors are never cached.
+        String key = SearchResultCache.vectorToolKey(resolved, userQuestion, start, effectiveMaxResults,
+                effectiveSourceType, effectiveIncludeTests, tokenBudget);
+        SearchResultCache.Lookup<ToolSearchResult> lookup = searchCache.get(
+                key, ToolSearchResult.class,
+                () -> doVectorSearch(userQuestion, resolved, start, effectiveMaxResults, effectiveIncludeTests,
+                        effectiveSourceType, tokenBudget, prefix));
+        queryStats.recordQuery(userQuestion, elapsedMs(startedAt), lookup.value().resultCount(), lookup.hit());
+        return lookup.value().text();
+    }
+
+    /**
+     * Phase 03: the uncached vector search — enrichment, header, keyword fallback, token cap.
+     * Runs only on a cache miss; the logging lives here for the same reason.
+     */
+    private ToolSearchResult doVectorSearch(String userQuestion, String resolved, double start, int maxResults,
+                                            Boolean includeTests, String effectiveSourceType,
+                                            Integer tokenBudget, String prefix) {
         // Strategy: search tools return pointers only — no contentLevel knob, so the agent
         // cannot escalate to SKELETON/FULL. Content comes via readBySignature/readFile.
         ContentLevel level = ContentLevel.POINTERS;
-        String effectiveSourceType = (sourceType == null || sourceType.isBlank()) ? SourceTypeFilter.CODE : sourceType;
         log.info(String.format("searching context for '%s' for project '%s' (contentLevel=%s, sourceType=%s).",
-                userQuestion, projectName, level, effectiveSourceType));
-        String context = enrichment.enrich(projectName, userQuestion, similarity, maxResults, level, includeTests,
-                SourceTypeFilter.mimeFilters(effectiveSourceType), 240, true, true);
+                userQuestion, resolved, level, effectiveSourceType));
+        SearchParams params = new SearchParams(maxResults, start);
+        params.setContentLevel(level);
+        params.setMaxContentLength(enrichment.getMaxContentLength());
+        params.setMaxChunksPerFile(enrichment.getMaxChunksPerFile());
+        params.setVectorFilters(SourceTypeFilter.mimeFilters(effectiveSourceType));
+        params.setSnippetChars(240);
+        params.setDeduplicate(true);
+        params.setReadChunksHint(true);
+        params.setMinScoreFloor(vectorMinScore);
+        params.setRequireVectorHit(requireVectorHit);
+        params.setGrowMaxResult(growMaxResults);
+        params.setLowerThresholdFirst(true);
+        EnrichmentOutcome outcome = enrichment.enrichOutcome(resolved, userQuestion, List.of(), params,
+                enrichment::reIterate,
+                context -> String.format("""
+                        Relevante Information in '%s':
+                        %s
+
+                        """, resolved, context),
+                includeTests,
+                c -> c.length() > 0);
+        // The tool formats its own header from the objective outcome — the enrichment header
+        // (a cosine label) must not be printed twice, and a BM25 hit must not be labelled
+        // with a cosine threshold it never passed.
+        // Locale.ROOT: the header must read 0.95, not 0,95, regardless of the JVM locale.
+        // Phase 03b: with vector hits the header shows the best (cosine) score — the value the
+        // confidence gate below compares against.
+        String vectorPart = outcome.hasVectorHit()
+                ? String.format(Locale.ROOT, "Vektor-Treffer: %d (best %.2f)",
+                        outcome.vectorHits(), outcome.bestVectorScore())
+                : String.format(Locale.ROOT, "Vektor-Treffer: %d", outcome.vectorHits());
+        String header = String.format(Locale.ROOT,
+                "%s | Lexikal-Treffer: %d | Schwelle %.2f→%.2f (%d Fallbacks)\n"
+                        + "Hinweis: Treffer mit score > 1.0 sind lexikalisch (BM25), nicht Cosine.\n",
+                vectorPart, outcome.lexicalHits(), start,
+                outcome.effectiveMinScore(), outcome.fallbackRounds());
+        // Phase 03: no vector hit triggers the lexical keyword fallback — even when the AND-lexical
+        // channel found something. Phase 03b: a weak vector hit (best score below the confidence
+        // threshold) triggers it, too. The fallback replaces the pointer blocks with file:line hits,
+        // so a query like "Vorgang service process" yields concrete locations instead of pointers.
+        // Gate abschaltbar mit 0.
+        boolean weakVector = vectorConfidenceScore > 0
+                && outcome.hasVectorHit()
+                && outcome.bestVectorScore() < vectorConfidenceScore;
+        boolean deadEnd = !outcome.hasVectorHit() || weakVector;
+        if (deadEnd && "keyword".equalsIgnoreCase(vectorFallback)) {
+            List<String> terms = QueryKeywords.extract(userQuestion, 8);
+            GrepResult fallback = grepSearchService.searchKeywords(terms, resolved, null, 3, includeTests,
+                    SourceTypeFilter.mimeFilters(effectiveSourceType));
+            String context = header + renderKeywordFallback(terms, fallback, effectiveSourceType);
+            String result = String.format("%s\n%s", prefix, context);
+            log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));
+            return new ToolSearchResult(ToolResultCaps.capTokens(result, ToolResultCaps.clampTokenBudget(tokenBudget)),
+                    outcome.vectorHits() + outcome.lexicalHits());
+        }
+        String context = header + outcome.context();
         context = appendDeadEndHint(context, effectiveSourceType);
 
         String result = String.format("%s\n%s", prefix, context);
         log.info(String.format("    responding with %d chars (about %d tokens) of content", result.length(), result.length() / 4));
-        return ToolResultCaps.capTokens(result, ToolResultCaps.clampTokenBudget(tokenBudget));
+        return new ToolSearchResult(ToolResultCaps.capTokens(result, ToolResultCaps.clampTokenBudget(tokenBudget)),
+                outcome.vectorHits() + outcome.lexicalHits());
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
+    }
+
+    /**
+     * Phase 03: renders the lexical keyword fallback — at most 3 files, at most 2 lines per file,
+     * each file followed by a read hint so the model reads instead of answering from grep lines
+     * (the exact failure mode of the 02 benchmark). No hits: the searched terms plus the
+     * historical dead-end hint.
+     */
+    private String renderKeywordFallback(List<String> terms, GrepResult fallback, String effectiveSourceType) {
+        StringBuilder sb = new StringBuilder();
+        sb.append("Lexikalischer Fallback (Terme: ").append(String.join(", ", terms)).append("):\n");
+        if (fallback == null || fallback.hits().isEmpty()) {
+            sb.append("Keine Keyword-Treffer für: ").append(String.join(", ", terms));
+            sb.append(deadEndHint(effectiveSourceType));
+            return sb.toString();
+        }
+        Map<String, List<SearchHit>> byFile = new LinkedHashMap<>();
+        for (SearchHit hit : fallback.hits()) {
+            byFile.computeIfAbsent(hit.file(), key -> new ArrayList<>()).add(hit);
+        }
+        int files = 0;
+        for (List<SearchHit> fileHits : byFile.values()) {
+            if (files >= 3) {
+                break;
+            }
+            files++;
+            for (int i = 0; i < Math.min(2, fileHits.size()); i++) {
+                SearchHit hit = fileHits.get(i);
+                sb.append(hit.file()).append(':').append(hit.lineFrom()).append(": ")
+                        .append(hit.snippet()).append('\n');
+            }
+            SearchHit first = fileHits.get(0);
+            int line = first.lineFrom() == null ? 1 : first.lineFrom();
+            sb.append("→ readFile(\"").append(first.file()).append("\", offset=")
+                    .append(Math.max(1, line - 5)).append(", limit=40)\n");
+            if (looksLikeFqn(first.chunkId())) {
+                sb.append("→ readChunks(ids=\"").append(first.chunkId()).append("\")\n");
+            }
+            sb.append('\n');
+        }
+        return sb.toString();
+    }
+
+    /**
+     * A chunk id that looks like a code FQN (dotted, no path separator) — the {@code readChunks}
+     * hint is only offered for these; a file-path chunk id is read with {@code readFile} instead.
+     */
+    private static boolean looksLikeFqn(String chunkId) {
+        return chunkId != null && chunkId.contains(".") && !chunkId.contains("/");
     }
 
     /**
@@ -100,12 +270,17 @@ public class PrjxpToolService {
      * in case the answer lives in prose documentation.
      */
     private String appendDeadEndHint(String context, String effectiveSourceType) {
-        boolean codeScoped = SourceTypeFilter.CODE.equalsIgnoreCase(
-                effectiveSourceType == null ? "" : effectiveSourceType.trim());
-        if (context != null && context.contains("kein valider Kontext") && codeScoped) {
-            return context + "\nKeine Code-Treffer. Mit sourceType=all wiederholen, wenn Doku/Prosa gemeint ist.";
+        if (context != null && context.contains("kein valider Kontext")) {
+            return context + deadEndHint(effectiveSourceType);
         }
         return context;
+    }
+
+    /** The dead-end nudge for code-scoped searches; empty when the search was not code-scoped. */
+    private String deadEndHint(String effectiveSourceType) {
+        boolean codeScoped = SourceTypeFilter.CODE.equalsIgnoreCase(
+                effectiveSourceType == null ? "" : effectiveSourceType.trim());
+        return codeScoped ? "\nKeine Code-Treffer. Mit sourceType=all wiederholen, wenn Doku/Prosa gemeint ist." : "";
     }
 
     public List<ProjectSummary> listProjects() {

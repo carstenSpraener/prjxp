@@ -6,6 +6,7 @@ import de.spraener.prjxp.common.model.SearchHit;
 import de.spraener.prjxp.common.model.SymbolMetadata;
 import de.spraener.prjxp.common.store.PxChunkDao;
 import de.spraener.prjxp.common.store.PxChunkDaoProvider;
+import de.spraener.prjxp.mcp.rest.QueryStatsCollector;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -24,8 +25,10 @@ public class ByIndexSearchService {
     private final PxChunkDaoProvider chunkDaoProvider;
     private final SearchCapabilitiesRegistry registry;
     private final ProjectRegistry projectRegistry;
+    private final QueryStatsCollector queryStats;
 
     public List<SearchHit> search(ByIndexQuery query) {
+        long startedAt = System.nanoTime();
         projectRegistry.ensureSearchable(query.project());   // throws UnknownProjectException for unknown projects
         String resolvedProject = projectRegistry.resolve(query.project());
         PxChunkDao dao = chunkDaoProvider.get(resolvedProject).orElse(null);
@@ -50,11 +53,18 @@ public class ByIndexSearchService {
             return List.of();
         }
 
-        return results.stream()
+        List<SearchHit> hits = results.stream()
                 .sorted(Comparator.comparingDouble(ScoredChunk::score).reversed()
                         .thenComparing(sc -> sc.chunk().getId(), Comparator.nullsLast(String::compareTo)))
                 .map(sc -> SearchHit.from(sc.chunk(), sc.score(), SearchHit.preview(sc.chunk().getContent()), SOURCE))
                 .toList();
+        String label = query.fqn() != null ? query.fqn() : query.methodName();
+        queryStats.recordQuery(label != null ? label : "byIndex", elapsedMs(startedAt), hits.size(), false);
+        return hits;
+    }
+
+    private static long elapsedMs(long startedAt) {
+        return (System.nanoTime() - startedAt) / 1_000_000;
     }
 
     private void putIfPresent(Map<String, String> filters, String key, String value) {

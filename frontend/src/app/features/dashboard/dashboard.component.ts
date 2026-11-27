@@ -1,5 +1,5 @@
 import { Component, OnInit, signal } from '@angular/core';
-import { AsyncPipe } from '@angular/common';
+import { AsyncPipe, DecimalPipe } from '@angular/common';
 import { MetricCardComponent } from '../../components/metric-card/metric-card.component';
 import { ChartPanelComponent, ChartDataPoint } from '../../components/chart-panel/chart-panel.component';
 import { LiveUpdateIndicatorComponent } from '../../components/live-update-indicator/live-update-indicator.component';
@@ -13,7 +13,7 @@ import { SetupStatusBannerComponent } from '../../components/setup-status-banner
 @Component({
   selector: 'app-dashboard',
   standalone: true,
-  imports: [AsyncPipe, MetricCardComponent, ChartPanelComponent, LiveUpdateIndicatorComponent, SetupStatusBannerComponent],
+  imports: [AsyncPipe, DecimalPipe, MetricCardComponent, ChartPanelComponent, LiveUpdateIndicatorComponent, SetupStatusBannerComponent],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.css'
 })
@@ -25,6 +25,7 @@ export class DashboardComponent implements OnInit {
   // Dynamic chart data derived from query stats
   queryTimesData = signal<ChartDataPoint[]>([]);
   cacheData = signal<ChartDataPoint[]>([]);
+  hasQueryData = signal(false);
 
   constructor(private dashboardService: DashboardService) {}
 
@@ -49,16 +50,24 @@ export class DashboardComponent implements OnInit {
   }
 
   private updateChartData(stats: QueryStats): void {
+    const hasData = !!stats && (stats.totalQueries ?? 0) > 0;
+    this.hasQueryData.set(hasData);
+
     // Query response times from real API data
-    this.queryTimesData.set([
+    this.queryTimesData.set(hasData ? [
       { label: 'Avg', value: stats.avgResponseTimeMs ?? 0 },
       { label: 'P95', value: stats.p95ResponseTimeMs ?? 0 }
-    ]);
+    ] : []);
 
     // Cache hit/miss from real API data
-    this.cacheData.set([
+    this.cacheData.set(hasData ? [
       { label: 'Hits', value: stats.cacheHits ?? 0 },
       { label: 'Misses', value: stats.cacheMisses ?? 0 }
-    ]);
+    ] : []);
+  }
+
+  cacheHitRate(stats: QueryStats): number {
+    const total = (stats.cacheHits ?? 0) + (stats.cacheMisses ?? 0);
+    return total === 0 ? 0 : Math.round((stats.cacheHits! / total) * 100);
   }
 }

@@ -55,6 +55,10 @@ class ReadChunksToolTest {
     private GraphSearchService graphSearchService;
     @Mock
     private ConfigCatalogService configCatalogService;
+    @Mock
+    private de.spraener.prjxp.mcp.rest.QueryStatsCollector queryStats;
+    @Mock
+    private de.spraener.prjxp.mcp.cache.SearchResultCache searchCache;
 
     private PrjxpToolService tool;
 
@@ -62,7 +66,7 @@ class ReadChunksToolTest {
     void setUp() {
         tool = new PrjxpToolService(enrichment, grepSearchService, readerService, symbolReaderService,
                 projectRegistry, fileListService, fileGraphService, semanticGraphService, chunkDaoProvider,
-                graphSearchService, configCatalogService);
+                graphSearchService, configCatalogService, queryStats, searchCache);
     }
 
     @Test

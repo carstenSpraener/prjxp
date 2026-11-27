@@ -103,6 +103,9 @@ describe('DashboardComponent', () => {
   });
 
   it('queryTimesData should have sample data after ngOnInit', () => {
+    const service = TestBed.inject(DashboardService);
+    vi.mocked(service.pollQueryStats).mockReturnValue(of({totalQueries: 9, avgResponseTimeMs: 12,
+      p95ResponseTimeMs: 22, cacheHits: 5, cacheMisses: 4, recentQueries: []}));
     component.ngOnInit();
     // The AsyncPipe subscribes during change detection, which triggers the tap()
     // that populates the chart data signals.
@@ -114,6 +117,9 @@ describe('DashboardComponent', () => {
   });
 
   it('cacheData should have sample data after ngOnInit', () => {
+    const service = TestBed.inject(DashboardService);
+    vi.mocked(service.pollQueryStats).mockReturnValue(of({totalQueries: 9, avgResponseTimeMs: 12,
+      p95ResponseTimeMs: 22, cacheHits: 5, cacheMisses: 4, recentQueries: []}));
     component.ngOnInit();
     // The AsyncPipe subscribes during change detection, which triggers the tap()
     // that populates the chart data signals.
@@ -122,6 +128,28 @@ describe('DashboardComponent', () => {
     expect(component.cacheData().length).toBe(2);
     expect(component.cacheData()[0].label).toBe('Hits');
     expect(component.cacheData()[1].label).toBe('Misses');
+  });
+
+  it('shows the empty hint when no queries were recorded', () => {
+    // Default mock returns {} as QueryStats -> no data
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Noch keine Queries erfasst');
+    expect(component.queryTimesData()).toEqual([]);
+    expect(component.cacheData()).toEqual([]);
+  });
+
+  it('hides the empty hint once query data arrives', () => {
+    const service = TestBed.inject(DashboardService);
+    vi.mocked(service.pollQueryStats).mockReturnValue(of({totalQueries: 9, avgResponseTimeMs: 12,
+      p95ResponseTimeMs: 22, cacheHits: 5, cacheMisses: 4, recentQueries: []}));
+    component.ngOnInit();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).not.toContain('Noch keine Queries erfasst');
+  });
+
+  it('calculates cache hit rate as rounded percentage', () => {
+    expect(component.cacheHitRate({cacheHits: 5, cacheMisses: 5} as QueryStats)).toBe(50);
+    expect(component.cacheHitRate({cacheHits: 0, cacheMisses: 0} as QueryStats)).toBe(0);
   });
 
   it('should have dashboard title with neon glow', () => {
