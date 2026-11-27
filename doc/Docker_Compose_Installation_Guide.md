@@ -91,7 +91,7 @@ the runtime image (`eclipse-temurin:21-jre`) runs them via `entry.sh` in mode
 ### Step 1 — Clone the repository
 
 ```bash
-git clone https://github.com/spraener/prjxp.git
+git clone https://github.com/carstenSpraener/prjxp.git
 cd prjxp
 ```
 
